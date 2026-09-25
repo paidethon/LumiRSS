@@ -22,16 +22,17 @@
 
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { useInfiniteQuery, keepPreviousData, useQueryClient } from '@tanstack/react-query'
-import { BarChart3, Calendar, GitCompare, Loader2, Rss, Search, SearchX, SlidersHorizontal, Sparkles, X } from 'lucide-react'
+import { BarChart3, Calendar, Camera, GitCompare, LineChart, Loader2, Rss, Search, SearchX, SlidersHorizontal, Sparkles, Unlink, X } from 'lucide-react'
 import {
   SEARCH_RESULTS_KEY,
-  useCreateSavedSearchViewMutation,
   useDeleteSavedSearchViewMutation,
   useFeeds,
   useSubscriptions,
   useRenameSavedSearchViewMutation,
   useSavedSearchViews,
+  useUnlinkSavedSearchScopeMutation,
   useSearch,
+  useWorkspaces,
 } from '../../api/queries'
 import { mergeUnique } from '../../lib/merge-unique'
 import {
@@ -47,7 +48,8 @@ import {
   type BuilderFilters,
   type QuickDateRangeKind,
 } from '../../lib/search-advanced'
-import { parseSearchQuery } from '../../lib/search-insight'
+import { parseSearchQuery, createSearchSnapshot } from '../../lib/search-insight'
+import { findSimilarTitleGroups } from '../../lib/similar-titles'
 import { HighlightText, splitTerms } from '../../lib/highlight-text'
 import type { LibrarySearchItem } from '../../api/client'
 import type { SavedSearchView, SearchItem } from '../../api/types'
@@ -69,6 +71,10 @@ import { SearchParsePreview, type ParseDraft } from '../SearchParsePreview'
 import { SearchWhyMissedPanel } from '../SearchWhyMissedPanel'
 import { SearchDistributionPanel } from '../SearchDistributionPanel'
 import { SearchBasketPanel } from '../SearchBasketPanel'
+import { SearchSnapshotPanel } from '../SearchSnapshotPanel'
+import { SearchTimelinePanel } from '../SearchTimelinePanel'
+import { SaveSearchDialog } from '../SaveSearchDialog'
+import { SimilarTitleBadge } from '../SimilarTitleBadge'
 import {
   clearSearchHistory,
   pushSearchHistory,
@@ -262,19 +268,23 @@ function BasketToggle({ item }: { item: SearchItem }) {
   )
 }
 
-/** F28：RSS 结果行（标题与摘要接入安全高亮；terms 来自搜索词分词）。 */
+/** F28：RSS 结果行（标题与摘要接入安全高亮；terms 来自搜索词分词）。
+ * N148：同页近同名标题 → 标题旁「相似标题」chip（对比 popover），
+ * 只帮助区分，绝不合并、绝不隐藏结果行。 */
 function ResultRow({
   item,
   terms,
   highlightEnabled,
   lastSyncedAt,
   libraryError,
+  similarItems,
 }: {
   item: SearchItem
   terms: string[]
   highlightEnabled: boolean
   lastSyncedAt: string | null
   libraryError: string | null
+  similarItems: SearchItem[]
 }) {
   const selectEntry = useReaderUi((s) => s.selectEntry)
   const selectedEntryRef = useReaderUi((s) => s.selectedEntryRef)
@@ -311,15 +321,18 @@ function ResultRow({
             />
           )}
         </div>
-        {/* F074：命中解释徽标 +「为什么匹配」popover */}
-        {(item.matchedFields?.length ?? 0) > 0 && (
-          <MatchExplainBadges
-            item={item}
-            terms={terms}
-            lastSyncedAt={lastSyncedAt}
-            libraryError={libraryError}
-          />
-        )}
+        {/* F074：命中解释徽标 +「为什么匹配」popover；N148：相似标题 chip */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {(item.matchedFields?.length ?? 0) > 0 && (
+            <MatchExplainBadges
+              item={item}
+              terms={terms}
+              lastSyncedAt={lastSyncedAt}
+              libraryError={libraryError}
+            />
+          )}
+          <SimilarTitleBadge item={item} similarItems={similarItems} />
+        </div>
         <button
           type="button"
           onClick={() => {
@@ -372,9 +385,16 @@ export default function SearchPage() {
   const debounced = useDebouncedValue(input)
   // pool #09：保存的搜索视图（服务端持久化；存意图，应用时重新查询）。
   const savedViews = useSavedSearchViews()
-  const createView = useCreateSavedSearchViewMutation()
   const deleteView = useDeleteSavedSearchViewMutation()
   const renameView = useRenameSavedSearchViewMutation()
+  // N144：按检索范围收藏（保存对话框 + 已失效工作区的解除关联）。
+  const unlinkScope = useUnlinkSavedSearchScopeMutation()
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false)
+  // N144：当前应用的检索范围（重新打开视图时还原；null = 未应用）。
+  const [activeScope, setActiveScope] = useState<{
+    workspaceId: string | null
+    contentTypes: string[] | null
+  } | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
   // F061：视图私有 Atom 订阅管理对话框（per-view）。
@@ -383,8 +403,13 @@ export default function SearchPage() {
   const [exportOpen, setExportOpen] = useState(false)
   // F075：视图对照对话框（base=点击「比较」的视图）。
   const [compareBase, setCompareBase] = useState<SavedSearchView | null>(null)
+  // N141：保存快照（对当前结果引用做一次冻结）。
+  const [snapshotPending, setSnapshotPending] = useState(false)
+  const [snapshotError, setSnapshotError] = useState<string | null>(null)
 
   const feeds = useFeeds()
+  // N144：范围标签用的工作区列表（已还原范围显示可读名称）。
+  const workspacesQuery = useWorkspaces()
   // F017：订阅列表（构建器「来源」选项来自真实订阅；非数组响应容错）
   const subscriptionsRaw = useSubscriptions()
   const subscriptions = {
@@ -400,6 +425,25 @@ export default function SearchPage() {
     }
     return [...map.entries()].map(([id, label]) => ({ id, label }))
   }, [feeds.data])
+
+  // N144：已还原范围的可读标签（工作区名来自真实列表；找不到 → 显示 id，
+  // 不冒充正常状态——scopeBroken 时横幅才是主要提示）。
+  const workspaceLabelOf = (workspaceId: string): string => {
+    const list = Array.isArray(workspacesQuery.data)
+      ? workspacesQuery.data
+      : (workspacesQuery.data?.items ?? [])
+    return list.find((w) => w.id === workspaceId)?.name ?? workspaceId
+  }
+  const CONTENT_TYPE_LABELS: Record<string, string> = {
+    rss: 'RSS 文章',
+    bookmark: '书签',
+    clip: '剪藏',
+    obsidian_note: '笔记',
+    snapshot: '快照',
+    api_item: '收件',
+  }
+  const contentTypesLabel = (types: string[]): string =>
+    types.map((t) => CONTENT_TYPE_LABELS[t] ?? t).join('、')
 
   // 提交值 = 显式提交或防抖后的输入（两者取新：Enter 立即、停顿自动）
   useEffect(() => {
@@ -425,12 +469,16 @@ export default function SearchPage() {
   const advancedMode = isAdvancedSearchActive(dateRange, advanced)
   const builderActive = hasBuilderFilters(builder)
 
-  // ---- N142/N143/N145/N147：搜索理解与排障面板（互斥展开；会话内
-  //      本地状态，与日期/高级面板同一生命周期口径） ----
-  const [openPanel, setOpenPanel] = useState<'parse' | 'why' | 'distribution' | 'basket' | null>(
+  // ---- N142/N143/N145/N147/N141/N149：搜索理解与排障面板（互斥展开；
+  //      会话内本地状态，与日期/高级面板同一生命周期口径） ----
+  const [openPanel, setOpenPanel] = useState<
+    'parse' | 'why' | 'distribution' | 'basket' | 'snapshots' | 'timeline' | null
+  >(
     null,
   )
-  const togglePanel = (panel: 'parse' | 'why' | 'distribution' | 'basket') => {
+  const togglePanel = (
+    panel: 'parse' | 'why' | 'distribution' | 'basket' | 'snapshots' | 'timeline',
+  ) => {
     setOpenPanel((prev) => (prev === panel ? null : panel))
   }
   // N142：parse-query 结果（含 pending / error；应用前仅预览）。
@@ -677,14 +725,14 @@ export default function SearchPage() {
 
   // 多页合并按 ref 去重（merge-unique）：双腿独立 keyset 下同一 ref
   // 理论上只出现一次，但旧服务端会每页重发同一库腿切片。
-  const results = useMemo(
+  const rawResults = useMemo(
     () => mergeUnique(data?.pages.flatMap((page) => page.items) ?? [], (i) => i.entryRef),
     [data],
   )
   const indexInfo = data?.pages.at(-1)?.index
   // phase2 G6：库腿（additive 字段）——多页合并；libraryError 取第一个
   // 非 null 页错误（诚实小字展示，不阻塞 RSS 结果）。
-  const libraryHits = useMemo(
+  const libraryHitsAll = useMemo(
     () => mergeUnique(data?.pages.flatMap((page) => page.library ?? []) ?? [], (h) => h.ref),
     [data],
   )
@@ -692,6 +740,31 @@ export default function SearchPage() {
     () => data?.pages.map((page) => page.libraryError ?? null).find((m) => m !== null) ?? null,
     [data],
   )
+
+  // N144：内容类型范围在客户端过滤展示腿（RSS 行 / 库行）——范围随
+  // 视图保存并在重新打开时还原；范围未包含的腿隐藏并诚实标注。
+  const scopeTypes = activeScope?.contentTypes ?? null
+  const scopeShowsRss = scopeTypes === null || scopeTypes.includes('rss')
+  const libraryHits = useMemo(
+    () =>
+      scopeTypes === null
+        ? libraryHitsAll
+        : libraryHitsAll.filter((hit) => scopeTypes.includes(hit.kind)),
+    [libraryHitsAll, scopeTypes],
+  )
+  const results = useMemo(
+    () => (scopeShowsRss ? rawResults : []),
+    [rawResults, scopeShowsRss],
+  )
+  const scopeFilterActive = scopeTypes !== null && (libraryHits.length !== libraryHitsAll.length || !scopeShowsRss)
+
+  // N148：同页近同名标题分组（纯客户端 bigram Jaccard ≥ 0.8）。
+  const similarGroups = useMemo(() => findSimilarTitleGroups(results), [results])
+  const resultsByRef = useMemo(() => {
+    const map = new Map<string, SearchItem>()
+    for (const item of results) map.set(item.entryRef, item)
+    return map
+  }, [results])
 
   // 无限滚动（与 EntryList / FavoritesPage 同一模式）
   const sentinelRef = useRef<HTMLLIElement>(null)
@@ -715,6 +788,8 @@ export default function SearchPage() {
     if (!q) return
     setSubmitted(q)
     setInput(q)
+    // N144：新的显式搜索不继承上一个视图的检索范围。
+    setActiveScope(null)
     // F079：暂停中不落盘（pushSearchHistoryEntry 内部诚实处理）。
     if (!historyPaused) {
       setHistory((prev) => pushSearchHistory(prev, q))
@@ -724,28 +799,46 @@ export default function SearchPage() {
   const cancel = () => {
     setInput('')
     setSubmitted('')
+    setActiveScope(null)
   }
 
-  const saveCurrentView = () => {
-    if (!hasQuery) return
-    createView.mutate(
-      { name: trimmed.slice(0, 60), query: trimmed, view, categoryKey },
-      {
-        onSuccess: () => {
-          setInput(trimmed)
-          setSubmitted(trimmed)
-        },
-      },
-    )
+  // N141：保存快照 = 冻结当前结果引用（同参全量迭代，≤2000 诚实截断）。
+  const saveSnapshot = async () => {
+    if (!hasQuery || snapshotPending) return
+    setSnapshotPending(true)
+    setSnapshotError(null)
+    try {
+      await createSearchSnapshot(distributionParams)
+      await queryClient.invalidateQueries({ queryKey: ['search', 'snapshots'] })
+      setOpenPanel('snapshots')
+    } catch (error) {
+      setSnapshotError(error instanceof Error ? error.message : '快照保存失败，请稍后重试。')
+    } finally {
+      setSnapshotPending(false)
+    }
   }
 
-  const applySavedView = (saved: { query: string; view: string; categoryKey: string }) => {
+  // N144：应用已存视图时一并还原检索范围（工作区 + 内容类型）。
+  const applySavedView = (
+    saved: {
+      query: string
+      view: string
+      categoryKey: string
+      workspaceId?: string | null
+      contentTypes?: string[] | null
+    },
+  ) => {
     const restored = saved.query
     setCategoryKey(saved.categoryKey)
     setView(saved.view as ViewFilter)
     setInput(restored)
     setSubmitted(restored)
     setHistory((prev) => pushSearchHistory(prev, restored))
+    setActiveScope(
+      saved.workspaceId != null || saved.contentTypes != null
+        ? { workspaceId: saved.workspaceId ?? null, contentTypes: saved.contentTypes ?? null }
+        : null,
+    )
   }
 
   // F120：命令面板「保存的视图」数据源的动作通道——palette 侧 dispatch
@@ -760,7 +853,6 @@ export default function SearchPage() {
     window.addEventListener('lumirss-open-saved-view', onOpen)
     return () => window.removeEventListener('lumirss-open-saved-view', onOpen)
   }, [])
-
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 max-lg:pb-[76px]">
@@ -962,6 +1054,46 @@ export default function SearchPage() {
             )}
           >
             暂存篮{basketItems.length > 0 ? `（${basketItems.length}）` : ''}
+          </button>
+
+          {/* N141：搜索快照（冻结结果引用 + 稍后比较变化） */}
+          <button
+            type="button"
+            data-testid="snapshot-toggle"
+            aria-expanded={openPanel === 'snapshots'}
+            aria-pressed={openPanel === 'snapshots'}
+            onClick={() => togglePanel('snapshots')}
+            className={cx(
+              'flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] px-2.5 py-1 text-xs',
+              'transition-colors duration-[var(--lumi-motion-fast)]',
+              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+              openPanel === 'snapshots'
+                ? 'bg-[var(--lumi-accent-soft)] font-medium text-[var(--lumi-accent-text)]'
+                : 'border border-[var(--lumi-border)] text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)]',
+            )}
+          >
+            <Camera aria-hidden className="size-3.5" />
+            快照
+          </button>
+
+          {/* N149：主题演变时间线（24 个月逐月计数 + 本人批注） */}
+          <button
+            type="button"
+            data-testid="timeline-toggle"
+            aria-expanded={openPanel === 'timeline'}
+            aria-pressed={openPanel === 'timeline'}
+            onClick={() => togglePanel('timeline')}
+            className={cx(
+              'flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] px-2.5 py-1 text-xs',
+              'transition-colors duration-[var(--lumi-motion-fast)]',
+              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+              openPanel === 'timeline'
+                ? 'bg-[var(--lumi-accent-soft)] font-medium text-[var(--lumi-accent-text)]'
+                : 'border border-[var(--lumi-border)] text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)]',
+            )}
+          >
+            <LineChart aria-hidden className="size-3.5" />
+            主题演变
           </button>
         </div>
 
@@ -1274,6 +1406,19 @@ export default function SearchPage() {
         {/* N147：暂存篮（设备本地；批量加入工作区 / 导出 / 清空） */}
         {openPanel === 'basket' && <SearchBasketPanel />}
 
+        {/* N141：搜索快照（冻结 → 比较 added/removed/rankChanges/permissionLost） */}
+        {openPanel === 'snapshots' && <SearchSnapshotPanel />}
+
+        {/* N149：主题演变时间线（24 个月柱状 + 本人批注卡片 + 设备本地排除） */}
+        {openPanel === 'timeline' && hasQuery && (
+          <SearchTimelinePanel params={distributionParams} />
+        )}
+        {openPanel === 'timeline' && !hasQuery && (
+          <p role="status" className="mt-2 px-1 text-xs text-[var(--lumi-text-tertiary)]">
+            输入搜索词后查看主题演变。
+          </p>
+        )}
+
         {/* pool #09：保存当前搜索（意图而非结果集）+ 已存视图 chips */}
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <SynonymsControls expanded={expandSynonyms} onToggle={setExpandSynonyms} />
@@ -1295,8 +1440,30 @@ export default function SearchPage() {
           </button>
           <button
             type="button"
-            onClick={saveCurrentView}
-            disabled={!hasQuery || createView.isPending}
+            data-testid="snapshot-save"
+            onClick={() => void saveSnapshot()}
+            disabled={!hasQuery || snapshotPending}
+            className={cx(
+              'min-h-7 rounded-[var(--lumi-radius-full)] border border-dashed border-[var(--lumi-border)] px-2.5 py-1 text-xs',
+              'transition-colors duration-[var(--lumi-motion-fast)]',
+              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+              hasQuery && !snapshotPending
+                ? 'text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)]'
+                : 'cursor-not-allowed text-[var(--lumi-text-tertiary)] opacity-60',
+            )}
+          >
+            {snapshotPending ? '快照保存中…' : '保存快照'}
+          </button>
+          {snapshotError !== null && (
+            <span role="alert" className="text-xs text-[var(--lumi-danger)]">
+              {snapshotError}
+            </span>
+          )}
+          <button
+            type="button"
+            data-testid="save-view-open"
+            onClick={() => setSaveDialogOpen(true)}
+            disabled={!hasQuery}
             className={cx(
               'min-h-7 rounded-[var(--lumi-radius-full)] border border-dashed border-[var(--lumi-border)] px-2.5 py-1 text-xs',
               'transition-colors duration-[var(--lumi-motion-fast)]',
@@ -1306,14 +1473,43 @@ export default function SearchPage() {
                 : 'cursor-not-allowed text-[var(--lumi-text-tertiary)] opacity-60',
             )}
           >
-            {createView.isPending ? '保存中…' : '+ 保存此搜索'}
+            + 保存此搜索
           </button>
           {(savedViews.data?.items ?? []).map((saved) => (
             <div
               key={saved.id}
               className="flex items-center gap-1 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-accent-soft)] pl-2.5 pr-1"
             >
-              {renamingId === saved.id ? (
+              {saved.scopeBroken ? (
+                // N144：范围指向的工作区已删除 → 诚实横幅 + 解除关联。
+                <>
+                  <button
+                    type="button"
+                    onClick={() => applySavedView(saved)}
+                    title={saved.query}
+                    className="max-w-40 truncate py-1 text-xs font-medium text-[var(--lumi-accent-text)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+                  >
+                    {saved.name}
+                  </button>
+                  <span
+                    data-testid="scope-broken-banner"
+                    role="status"
+                    className="rounded-[var(--lumi-radius-full)] border border-dashed border-[var(--lumi-danger)] px-1.5 py-0.5 text-[10px] text-[var(--lumi-danger)]"
+                  >
+                    范围已失效
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="scope-unlink"
+                    onClick={() => unlinkScope.mutate(saved.id)}
+                    disabled={unlinkScope.isPending}
+                    aria-label={`解除视图「${saved.name}」的失效工作区关联`}
+                    className="relative flex size-6 items-center justify-center rounded-full text-[var(--lumi-accent-text)] transition-colors after:absolute after:-inset-y-2.5 after:-inset-x-1 after:content-[''] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+                  >
+                    <Unlink aria-hidden className="size-3" />
+                  </button>
+                </>
+              ) : renamingId === saved.id ? (
                 <input
                   value={renameDraft}
                   autoFocus
@@ -1377,6 +1573,26 @@ export default function SearchPage() {
             </span>
           )}
         </div>
+
+        {/* N144：已还原的检索范围（重新打开视图时展示；内容类型同时过滤展示腿） */}
+        {activeScope !== null && (
+          <div
+            data-testid="active-scope"
+            aria-label="已还原检索范围"
+            className="mt-1.5 flex flex-wrap items-center gap-1.5"
+          >
+            {activeScope.workspaceId !== null && (
+              <span className="flex items-center gap-1 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] px-2 py-0.5 text-[11px] text-[var(--lumi-text-secondary)]">
+                范围：工作区 {workspaceLabelOf(activeScope.workspaceId)}
+              </span>
+            )}
+            {activeScope.contentTypes !== null && (
+              <span className="flex items-center gap-1 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] px-2 py-0.5 text-[11px] text-[var(--lumi-text-secondary)]">
+                范围：内容类型 {contentTypesLabel(activeScope.contentTypes)}
+              </span>
+            )}
+          </div>
+        )}
 
         {/* F023：作者聚合面板（计数/合并/取消合并；显式别名） */}
         <Suspense fallback={null}><AuthorAggregatesPanelLazy /></Suspense>
@@ -1461,6 +1677,11 @@ export default function SearchPage() {
             </div>
           ) : results.length === 0 ? (
             <div className="mt-6">
+              {scopeFilterActive && (
+                <p role="note" data-testid="scope-filter-note" className="px-1 pb-2 text-xs text-[var(--lumi-text-tertiary)]">
+                  已按视图保存的内容类型范围过滤（{scopeTypes?.join('、')}）；清除请重新应用无范围的搜索。
+                </p>
+              )}
               {(indexInfo?.entryCount ?? 0) === 0 && libraryHits.length === 0 ? (
                 <EmptyState
                   icon={<Search aria-hidden className="size-8" />}
@@ -1478,6 +1699,11 @@ export default function SearchPage() {
             </div>
           ) : (
             <>
+              {scopeFilterActive && (
+                <p role="note" data-testid="scope-filter-note" className="mt-3 px-1 text-xs text-[var(--lumi-text-tertiary)]">
+                  已按视图保存的内容类型范围过滤（{scopeTypes?.join('、')}）；清除请重新应用无范围的搜索。
+                </p>
+              )}
               <ul className="mt-3 flex flex-col gap-1" aria-label="搜索结果">
                 {results.map((item) => (
                   <ResultRow
@@ -1487,6 +1713,9 @@ export default function SearchPage() {
                     highlightEnabled={searchHighlightMatches}
                     lastSyncedAt={indexInfo?.lastSyncedAt ?? null}
                     libraryError={libraryError}
+                    similarItems={(similarGroups.get(item.entryRef) ?? [])
+                      .map((ref) => resultsByRef.get(ref))
+                      .filter((r): r is SearchItem => r !== undefined)}
                   />
                 ))}
                 {isFetchingNextPage && (
@@ -1537,6 +1766,18 @@ export default function SearchPage() {
         onClose={() => setExportOpen(false)}
         query={debounced}
       />
+      {/* N144：按检索范围收藏（工作区 + 内容类型，随视图保存/还原）。
+          条件挂载：每次打开重新初始化表单（默认名取当前查询）。 */}
+      {saveDialogOpen && (
+        <SaveSearchDialog
+          open
+          defaultName={trimmed.slice(0, 60)}
+          query={trimmed}
+          view={view}
+          categoryKey={categoryKey}
+          onClose={() => setSaveDialogOpen(false)}
+        />
+      )}
       {/* F075：视图对照（选第二视图→三区面板） */}
       <ViewCompareDialog
         open={compareBase !== null}

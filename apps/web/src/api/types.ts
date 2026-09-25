@@ -146,6 +146,15 @@ export type SearchDistributionSource = Schemas['SearchDistributionSource']
 export type SearchDistributionDay = Schemas['SearchDistributionDay']
 export type TagMergePreview = Schemas['TagMergePreview']
 export type TagMergeResult = Schemas['TagMergeResult']
+// N141 搜索快照 / N149 主题演变时间线 / N150 标签合并撤销
+export type SearchSnapshotView = Schemas['SearchSnapshotView']
+export type SearchSnapshotList = Schemas['SearchSnapshotList']
+export type SearchSnapshotRankChange = Schemas['SearchSnapshotRankChange']
+export type SearchSnapshotCompareResult = Schemas['SearchSnapshotCompareResult']
+export type SearchTimelineMonth = Schemas['SearchTimelineMonth']
+export type SearchTimelineAnnotation = Schemas['SearchTimelineAnnotation']
+export type SearchTimelineResult = Schemas['SearchTimelineResult']
+export type TagMergeUndoResult = Schemas['TagMergeUndoResult']
 
 // ---- phase2 M1 Library domain ----
 

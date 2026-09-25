@@ -89,6 +89,8 @@ import {
   enableRag,
   getTagMergePreview,
   mergeTags,
+  unlinkSavedSearchScope,
+  undoTagMerge,
   executeRestore,
   fetchClipArticle,
   fetchDuplicateSuspects,
@@ -440,8 +442,25 @@ export function useSavedSearchViews() {
 export function useCreateSavedSearchViewMutation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (body: { name: string; query: string; view: string; categoryKey: string }) =>
-      createSavedSearchView(body),
+    mutationFn: (body: {
+      name: string
+      query: string
+      view: string
+      categoryKey: string
+      workspaceId?: string | null
+      contentTypes?: string[] | null
+    }) => createSavedSearchView(body),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: SAVED_VIEWS_KEY })
+    },
+  })
+}
+
+/** N144：解除已失效的工作区关联（保存视图列表即时刷新）。 */
+export function useUnlinkSavedSearchScopeMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => unlinkSavedSearchScope(id),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: SAVED_VIEWS_KEY })
     },
@@ -2867,6 +2886,21 @@ export function useTagMergeMutation() {
   return useMutation({
     mutationFn: (vars: { sourceId: number; targetId: number }) =>
       mergeTags(vars.sourceId, vars.targetId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['tags'] }),
+        queryClient.invalidateQueries({ queryKey: ['graph'] }),
+        queryClient.invalidateQueries({ queryKey: ['item-tags'] }),
+      ])
+    },
+  })
+}
+
+/** N150：撤销最近一次合并（重建源标签并恢复绑定；同样全量失效）。 */
+export function useTagMergeUndoMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => undoTagMerge(),
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['tags'] }),
