@@ -191,6 +191,17 @@ jobs:
       - name: Boot e2e stack + init (FreshRSS install / pool / owner password)
         run: e2e/stack/run-smoke.sh up
 
+      - name: Wait (bounded) for the stack to serve
+        run: |
+          for i in $(seq 1 90); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8088/ || true)
+            if [ "$code" = "200" ]; then echo "stack ready after ~$((i*10))s"; exit 0; fi
+            sleep 10
+          done
+          echo "stack never became ready"
+          docker compose -f e2e/stack/docker-compose.e2e.yml logs --tail 40
+          exit 1
+
       - name: Run core Playwright journeys against live stack
         working-directory: apps/web
         env:
