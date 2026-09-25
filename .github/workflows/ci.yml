@@ -190,7 +190,10 @@ jobs:
           sudo rm -f /etc/apt/sources.list.d/google-chrome.list || true
           pnpm exec playwright install --with-deps chromium
 
-      - name: Boot e2e stack + init (FreshRSS install / pool / owner password)
+      - name: Boot e2e stack (build + up)
+        run: docker compose -f e2e/stack/docker-compose.e2e.yml up -d --build
+
+      - name: Init (FreshRSS install / pool / owner password / allow-list)
         run: e2e/stack/run-smoke.sh up
 
       - name: Wait (bounded) for the stack to serve
