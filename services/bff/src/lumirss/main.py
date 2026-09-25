@@ -64,6 +64,7 @@ from lumirss.routers import (
     opml,
     passkeys,
     privacy,
+    qa,
     qa_templates,
     quiz,
     rag,
@@ -421,6 +422,7 @@ app.include_router(storage.router)
 app.include_router(lumi_export.router)
 app.include_router(lumi_notes.router)
 app.include_router(relations.router)
+app.include_router(qa.router)
 app.include_router(qa_templates.router)
 app.include_router(quiz.router)
 app.include_router(task_records.router)

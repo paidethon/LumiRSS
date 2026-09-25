@@ -8,6 +8,7 @@ goes through the Source Registry (:mod:`lumirss.sources`). The reserved
 import asyncio
 import logging
 from datetime import UTC
+from typing import Any
 
 from fastapi import APIRouter, Request, Response
 
@@ -27,6 +28,7 @@ from lumirss.models import (
     ResearchPackRequest,
     ResolvedItem,
     ResolveRequest,
+    SharePackageRequest,
     Workspace,
     WorkspaceCleanupApplyRequest,
     WorkspaceCleanupApplyResult,
@@ -60,6 +62,7 @@ from lumirss.models import (
     WorkspaceSectionView,
     WorkspaceSnapshot,
     WorkspaceSnapshotCreate,
+    WorkspaceSnapshotDiff,
     WorkspaceSnapshotList,
     WorkspaceSnapshotRestoreRequest,
     WorkspaceSnapshotRestoreResult,
@@ -474,6 +477,32 @@ async def restore_workspace_snapshot(
         removed=result["removed"],
         revision=revision,
     )
+
+
+@router.get(
+    "/api/v1/workspaces/{workspace_id}/snapshots/{snapshot_id_a}/diff/{snapshot_id_b}",
+    response_model=WorkspaceSnapshotDiff,
+)
+async def diff_workspace_snapshots(
+    workspace_id: str,
+    snapshot_id_a: str,
+    snapshot_id_b: str,
+    request: Request,
+) -> WorkspaceSnapshotDiff:
+    """N115：两快照差异（纯只读）。
+
+    - ``added`` / ``removed``：B 相对 A 的成员增减（ref 列表）；
+    - ``moved``：两者都有但位置变化（fromPos → toPos）；
+    - ``groupChanges``：两者都有但分组归属变化（null = 未分组）；
+    - ref 的内容定位走既有 views/resolve 端点（本端点绝不解析内容，
+      绝不触碰工作区成员行）。"""
+    ws_store: WorkspaceStore = _get_workspace_store(request)
+    if await ws_store.get_workspace(workspace_id) is None:
+        raise WorkspaceNotFound(workspace_id)
+    result = await _snapshot_store(request).diff(
+        workspace_id, snapshot_id_a, snapshot_id_b
+    )
+    return WorkspaceSnapshotDiff(**result)
 
 
 @router.put(
@@ -931,19 +960,13 @@ async def _compile_notes(
     return notes
 
 
-@router.post(
-    "/api/v1/workspaces/{workspace_id}/compile",
-    response_model=CompileResponse,
-)
-async def compile_workspace(
+async def _compile_workspace_internal(
     workspace_id: str, payload: CompileRequest, request: Request
-) -> CompileResponse:
-    """N114：按大纲汇编草稿（纯预览，绝不落库）。
+) -> tuple[CompileResponse, dict[str, ResolvedItem], Any]:
+    """N114 汇编草稿构建（compile / markdown / N116 分享包共用）。
 
-    - 每个分节：标题 + 成员（标题 / 摘录 ≤200 / 引文链接 / 自有笔记）；
-    - 无分节（或全部为空大纲）→ 单一隐式节（工作区名，平铺全部成员）；
-    - 已消失 / 未授权的引用诚实排除并计数（excluded + excludedMissing），
-      绝不冒充内容。"""
+    返回 (draft, resolved_by_ref, workspace_summary)：分享包需要解析
+    视图做来源标注，草稿本体不含 source/datetime 字段。"""
     store = _get_workspace_store(request)
     summary = await store.get_workspace(workspace_id)
     if summary is None:
@@ -1020,7 +1043,7 @@ async def compile_workspace(
                 sectionId=section["id"], title=section["title"], items=items
             )
         )
-    return CompileResponse(
+    draft = CompileResponse(
         workspaceId=workspace_id,
         workspaceName=summary.name,
         generatedAt=utc_now(),
@@ -1029,6 +1052,26 @@ async def compile_workspace(
         excludedMissing=len(excluded),
         excluded=excluded,
     )
+    return draft, resolved, summary
+
+
+@router.post(
+    "/api/v1/workspaces/{workspace_id}/compile",
+    response_model=CompileResponse,
+)
+async def compile_workspace(
+    workspace_id: str, payload: CompileRequest, request: Request
+) -> CompileResponse:
+    """N114：按大纲汇编草稿（纯预览，绝不落库）。
+
+    - 每个分节：标题 + 成员（标题 / 摘录 ≤200 / 引文链接 / 自有笔记）；
+    - 无分节（或全部为空大纲）→ 单一隐式节（工作区名，平铺全部成员）；
+    - 已消失 / 未授权的引用诚实排除并计数（excluded + excludedMissing），
+      绝不冒充内容。"""
+    draft, _resolved, _summary = await _compile_workspace_internal(
+        workspace_id, payload, request
+    )
+    return draft
 
 
 def _compile_markdown(draft: CompileResponse) -> str:
@@ -1076,6 +1119,44 @@ async def compile_workspace_markdown(
         content=text,
         media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition": f'inline; filename="compile-{workspace_id}.md"'},
+    )
+
+
+@router.post("/api/v1/workspaces/{workspace_id}/share-package")
+async def export_share_package(
+    workspace_id: str, payload: SharePackageRequest, request: Request
+) -> Response:
+    """N116：汇编只读分享包（自包含静态 HTML 下载）。
+
+    - 与 N114 同一大纲/解析口径；私人笔记绝不进入（includeNotes
+      固定 false——传 true 是 422 契约错误，不是静默忽略）；
+    - 引文链接策略：绝对 http(s) → 真链接；应用内路由 → 仅当配置
+      ``LUMIRSS_PUBLIC_URL`` 时拼公开绝对链接，否则纯文本诚实省略；
+    - 每条附来源标注，文末隐私提示；包内绝无 cookie/token/凭据/
+      绝对本地路径（测试断言）。"""
+    from urllib.parse import quote
+
+    from lumirss.config import LumiSettings
+    from lumirss.workspace_share import render_share_package_html
+
+    draft, resolved, _summary = await _compile_workspace_internal(
+        workspace_id,
+        CompileRequest(sectionIds=payload.sectionIds),
+        request,
+    )
+    html_text = render_share_package_html(
+        draft,
+        resolved,
+        public_base_url=LumiSettings().LUMIRSS_PUBLIC_URL,
+    )
+    filename = f"share-package-{workspace_id}.html"
+    quoted = quote(filename)
+    return Response(
+        content=html_text,
+        media_type="text/html; charset=utf-8",
+        headers={
+            "Content-Disposition": f"attachment; filename=\"{filename}\"; filename*=UTF-8''{quoted}"
+        },
     )
 
 

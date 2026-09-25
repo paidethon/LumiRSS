@@ -79,6 +79,11 @@ _DOC_PAGE = 16
 _EMBED_BATCH = 32
 # F093：作业游标持久化上限与默认 kind。
 _JOB_KIND = "rebuild"
+# N158：局部重建作业（同一 rag_jobs 表，kind 区分；取消 = 现有暂停）。
+_SUBSET_JOB_KIND = "rebuild_subset"
+# N158：子集逐页推进（每页 5 个 ref 写一次进度——轮询粒度与批开销的
+# 折中；≤50 的子集最多 10 页）。
+_SUBSET_PAGE = 5
 
 
 def chunk_scheme() -> dict[str, int]:
@@ -98,6 +103,10 @@ class RagRebuildBusy(Exception):
 
 class RagJobPaused(Exception):
     """F093：批间安全点观察到暂停请求（游标已持久化）。"""
+
+
+class RagJobNotFound(Exception):
+    """N158：作业不存在（映射 404，不跨用户库泄露）。"""
 
 
 def doc_content_hash(text: str) -> str:
@@ -445,10 +454,25 @@ class RagService:
         }
 
     async def _job_summary(self) -> dict[str, Any] | None:
-        """F093 status job 段：最近作业的进度（stage/done/remaining）。"""
+        """F093 status job 段：最近作业的进度（stage/done/remaining）。
+
+        N158：kind=rebuild_subset 的作业按子集口径回显（done/total/
+        pending），绝不套用全量语料的 remaining 估算。"""
         job = await self._job_latest()
         if job is None:
             return None
+        if job["kind"] == _SUBSET_JOB_KIND:
+            stats = job.get("stats") or {}
+            cursor = job.get("cursor") or {}
+            return {
+                "jobId": job["jobId"],
+                "kind": job["kind"],
+                "status": job["status"],
+                "stage": "refs",
+                "done": int(stats.get("done", 0)),
+                "remaining": len(cursor.get("pending", []) or []),
+                "updatedAt": job["updatedAt"],
+            }
         stage = (job.get("cursor") or {}).get("stage")
         done = int((job.get("stats") or {}).get("chunks", 0))
         docs_done = int((job.get("stats") or {}).get("docs", 0))
@@ -507,11 +531,16 @@ class RagService:
 
     # -- F093 作业行（rag_jobs）---------------------------------------------
 
-    async def _job_create(self) -> str:
+    async def _job_create(
+        self,
+        *,
+        kind: str = _JOB_KIND,
+        stats: dict[str, Any] | None = None,
+    ) -> str:
         job_id = str(_uuid.uuid4())
         await self._db.execute(
             "INSERT INTO rag_jobs (id, kind, status, cursor_json, stats_json, updated_at) VALUES (?, ?, 'running', NULL, ?, ?)",
-            (job_id, _JOB_KIND, json.dumps({"chunks": 0, "docs": 0, "skipped": []}), utc_now()),
+            (job_id, kind, json.dumps(stats if stats is not None else {"chunks": 0, "docs": 0, "skipped": []}), utc_now()),
         )
         return job_id
 
@@ -540,6 +569,10 @@ class RagService:
         job = await self._job_get(str(row["id"]))
         assert job is not None
         return job
+
+    async def job_get(self, job_id: str) -> dict[str, Any] | None:
+        """N158：按 id 取作业行（公开只读视图；None = 不存在 → 404）。"""
+        return await self._job_get(job_id)
 
     async def _job_pause_request(self, job_id: str) -> bool:
         """设置暂停请求（当前批完成后生效）；False = 作业不在运行。"""
@@ -631,6 +664,15 @@ class RagService:
                 "status": "done" if job else "idle",
                 "resumed": False,
             }
+        if job["kind"] == _SUBSET_JOB_KIND:
+            # N158：最近作业是子集重建——全量续建绝不吞并子集游标。
+            subset = await self.resume_subset(job["jobId"])
+            return {
+                "chunks": 0,
+                "jobId": job["jobId"],
+                "status": str(subset.get("status", "done")),
+                "resumed": bool(subset.get("resumed")),
+            }
         if self._rebuild_lock.locked():
             raise RagRebuildBusy("重建已在进行中。")
         async with self._rebuild_lock:
@@ -661,8 +703,143 @@ class RagService:
                 raise
 
     async def pause_rebuild(self) -> str | None:
-        """F093：请求暂停（当前文档页完成后生效）。返回作业 id。"""
+        """F093：请求暂停（当前文档页完成后生效）。返回作业 id。
+
+        N158：取消 = 同一暂停机制——局部重建作业是同一 rag_jobs 表的
+        running 行，最新 running 作业无论 kind 都会被此入口命中。"""
         return await self._job_pause_latest_running()
+
+    # -- N158 局部索引重建 ----------------------------------------------------
+
+    async def rebuild_subset(self, refs: list[str]) -> dict[str, Any]:
+        """N158：局部重建——只重嵌给定 refs（≤50），绝不触碰其他分块。
+
+        - 复用增量管线（分块 → 嵌入 → 事务内只替换这些 ref 的行，
+          ``_write_index_sync(only_refs=…)``）——不走全量的 staging/
+          swap 路径（那会清空整个索引，正是本特性要避免的）；
+        - 进度持久化在 rag_jobs（kind=rebuild_subset）：每页写一次
+          {done, total}，轮询端点据此显示工作量；
+        - 取消 = 现有暂停（批间安全点观察 paused → 游标 pending
+          持久化）；resume 从游标继续，已完成的 ref 绝不重复嵌入；
+        - 投影中不存在的 ref 诚实汇报 ``missing``，绝不冒充成功。"""
+        cleaned = list(dict.fromkeys(str(ref) for ref in refs))[:_MAX_INDEX_REFS]
+        if not cleaned:
+            return {"jobId": "", "status": "done", "total": 0, "updated": 0, "chunks": 0, "missing": []}
+        if self._rebuild_lock.locked():
+            raise RagRebuildBusy("重建已在进行中。")
+        async with self._rebuild_lock:
+            job_id = await self._job_create(
+                kind=_SUBSET_JOB_KIND,
+                stats={"done": 0, "total": len(cleaned), "chunks": 0, "missing": []},
+            )
+            try:
+                result = await self._rebuild_subset_locked(job_id, cleaned)
+                return {
+                    "jobId": job_id,
+                    "status": str(result.get("status", "done")),
+                    "total": len(cleaned),
+                    "updated": int(result.get("updated", 0)),
+                    "chunks": int(result.get("chunks", 0)),
+                    "missing": list(result.get("missing", [])),
+                }
+            except RagJobPaused:
+                return {
+                    "jobId": job_id,
+                    "status": "paused",
+                    "total": len(cleaned),
+                    "updated": 0,
+                    "chunks": 0,
+                    "missing": [],
+                }
+            except Exception as exc:
+                await self._job_write(job_id, status="failed", stats={"error": str(exc)[:300]})
+                await self._set_setting("rag_last_error", str(exc)[:500])
+                raise
+
+    async def _rebuild_subset_locked(
+        self, job_id: str, refs: list[str]
+    ) -> dict[str, Any]:
+        """子集推进循环：每页 _SUBSET_PAGE 个 ref，页间安全点检查暂停。"""
+        pending = list(refs)
+        done = 0
+        chunks = 0
+        missing: list[str] = []
+        cursor: dict[str, Any] = {"pending": pending}
+        stats: dict[str, Any] = {
+            "done": 0, "total": len(refs), "chunks": 0, "missing": [],
+        }
+        await self._job_write(job_id, cursor=cursor, stats=stats)
+        while pending:
+            await self._check_pause(job_id, cursor, stats)
+            page, pending = pending[:_SUBSET_PAGE], pending[_SUBSET_PAGE:]
+            result = await self._index_refs_locked(page)
+            done += int(result["updated"])
+            chunks += int(result["chunks"])
+            missing.extend(result["missing"])
+            cursor = {"pending": pending}
+            stats = {
+                "done": done,
+                "total": len(refs),
+                "chunks": chunks,
+                "missing": missing,
+            }
+            await self._job_write(job_id, cursor=cursor, stats=stats)
+        await self._job_write(job_id, status="done", cursor=None, stats=stats)
+        return {"status": "done", "updated": done, "chunks": chunks, "missing": missing}
+
+    async def resume_subset(self, job_id: str | None = None) -> dict[str, Any]:
+        """N158：从游标继续 paused 的子集作业（幂等；缺省 = 最近一个）。"""
+        job = (
+            await self._job_get(job_id)
+            if job_id is not None
+            else await self._job_latest()
+        )
+        if job is None or job["kind"] != _SUBSET_JOB_KIND or job["status"] == "done":
+            return {"status": "done" if job is not None and job["status"] == "done" else "idle", "resumed": False}
+        if self._rebuild_lock.locked():
+            raise RagRebuildBusy("重建已在进行中。")
+        async with self._rebuild_lock:
+            current = await self._job_get(job["jobId"])
+            if current is None or current["status"] == "done":
+                return {"status": "done", "resumed": False}
+            pending = list((current.get("cursor") or {}).get("pending", []) or [])
+            stats = current.get("stats") or {}
+            await self._job_write(job["jobId"], status="running")
+            result = await self._rebuild_subset_locked_from(
+                job["jobId"], pending, int(stats.get("done", 0)),
+                int(stats.get("chunks", 0)), list(stats.get("missing", [])),
+                int(stats.get("total", 0)) or len(pending),
+            )
+            return {"status": "done", "resumed": True, **result}
+
+    async def _rebuild_subset_locked_from(
+        self,
+        job_id: str,
+        pending: list[str],
+        done: int,
+        chunks: int,
+        missing: list[str],
+        total: int,
+    ) -> dict[str, Any]:
+        """resume 变体：携带续建前的累计状态（done/chunks/missing）。"""
+        cursor: dict[str, Any] = {"pending": list(pending)}
+        stats: dict[str, Any] = {
+            "done": done, "total": total, "chunks": chunks, "missing": missing,
+        }
+        while pending:
+            await self._check_pause(job_id, cursor, stats)
+            page, pending = pending[:_SUBSET_PAGE], pending[_SUBSET_PAGE:]
+            result = await self._index_refs_locked(page)
+            done += int(result["updated"])
+            chunks += int(result["chunks"])
+            missing = list(missing) + list(result["missing"])
+            cursor = {"pending": pending}
+            stats = {
+                "done": done, "total": total, "chunks": chunks, "missing": missing,
+            }
+            await self._job_write(job_id, cursor=cursor, stats=stats)
+        await self._job_write(job_id, status="done", cursor=None, stats=stats)
+        return {"updated": done, "chunks": chunks, "missing": missing}
 
     async def _check_pause(self, job_id: str, cursor: dict[str, Any], stats: dict[str, Any]) -> None:
         """批间安全点：暂停请求 → 游标持久化 → 抛 RagJobPaused。"""

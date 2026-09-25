@@ -6,7 +6,7 @@ coverage 覆盖分桶、chunk-preview 分块可视预览、ask 同步问答（�
 强弱 + 引用缺失拦截 + 摘录模式）。
 """
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 
 from lumirss.models import (
@@ -21,6 +21,10 @@ from lumirss.models import (
     RagCoverage,
     RagEffectiveScope,
     RagEnableResult,
+    RagEvalRerunDiff,
+    RagEvalSample,
+    RagEvalSampleCreate,
+    RagEvalSampleList,
     RagExclusionItem,
     RagExclusionList,
     RagExclusionPut,
@@ -28,14 +32,17 @@ from lumirss.models import (
     RagInconsistencyList,
     RagRebuildPauseResult,
     RagRebuildResult,
+    RagRebuildSubsetRequest,
+    RagRebuildSubsetResult,
     RagRepairRequest,
     RagRepairResult,
     RagSearchItem,
     RagSearchResponse,
     RagStatus,
+    RagSubsetJobView,
 )
 from lumirss.rag import MODEL_ID as MODEL_ID_EXPORT
-from lumirss.rag import RagService, chunk_scheme, chunk_text_with_spans
+from lumirss.rag import RagJobNotFound, RagService, chunk_scheme, chunk_text_with_spans
 
 from ..deps import _get_rag_service
 
@@ -74,6 +81,155 @@ async def rag_rebuild(request: Request) -> RagRebuildResult:
     service: RagService = _get_rag_service(request)
     result = await service.rebuild()
     return RagRebuildResult(**result)
+
+
+# ---------------------------------------------------------------------------
+# N158 局部索引重建 / N159 检索质量收藏
+# ---------------------------------------------------------------------------
+
+
+@router.post("/api/v1/rag/rebuild/refs", response_model=RagRebuildSubsetResult)
+async def rag_rebuild_subset(
+    payload: RagRebuildSubsetRequest, request: Request
+) -> RagRebuildSubsetResult:
+    """N158：局部重建——只重嵌给定 refs（≤50，本用户库范围）。
+
+    - 复用增量管线（只替换这些 ref 的行），绝不触碰其他分块
+      （无全量 wipe）；投影中不存在的 ref 诚实进 ``missing``；
+    - 进度持久化在 rag_jobs（kind=rebuild_subset，{done, total}），
+      轮询 GET .../refs/{jobId}；取消 = 现有暂停。"""
+    service: RagService = _get_rag_service(request)
+    result = await service.rebuild_subset(payload.refs)
+    return RagRebuildSubsetResult(**result)
+
+
+@router.get(
+    "/api/v1/rag/rebuild/refs/{job_id}", response_model=RagSubsetJobView
+)
+async def rag_rebuild_subset_status(
+    job_id: str, request: Request
+) -> RagSubsetJobView:
+    """N158：子集作业进度轮询（done/total + pending + missing 明细）。"""
+    service: RagService = _get_rag_service(request)
+    job = await service.job_get(job_id)
+    if job is None:
+        raise RagJobNotFound(job_id)
+    stats = job.get("stats") or {}
+    cursor = job.get("cursor") or {}
+    return RagSubsetJobView(
+        jobId=job["jobId"],
+        kind=job["kind"],
+        status=job["status"],
+        done=int(stats.get("done", 0)),
+        total=int(stats.get("total", 0)),
+        chunks=int(stats.get("chunks", 0)),
+        missing=[str(r) for r in stats.get("missing", [])],
+        pending=[str(r) for r in cursor.get("pending", []) or []],
+        updatedAt=job["updatedAt"],
+    )
+
+
+@router.post(
+    "/api/v1/rag/rebuild/refs/{job_id}/pause",
+    response_model=RagRebuildPauseResult,
+)
+async def rag_rebuild_subset_pause(
+    job_id: str, request: Request
+) -> RagRebuildPauseResult:
+    """N158：取消 = 暂停（批间安全点生效；游标持久化，可续）。"""
+    service: RagService = _get_rag_service(request)
+    job = await service.job_get(job_id)
+    if job is None:
+        raise RagJobNotFound(job_id)
+    paused = await service._job_pause_request(job_id)  # noqa: SLF001 — 同域路由
+    if not paused:
+        return RagRebuildPauseResult(paused=False, jobId=job_id, status=job["status"])
+    return RagRebuildPauseResult(paused=True, jobId=job_id, status="pausing")
+
+
+@router.post(
+    "/api/v1/rag/rebuild/refs/{job_id}/resume",
+    response_model=RagRebuildSubsetResult,
+)
+async def rag_rebuild_subset_resume(
+    job_id: str, request: Request
+) -> RagRebuildSubsetResult:
+    """N158：从持久化游标继续 paused 的子集作业（幂等）。"""
+    service: RagService = _get_rag_service(request)
+    result = await service.resume_subset(job_id)
+    if result.get("status") == "idle":
+        raise RagJobNotFound(job_id)
+    job = await service.job_get(job_id)
+    stats = (job or {}).get("stats") or {}
+    return RagRebuildSubsetResult(
+        jobId=job_id,
+        status=str(result.get("status", "done")),
+        total=int(stats.get("total", 0)),
+        updated=int(stats.get("done", 0)),
+        chunks=int(stats.get("chunks", 0)),
+        missing=[str(r) for r in stats.get("missing", [])],
+    )
+
+
+@router.post(
+    "/api/v1/rag/eval-samples",
+    response_model=RagEvalSample,
+    status_code=201,
+)
+async def create_rag_eval_sample(
+    payload: RagEvalSampleCreate, request: Request
+) -> RagEvalSample:
+    """N159：保存评测样例——服务端【立即】执行一次真实检索并捕获
+    实际命中（不是裸期望）。私有：只进本用户库，绝不进入任何导出/
+    分享包/备份组件（local-only，见 rag_eval.py 模块注释）。"""
+    from lumirss.rag_eval import RagEvalSampleStore
+
+    store = RagEvalSampleStore(request.app.state.db, _get_rag_service(request))
+    sample = await store.save(
+        query=payload.query,
+        expected_refs=payload.expectedRefs,
+        kind=payload.kind,
+    )
+    return RagEvalSample(**sample)
+
+
+@router.get("/api/v1/rag/eval-samples", response_model=RagEvalSampleList)
+async def list_rag_eval_samples(request: Request) -> RagEvalSampleList:
+    """N159：样例列表（新→旧；cap=50 由存储层诚实强制）。"""
+    from lumirss.rag_eval import RagEvalSampleStore
+
+    store = RagEvalSampleStore(request.app.state.db, _get_rag_service(request))
+    samples = await store.list_samples()
+    return RagEvalSampleList(items=[RagEvalSample(**s) for s in samples])
+
+
+@router.delete("/api/v1/rag/eval-samples/{sample_id}", status_code=204)
+async def delete_rag_eval_sample(
+    sample_id: str, request: Request
+) -> Response:
+    from lumirss.rag_eval import EvalSampleNotFound, RagEvalSampleStore
+
+    store = RagEvalSampleStore(request.app.state.db, _get_rag_service(request))
+    deleted = await store.delete(sample_id)
+    if not deleted:
+        raise EvalSampleNotFound(sample_id)
+    return Response(status_code=204)
+
+
+@router.post(
+    "/api/v1/rag/eval-samples/{sample_id}/rerun",
+    response_model=RagEvalRerunDiff,
+)
+async def rerun_rag_eval_sample(
+    sample_id: str, request: Request
+) -> RagEvalRerunDiff:
+    """N159：重放查询并与存档差分（hitExpected / missed / newHits；
+    stored/now 两份命中原样回显——绝不只给结论不给证据）。"""
+    from lumirss.rag_eval import RagEvalSampleStore
+
+    store = RagEvalSampleStore(request.app.state.db, _get_rag_service(request))
+    diff = await store.rerun(sample_id)
+    return RagEvalRerunDiff(**diff)
 
 
 @router.get("/api/v1/rag/search", response_model=RagSearchResponse)
