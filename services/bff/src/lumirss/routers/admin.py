@@ -757,6 +757,47 @@ def _task_state(task: object) -> str:
     return "failed" if task.exception() is not None else "completed"
 
 
+# N194：探针时效 — checkedAt 早于该阈值的探针在管理台标注「过期」。
+# 服务端在响应序列化前即时计算（探针本身每次请求现跑，正常恒为
+# fresh；UI 若持有超过 5 分钟的旧响应也能据此诚实降级展示）。
+_PROBE_STALE_AFTER_S = 300.0
+
+
+def _probe_freshness(
+    checked_at: str | None, now_epoch: float | None = None
+) -> tuple[str | None, bool]:
+    """(checkedAt, stale) — server-side probe age computation.
+
+    ``checked_at`` is the server timestamp at which the probe ran
+    (operations.py already stamps ``lastCheckedAt``). ``None`` means the
+    probe ran during THIS response (presence-only services, or a probe
+    that does not stamp its own time) — the server clock at computation
+    time is then the honest checkedAt. ``stale`` is True exactly when
+    the probe is older than 5 minutes; an unparseable timestamp
+    degrades the same way: we never claim staleness we cannot prove."""
+    import time as _time
+    from datetime import datetime
+
+    if now_epoch is None:
+        now_epoch = _time.time()
+    if not checked_at:
+        return (
+            _time.strftime("%Y-%m-%dT%H:%M:%S+00:00", _time.gmtime()),
+            False,
+        )
+    try:
+        parsed = datetime.fromisoformat(str(checked_at))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        age_s = now_epoch - parsed.timestamp()
+    except ValueError:
+        return (
+            _time.strftime("%Y-%m-%dT%H:%M:%S+00:00", _time.gmtime()),
+            False,
+        )
+    return str(checked_at), age_s > _PROBE_STALE_AFTER_S
+
+
 def _uptime_seconds() -> int | None:
     """Process uptime from /proc (starttime vs /proc/uptime); honest null
     where /proc does not exist — clock-monotonic-since-boot is NOT uptime."""
@@ -869,11 +910,11 @@ async def system_status(request: Request) -> dict[str, object]:
         service.sqlite_status(), service.freshrss_status(), service.rsshub_status()
     )
 
-    def _presence(status: str) -> tuple[bool, str]:
-        return status != "unconfigured", status
+    def _presence(status: str) -> bool:
+        return status != "unconfigured"
 
-    freshrss_configured, freshrss_state = _presence(str(freshrss_st.get("status", "unknown")))
-    rsshub_configured, rsshub_state = _presence(str(rsshub_st.get("status", "unknown")))
+    freshrss_configured = _presence(str(freshrss_st.get("status", "unknown")))
+    rsshub_configured = _presence(str(rsshub_st.get("status", "unknown")))
 
     obsidian = False
     try:
@@ -901,32 +942,43 @@ async def system_status(request: Request) -> dict[str, object]:
         imap_present = False
 
     def _bool_service(name: str, configured: bool) -> dict[str, object]:
+        checked_at, stale = _probe_freshness(None, time.time())
         return {
             "name": name,
             "configured": configured,
             "status": "configured" if configured else "unconfigured",
             "latencyMs": None,
+            # N194：presence-only 服务没有真实探针——checkedAt 取响应
+            # 构建时刻（服务端时钟），stale 恒 False。
+            "checkedAt": checked_at,
+            "stale": stale,
+        }
+
+    def _probed_service(
+        name: str, configured: bool, probe: dict, default_status: str
+    ) -> dict[str, object]:
+        checked_at, stale = _probe_freshness(
+            probe.get("lastCheckedAt") if isinstance(probe, dict) else None,
+            time.time(),
+        )
+        return {
+            "name": name,
+            "configured": configured,
+            "status": (
+                str(probe.get("status", default_status))
+                if isinstance(probe, dict)
+                else default_status
+            ),
+            "latencyMs": probe.get("latencyMs") if isinstance(probe, dict) else None,
+            # N194：探针完成的服务端时刻 + 5 分钟时效标志。
+            "checkedAt": checked_at,
+            "stale": stale,
         }
 
     services = [
-        {
-            "name": "sqlite",
-            "configured": True,
-            "status": str(sqlite_st.get("status", "unknown")),
-            "latencyMs": None,
-        },
-        {
-            "name": "freshrss",
-            "configured": freshrss_configured,
-            "status": freshrss_state,
-            "latencyMs": freshrss_st.get("latencyMs"),
-        },
-        {
-            "name": "rsshub",
-            "configured": rsshub_configured,
-            "status": rsshub_state,
-            "latencyMs": rsshub_st.get("latencyMs"),
-        },
+        _probed_service("sqlite", True, sqlite_st, "unknown"),
+        _probed_service("freshrss", freshrss_configured, freshrss_st, "unknown"),
+        _probed_service("rsshub", rsshub_configured, rsshub_st, "unknown"),
         _bool_service("obsidian", obsidian),
         _bool_service("webdav", webdav_configured),
         _bool_service("ai", ai_key_present),

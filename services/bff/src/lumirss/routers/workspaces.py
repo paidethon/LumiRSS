@@ -10,9 +10,14 @@ import logging
 from datetime import UTC
 from typing import Any
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 
-from lumirss.itemref import InvalidItemRef
+from lumirss.itemref import (
+    LIBRARY_DOMAIN,
+    RSS_DOMAIN,
+    InvalidItemRef,
+    parse_item_ref,
+)
 from lumirss.models import (
     CompileExcluded,
     CompileItem,
@@ -54,6 +59,8 @@ from lumirss.models import (
     WorkspaceResumePointer,
     WorkspaceResumePutRequest,
     WorkspaceResumeResponse,
+    WorkspaceSearchHit,
+    WorkspaceSearchResponse,
     WorkspaceSectionCreate,
     WorkspaceSectionItem,
     WorkspaceSectionItemAddRequest,
@@ -653,6 +660,138 @@ async def workspace_contents(
         )
     )
     return WorkspaceItemsResolvedResponse(items=_resolved_models(resolved))
+
+
+# ---- N109：工作区标签全文检索 ------------------------------------------------
+
+_WORKSPACE_SEARCH_MAX_HITS = 200
+_WORKSPACE_SEARCH_EXCERPT = 160
+# SQLite 变量数上限远大于此；分块只为了让超大工作区（≤500 成员）的
+# IN 查询保持有界。
+_SEARCH_IN_CHUNK = 100
+
+
+def _search_excerpt(text: str, needle_lower: str, limit: int) -> str:
+    """命中处上下文摘要（≤limit 字符；截断侧加 …）。仅标题命中 → 标题。"""
+    text = str(text or "")
+    idx = text.lower().find(needle_lower)
+    if idx < 0:
+        return text[:limit]
+    start = max(0, idx - limit // 4)
+    chunk = text[start : start + limit]
+    prefix = "…" if start > 0 else ""
+    suffix = "…" if start + limit < len(text) else ""
+    return f"{prefix}{chunk}{suffix}"
+
+
+async def _fetch_projection_rows(
+    db, table: str, key_col: str, keys: list[str], fields: tuple[str, ...]
+) -> dict[str, dict]:
+    """按主键分块拉取搜索投影行（表/列名均为代码内常量，值全部绑定）。"""
+    out: dict[str, dict] = {}
+    for start in range(0, len(keys), _SEARCH_IN_CHUNK):
+        chunk = keys[start : start + _SEARCH_IN_CHUNK]
+        placeholders = ",".join("?" for _ in chunk)
+        rows = await db.fetch_all(
+            f"SELECT {key_col} AS _key, {', '.join(fields)} FROM {table} WHERE {key_col} IN ({placeholders})",
+            tuple(chunk),
+        )
+        for row in rows:
+            out[str(row["_key"])] = dict(row)
+    return out
+
+
+@router.get(
+    "/api/v1/workspaces/{workspace_id}/search",
+    response_model=WorkspaceSearchResponse,
+)
+async def search_workspace(
+    workspace_id: str,
+    request: Request,
+    q: str = Query(min_length=1, max_length=200),
+) -> WorkspaceSearchResponse:
+    """N109：在「当前工作区自己的条目」内做标题 + 全文检索。
+
+    范围严格限定工作区成员关系：先把 workspace_items 的 ref 全部取出，
+    再按域查各自的派生投影（rss → search_entries.content_text；library
+    → search_library.body）。其他工作区的条目即使内容命中也绝不返回；
+    投影缺失（ref 已失效/未同步）的成员诚实跳过。命中 ≤200 条，每条
+    摘要 ≤160 字符。"""
+    needle = q.strip().lower()
+    store: WorkspaceStore = _get_workspace_store(request)
+    if await store.get_workspace(workspace_id) is None:
+        raise WorkspaceNotFound(workspace_id)
+    if needle == "":
+        return WorkspaceSearchResponse(workspaceId=workspace_id, query=q, results=[])
+    members = await store.list_items(workspace_id, limit=_MAX_ITEM_LIMIT)
+
+    rss_keys: list[str] = []
+    library_keys: list[str] = []
+    for item in members:
+        try:
+            ref = parse_item_ref(item.item_ref)
+        except InvalidItemRef:
+            continue  # 损坏的 ref 不参与匹配（成员列表自身会把它显示为失效）
+        if ref.domain == RSS_DOMAIN:
+            rss_keys.append(ref.key)
+        elif ref.domain == LIBRARY_DOMAIN:
+            # search_library.ref 存完整 itemRef 形态（library:<uuid>）。
+            library_keys.append(item.item_ref)
+    rss_rows = await _fetch_projection_rows(
+        request.app.state.db, "search_entries", "entry_ref", rss_keys, ("title", "content_text")
+    )
+    library_rows = await _fetch_projection_rows(
+        request.app.state.db, "search_library", "ref", library_keys, ("title", "body")
+    )
+
+    results: list[WorkspaceSearchHit] = []
+    truncated = False
+    for item in members:
+        try:
+            ref = parse_item_ref(item.item_ref)
+        except InvalidItemRef:
+            continue
+        if ref.domain == RSS_DOMAIN:
+            row = rss_rows.get(ref.key)
+            body = str(row.get("content_text", "")) if row else ""
+        elif ref.domain == LIBRARY_DOMAIN:
+            row = library_rows.get(item.item_ref)
+            body = str(row.get("body", "")) if row else ""
+        else:
+            continue
+        if row is None:
+            continue  # 投影缺失 → 无标题也无内容可匹配，诚实跳过
+        title = str(row.get("title", "") or "")
+        in_title = needle in title.lower()
+        in_content = needle in body.lower()
+        if not in_title and not in_content:
+            continue
+        if len(results) >= _WORKSPACE_SEARCH_MAX_HITS:
+            truncated = True
+            break
+        if in_title and in_content:
+            matched_in = "title+content"
+        elif in_title:
+            matched_in = "title"
+        else:
+            matched_in = "content"
+        excerpt = (
+            _search_excerpt(body, needle, _WORKSPACE_SEARCH_EXCERPT)
+            if in_content
+            else title[:_WORKSPACE_SEARCH_EXCERPT]
+        )
+        results.append(
+            WorkspaceSearchHit(
+                itemRef=item.item_ref,
+                domain=ref.domain,
+                title=title,
+                excerpt=excerpt,
+                matchedIn=matched_in,
+            )
+        )
+    return WorkspaceSearchResponse(
+        workspaceId=workspace_id, query=q, truncated=truncated, results=results
+    )
 
 
 @router.post(

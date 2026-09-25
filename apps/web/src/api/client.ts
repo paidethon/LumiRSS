@@ -1038,6 +1038,10 @@ export interface AdminSystemService {
   /** healthy/unconfigured/unauthenticated/unavailable/configured（服务端固定词表）。 */
   status: string
   latencyMs: number | null
+  /** N194：探针完成的服务端时刻（ISO）；presence-only 服务 = 响应构建时刻。 */
+  checkedAt: string | null
+  /** N194：探针早于 5 分钟 → true（UI 标注「可能过期」）。 */
+  stale: boolean
 }
 
 export interface AdminSystemTask {
@@ -1115,6 +1119,8 @@ export async function getAdminSystem(signal?: AbortSignal): Promise<AdminSystemI
         configured: row.configured === true,
         status: String(row.status ?? 'unknown'),
         latencyMs: num(row.latencyMs),
+        checkedAt: toIso(row.checkedAt),
+        stale: row.stale === true,
       }
     }),
     tasks: tasks.map((raw) => {
@@ -2810,6 +2816,37 @@ export async function getWorkspaceContents(
 ): Promise<WorkspaceItemsResolvedResponse> {
   return request<WorkspaceItemsResolvedResponse>(
     `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/contents`,
+    signal,
+  )
+}
+
+// ---- N109：工作区标签全文检索（严格限定本工作区成员） ----
+
+export interface WorkspaceSearchHit {
+  itemRef: string
+  domain: 'rss' | 'library'
+  title: string
+  /** 命中摘要（≤160 字符；内容命中取匹配处上下文）。 */
+  excerpt: string
+  matchedIn: 'title' | 'content' | 'title+content'
+}
+
+export interface WorkspaceSearchResponse {
+  workspaceId: string
+  query: string
+  truncated: boolean
+  results: WorkspaceSearchHit[]
+}
+
+/** N109：在工作区自己的条目内做标题 + 全文检索（非成员绝不返回）。 */
+export async function searchWorkspace(
+  workspaceId: string,
+  q: string,
+  signal?: AbortSignal,
+): Promise<WorkspaceSearchResponse> {
+  const params = new URLSearchParams({ q })
+  return request<WorkspaceSearchResponse>(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/search?${params}`,
     signal,
   )
 }
@@ -5492,13 +5529,59 @@ export async function generateDigestForDate(
 
 export interface SnapshotResource {
   url: string
-  status: 'ok' | 'failed' | 'skipped'
+  status: 'ok' | 'failed' | 'skipped' | 'missing'
   error?: string | null
 }
 
 export interface SnapshotDetail extends SnapshotView {
   resources: SnapshotResource[]
   resourcesTruncated: boolean
+}
+
+// ---- N124 快照资源预算 + 选择性清理 ----
+
+export interface SnapshotStorageBreakdown {
+  images: { count: number; bytes: number }
+  styles: { count: number; bytes: number }
+  attachments: { count: number; bytes: number }
+}
+
+export interface SnapshotStorage {
+  uuid: string
+  /** 磁盘文件真实大小（monolith 单文件化；子资源内联其中）。 */
+  totalBytes: number
+  breakdown: SnapshotStorageBreakdown
+}
+
+export type SnapshotCleanupKind = 'images' | 'styles' | 'attachments'
+
+export interface SnapshotCleanupResult {
+  cleaned: Partial<Record<SnapshotCleanupKind, number>>
+  storage: SnapshotStorage
+}
+
+/** N124：单个快照的资源预算（真实文件大小 + 内联 data: URI 分类拆分）。 */
+export async function getSnapshotStorage(
+  uuid: string,
+  signal?: AbortSignal,
+): Promise<SnapshotStorage> {
+  return request<SnapshotStorage>(
+    `${API_BASE}/library/snapshots/${encodeURIComponent(uuid)}/storage`,
+    signal,
+  )
+}
+
+/** N124：只删除选中类别的内联资源（条目本体保留；缺失资源在诊断清单标 missing）。 */
+export async function cleanupSnapshotResources(
+  uuid: string,
+  kinds: SnapshotCleanupKind[],
+): Promise<SnapshotCleanupResult> {
+  const response = await rawRequest(
+    `${API_BASE}/library/snapshots/${encodeURIComponent(uuid)}/cleanup`,
+    { method: 'POST', body: JSON.stringify({ kinds }), contentType: 'application/json' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as SnapshotCleanupResult
 }
 
 export interface SnapshotVersionMeta {

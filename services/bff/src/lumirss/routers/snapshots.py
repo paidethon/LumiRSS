@@ -8,7 +8,12 @@ origin powers, no forms, no top navigation — so even a malicious
 snapshot cannot touch Lumi's origin, cookies or /api.
 """
 
+import hashlib
+import shutil
+from typing import Literal
+
 from fastapi import APIRouter, Request, Response
+from pydantic import BaseModel, Field
 
 from lumirss.library_assets import (
     AssetNotFound,
@@ -283,3 +288,131 @@ async def diff_snapshot_versions(
     from lumirss.snapshot_versions import text_diff
 
     return {"diff": text_diff(b["text"], a["text"])}
+
+
+# ---- N124：快照资源预算（storage accounting）+ 选择性清理 -------------------
+
+
+class SnapshotCleanupRequest(BaseModel):
+    """POST /api/v1/library/snapshots/{id}/cleanup body.
+
+    ``kinds`` 非空、白名单（images/styles/attachments）；条目本体
+    （页面 HTML 文本 / 标题 / library 行）永不参与清理。"""
+
+    model_config = {"extra": "forbid"}
+
+    kinds: list[Literal["images", "styles", "attachments"]] = Field(min_length=1)
+
+
+async def _storage_payload(store: AssetStore, asset_uuid: str) -> dict:
+    from lumirss.snapshot_versions import storage_breakdown
+
+    data = await store.read_bytes(asset_uuid)
+    breakdown = storage_breakdown(data.decode("utf-8", errors="replace"))
+    return {
+        "uuid": asset_uuid,
+        "totalBytes": len(data),
+        "breakdown": breakdown,
+    }
+
+
+@router.get("/api/v1/library/snapshots/{asset_uuid}/storage")
+async def snapshot_storage(asset_uuid: str, request: Request) -> dict:
+    """N124：单个快照的资源预算。
+
+    ``totalBytes`` = 磁盘文件的真实大小（monolith 单文件化，子资源内联
+    为 base64 data: URI）；``breakdown`` 按 data: URI 的 MIME 类别算术
+    拆分（images 带内联数量；styles/attachments 计解码后字节）——纯
+    长度计算，绝不整包解码。"""
+    store: AssetStore = _get_snapshot_store(request)
+    record = await store.get_asset(asset_uuid)
+    if record is None:
+        raise AssetNotFound(asset_uuid)
+    return await _storage_payload(store, asset_uuid)
+
+
+@router.post("/api/v1/library/snapshots/{asset_uuid}/cleanup")
+async def cleanup_snapshot_resources(
+    asset_uuid: str, payload: SnapshotCleanupRequest, request: Request
+) -> dict:
+    """N124：只删除选中类别的内联资源；条目本体与 library 行保留。
+
+    - 共享文件（sha256 去重让多行引用同一物理文件）→ 本行改写为
+      自己的私有新文件，旧文件留给其他引用行，绝不改写他人内容；
+    - 独占文件 → 原子改写（tmp + move；崩溃至多留下 reconcile()
+      可清扫的孤儿 tmp）；
+    - 被清理的子资源在既有完整性清单（resources 列）中如实标记
+      missing——随后的快照诊断端点按缺失回显；
+    - 内容变化 → RAG 标记 stale（与删除快照同一诚实语义）。
+    """
+    from lumirss.snapshot_versions import (
+        mark_resources_missing,
+        parse_resources,
+        save_resources,
+        storage_breakdown,
+        strip_inline_resources,
+    )
+
+    store: AssetStore = _get_snapshot_store(request)
+    record = await store.get_asset(asset_uuid)
+    if record is None:
+        raise AssetNotFound(asset_uuid)
+    kinds = tuple(dict.fromkeys(payload.kinds))  # 去重保序
+    data = await store.read_bytes(asset_uuid)
+    html = data.decode("utf-8", errors="replace")
+    new_html, removed = strip_inline_resources(html, kinds)
+    cleaned = {kind: int(removed.get(kind, 0)) for kind in kinds}
+    if new_html == html:
+        # 没有可清理的该类资源 → 幂等 no-op（如实回 0 + 当前预算）。
+        return {"cleaned": cleaned, "storage": await _storage_payload(store, asset_uuid)}
+
+    new_data = new_html.encode("utf-8")
+    digest = hashlib.sha256(new_data).hexdigest()
+    row = await request.app.state.db.fetch_one(
+        "SELECT COUNT(*) AS n FROM library_assets WHERE uuid != ? AND sha256 = ?",
+        (asset_uuid, record.sha256),
+    )
+    shared = row is not None and int(row["n"]) > 0
+    store.root.mkdir(parents=True, exist_ok=True)
+    if shared:
+        # 本行迁移到私有新文件；旧物理文件仍被其他行引用，保持不动。
+        new_path = f"{asset_uuid}.cleaned-{digest[:8]}.html"
+        target = store.root / new_path
+    else:
+        new_path = record.path
+        target = store.file_path(record)
+    tmp = store.root / f".{asset_uuid}.cleanup.tmp"
+    try:
+        tmp.write_bytes(new_data)
+        shutil.move(str(tmp), str(target))
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
+    await request.app.state.db.execute(
+        "UPDATE library_assets SET bytes = ?, sha256 = ?, path = ? WHERE uuid = ?",
+        (len(new_data), digest, new_path, asset_uuid),
+    )
+    # 完整性清单：被清理的子资源标记 missing（既有诊断端点原样回显）。
+    row = await request.app.state.db.fetch_one(
+        "SELECT resources FROM library_assets WHERE uuid = ?", (asset_uuid,)
+    )
+    resources = parse_resources(
+        str(row["resources"]) if row is not None and row["resources"] else "[]"
+    )
+    await save_resources(
+        request.app.state.db,
+        asset_uuid,
+        mark_resources_missing(resources, kinds),
+        False,
+    )
+    from ..deps import _rag_mark_stale
+
+    await _rag_mark_stale(request, [f"library:{record.item_uuid}"])
+    return {
+        "cleaned": cleaned,
+        "storage": {
+            "uuid": asset_uuid,
+            "totalBytes": len(new_data),
+            "breakdown": storage_breakdown(new_html),
+        },
+    }

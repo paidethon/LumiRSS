@@ -22787,6 +22787,30 @@
     "title": "SharePackageRequest",
     "type": "object"
    },
+   "SnapshotCleanupRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/library/snapshots/{id}/cleanup body.\n\n``kinds`` 非空、白名单（images/styles/attachments）；条目本体\n（页面 HTML 文本 / 标题 / library 行）永不参与清理。",
+    "properties": {
+     "kinds": {
+      "items": {
+       "enum": [
+        "images",
+        "styles",
+        "attachments"
+       ],
+       "type": "string"
+      },
+      "minItems": 1,
+      "title": "Kinds",
+      "type": "array"
+     }
+    },
+    "required": [
+     "kinds"
+    ],
+    "title": "SnapshotCleanupRequest",
+    "type": "object"
+   },
    "SnapshotCreate": {
     "additionalProperties": false,
     "description": "POST /api/v1/library/snapshots.",
@@ -26895,6 +26919,81 @@
      "workspaceId"
     ],
     "title": "WorkspaceResumeResponse",
+    "type": "object"
+   },
+   "WorkspaceSearchHit": {
+    "description": "N109：工作区内检索的单条命中（成员范围严格限定）。",
+    "properties": {
+     "domain": {
+      "enum": [
+       "rss",
+       "library"
+      ],
+      "title": "Domain",
+      "type": "string"
+     },
+     "excerpt": {
+      "default": "",
+      "title": "Excerpt",
+      "type": "string"
+     },
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     },
+     "matchedIn": {
+      "default": "title",
+      "enum": [
+       "title",
+       "content",
+       "title+content"
+      ],
+      "title": "Matchedin",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "itemRef",
+     "domain",
+     "title"
+    ],
+    "title": "WorkspaceSearchHit",
+    "type": "object"
+   },
+   "WorkspaceSearchResponse": {
+    "description": "Envelope for GET /api/v1/workspaces/{id}/search?q=（N109）.\n\n``results`` 上限 200 条（``truncated`` 如实标记截断）；只包含该\n工作区自己的成员——其他工作区的条目绝不出现。",
+    "properties": {
+     "query": {
+      "title": "Query",
+      "type": "string"
+     },
+     "results": {
+      "items": {
+       "$ref": "#/components/schemas/WorkspaceSearchHit"
+      },
+      "title": "Results",
+      "type": "array"
+     },
+     "truncated": {
+      "default": false,
+      "title": "Truncated",
+      "type": "boolean"
+     },
+     "workspaceId": {
+      "title": "Workspaceid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "workspaceId",
+     "query",
+     "results"
+    ],
+    "title": "WorkspaceSearchResponse",
     "type": "object"
    },
    "WorkspaceSectionCreate": {
@@ -38933,6 +39032,58 @@
     "summary": "Snapshot Detail"
    }
   },
+  "/api/v1/library/snapshots/{asset_uuid}/cleanup": {
+   "post": {
+    "description": "N124：只删除选中类别的内联资源；条目本体与 library 行保留。\n\n- 共享文件（sha256 去重让多行引用同一物理文件）→ 本行改写为\n  自己的私有新文件，旧文件留给其他引用行，绝不改写他人内容；\n- 独占文件 → 原子改写（tmp + move；崩溃至多留下 reconcile()\n  可清扫的孤儿 tmp）；\n- 被清理的子资源在既有完整性清单（resources 列）中如实标记\n  missing——随后的快照诊断端点按缺失回显；\n- 内容变化 → RAG 标记 stale（与删除快照同一诚实语义）。",
+    "operationId": "cleanup_snapshot_resources_api_v1_library_snapshots__asset_uuid__cleanup_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "asset_uuid",
+      "required": true,
+      "schema": {
+       "title": "Asset Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SnapshotCleanupRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Cleanup Snapshot Resources Api V1 Library Snapshots  Asset Uuid  Cleanup Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Cleanup Snapshot Resources"
+   }
+  },
   "/api/v1/library/snapshots/{asset_uuid}/retry-failed": {
    "post": {
     "description": "仅对 failed 资源重采（走既有 SSRF 防护采集层，私网/元数据地址\n在 validate 层拒绝）；无失败 → no-op 返回 0（幂等）。",
@@ -38973,6 +39124,48 @@
      }
     },
     "summary": "Retry Failed Resources"
+   }
+  },
+  "/api/v1/library/snapshots/{asset_uuid}/storage": {
+   "get": {
+    "description": "N124：单个快照的资源预算。\n\n``totalBytes`` = 磁盘文件的真实大小（monolith 单文件化，子资源内联\n为 base64 data: URI）；``breakdown`` 按 data: URI 的 MIME 类别算术\n拆分（images 带内联数量；styles/attachments 计解码后字节）——纯\n长度计算，绝不整包解码。",
+    "operationId": "snapshot_storage_api_v1_library_snapshots__asset_uuid__storage_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "asset_uuid",
+      "required": true,
+      "schema": {
+       "title": "Asset Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Snapshot Storage Api V1 Library Snapshots  Asset Uuid  Storage Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Snapshot Storage"
    }
   },
   "/api/v1/library/snapshots/{asset_uuid}/versions": {
@@ -50861,6 +51054,57 @@
      }
     },
     "summary": "Save As Template"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/search": {
+   "get": {
+    "description": "N109：在「当前工作区自己的条目」内做标题 + 全文检索。\n\n范围严格限定工作区成员关系：先把 workspace_items 的 ref 全部取出，\n再按域查各自的派生投影（rss → search_entries.content_text；library\n→ search_library.body）。其他工作区的条目即使内容命中也绝不返回；\n投影缺失（ref 已失效/未同步）的成员诚实跳过。命中 ≤200 条，每条\n摘要 ≤160 字符。",
+    "operationId": "search_workspace_api_v1_workspaces__workspace_id__search_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "q",
+      "required": true,
+      "schema": {
+       "maxLength": 200,
+       "minLength": 1,
+       "title": "Q",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceSearchResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Search Workspace"
    }
   },
   "/api/v1/workspaces/{workspace_id}/sections": {

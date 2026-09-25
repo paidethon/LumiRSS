@@ -139,6 +139,7 @@ import {
   getWorkspaceGroups,
   getWorkspaceResume,
   putWorkspaceResume,
+  searchWorkspace,
   createInboxSource,
   deleteInboxItem,
   deleteInboxSource,
@@ -1603,6 +1604,17 @@ export function useWorkspaceContents(workspaceId: string | null) {
     queryKey: ['workspace', workspaceId, 'contents'],
     queryFn: ({ signal }) => getWorkspaceContents(workspaceId!, signal),
     enabled: workspaceId !== null,
+  })
+}
+
+/** N109：本工作区内检索（q 为空 / 未选中工作区 → 不发请求）。
+ * 范围严格限定该工作区成员；enabled=false 的旧结果按 key 隔离。 */
+export function useWorkspaceSearch(workspaceId: string | null, q: string) {
+  const trimmed = q.trim()
+  return useQuery({
+    queryKey: ['workspace', workspaceId, 'search', trimmed],
+    queryFn: ({ signal }) => searchWorkspace(workspaceId as string, trimmed, signal),
+    enabled: workspaceId !== null && trimmed !== '',
   })
 }
 

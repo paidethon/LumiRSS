@@ -1967,6 +1967,18 @@ function serviceTone(status: string): 'ok' | 'warn' | 'muted' {
   return 'muted'
 }
 
+/** N194：探针时刻 → 「X 前」相对时间；无法解析时诚实回退为原始串。 */
+function probeAgeText(checkedAt: string | null): string {
+  if (checkedAt === null || checkedAt === '') return '未知时刻'
+  const at = Date.parse(checkedAt)
+  if (Number.isNaN(at)) return checkedAt
+  const seconds = Math.max(0, Math.round((Date.now() - at) / 1000))
+  if (seconds < 60) return `${seconds} 秒前`
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前`
+  if (seconds < 86_400) return `${Math.floor(seconds / 3600)} 小时前`
+  return `${Math.floor(seconds / 86_400)} 天前`
+}
+
 function SystemSection() {
   const system = useQuery({
     queryKey: ['admin', 'system'],
@@ -2052,9 +2064,25 @@ function SystemSection() {
                     {service.latencyMs !== null && (
                       <span className="text-xs text-[var(--lumi-text-tertiary)]">{service.latencyMs} ms</span>
                     )}
-                    <span className={stateBadge(SERVICE_STATE_LABELS[service.status] ?? service.status, serviceTone(service.status))}>
-                      {SERVICE_STATE_LABELS[service.status] ?? service.status}
-                    </span>
+                    {/* N194：探针时间 + 过期态（检测早于 5 分钟 → 可能过期，
+                        取代正常徽标；不再把旧探测结果伪装成「正常」）。 */}
+                    {service.stale ? (
+                      <span
+                        className={stateBadge('检测于 ' + probeAgeText(service.checkedAt) + '（可能过期）', 'warn')}
+                        data-testid={`admin-service-stale-${service.name}`}
+                      >
+                        检测于 {probeAgeText(service.checkedAt)}（可能过期）
+                      </span>
+                    ) : (
+                      <span className={stateBadge(SERVICE_STATE_LABELS[service.status] ?? service.status, serviceTone(service.status))}>
+                        {SERVICE_STATE_LABELS[service.status] ?? service.status}
+                      </span>
+                    )}
+                    {!service.stale && service.checkedAt !== null && (
+                      <span className="text-xs text-[var(--lumi-text-tertiary)]">
+                        检测于 {probeAgeText(service.checkedAt)}
+                      </span>
+                    )}
                   </span>
                 </li>
               ))}

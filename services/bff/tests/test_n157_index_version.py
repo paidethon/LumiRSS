@@ -17,8 +17,8 @@ from lumirss.rag import (
     DEFAULT_MODEL_ID,
     MODEL_CATALOG,
     RagService,
-    _stage_rows,
     _promote_staged_index,
+    _stage_rows,
 )
 from lumirss.search_library import LibrarySearchWriter
 from lumirss.storage import Database
