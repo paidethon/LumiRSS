@@ -13,15 +13,24 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  createRagEvalSample,
+  deleteRagEvalSample,
   getRagCoverage,
+  getRagSubsetJob,
+  listRagEvalSamples,
   listRagExclusions,
   listRagInconsistencies,
+  pauseRagRebuild,
   ragChunkPreview,
   ragTrySearch,
+  rebuildRagSubset,
+  rerunRagEvalSample,
   repairRagRefs,
   setRagExclusion,
   type RagChunkPreview,
   type RagCoverage,
+  type RagEvalRerunDiff,
+  type RagEvalSample,
   type RagExclusionItem,
 } from '../api/client'
 import { Button } from './ui/Button'
@@ -184,8 +193,105 @@ export function RagTrySearchPanel({ enabled }: { enabled: boolean }) {
 
 // ---- N152 索引覆盖率 ----------------------------------------------------------
 
+/** N158：局部重建（重建所选）——只重嵌勾选的过期 ref（≤50）；取消 =
+ * 现有暂停（重建进行中点击会翻作业行，当前页完成后停）。 */
+function RebuildSelectedFlow({ coverage }: { coverage: RagCoverage }) {
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [result, setResult] = useState<{
+    jobId: string
+    status: string
+    total: number
+    updated: number
+    chunks: number
+    missing: string[]
+  } | null>(null)
+  const rebuild = useMutation({
+    mutationFn: () => rebuildRagSubset([...selected]),
+    onSuccess: (data) => {
+      setResult(data)
+      setSelected(new Set())
+    },
+  })
+  const cancel = useMutation({
+    mutationFn: () => pauseRagRebuild(),
+  })
+  // paused 作业轮询（进度 {done, total}）。
+  const job = useQuery({
+    queryKey: ['rag-subset-job', result?.jobId],
+    queryFn: ({ signal }) => getRagSubsetJob(result!.jobId, signal),
+    enabled: result !== null && (result.status === 'running' || result.status === 'paused'),
+    refetchInterval: 1000,
+  })
+  const staleRefs = coverage.staleRefs ?? []
+  if (staleRefs.length === 0) return null
+  const refs = staleRefs.slice(0, 50)
+
+  return (
+    <div className="flex flex-col gap-1.5" data-rebuild-selected="">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={selected.size === 0 || rebuild.isPending}
+          onClick={() => rebuild.mutate()}
+        >
+          {rebuild.isPending ? '重建中…' : `重建所选（${selected.size}）`}
+        </Button>
+        {rebuild.isPending && (
+          <Button variant="ghost" size="sm" disabled={cancel.isPending} onClick={() => cancel.mutate()}>
+            取消（暂停）
+          </Button>
+        )}
+        <span className="text-[11px] text-[var(--lumi-text-tertiary)]">
+          局部重建只重嵌所选条目，其余分块不动；取消 = 暂停，可续。
+        </span>
+      </div>
+      <ul className="flex max-h-40 flex-col gap-1 overflow-y-auto">
+        {refs.map((ref) => (
+          <li key={ref} className="flex items-center gap-2 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] px-2 py-1 text-xs">
+            <input
+              type="checkbox"
+              checked={selected.has(ref)}
+              onChange={() =>
+                setSelected((prev) => {
+                  const next = new Set(prev)
+                  if (next.has(ref)) next.delete(ref)
+                  else next.add(ref)
+                  return next
+                })
+              }
+              aria-label={`重建：${ref}`}
+            />
+            <span className="min-w-0 flex-1 truncate text-[var(--lumi-text-secondary)]">{ref}</span>
+          </li>
+        ))}
+      </ul>
+      {rebuild.isError && (
+        <p role="alert" className="text-xs text-[var(--lumi-danger)]">
+          {rebuild.error instanceof Error ? rebuild.error.message : '重建失败，请稍后重试。'}
+        </p>
+      )}
+      {result !== null && (
+        <p role="status" className="text-xs text-[var(--lumi-text-primary)]" data-rebuild-result="">
+          {result.status === 'done'
+            ? `局部重建完成：更新 ${result.updated}/${result.total} 条 · 新增 ${result.chunks} 块${result.missing.length > 0 ? ` · 投影缺失 ${result.missing.length} 条（诚实跳过）` : ''}。`
+            : result.status === 'paused'
+              ? `已暂停（job ${result.jobId.slice(0, 8)}…）——进度可在上方状态里查看，再次重建其余条目可续。`
+              : `状态：${result.status}`}
+        </p>
+      )}
+      {job.data !== undefined && job.data.pending.length > 0 && (
+        <p className="text-[11px] text-[var(--lumi-text-tertiary)]">
+          进度 {job.data.done}/{job.data.total} · 待续 {job.data.pending.length} 条
+        </p>
+      )}
+    </div>
+  )
+}
+
 /** N152 覆盖率卡片：语料 ↔ 索引真实分桶（indexable/indexed/stale/failed
- * 来自行与作业，unsupported 按 kind 给原因）。纯只读盘点。 */
+ * 来自行与作业，unsupported 按 kind 给原因）。纯只读盘点。
+ * N158：过期 ref 明细（staleRefs）→「重建所选」勾选流。 */
 export function RagCoveragePanel() {
   const scan = useMutation({
     mutationFn: () => getRagCoverage(),
@@ -249,6 +355,7 @@ export function RagCoveragePanel() {
               </ul>
             </div>
           )}
+          <RebuildSelectedFlow coverage={coverage} />
         </>
       )}
     </div>
@@ -415,6 +522,178 @@ export function RagConsistencyPanel() {
           修复失败：{repair.error instanceof Error ? repair.error.message : '请稍后重试。'}
         </p>
       )}
+    </div>
+  )
+}
+
+// ---- N159 检索质量收藏（评测样例） ---------------------------------------------
+
+/** N159 评测样例面板：保存「查询 + 期望命中」（保存时服务端立即检索并
+ * 捕获实际命中），rerun 重放同一查询并差分（hitExpected / missed /
+ * newHits）。样例私有（每用户库），绝不进入任何导出/分享包/备份组件。
+ * 上限 50 条（满了服务端 409 诚实拒绝，绝不静默挤出最旧行）。 */
+export function RagEvalSamplesPanel() {
+  const samples = useQuery({
+    queryKey: ['rag-eval-samples'],
+    queryFn: ({ signal }) => listRagEvalSamples(signal),
+  })
+  const queryClient = useQueryClient()
+  const [query, setQuery] = useState('')
+  const [expected, setExpected] = useState('')
+  const [diffs, setDiffs] = useState<Record<string, RagEvalRerunDiff>>({})
+  const invalidate = async () => {
+    await queryClient.invalidateQueries({ queryKey: ['rag-eval-samples'] })
+  }
+  const save = useMutation({
+    mutationFn: () =>
+      createRagEvalSample(
+        query.trim(),
+        expected
+          .split(/[,，;；\s]+/)
+          .map((s) => s.trim())
+          .filter((s) => s !== ''),
+      ),
+    onSuccess: async () => {
+      setQuery('')
+      setExpected('')
+      await invalidate()
+    },
+  })
+  const remove = useMutation({
+    mutationFn: async (id: string) => {
+      await deleteRagEvalSample(id)
+      return id
+    },
+    onSuccess: async (deletedId: string) => {
+      setDiffs((prev) => {
+        const next = { ...prev }
+        delete next[deletedId]
+        return next
+      })
+      await invalidate()
+    },
+  })
+  const rerun = useMutation({
+    mutationFn: (id: string) => rerunRagEvalSample(id),
+    onSuccess: (diff) => {
+      setDiffs((prev) => ({ ...prev, [diff.sampleId]: diff }))
+    },
+  })
+  const items: RagEvalSample[] = samples.data?.items ?? []
+
+  return (
+    <div className="flex flex-col gap-2" data-rag-eval-samples="">
+      <p className="text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+        保存时服务端会立即执行一次真实检索并捕获当时的实际命中；之后可
+        「重放」同一查询与存档差分，观察索引漂移。样例仅存于本账户。
+      </p>
+      <form
+        className="flex flex-col gap-1.5"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (query.trim() !== '') save.mutate()
+        }}
+        data-eval-sample-create=""
+      >
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="评测查询…"
+          aria-label="评测查询"
+          className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 py-1.5 text-sm text-[var(--lumi-text-primary)]"
+        />
+        <input
+          type="text"
+          value={expected}
+          onChange={(e) => setExpected(e.target.value)}
+          placeholder="期望命中的 ref（逗号/空格分隔，可空）"
+          aria-label="期望命中 ref"
+          className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 py-1.5 text-sm text-[var(--lumi-text-primary)]"
+        />
+        <div>
+          <Button type="submit" variant="secondary" size="sm" disabled={query.trim() === '' || save.isPending}>
+            {save.isPending ? '保存中…' : '保存评测样例'}
+          </Button>
+        </div>
+      </form>
+      {save.isError && (
+        <p role="alert" className="text-xs text-[var(--lumi-danger)]">
+          {save.error instanceof Error ? save.error.message : '保存失败，请稍后重试。'}
+        </p>
+      )}
+      {samples.isPending && <Skeleton className="h-16 w-full" />}
+      {samples.isError && (
+        <p role="alert" className="text-xs text-[var(--lumi-danger)]">
+          样例加载失败：{samples.error instanceof Error ? samples.error.message : '请稍后重试。'}
+        </p>
+      )}
+      {!samples.isPending && items.length === 0 && !samples.isError && (
+        <p className="text-xs text-[var(--lumi-text-tertiary)]">
+          还没有评测样例（上限 {samples.data?.cap ?? 50} 条）。
+        </p>
+      )}
+      <ul className="flex flex-col gap-1.5">
+        {items.map((sample) => {
+          const diff = diffs[sample.id]
+          return (
+            <li
+              key={sample.id}
+              data-eval-sample={sample.id}
+              className="flex flex-col gap-1 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] px-2.5 py-1.5 text-xs"
+            >
+              <div className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate font-medium text-[var(--lumi-text-primary)]">
+                  {sample.query}
+                </span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={rerun.isPending}
+                  onClick={() => rerun.mutate(sample.id)}
+                >
+                  {rerun.isPending ? '重放中…' : '重放'}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={remove.isPending}
+                  aria-label={`删除样例 ${sample.query}`}
+                  onClick={() => remove.mutate(sample.id)}
+                >
+                  删除
+                </Button>
+              </div>
+              <p className="text-[11px] text-[var(--lumi-text-tertiary)]">
+                期望 {sample.expectedRefs.length} 条 · 保存时实际命中 {sample.actualRefs.length} 条
+              </p>
+              {diff !== undefined && (
+                <div className="flex flex-col gap-0.5 rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-selected)] p-1.5" data-rerun-diff="">
+                  <span className="text-[var(--lumi-text-primary)]">
+                    期望仍命中 {diff.hitExpected.length} · 期望丢失 {diff.missed.length} · 新命中{' '}
+                    {diff.newHits.length}
+                  </span>
+                  {diff.missed.length > 0 && (
+                    <span className="text-[var(--lumi-text-secondary)]">
+                      丢失：{diff.missed.join('、')}
+                    </span>
+                  )}
+                  {diff.newHits.length > 0 && (
+                    <span className="text-[var(--lumi-text-secondary)]">
+                      新命中：{diff.newHits.join('、')}
+                    </span>
+                  )}
+                </div>
+              )}
+              {rerun.isError && rerun.variables === sample.id && (
+                <p role="alert" className="text-xs text-[var(--lumi-danger)]">
+                  {rerun.error instanceof Error ? rerun.error.message : '重放失败。'}
+                </p>
+              )}
+            </li>
+          )
+        })}
+      </ul>
     </div>
   )
 }

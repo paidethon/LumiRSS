@@ -68,6 +68,8 @@ async def scan_coverage(service: Any) -> dict[str, Any]:
     unsupported_kinds: dict[str, int] = {}
     stale = 0
     indexed = 0
+    # N158：过期 ref 明细（有界）——覆盖率卡片「重建所选」的输入。
+    stale_refs: list[str] = []
     for ref, (kind, text) in corpus.items():
         if not text.strip():
             # 空正文：不可索引（unsupported），已不在 indexed 口径内。
@@ -80,6 +82,8 @@ async def scan_coverage(service: Any) -> dict[str, Any]:
         indexed += 1
         if stored != doc_content_hash(text):
             stale += 1
+            if len(stale_refs) < _MAX_STALE_REFS:
+                stale_refs.append(ref)
 
     failed_refs = await _latest_job_skipped_refs(db)
     return {
@@ -87,6 +91,7 @@ async def scan_coverage(service: Any) -> dict[str, Any]:
         "indexable": indexable,
         "indexed": indexed,
         "stale": stale,
+        "staleRefs": stale_refs,
         "failed": len(failed_refs),
         "unsupported": {
             "count": sum(unsupported_kinds.values()),

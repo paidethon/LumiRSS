@@ -6455,13 +6455,20 @@ export interface WorkspaceTemplateView {
   createdAt: string
 }
 
+/** N117：includeStructure=true 额外快照工作区结构（组序/分节/看板列/
+ * 收集规则条件；绝不包含条目内容）。 */
 export async function saveWorkspaceAsTemplate(
   workspaceId: string,
   name: string,
+  includeStructure = false,
 ): Promise<WorkspaceTemplateView> {
   const response = await rawRequest(
     `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/save-as-template`,
-    { method: 'POST', body: JSON.stringify({ name }), contentType: 'application/json' },
+    {
+      method: 'POST',
+      body: JSON.stringify({ name, includeStructure }),
+      contentType: 'application/json',
+    },
   )
   if (!response.ok) throw await toApiError(response)
   return (await response.json()) as WorkspaceTemplateView
@@ -6472,7 +6479,18 @@ export async function createWorkspaceFromTemplate(body: {
   name: string
   includeExampleItems: boolean
   exampleRefs?: string[]
-}): Promise<{ workspace: Workspace; addedExampleRefs: string[]; skippedExampleRefs: string[] }> {
+  includeStructure?: boolean
+}): Promise<{
+  workspace: Workspace
+  addedExampleRefs: string[]
+  skippedExampleRefs: string[]
+  structure: {
+    sectionsCreated: number
+    groupOrderRestored: number
+    collectRulesCreated: number
+    boardColumns: string[]
+  } | null
+}> {
   const response = await rawRequest(`${API_BASE}/workspaces/from-template`, {
     method: 'POST',
     body: JSON.stringify(body),
@@ -6483,6 +6501,12 @@ export async function createWorkspaceFromTemplate(body: {
     workspace: Workspace
     addedExampleRefs: string[]
     skippedExampleRefs: string[]
+    structure: {
+      sectionsCreated: number
+      groupOrderRestored: number
+      collectRulesCreated: number
+      boardColumns: string[]
+    } | null
   }
 }
 
@@ -6512,8 +6536,29 @@ export async function patchWorkspaceArchive(
   return (await response.json()) as Workspace
 }
 
-export async function listArchivedWorkspaces(): Promise<Workspace[]> {
-  return request<Workspace[]>(`${API_BASE}/workspace-archive`)
+/** N119：归档列表逐工作区附摘要卡（itemCount/doneCount/goalProgress/
+ * archivedAt/daysActive，全部真实行派生）。 */
+export interface WorkspaceArchivedEntry {
+  id: string
+  name: string
+  position: number
+  itemCount: number
+  reserved: boolean
+  description: string
+  archived: boolean
+  archivedAt: string | null
+  revision: number
+  summary: {
+    itemCount: number
+    doneCount: number
+    goalProgress: { targetCount: number; doneCount: number } | null
+    archivedAt: string | null
+    daysActive: number
+  }
+}
+
+export async function listArchivedWorkspaces(): Promise<WorkspaceArchivedEntry[]> {
+  return request<WorkspaceArchivedEntry[]>(`${API_BASE}/workspace-archive`)
 }
 
 // ---- F085 看板 / F086 目标 --------------------------------------------------
@@ -7156,12 +7201,14 @@ export interface RagEffectiveScope {
   refCount: number | null
 }
 
-/** N152 覆盖率分桶（全部来自真实行/作业）。 */
+/** N152 覆盖率分桶（全部来自真实行/作业）。N158：staleRefs 为过期
+ * ref 明细（≤500 有界）——「重建所选」的输入。 */
 export interface RagCoverage {
   modelId: string
   indexable: number
   indexed: number
   stale: number
+  staleRefs: string[]
   failed: number
   unsupported: { count: number; kinds: { kind: string; reason: string }[] }
 }
@@ -8241,4 +8288,267 @@ export async function runAgentRecipe(
   )
   if (!response.ok) throw await toApiError(response)
   return (await response.json()) as { recipeId: string; thread: AgentThread; status: string }
+}
+
+// ---- N115 快照差异视图 / N116 分享包 / N118 收集规则 / N156 冲突对照 /
+//      N158 局部重建 / N159 评测样例 ------------------------------------------
+
+import type {
+  QaConflictResponse,
+  WorkspaceCollectApplyResult,
+  WorkspaceCollectPreview,
+  WorkspaceCollectRule,
+  WorkspaceCollectRuleList,
+  WorkspaceSnapshotDiff,
+} from './types'
+
+/** N115：两快照差异（纯只读；added/removed/moved/groupChanges）。 */
+export async function diffWorkspaceSnapshots(
+  workspaceId: string,
+  snapshotIdA: string,
+  snapshotIdB: string,
+  signal?: AbortSignal,
+): Promise<WorkspaceSnapshotDiff> {
+  return request<WorkspaceSnapshotDiff>(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/snapshots/${encodeURIComponent(snapshotIdA)}/diff/${encodeURIComponent(snapshotIdB)}`,
+    signal,
+  )
+}
+
+/** N116：导出汇编只读分享包（自包含静态 HTML 下载；includeNotes 固定
+ * false——私人笔记绝不进包）。 */
+export async function exportSharePackage(
+  workspaceId: string,
+  sectionIds?: string[],
+): Promise<void> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/share-package`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ sectionIds: sectionIds ?? null, includeNotes: false }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  try {
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `share-package-${workspaceId}.html`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
+// ---- N118 工作区收集规则（手动触发，绝不后台抓取） ----
+
+/** N118：创建规则（feedUrl | tag | keyword 恰好其一；maxItems ≤100）。 */
+export async function createCollectRule(
+  workspaceId: string,
+  body: {
+    feedUrl?: string | null
+    tag?: string | null
+    keyword?: string | null
+    maxItems?: number
+    enabled?: boolean
+  },
+): Promise<WorkspaceCollectRule> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/collect-rules`,
+    { method: 'POST', body: JSON.stringify(body), contentType: 'application/json' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as WorkspaceCollectRule
+}
+
+export async function listCollectRules(
+  workspaceId: string,
+  signal?: AbortSignal,
+): Promise<WorkspaceCollectRuleList> {
+  return request<WorkspaceCollectRuleList>(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/collect-rules`,
+    signal,
+  )
+}
+
+/** N118：暂停/恢复（enabled set 语义，非 toggle）。 */
+export async function setCollectRuleEnabled(
+  workspaceId: string,
+  ruleId: string,
+  enabled: boolean,
+): Promise<WorkspaceCollectRule> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/collect-rules/${encodeURIComponent(ruleId)}`,
+    { method: 'PATCH', body: JSON.stringify({ enabled }), contentType: 'application/json' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as WorkspaceCollectRule
+}
+
+export async function deleteCollectRule(
+  workspaceId: string,
+  ruleId: string,
+): Promise<void> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/collect-rules/${encodeURIComponent(ruleId)}`,
+    { method: 'DELETE' },
+  )
+  if (!response.ok) throw await toApiError(response)
+}
+
+/** N118：预演（dry-run，有界 50；绝不写库）。 */
+export async function previewCollectRule(
+  workspaceId: string,
+  ruleId: string,
+): Promise<WorkspaceCollectPreview> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/collect-rules/${encodeURIComponent(ruleId)}/preview`,
+    { method: 'POST' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as WorkspaceCollectPreview
+}
+
+/** N118：手动应用（命中条目以 ref 引用进工作区；幂等；上限约束）。 */
+export async function applyCollectRule(
+  workspaceId: string,
+  ruleId: string,
+): Promise<WorkspaceCollectApplyResult> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/collect-rules/${encodeURIComponent(ruleId)}/apply`,
+    { method: 'POST' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as WorkspaceCollectApplyResult
+}
+
+// ---- N156 资料冲突对照（纯词法，零模型调用） ----
+
+export async function qaConflicts(refs: string[]): Promise<QaConflictResponse> {
+  const response = await rawRequest(`${API_BASE}/qa/conflicts`, {
+    method: 'POST',
+    body: JSON.stringify({ refs }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as QaConflictResponse
+}
+
+// ---- N158 局部索引重建（只重嵌所选 refs；取消 = 现有暂停） ----
+
+export interface RagSubsetJobView {
+  jobId: string
+  kind: string
+  status: string
+  done: number
+  total: number
+  chunks: number
+  missing: string[]
+  pending: string[]
+  updatedAt: string | null
+}
+
+export async function rebuildRagSubset(
+  refs: string[],
+): Promise<{ jobId: string; status: string; total: number; updated: number; chunks: number; missing: string[] }> {
+  const response = await rawRequest(`${API_BASE}/rag/rebuild/refs`, {
+    method: 'POST',
+    body: JSON.stringify({ refs }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as {
+    jobId: string
+    status: string
+    total: number
+    updated: number
+    chunks: number
+    missing: string[]
+  }
+}
+
+export async function getRagSubsetJob(
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<RagSubsetJobView> {
+  return request<RagSubsetJobView>(
+    `${API_BASE}/rag/rebuild/refs/${encodeURIComponent(jobId)}`,
+    signal,
+  )
+}
+
+export async function pauseRagSubsetJob(
+  jobId: string,
+): Promise<{ paused: boolean; jobId?: string; status?: string }> {
+  const response = await rawRequest(
+    `${API_BASE}/rag/rebuild/refs/${encodeURIComponent(jobId)}/pause`,
+    { method: 'POST' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { paused: boolean; jobId?: string; status?: string }
+}
+
+// ---- N159 检索质量收藏（私有评测样例；保存时捕获真实命中） ----
+
+export interface RagEvalSample {
+  id: string
+  query: string
+  expectedRefs: string[]
+  actualRefs: string[]
+  kind: string | null
+  createdAt: string
+}
+
+export interface RagEvalRerunDiff {
+  sampleId: string
+  query: string
+  storedActualRefs: string[]
+  nowActualRefs: string[]
+  hitExpected: string[]
+  missed: string[]
+  newHits: string[]
+  ranAt: string
+}
+
+export async function createRagEvalSample(
+  query: string,
+  expectedRefs: string[],
+): Promise<RagEvalSample> {
+  const response = await rawRequest(`${API_BASE}/rag/eval-samples`, {
+    method: 'POST',
+    body: JSON.stringify({ query, expectedRefs }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as RagEvalSample
+}
+
+export async function listRagEvalSamples(
+  signal?: AbortSignal,
+): Promise<{ items: RagEvalSample[]; cap: number }> {
+  return request<{ items: RagEvalSample[]; cap: number }>(
+    `${API_BASE}/rag/eval-samples`,
+    signal,
+  )
+}
+
+export async function deleteRagEvalSample(sampleId: string): Promise<void> {
+  const response = await rawRequest(
+    `${API_BASE}/rag/eval-samples/${encodeURIComponent(sampleId)}`,
+    { method: 'DELETE' },
+  )
+  if (!response.ok) throw await toApiError(response)
+}
+
+export async function rerunRagEvalSample(sampleId: string): Promise<RagEvalRerunDiff> {
+  const response = await rawRequest(
+    `${API_BASE}/rag/eval-samples/${encodeURIComponent(sampleId)}/rerun`,
+    { method: 'POST' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as RagEvalRerunDiff
 }

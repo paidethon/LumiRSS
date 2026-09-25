@@ -158,6 +158,13 @@ import {
   listWorkspaceItems,
   listWorkspaces,
   listWorkspaceSnapshots,
+  diffWorkspaceSnapshots,
+  listCollectRules,
+  createCollectRule,
+  setCollectRuleEnabled,
+  deleteCollectRule,
+  previewCollectRule,
+  applyCollectRule,
   lookupTranslationSegments,
   moveSubscription,
   moveWorkspaceItemGroup,
@@ -1779,6 +1786,93 @@ export function useRestoreWorkspaceSnapshotMutation() {
         vars.force ?? false,
       ),
     onSuccess: () => invalidateWorkspaceState(queryClient),
+  })
+}
+
+// ---- N115：两快照差异（只读） ----
+
+export function useWorkspaceSnapshotDiff(
+  workspaceId: string | null,
+  snapshotIdA: string | null,
+  snapshotIdB: string | null,
+) {
+  return useQuery({
+    queryKey: ['workspace-snapshot-diff', workspaceId, snapshotIdA, snapshotIdB],
+    queryFn: ({ signal }) =>
+      diffWorkspaceSnapshots(workspaceId!, snapshotIdA!, snapshotIdB!, signal),
+    enabled: workspaceId !== null && snapshotIdA !== null && snapshotIdB !== null,
+  })
+}
+
+// ---- N118：工作区收集规则 ----
+
+export function useWorkspaceCollectRules(workspaceId: string | null) {
+  return useQuery({
+    queryKey: ['workspace-collect-rules', workspaceId],
+    queryFn: ({ signal }) => listCollectRules(workspaceId!, signal),
+    enabled: workspaceId !== null,
+  })
+}
+
+function invalidateCollectRules(
+  queryClient: ReturnType<typeof useQueryClient>,
+  workspaceId?: string,
+) {
+  void queryClient.invalidateQueries({ queryKey: ['workspace-collect-rules'] })
+  if (workspaceId !== undefined) {
+    void queryClient.invalidateQueries({ queryKey: ['workspaces'] })
+    void queryClient.invalidateQueries({ queryKey: ['workspace-items'] })
+  }
+}
+
+export function useCreateCollectRuleMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: {
+      workspaceId: string
+      body: {
+        feedUrl?: string | null
+        tag?: string | null
+        keyword?: string | null
+        maxItems?: number
+        enabled?: boolean
+      }
+    }) => createCollectRule(vars.workspaceId, vars.body),
+    onSuccess: (_data, vars) => invalidateCollectRules(queryClient, vars.workspaceId),
+  })
+}
+
+export function useSetCollectRuleEnabledMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { workspaceId: string; ruleId: string; enabled: boolean }) =>
+      setCollectRuleEnabled(vars.workspaceId, vars.ruleId, vars.enabled),
+    onSuccess: () => invalidateCollectRules(queryClient),
+  })
+}
+
+export function useDeleteCollectRuleMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { workspaceId: string; ruleId: string }) =>
+      deleteCollectRule(vars.workspaceId, vars.ruleId),
+    onSuccess: () => invalidateCollectRules(queryClient),
+  })
+}
+
+export function usePreviewCollectRuleMutation() {
+  return useMutation({
+    mutationFn: (vars: { workspaceId: string; ruleId: string }) =>
+      previewCollectRule(vars.workspaceId, vars.ruleId),
+  })
+}
+
+export function useApplyCollectRuleMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { workspaceId: string; ruleId: string }) =>
+      applyCollectRule(vars.workspaceId, vars.ruleId),
+    onSuccess: (_data, vars) => invalidateCollectRules(queryClient, vars.workspaceId),
   })
 }
 

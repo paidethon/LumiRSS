@@ -171,8 +171,10 @@ from lumirss.opml_import_log import (
     OpmlImportLogNotFound,
     OpmlImportLogUndone,
 )
+from lumirss.qa_conflicts import QaConflictInvalid
 from lumirss.qa_templates import QaTemplateInvalid, QaTemplateNotFound
-from lumirss.rag import RagModelUnavailable, RagRebuildBusy
+from lumirss.rag import RagJobNotFound, RagModelUnavailable, RagRebuildBusy
+from lumirss.rag_eval import EvalSampleInvalid, EvalSampleLimit, EvalSampleNotFound
 from lumirss.reading_queue import (
     QueueInvalid,
     QueueItemDone,
@@ -248,6 +250,10 @@ from lumirss.workspace_archive import (
 )
 from lumirss.workspace_board import BoardInvalid, BoardItemNotFound
 from lumirss.workspace_cleanup import CleanupInvalid, CleanupLogNotFound
+from lumirss.workspace_collect_rules import (
+    CollectRuleInvalid,
+    CollectRuleNotFound,
+)
 from lumirss.workspace_goals import GoalInvalid
 from lumirss.workspace_sections import (
     SectionInvalid,
@@ -381,6 +387,9 @@ _ERROR_RESPONSES = {
     # N120 清理预演
     CleanupInvalid: (422, "invalid_workspace_cleanup"),
     CleanupLogNotFound: (404, "workspace_cleanup_log_not_found"),
+    # N118 工作区收集规则
+    CollectRuleInvalid: (422, "invalid_collect_rule"),
+    CollectRuleNotFound: (404, "collect_rule_not_found"),
     # N041/N042/N043：今日必读队列（稳定错误信封）
     QueueInvalid: (400, "invalid_queue"),
     QueueItemNotFound: (404, "queue_item_not_found"),
@@ -436,6 +445,14 @@ _ERROR_RESPONSES = {
     # phase2 G7 rag + agent
     RagModelUnavailable: (503, "model_unavailable"),
     RagRebuildBusy: (409, "rebuild_in_progress"),
+    # N158 局部重建作业
+    RagJobNotFound: (404, "rag_job_not_found"),
+    # N159 检索质量收藏
+    EvalSampleInvalid: (422, "invalid_eval_sample"),
+    EvalSampleLimit: (409, "eval_sample_limit"),
+    EvalSampleNotFound: (404, "eval_sample_not_found"),
+    # N156 资料冲突对照（纯词法，零模型）
+    QaConflictInvalid: (422, "invalid_qa_conflicts"),
     AgentProviderUnavailable: (503, "provider_unavailable"),
     ToolDenied: (403, "tool_denied"),
     ApprovalInvalid: (409, "approval_invalid"),
@@ -712,6 +729,14 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(SectionItemNotFound)
     @app.exception_handler(CleanupInvalid)
     @app.exception_handler(CleanupLogNotFound)
+    # N115-N119 工作区补位 / N156 / N158 / N159
+    @app.exception_handler(CollectRuleInvalid)
+    @app.exception_handler(CollectRuleNotFound)
+    @app.exception_handler(RagJobNotFound)
+    @app.exception_handler(EvalSampleInvalid)
+    @app.exception_handler(EvalSampleLimit)
+    @app.exception_handler(EvalSampleNotFound)
+    @app.exception_handler(QaConflictInvalid)
     @app.exception_handler(QueueInvalid)
     @app.exception_handler(QueueItemNotFound)
     @app.exception_handler(QueueItemDone)

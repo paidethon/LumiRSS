@@ -198,6 +198,24 @@ export type WorkspaceGroup = Schemas['WorkspaceGroup']
 export type WorkspaceSnapshot = Schemas['WorkspaceSnapshot']
 export type WorkspaceSnapshotList = Schemas['WorkspaceSnapshotList']
 export type WorkspaceSnapshotRestoreResult = Schemas['WorkspaceSnapshotRestoreResult']
+/** N115：两快照差异（只读；ref 定位走既有 views/resolve 端点）。 */
+export type WorkspaceSnapshotDiff = Schemas['WorkspaceSnapshotDiff']
+export type WorkspaceSnapshotDiffMove = Schemas['WorkspaceSnapshotDiffMove']
+export type WorkspaceSnapshotDiffGroupChange = Schemas['WorkspaceSnapshotDiffGroupChange']
+/** N116：汇编只读分享包请求（includeNotes 固定 false）。 */
+export type SharePackageRequest = Schemas['SharePackageRequest']
+/** N118：工作区收集规则（手动触发，绝不后台抓取）。 */
+export type WorkspaceCollectRule = Schemas['WorkspaceCollectRule']
+export type WorkspaceCollectRuleList = Schemas['WorkspaceCollectRuleList']
+export type WorkspaceCollectPreview = Schemas['WorkspaceCollectPreview']
+export type WorkspaceCollectApplyResult = Schemas['WorkspaceCollectApplyResult']
+/** N119：归档工作区摘要卡。 */
+export type WorkspaceArchiveEntry = Schemas['WorkspaceArchiveEntry']
+export type WorkspaceArchiveSummary = Schemas['WorkspaceArchiveSummary']
+/** N156：资料冲突对照（纯词法，非语义裁决）。 */
+export type QaConflictRequest = Schemas['QaConflictRequest']
+export type QaConflictResponse = Schemas['QaConflictResponse']
+export type QaConflictItem = Schemas['QaConflictItem']
 export type ResolvedItem = Schemas['ResolvedItem']
 export type WorkspaceItemsResolvedResponse = Schemas['WorkspaceItemsResolvedResponse']
 /** P15：「上次看到哪」续读指针（每工作区一个；pointer=null = 无）。 */
