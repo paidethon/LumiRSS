@@ -702,11 +702,17 @@ def _get_agent_loop(request: Request) -> AgentLoop:
             ).get_settings(thread_id)
             return settings or {}
 
+        async def _evidence_lookup(refs: list[str]) -> dict[str, str]:
+            from lumirss.rag_evidence import collect_evidence_texts
+
+            return await collect_evidence_texts(request.app.state.db, refs)
+
         return AgentLoop(
             _get_agent_store(request),
             registry,
             lambda: _provider_or_none(request),
             session_loader=_session_loader,
+            evidence_lookup=_evidence_lookup,
         )
 
     return _cached_on_app_state(request, "agent_loop", build)

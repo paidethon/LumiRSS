@@ -10,15 +10,17 @@
  *   工具、不复制审批/副作用。
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Download, GitBranch, Search, Settings2 } from 'lucide-react'
 import {
   branchAgentThread,
   exportAgentThreadMarkdown,
   previewAgentApproval,
+  previewAgentScope,
   searchAgentThreads,
   updateAgentThreadSettings,
+  type AgentScopeSummary,
   type AgentThreadSearchHit,
   type ApprovalPreview,
 } from '../api/client'
@@ -133,25 +135,54 @@ export function ThreadSettingsButton({ threadId }: { threadId: string }) {
   const [maxOps, setMaxOps] = useState('')
   const [saved, setSaved] = useState<string | null>(null)
 
+  /** 当前选择 → 会话设置载荷（保存与 N151 范围预览共用一份口径）。 */
+  function buildPayload() {
+    return {
+      scope: scopeWorkspace === '' ? null : { workspaceId: scopeWorkspace },
+      clearScope: scopeWorkspace === '',
+      toolPolicy:
+        toolMode === 'all' && allowedTools.trim() === '' && maxOps.trim() === ''
+          ? null
+          : {
+              mode: toolMode as 'all' | 'readonly',
+              ...(allowedTools.trim() !== ''
+                ? { allowedTools: allowedTools.split(/[,，]/).map((s) => s.trim()).filter(Boolean) }
+                : {}),
+              ...(maxOps.trim() !== '' ? { maxOpsPerTurn: Math.max(1, Math.min(50, Number(maxOps) || 50)) } : {}),
+            },
+      clearToolPolicy: toolMode === 'all' && allowedTools.trim() === '' && maxOps.trim() === '',
+    }
+  }
+
   const save = useMutation({
-    mutationFn: () =>
-      updateAgentThreadSettings(threadId, {
-        scope: scopeWorkspace === '' ? null : { workspaceId: scopeWorkspace },
-        clearScope: scopeWorkspace === '',
-        toolPolicy:
-          toolMode === 'all' && allowedTools.trim() === '' && maxOps.trim() === ''
-            ? null
-            : {
-                mode: toolMode,
-                ...(allowedTools.trim() !== ''
-                  ? { allowedTools: allowedTools.split(/[,，]/).map((s) => s.trim()).filter(Boolean) }
-                  : {}),
-                ...(maxOps.trim() !== '' ? { maxOpsPerTurn: Math.max(1, Math.min(50, Number(maxOps) || 50)) } : {}),
-              },
-        clearToolPolicy: toolMode === 'all' && allowedTools.trim() === '' && maxOps.trim() === '',
-      }),
+    mutationFn: () => updateAgentThreadSettings(threadId, buildPayload()),
     onSuccess: () => setSaved('已保存（下一轮对话生效）。'),
   })
+
+  // N151 授权范围摘要卡：选择变化 → 服务端解析 kind × refCount × toolCount
+  // （refCount 服务端查询时解析，前端绝不伪造计数）。
+  const scopePreview = useMutation({
+    mutationFn: () => {
+      const payload = buildPayload()
+      return previewAgentScope({ scope: payload.scope, toolPolicy: payload.toolPolicy })
+    },
+  })
+  useEffect(() => {
+    if (!open) return
+    const timer = setTimeout(() => scopePreview.mutate(), 250)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, scopeWorkspace, toolMode, allowedTools, maxOps])
+  const summary: AgentScopeSummary | null = scopePreview.data ?? null
+
+  const scopeKindLabel =
+    summary === null
+      ? null
+      : summary.kind === 'all'
+        ? '全库（不锁定）'
+        : summary.kind === 'workspace'
+          ? '工作区'
+          : '条目列表'
 
   return (
     <>
@@ -191,6 +222,28 @@ export function ThreadSettingsButton({ threadId }: { threadId: string }) {
                 ))}
               </select>
             </label>
+            {/* N151 授权范围摘要卡：kind × refCount × toolCount。 */}
+            <div
+              data-scope-summary=""
+              className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2.5 py-2 text-xs"
+            >
+              <p className="font-medium text-[var(--lumi-text-primary)]">授权范围</p>
+              {scopePreview.isPending && (
+                <p className="mt-0.5 text-[var(--lumi-text-tertiary)]">解析中…</p>
+              )}
+              {scopePreview.isError && (
+                <p role="alert" className="mt-0.5 text-[var(--lumi-danger)]">
+                  范围解析失败。
+                </p>
+              )}
+              {summary !== null && !scopePreview.isPending && (
+                <p className="mt-0.5 text-[var(--lumi-text-secondary)]">
+                  {scopeKindLabel} ·{' '}
+                  {summary.refCount === null ? '条目不限' : `${summary.refCount} 条`} ·{' '}
+                  {summary.toolCount} 个工具可用
+                </p>
+              )}
+            </div>
             <label className="flex flex-col gap-1 text-xs">
               <span className="text-[var(--lumi-text-secondary)]">工具权限</span>
               <select

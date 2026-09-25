@@ -13,14 +13,19 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  getRagCoverage,
   listRagExclusions,
   listRagInconsistencies,
+  ragChunkPreview,
   ragTrySearch,
   repairRagRefs,
   setRagExclusion,
+  type RagChunkPreview,
+  type RagCoverage,
   type RagExclusionItem,
 } from '../api/client'
 import { Button } from './ui/Button'
+import { Dialog } from './ui/Dialog'
 import { Skeleton } from './ui/Skeleton'
 import { resolveAndOpen } from '../lib/open-item'
 import { cx } from './ui/cx'
@@ -172,6 +177,149 @@ export function RagTrySearchPanel({ enabled }: { enabled: boolean }) {
             <p role="alert" className="text-xs text-[var(--lumi-danger)]">{result.semanticError}</p>
           )}
         </div>
+      )}
+    </div>
+  )
+}
+
+// ---- N152 索引覆盖率 ----------------------------------------------------------
+
+/** N152 覆盖率卡片：语料 ↔ 索引真实分桶（indexable/indexed/stale/failed
+ * 来自行与作业，unsupported 按 kind 给原因）。纯只读盘点。 */
+export function RagCoveragePanel() {
+  const scan = useMutation({
+    mutationFn: () => getRagCoverage(),
+  })
+  const coverage: RagCoverage | undefined = scan.data
+
+  return (
+    <div className="flex flex-col gap-2" data-rag-coverage="">
+      <div className="flex items-center gap-2">
+        <Button variant="secondary" size="sm" disabled={scan.isPending} onClick={() => scan.mutate()}>
+          {scan.isPending ? '盘点中…' : '扫描索引覆盖率'}
+        </Button>
+        {coverage !== undefined && (
+          <span className="text-xs text-[var(--lumi-text-secondary)]">
+            可索引 {coverage.indexable} · 已索引 {coverage.indexed} · 过期 {coverage.stale} · 失败{' '}
+            {coverage.failed} · 不支持 {coverage.unsupported.count}
+          </span>
+        )}
+      </div>
+      {scan.isError && (
+        <p role="alert" className="text-xs text-[var(--lumi-danger)]">
+          覆盖率盘点失败：{scan.error instanceof Error ? scan.error.message : '请稍后重试。'}
+        </p>
+      )}
+      {coverage !== undefined && (
+        <>
+          <dl className="grid grid-cols-4 gap-2 text-xs max-sm:grid-cols-2">
+            {(
+              [
+                ['可索引', coverage.indexable],
+                ['已索引', coverage.indexed],
+                ['过期', coverage.stale],
+                ['失败', coverage.failed],
+              ] as const
+            ).map(([label, value]) => (
+              <div
+                key={label}
+                data-coverage-bucket={label}
+                className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] px-2 py-1.5"
+              >
+                <dt className="text-[var(--lumi-text-tertiary)]">{label}</dt>
+                <dd className="font-medium text-[var(--lumi-text-primary)]">{value}</dd>
+              </div>
+            ))}
+          </dl>
+          {coverage.unsupported.count > 0 && (
+            <div className="flex flex-col gap-1" data-coverage-unsupported="">
+              <p className="text-xs text-[var(--lumi-text-secondary)]">
+                不支持的语料（正文为空，永远不会被索引）共 {coverage.unsupported.count} 条：
+              </p>
+              <ul className="flex flex-wrap gap-1">
+                {coverage.unsupported.kinds.map((entry) => (
+                  <li
+                    key={`${entry.kind}:${entry.reason}`}
+                    data-unsupported-kind={entry.kind}
+                    className="rounded-full bg-[var(--lumi-surface-selected)] px-2 py-0.5 text-[10px] text-[var(--lumi-text-secondary)]"
+                  >
+                    {entry.kind} · {entry.reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+// ---- N153 分块可视预览 ----------------------------------------------------------
+
+/** N153 查看分块：输入 ref → POST /rag/chunk-preview → 模态展示索引
+ * 「将会」产生的分块（ord / 源文本坐标 / 预览文本）+ 方案元数据。 */
+export function RagChunkPreviewPanel() {
+  const [ref, setRef] = useState('')
+  const [open, setOpen] = useState(false)
+  const preview = useMutation({
+    mutationFn: () => ragChunkPreview(ref.trim()),
+    onSuccess: () => setOpen(true),
+  })
+  const result: RagChunkPreview | undefined = preview.data
+
+  return (
+    <div className="flex flex-col gap-2" data-rag-chunk-preview="">
+      <form
+        className="flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (ref.trim() !== '') preview.mutate()
+        }}
+      >
+        <input
+          type="text"
+          value={ref}
+          onChange={(e) => setRef(e.target.value)}
+          placeholder="输入条目 ref（如 library:…）"
+          aria-label="分块预览 ref"
+          className="min-w-0 flex-1 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 py-1.5 text-sm text-[var(--lumi-text-primary)]"
+        />
+        <Button type="submit" variant="secondary" size="sm" disabled={preview.isPending || ref.trim() === ''}>
+          {preview.isPending ? '生成中…' : '查看分块'}
+        </Button>
+      </form>
+      {preview.isError && (
+        <p role="alert" className="text-xs text-[var(--lumi-danger)]">
+          {preview.error instanceof Error ? preview.error.message : '预览失败，请稍后重试。'}
+        </p>
+      )}
+      {open && result !== undefined && (
+        <Dialog open onClose={() => setOpen(false)} title="分块预览" panelClassName="max-w-2xl">
+          <div className="flex flex-col gap-2" data-chunk-preview-result="">
+            <p className="text-xs text-[var(--lumi-text-secondary)]">
+              {result.ref}（{result.kind}）· 将产生 {result.chunks.length} 块 · 方案：单块上限{' '}
+              {result.scheme.maxLen} 字符 · 重叠 {result.scheme.overlap}
+            </p>
+            {result.chunks.length === 0 && (
+              <p className="text-xs text-[var(--lumi-text-tertiary)]">该条目没有可分块的正文。</p>
+            )}
+            <ul className="flex max-h-80 flex-col gap-1.5 overflow-y-auto">
+              {result.chunks.map((chunk) => (
+                <li
+                  key={chunk.ord}
+                  data-preview-chunk={chunk.ord}
+                  className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-2 text-xs"
+                >
+                  <p className="text-[10px] text-[var(--lumi-text-tertiary)]">
+                    #{chunk.ord} · 原文位置 {chunk.charStart}–{chunk.charEnd}
+                  </p>
+                  <p className="mt-0.5 leading-relaxed text-[var(--lumi-text-secondary)]">{chunk.text}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </Dialog>
       )}
     </div>
   )

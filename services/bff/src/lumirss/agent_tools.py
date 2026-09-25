@@ -57,6 +57,12 @@ def build_registry(**services) -> ToolRegistry:
             return refs
         return [r for r in refs if r in allowed]
 
+    async def _effective_scope() -> dict:
+        """N151：查询时服务端解析 {kind, refCount}（范围回显）。"""
+        from lumirss.agent_scope import effective_scope
+
+        return await effective_scope(db, workspaces, registry.context.get("scope"))
+
     async def tool_search(args: dict) -> dict:
         query = str(args.get("query") or "").strip()[:200]
         rss_rows = await rss_search(query, 5)
@@ -107,12 +113,15 @@ def build_registry(**services) -> ToolRegistry:
             **result,
             "items": [i for i in result["items"] if i["ref"] in set(kept_refs)],
         }
+        # N151：授权范围回显（查询时服务端解析 kind × refCount）。
+        effective = await _effective_scope()
         scope = registry.context.get("scope")
         if scope is not None and not result["items"]:
             return {
                 "error": "scope_empty",
                 "results": [],
                 "semanticUsed": result["semanticUsed"],
+                "effectiveScope": effective,
                 "citations": [],
             }
         refs = [item["ref"] for item in result["items"]]
@@ -126,6 +135,7 @@ def build_registry(**services) -> ToolRegistry:
                 for item in result["items"]
             ],
             "semanticUsed": result["semanticUsed"],
+            "effectiveScope": effective,
             "citations": refs,
         }
 

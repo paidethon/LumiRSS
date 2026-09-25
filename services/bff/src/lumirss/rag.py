@@ -80,6 +80,11 @@ _EMBED_BATCH = 32
 # F093：作业游标持久化上限与默认 kind。
 _JOB_KIND = "rebuild"
 
+
+def chunk_scheme() -> dict[str, int]:
+    """N153：当前分块方案的只读元数据（当前 chunker 无重叠，诚实为 0）。"""
+    return {"maxLen": _CHUNK_MAX, "overlap": 0}
+
 _FASTEMBED_AVAILABLE = importlib.util.find_spec("fastembed") is not None
 
 
@@ -110,31 +115,102 @@ def serialize_vector(values: list[float]) -> bytes:
 
 def chunk_text(text: str, *, heading: str | None = None) -> list[str]:
     """Heading-inheriting paragraph grouping (300-800 chars)."""
-    paragraphs = []
-    for block in text.replace("\r\n", "\n").split("\n\n"):
-        clean = " ".join(block.split())
-        if clean:
-            paragraphs.append(clean)
-    chunks: list[str] = []
-    buffer = ""
+    return [span.text for span in chunk_text_with_spans(text, heading=heading)]
+
+
+@dataclass(frozen=True)
+class ChunkSpan:
+    """One chunk plus its source-document character span (N153).
+
+    ``char_start``/``char_end`` index the ORIGINAL stored text such that
+    the whitespace-normalized source span equals the chunk text without
+    the heading prefix (the prefix is decoration, never part of the
+    span). ``ord`` is the per-ref chunk ordinal (matches rag_chunks.ord).
+    """
+
+    ord: int
+    text: str
+    char_start: int
+    char_end: int
+
+
+def chunk_text_with_spans(
+    text: str, *, heading: str | None = None
+) -> list[ChunkSpan]:
+    """N153：chunk_text 的带源文本坐标版本（单一实现，chunk_text 委托）。
+
+    Produces byte-identical chunk strings to the historical chunk_text
+    while carrying each chunk's source span, so the preview endpoint can
+    show exactly what indexing WOULD store with verifiable offsets. The
+    ``\\r\\n`` → ``\\n`` normalization happens first and offsets are
+    mapped back to the ORIGINAL text."""
+    normalized = (text or "").replace("\r\n", "\n")
+    # orig index of each normalized char (+1 sentinel); \r\n pairs shrink.
+    orig_of_norm: list[int] = []
+    orig_i = 0
+    for ch in normalized:
+        orig_of_norm.append(orig_i)
+        orig_i += 2 if (ch == "\n" and orig_i < len(text) and text[orig_i] == "\r") else 1
+    orig_of_norm.append(min(orig_i, len(text)))
+
+    # Paragraphs as (clean, per-clean-char normalized offsets, block offset).
+    paragraphs: list[tuple[str, list[int], int]] = []
+    block_start = 0
+    for block in normalized.split("\n\n"):
+        nonws = [pos for pos, ch in enumerate(block) if not ch.isspace()]
+        if nonws:
+            clean = " ".join(block.split())
+            clean_pos = [block_start + pos for pos in nonws]
+            paragraphs.append((clean, clean_pos, block_start))
+        block_start += len(block) + 2  # split consumed the "\n\n" separator
+
     prefix = f"{heading} — " if heading else ""
-    for paragraph in paragraphs:
-        if len(paragraph) > _CHUNK_MAX:
+    spans: list[ChunkSpan] = []
+    buffer: list[tuple[str, list[int]]] = []
+    # Accumulated buffer length = the historical string-buffer length
+    # (pieces joined with "\n") — the flush condition must stay identical.
+    buffer_len = 0
+
+    def emit(pieces: list[tuple[str, list[int]]]) -> None:
+        text_out = (prefix + "\n".join(p[0] for p in pieces)).strip()
+        char_start = orig_of_norm[pieces[0][1][0]]
+        char_end = orig_of_norm[pieces[-1][1][-1]] + 1
+        spans.append(
+            ChunkSpan(
+                ord=len(spans), text=text_out, char_start=char_start,
+                char_end=char_end,
+            )
+        )
+
+    for clean, clean_pos, _block_start in paragraphs:
+        if len(clean) > _CHUNK_MAX:
             if buffer:
-                chunks.append((prefix + buffer).strip())
-                buffer = ""
-            for start in range(0, len(paragraph), _CHUNK_MAX):
-                chunks.append((prefix + paragraph[start : start + _CHUNK_MAX]).strip())
+                emit(buffer)
+                buffer = []
+                buffer_len = 0
+            for start in range(0, len(clean), _CHUNK_MAX):
+                window = clean[start : start + _CHUNK_MAX]
+                window_pos = clean_pos[start : start + _CHUNK_MAX]
+                spans.append(
+                    ChunkSpan(
+                        ord=len(spans),
+                        text=(prefix + window).strip(),
+                        char_start=orig_of_norm[window_pos[0]],
+                        char_end=orig_of_norm[window_pos[-1]] + 1,
+                    )
+                )
             continue
-        candidate = f"{buffer}\n{paragraph}".strip() if buffer else paragraph
-        if len(candidate) > _CHUNK_MAX and len(buffer) >= _CHUNK_MIN:
-            chunks.append((prefix + buffer).strip())
-            buffer = paragraph
+        candidate_len = buffer_len + 1 + len(clean) if buffer else len(clean)
+        if candidate_len > _CHUNK_MAX and buffer_len >= _CHUNK_MIN:
+            emit(buffer)
+            buffer = [(clean, clean_pos)]
+            buffer_len = len(clean)
         else:
-            buffer = candidate
+            buffer.append((clean, clean_pos))
+            buffer_len = candidate_len
     if buffer:
-        chunks.append((prefix + buffer).strip())
-    return chunks[:_MAX_CHUNKS_PER_REF]
+        emit(buffer)
+    return spans[:_MAX_CHUNKS_PER_REF]
 
 
 class EmbeddingService:

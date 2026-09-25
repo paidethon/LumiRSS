@@ -3121,7 +3121,11 @@ class AgentUserContent(BaseModel):
 
 class AgentAssistantContent(BaseModel):
     """role=assistant message body (streaming marker / cancel note /
-    branch-truncation notice / toolCalls while the loop is mid-turn)."""
+    branch-truncation notice / toolCalls while the loop is mid-turn).
+
+    N154/N155：evidenceStrength（direct|partial|none，引用文本 vs 主张
+    重叠分级——绝不用「置信度」措辞）；unverifiable/unverifiableReason
+    标记「有文档事实主张但零有效引用」的回答（no_valid_citations）。"""
 
     model_config = {"extra": "forbid"}
 
@@ -3130,6 +3134,9 @@ class AgentAssistantContent(BaseModel):
     streaming: bool | None = None
     cancelled: bool | None = None
     branchTruncated: bool | None = None
+    evidenceStrength: Literal["direct", "partial", "none"] | None = None
+    unverifiable: bool | None = None
+    unverifiableReason: str | None = None
 
 
 class AgentToolContent(BaseModel):
@@ -3244,12 +3251,25 @@ class RagSearchItem(BaseModel):
     modelId: str | None = None
 
 
+class RagEffectiveScope(BaseModel):
+    """N151 查询时服务端解析的授权范围回显。
+
+    kind: all（未锁定，refCount=None）| workspace | entryRefs；
+    refCount = scope 实际解析到的 ref 数（有界）。"""
+
+    kind: Literal["all", "workspace", "entryRefs"]
+    refCount: int | None = None
+
+
 class RagSearchResponse(BaseModel):
     """Envelope for GET /api/v1/rag/search (honest degradation flags)."""
 
     items: list[RagSearchItem]
     semanticUsed: bool
     semanticError: str | None = None
+    effectiveScope: RagEffectiveScope = Field(
+        default_factory=lambda: RagEffectiveScope(kind="all", refCount=None)
+    )
 
 
 class RagRebuildResult(BaseModel):
@@ -4489,6 +4509,132 @@ class RagRepairResult(BaseModel):
     failed: list[dict] = []
 
 
+# ---------------------------------------------------------------------------
+# N152 覆盖率 / N153 分块预览 / N155 RAG 问答（引用缺失拦截）
+# ---------------------------------------------------------------------------
+
+
+class RagCoverageUnsupportedKind(BaseModel):
+    """N152 一种不可索引 kind 及原因（empty_text = 正文为空）。"""
+
+    kind: str
+    reason: str
+
+
+class RagCoverageUnsupported(BaseModel):
+    """N152 不可索引语料分组计数。"""
+
+    count: int = 0
+    kinds: list[RagCoverageUnsupportedKind] = []
+
+
+class RagCoverage(BaseModel):
+    """GET /api/v1/rag/coverage —— 语料 ↔ 索引的真实分桶（N152）。
+
+    indexable/indexed/stale 来自行与 content_hash，failed 来自最近
+    rag_jobs 作业的 skipped 记录。"""
+
+    modelId: str
+    indexable: int = 0
+    indexed: int = 0
+    stale: int = 0
+    failed: int = 0
+    unsupported: RagCoverageUnsupported = Field(
+        default_factory=RagCoverageUnsupported
+    )
+
+
+class RagChunkPreviewRequest(BaseModel):
+    """POST /api/v1/rag/chunk-preview body（N153）。"""
+
+    model_config = {"extra": "forbid"}
+
+    ref: str = Field(min_length=1, max_length=500)
+
+
+class RagChunkScheme(BaseModel):
+    """N153 只读分块方案元数据（当前 chunker 无重叠，诚实为 0）。"""
+
+    maxLen: int
+    overlap: int
+
+
+class RagChunkPreviewChunk(BaseModel):
+    """N153 一条预览分块：text 截断到预览上限（≤400 字符）。"""
+
+    ord: int
+    text: str
+    charStart: int
+    charEnd: int
+
+
+class RagChunkPreview(BaseModel):
+    """POST /api/v1/rag/chunk-preview —— 索引「将会」产生的分块。"""
+
+    ref: str
+    kind: str
+    title: str | None = None
+    chunks: list[RagChunkPreviewChunk] = []
+    scheme: RagChunkScheme
+
+
+class RagAskCitation(BaseModel):
+    """N155 一条有效引用：编号（1 起）+ ref。"""
+
+    index: int
+    ref: str
+
+
+class RagAskExcerpt(BaseModel):
+    """N155 摘录模式的一条原文片段（labeled：摘录 ≠ 回答）。"""
+
+    ref: str
+    title: str | None = None
+    ord: int = 0
+    text: str
+
+
+class RagAskRequest(BaseModel):
+    """POST /api/v1/rag/ask body（N151/N154/N155）。
+
+    - threadId：提供则继承该会话的 F094 范围（服务端解析、越界 403）；
+    - refs：显式指定依据条目（≤8）；不提供则走检索；
+    - mode=excerpt：只取原文片段（零 provider 调用）。"""
+
+    model_config = {"extra": "forbid"}
+
+    question: str = Field(min_length=1, max_length=2000)
+    threadId: str | None = None
+    refs: list[str] = Field(default=[], max_length=8)
+    k: int = Field(default=6, ge=1, le=12)
+    mode: Literal["answer", "excerpt"] = "answer"
+
+    @field_validator("question")
+    @classmethod
+    def _question_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("question must not be blank")
+        return value
+
+
+class RagAskResponse(BaseModel):
+    """POST /api/v1/rag/ask 响应（N151 effectiveScope / N154 强弱 /
+    N155 unverifiable + 摘录）。"""
+
+    question: str
+    mode: Literal["answer", "excerpt"]
+    answer: str | None = None
+    citations: list[RagAskCitation] = []
+    evidenceStrength: Literal["direct", "partial", "none"] | None = None
+    unverifiable: bool = False
+    reason: str | None = None
+    effectiveScope: RagEffectiveScope = Field(
+        default_factory=lambda: RagEffectiveScope(kind="all", refCount=None)
+    )
+    excerpts: list[RagAskExcerpt] = []
+    semanticUsed: bool = False
+
+
 class AgentThreadUpdate(BaseModel):
     """F094/F098 会话设置（scope / toolPolicy；None = 清除/不修改按键）。
 
@@ -4554,6 +4700,24 @@ class AgentThreadSettings(BaseModel):
     scope: AgentThreadScope | None = None
     toolPolicy: AgentToolPolicy | None = None
     branchOf: str | None = None
+
+
+class AgentScopePreviewRequest(BaseModel):
+    """N151 POST /api/v1/agent/scope-preview body（工作台范围选择器的
+    授权范围摘要卡：kind × refCount × toolCount）。"""
+
+    model_config = {"extra": "forbid"}
+
+    scope: AgentThreadScope | None = None
+    toolPolicy: AgentToolPolicy | None = None
+
+
+class AgentScopeSummary(BaseModel):
+    """N151 授权范围摘要（服务端解析，绝不在前端伪造计数）。"""
+
+    kind: Literal["all", "workspace", "entryRefs"]
+    refCount: int | None = None
+    toolCount: int = 0
 
 
 class AgentThreadSearchHit(BaseModel):
