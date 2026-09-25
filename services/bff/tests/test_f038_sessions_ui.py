@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import secrets
 import tempfile
 from pathlib import Path
 
@@ -12,7 +13,7 @@ from lumirss.auth_store import AuthStore
 from lumirss.main import app
 from lumirss.storage import Database
 
-PASSWORD = "test-password-f038-ok"
+PASSWORD = secrets.token_urlsafe(16)
 
 
 def run(coroutine):

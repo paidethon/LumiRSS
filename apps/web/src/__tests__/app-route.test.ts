@@ -1,7 +1,14 @@
-/** app-route — 顶层极简路由（/activate、/admin）判定与导航测试。 */
+/** app-route — 顶层极简路由（/activate、/register、/admin）判定与导航测试。 */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { readActivateToken, readAppRoute, navigateAppRoute } from '../lib/app-route'
+import {
+  isSafeAuthRedirectPath,
+  navigateAppRoute,
+  navigateToPath,
+  readActivateToken,
+  readAppRoute,
+  readAuthRedirectTarget,
+} from '../lib/app-route'
 
 function setUrl(url: string): void {
   window.history.replaceState(null, '', url)
@@ -86,5 +93,77 @@ describe('readActivateToken', () => {
   it('无 token → null', () => {
     setUrl('/activate')
     expect(readActivateToken()).toBeNull()
+  })
+})
+
+describe('register 路由（P0-02 公开注册）', () => {
+  it('pathname /register → register', () => {
+    setUrl('/register')
+    expect(readAppRoute()).toBe('register')
+  })
+
+  it('navigateAppRoute("register") → /register', () => {
+    setUrl('/')
+    navigateAppRoute('register')
+    expect(window.location.pathname).toBe('/register')
+    expect(readAppRoute()).toBe('register')
+  })
+})
+
+describe('isSafeAuthRedirectPath（F015 开放重定向防护）', () => {
+  it('合法：单 / 开头的同源路径', () => {
+    expect(isSafeAuthRedirectPath('/library')).toBe(true)
+    expect(isSafeAuthRedirectPath('/admin')).toBe(true)
+    expect(isSafeAuthRedirectPath('/a/b?x=1')).toBe(true)
+  })
+
+  it('非法：空、相对、协议相对 //、反斜杠、scheme、控制字符', () => {
+    expect(isSafeAuthRedirectPath(null)).toBe(false)
+    expect(isSafeAuthRedirectPath('')).toBe(false)
+    expect(isSafeAuthRedirectPath('library')).toBe(false)
+    expect(isSafeAuthRedirectPath('//evil.com')).toBe(false)
+    expect(isSafeAuthRedirectPath('/\\evil.com')).toBe(false)
+    expect(isSafeAuthRedirectPath('https://evil.com')).toBe(false)
+    expect(isSafeAuthRedirectPath('javascript:alert(1)')).toBe(false)
+    expect(isSafeAuthRedirectPath('/a\nb')).toBe(false)
+  })
+})
+
+describe('readAuthRedirectTarget（?next= 读取 + 归一）', () => {
+  it('合法 ?next= 原样返回', () => {
+    setUrl('/?next=%2Flibrary')
+    expect(readAuthRedirectTarget()).toBe('/library')
+  })
+
+  it('非法 ?next=（//、scheme、空）→ null（回退默认页）', () => {
+    setUrl('/?next=%2F%2Fevil.com')
+    expect(readAuthRedirectTarget()).toBeNull()
+    setUrl('/?next=https%3A%2F%2Fevil.example')
+    expect(readAuthRedirectTarget()).toBeNull()
+    setUrl('/?next=')
+    expect(readAuthRedirectTarget()).toBeNull()
+  })
+
+  it('无 ?next= → null', () => {
+    setUrl('/')
+    expect(readAuthRedirectTarget()).toBeNull()
+  })
+
+  it('hash 路由形式 #/?next=… 同样解析', () => {
+    setUrl('/#/?next=%2Flibrary')
+    expect(readAuthRedirectTarget()).toBe('/library')
+  })
+})
+
+describe('navigateToPath（认证后回任意同源路径）', () => {
+  it('replace=true 时替换当前历史并派发路由事件', () => {
+    setUrl('/?next=%2Flibrary')
+    const listener = vi.fn()
+    window.addEventListener('lumirss-route-change', listener)
+    navigateToPath('/library', true)
+    window.removeEventListener('lumirss-route-change', listener)
+    expect(window.location.pathname).toBe('/library')
+    expect(readAppRoute()).toBe('app')
+    expect(listener).toHaveBeenCalledTimes(1)
   })
 })

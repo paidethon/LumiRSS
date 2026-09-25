@@ -15,6 +15,7 @@ import {
   addReviewQueueItem,
   createFeedFilterRule,
   deleteFeedFilterRule,
+  getSourceAccessCard,
   listAnnotations,
   listFeedFilterRules,
   listImportBatches,
@@ -24,11 +25,15 @@ import {
   completeReviewQueueItem,
   postponeReviewQueueItem,
   migrateSubscription,
+  putSourceAccessCard,
   retryImportBatch,
   runHealthCheck,
   trialFeedFilterRule,
+  type ApiError,
   type HealthCheckItem,
+  type SourceAccessCardView,
 } from '../api/client'
+import type { FeedPreviewMetadata, RedirectHop } from '../api/types'
 import { listSourceOverrides, previewFeed, setSourceOverride } from '../api/client'
 import { Button } from './ui/Button'
 import { Dialog } from './ui/Dialog'
@@ -45,6 +50,78 @@ function errMsg(error: unknown): string {
   return error instanceof Error ? error.message : '请稍后重试。'
 }
 
+function isApiError(error: unknown): error is ApiError {
+  return error instanceof Error && error.name === 'ApiError'
+}
+
+/** N035：重定向链视图 — 每跳掩码 URL + 状态；多跳时给最终域名，
+ * 失败变体把「请求从未发出 / 未完成」的跳（status=null）标为失败跳。
+ * url 的 query 凭据值已由服务端掩码，这里不再自行改写。 */
+function RedirectChainView({
+  hops,
+  variant,
+}: {
+  hops: RedirectHop[]
+  variant: 'success' | 'failure'
+}) {
+  const last = hops[hops.length - 1] ?? null
+  let finalHost: string | null = null
+  if (variant === 'success' && last !== null) {
+    try {
+      finalHost = new URL(last.url).hostname
+    } catch {
+      finalHost = null
+    }
+  }
+  return (
+    <div
+      role="group"
+      aria-label="重定向链"
+      className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-2.5 text-xs"
+    >
+      <p className="font-medium text-[var(--lumi-text-primary)]">
+        重定向链（{hops.length} 跳）
+        {variant === 'success' && hops.length > 1 ? ' —— 该地址发生了重定向' : ''}
+      </p>
+      <ol className="mt-1.5 flex flex-col gap-1">
+        {hops.map((hop, index) => {
+          const failedHop = hop.status === null
+          return (
+            <li key={`${hop.url}-${index}`} className="flex min-w-0 items-start gap-1.5">
+              <span aria-hidden className="shrink-0 text-[var(--lumi-text-tertiary)]">
+                {index + 1}.
+              </span>
+              <span className="min-w-0 flex-1">
+                <span
+                  className={cx(
+                    'block break-all font-mono text-[11px]',
+                    failedHop && variant === 'failure'
+                      ? 'text-[var(--lumi-danger)]'
+                      : 'text-[var(--lumi-text-secondary)]',
+                  )}
+                >
+                  {hop.url}
+                </span>
+                <span className="block text-[11px] text-[var(--lumi-text-tertiary)]">
+                  {hop.status === null
+                    ? variant === 'failure'
+                      ? '失败跳：请求未完成（未发出或被拒绝）'
+                      : '未记录状态'
+                    : `HTTP ${hop.status}`}
+                  {hop.final ? ' · 最终地址' : ''}
+                </span>
+              </span>
+            </li>
+          )
+        })}
+      </ol>
+      {finalHost !== null && (
+        <p className="mt-1.5 text-[var(--lumi-text-secondary)]">最终域名：{finalHost}</p>
+      )}
+    </div>
+  )
+}
+
 // ---- F044 更换订阅地址向导 --------------------------------------------------
 
 export interface MigrateDialogProps {
@@ -59,15 +136,20 @@ export function MigrateSubscriptionDialog({ open, onClose, subscriptionRef, feed
   const queryClient = useQueryClient()
   const [step, setStep] = useState<1 | 2 | 3>(1)
   const [newUrl, setNewUrl] = useState('')
-  const [previewError, setPreviewError] = useState<string | null>(null)
+  const [previewError, setPreviewError] = useState<Error | null>(null)
+  const [previewData, setPreviewData] = useState<FeedPreviewMetadata | null>(null)
   const [result, setResult] = useState<Awaited<ReturnType<typeof migrateSubscription>> | null>(null)
   const previewMutation = useMutation({
     mutationFn: () => previewFeed(newUrl.trim()),
-    onSuccess: () => {
+    onSuccess: (metadata) => {
       setPreviewError(null)
+      setPreviewData(metadata)
       setStep(2)
     },
-    onError: (error) => setPreviewError(errMsg(error)),
+    onError: (error) => {
+      setPreviewData(null)
+      setPreviewError(error as Error)
+    },
   })
   const migrateMutation = useMutation({
     mutationFn: () => migrateSubscription(subscriptionRef, newUrl.trim()),
@@ -83,9 +165,19 @@ export function MigrateSubscriptionDialog({ open, onClose, subscriptionRef, feed
       setStep(1)
       setNewUrl('')
       setPreviewError(null)
+      setPreviewData(null)
       setResult(null)
     }
   }, [open])
+
+  // N035：成功预览 / 校验失败两条路径都取重定向链（服务端已掩码 query）。
+  // 成功侧单跳链 = 未发生重定向，不渲染该区块（避免噪音）；失败侧以
+  // 服务端是否附链为准（仅多跳或存在失败跳时服务端才附）。
+  const successRedirects = previewData?.redirectChain ?? null
+  const successChain =
+    successRedirects !== null && successRedirects.length > 1 ? successRedirects : null
+  const failureChain =
+    previewError !== null && isApiError(previewError) ? previewError.redirectChain : null
 
   return (
     <Dialog open={open} onClose={onClose} title={`更换订阅地址 — ${title}`}>
@@ -108,9 +200,12 @@ export function MigrateSubscriptionDialog({ open, onClose, subscriptionRef, feed
             </p>
           )}
           {previewError && (
-            <p role="alert" className="text-xs leading-relaxed text-[var(--lumi-danger)]">
-              {previewError}
-            </p>
+            <>
+              <p role="alert" className="text-xs leading-relaxed text-[var(--lumi-danger)]">
+                {errMsg(previewError)}
+              </p>
+              {failureChain !== null && <RedirectChainView hops={failureChain} variant="failure" />}
+            </>
           )}
           <div className="flex justify-end gap-2">
             <Button size="sm" variant="ghost" onClick={onClose}>取消</Button>
@@ -131,6 +226,7 @@ export function MigrateSubscriptionDialog({ open, onClose, subscriptionRef, feed
           <p className="flex items-center gap-1.5 text-xs text-[var(--lumi-success, var(--lumi-text-primary))]">
             <CheckCircle2 aria-hidden className="size-3.5" /> 新地址可达且为有效 feed。
           </p>
+          {successChain !== null && <RedirectChainView hops={successChain} variant="success" />}
           <div className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
             <p className="font-medium text-[var(--lumi-text-primary)]">迁移前请了解：</p>
             <ul className="mt-1.5 list-disc pl-4">
@@ -422,6 +518,144 @@ function MuteWindowRow({
   )
 }
 
+// ---- N019 来源接入说明卡（结构化字段；凭据只存归属标签） --------------------
+
+const CREDENTIAL_OWNERSHIP_LABELS: Record<string, string> = {
+  self: '本账号',
+  shared: '共享',
+  none: '无凭据',
+}
+
+function AccessCardEditor({ feedUrl }: { feedUrl: string }) {
+  const queryClient = useQueryClient()
+  const cardQuery = useQuery({
+    queryKey: ['source-access-card', feedUrl],
+    queryFn: () => getSourceAccessCard(feedUrl),
+  })
+  const [acquisition, setAcquisition] = useState('')
+  const [limits, setLimits] = useState('')
+  const [ownership, setOwnership] = useState<'self' | 'shared' | 'none' | ''>('')
+  const [maintenance, setMaintenance] = useState('')
+  const [saved, setSaved] = useState(false)
+  // 服务端内容签名同步（同 SourcePolicyDialog 的编辑保护策略）。
+  const editedRef = useRef(false)
+  const signature = cardQuery.data ? JSON.stringify(cardQuery.data) : ''
+  useEffect(() => {
+    if (editedRef.current) return
+    const card = cardQuery.data as SourceAccessCardView | undefined
+    setAcquisition(card?.acquisition ?? '')
+    setLimits(card?.limits ?? '')
+    setOwnership((card?.credentialOwnership as 'self' | 'shared' | 'none' | undefined) ?? '')
+    setMaintenance(card?.maintenance ?? '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signature])
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      putSourceAccessCard({
+        feedUrl,
+        acquisition: acquisition.trim() || null,
+        limits: limits.trim() || null,
+        credentialOwnership: ownership === '' ? null : ownership,
+        maintenance: maintenance.trim() || null,
+      }),
+    onSuccess: async () => {
+      setSaved(true)
+      editedRef.current = false
+      await queryClient.invalidateQueries({ queryKey: ['source-access-card', feedUrl] })
+    },
+  })
+
+  return (
+    <div className="flex flex-col gap-1.5 rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface)] p-2.5" data-testid="access-card-editor">
+      <p className="text-xs font-medium text-[var(--lumi-text-primary)]">接入说明卡</p>
+      <p className="text-[11px] leading-relaxed text-[var(--lumi-text-tertiary)]">
+        结构化记录这个来源怎么来的、有什么限制、凭据归谁。凭据只记归属标签，
+        绝不在此填写凭据值（凭据在 RSSHub 凭据库等专用入口管理）。
+      </p>
+      <label className="flex flex-col gap-1 text-xs text-[var(--lumi-text-secondary)]">
+        获取方式
+        <input
+          aria-label="获取方式"
+          value={acquisition}
+          onChange={(e) => {
+            editedRef.current = true
+            setSaved(false)
+            setAcquisition(e.target.value)
+          }}
+          placeholder="如：RSSHub /twitter/user/{id} 路由"
+          className={inputCls}
+        />
+      </label>
+      <label className="flex flex-col gap-1 text-xs text-[var(--lumi-text-secondary)]">
+        站点限制
+        <input
+          aria-label="站点限制"
+          value={limits}
+          onChange={(e) => {
+            editedRef.current = true
+            setSaved(false)
+            setLimits(e.target.value)
+          }}
+          placeholder="如：每小时约 100 次限流"
+          className={inputCls}
+        />
+      </label>
+      <label className="flex flex-col gap-1 text-xs text-[var(--lumi-text-secondary)]">
+        凭据归属（只记标签，不填值）
+        <select
+          aria-label="凭据归属"
+          value={ownership}
+          onChange={(e) => {
+            editedRef.current = true
+            setSaved(false)
+            setOwnership(e.target.value as 'self' | 'shared' | 'none' | '')
+          }}
+          className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 py-1.5 text-sm"
+        >
+          <option value="">未设置</option>
+          {Object.entries(CREDENTIAL_OWNERSHIP_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="flex flex-col gap-1 text-xs text-[var(--lumi-text-secondary)]">
+        维护说明
+        <input
+          aria-label="维护说明"
+          value={maintenance}
+          onChange={(e) => {
+            editedRef.current = true
+            setSaved(false)
+            setMaintenance(e.target.value)
+          }}
+          placeholder="如：Cookie 失效时如何续期"
+          className={inputCls}
+        />
+      </label>
+      {saveMutation.isError && (
+        <p role="alert" className="text-xs text-[var(--lumi-danger)]">{errMsg(saveMutation.error)}</p>
+      )}
+      {saved && saveMutation.isSuccess && (
+        <p role="status" className="text-xs text-[var(--lumi-success, var(--lumi-text-primary))]" data-testid="access-card-saved">
+          接入说明卡已保存。
+        </p>
+      )}
+      <div>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={saveMutation.isPending}
+          onClick={() => saveMutation.mutate()}
+        >
+          {saveMutation.isPending ? '保存中…' : '保存接入卡'}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 export function SourcePolicyDialog({
   open,
   onClose,
@@ -449,6 +683,10 @@ export function SourcePolicyDialog({
   const [aiDisabled, setAiDisabled] = useState(false)
   // N015：分时静音窗口（每周循环；命中期间不出现在通用时间线）。
   const [muteWindows, setMuteWindows] = useState<MuteWindow[]>([])
+  // N020：关注级别（服务端过滤通用时间线 + 今日队列排序依据）。
+  const [attentionLevel, setAttentionLevel] = useState<'must_read' | 'normal' | 'low'>('normal')
+  // N014：已接受的低频建议（纯记录，展示用）。
+  const refreshAdvisory = current?.refreshAdvisory ?? null
   // 服务端值按「内容签名」同步（键为签名而非对象引用）：react-query 的
   // data 引用在无关重渲染时会更换，按引用同步会把未保存编辑冲掉。
   // 用户一旦编辑（editedRef）即停同步——编辑不被服务端重置；保存成功后
@@ -473,10 +711,20 @@ export function SourcePolicyDialog({
           }))
         : [],
     )
+    setAttentionLevel(
+      current?.attentionLevel === 'must_read' || current?.attentionLevel === 'low'
+        ? current.attentionLevel
+        : 'normal',
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverSignature, open])
+  // N020：关注级别（≠normal）同样是服务端生效的覆盖维度，计入继承状态。
   const overrideActive =
-    policy !== 'rss' || fontSize !== '' || lineHeight !== '' || width !== ''
+    policy !== 'rss' ||
+    fontSize !== '' ||
+    lineHeight !== '' ||
+    width !== '' ||
+    attentionLevel !== 'normal'
   const muteError = muteWindowError(muteWindows)
   /** 标记用户已编辑：停掉服务端→表单的同步（保护未保存编辑）。 */
   const markEdited = () => {
@@ -488,6 +736,7 @@ export function SourcePolicyDialog({
       readerStyle: Record<string, number> | null
       aiDisabled?: boolean
       muteWindows?: MuteWindow[] | null
+      attentionLevel?: 'must_read' | 'normal' | 'low'
     }) =>
       setSourceOverride({ feedUrl, ...patch }),
     onSuccess: async () => {
@@ -509,6 +758,36 @@ export function SourcePolicyDialog({
             <option value="web">抓取原文正文（全文型站点）</option>
           </select>
         </label>
+        {/* N020：关注级别（时间线 ?attention= 服务端过滤 + 今日队列排序）。 */}
+        <label className="flex flex-col gap-1 text-xs text-[var(--lumi-text-secondary)]">
+          关注级别
+          <select
+            aria-label="关注级别"
+            value={attentionLevel}
+            data-testid="attention-level-select"
+            onChange={(e) => {
+              markEdited()
+              setAttentionLevel(e.target.value as 'must_read' | 'normal' | 'low')
+            }}
+            className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 py-1.5 text-sm"
+          >
+            <option value="must_read">必读（时间线可筛选，队列优先）</option>
+            <option value="normal">普通（默认）</option>
+            <option value="low">低（队列垫后，可用 excl_low 隐藏）</option>
+          </select>
+        </label>
+        {/* N014：已接受的低频建议（诚实标注：只记录决定，不改抓取行为）。 */}
+        {refreshAdvisory === 'accepted' && (
+          <p
+            role="status"
+            data-testid="refresh-advisory-accepted"
+            className="rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-hover)] px-2.5 py-1.5 text-[11px] leading-relaxed text-[var(--lumi-text-secondary)]"
+          >
+            已接受低频建议（N014 记录）。FreshRSS 的抓取粒度由实例 CRON_MIN
+            决定，greader API 无 per-feed 刷新频率；逐源频率需在 FreshRSS
+            原生界面调整。
+          </p>
+        )}
         <div className="grid grid-cols-3 gap-2">
           <label className="flex flex-col gap-1 text-xs text-[var(--lumi-text-secondary)]">
             字号
@@ -577,6 +856,8 @@ export function SourcePolicyDialog({
             </Button>
           </div>
         </div>
+        {/* N019：结构化接入说明卡（凭据只记归属标签）。 */}
+        <AccessCardEditor feedUrl={feedUrl} />
         {saveMutation.isError && (
           <p role="alert" className="text-xs text-[var(--lumi-danger)]">{errMsg(saveMutation.error)}</p>
         )}
@@ -585,7 +866,7 @@ export function SourcePolicyDialog({
             size="sm"
             variant="ghost"
             disabled={saveMutation.isPending}
-            onClick={() => saveMutation.mutate({ extractPolicy: 'rss', readerStyle: null, aiDisabled: false, muteWindows: null })}
+            onClick={() => saveMutation.mutate({ extractPolicy: 'rss', readerStyle: null, aiDisabled: false, muteWindows: null, attentionLevel: 'normal' })}
           >
             恢复跟随全局
           </Button>
@@ -603,6 +884,7 @@ export function SourcePolicyDialog({
                 },
                 aiDisabled,
                 muteWindows: muteWindows.length > 0 ? muteWindows : null,
+                attentionLevel,
               })
             }
           >

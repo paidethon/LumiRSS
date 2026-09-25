@@ -102,6 +102,9 @@ function apiSourceFixture(over: Partial<ApiSource> = {}): ApiSource {
     lastStatus: 'ok',
     lastError: null,
     lastSuccessAt: '2026-09-11T08:00:00Z',
+    maxRunsPerHour: 4,
+    respectRetryAfter: true,
+    nextAllowedRun: null,
     ...over,
   }
 }

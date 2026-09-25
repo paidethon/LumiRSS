@@ -18,10 +18,16 @@ from datetime import UTC
 
 from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from lumirss.config import RssHubSettings
 from lumirss.models import (
     CollectionTiming,
+    FreshnessAdvisoryApplyResult,
+    FreshnessSuggestionsResponse,
+    SourceAccessCardList,
+    SourceAccessCardUpdate,
+    SourceAccessCardView,
     SourceAliasHistoryItem,
     SourceAliasHistoryList,
     SourceAliasList,
@@ -35,6 +41,7 @@ from lumirss.models import (
     StaleSourcesResponse,
     SubscriptionVolumeItem,
     SubscriptionVolumeResponse,
+    VolumeDailyBucket,
 )
 from lumirss.util import utc_now
 
@@ -280,6 +287,20 @@ async def set_source_override(payload: SourceOverrideUpdate, request: Request) -
     # N015：分时静音窗口（子集校验，非法 → 422 稳定错误）。
     if "muteWindows" in fields:
         await set_mute_windows(request.app.state.db, payload.feedUrl, payload.muteWindows)
+    # N020：关注级别（非法值 → 422 稳定错误；None = 恢复 normal）。
+    if "attentionLevel" in fields:
+        from lumirss.source_overrides import (
+            AttentionLevelInvalid,
+            attention_level_valid,
+        )
+
+        if payload.attentionLevel is not None and not attention_level_valid(
+            payload.attentionLevel
+        ):
+            raise AttentionLevelInvalid(
+                "attentionLevel 必须是 'must_read'、'normal' 或 'low'。"
+            )
+        await store.set_attention_level(payload.feedUrl, payload.attentionLevel)
     # F066：per-source AI 禁用（服务端执行点统一判定，非仅 UI 隐藏）。
     if "aiDisabled" in fields:
         from lumirss.source_ai_gate import set_ai_disabled
@@ -287,6 +308,16 @@ async def set_source_override(payload: SourceOverrideUpdate, request: Request) -
         await set_ai_disabled(request.app.state.db, payload.feedUrl, bool(payload.aiDisabled))
         if payload.aiDisabled:
             await _drop_feed_from_rag(request, payload.feedUrl)
+    # F032/F034/F031：语言 / 未读警戒阈值 / 同步优先级。
+    if "language" in fields or "unreadAlertThreshold" in fields or "syncPriority" in fields:
+        metadata_kwargs: dict[str, object] = {}
+        if "language" in fields:
+            metadata_kwargs["language"] = payload.language
+        if "unreadAlertThreshold" in fields:
+            metadata_kwargs["unread_alert_threshold"] = payload.unreadAlertThreshold
+        if "syncPriority" in fields:
+            metadata_kwargs["sync_priority"] = payload.syncPriority
+        await store.set_source_metadata(payload.feedUrl, **metadata_kwargs)
     result = await store.get_override(payload.feedUrl)
     if result is None:
         result = {
@@ -298,6 +329,8 @@ async def set_source_override(payload: SourceOverrideUpdate, request: Request) -
             "readerStyle": None,
             "aiDisabled": False,
             "muteWindows": None,
+            "attentionLevel": "normal",
+            "refreshAdvisory": None,
             "updatedAt": utc_now(),
         }
     return SourceOverrideResult(**result)
@@ -433,7 +466,9 @@ async def replacement_preview(feedUrl: str, request: Request) -> dict[str, objec
     }
 
 @router.get("/api/v1/sources/volume", response_model=SubscriptionVolumeResponse)
-async def subscription_volume(request: Request, days: int = 7) -> SubscriptionVolumeResponse:
+async def subscription_volume(
+    request: Request, days: int = 7, daily: bool = False
+) -> SubscriptionVolumeResponse:
     """F12 订阅收件量概览（派生投影聚合，只读，不复制 RSS 全文）。
 
     口径（显式区分，未知为 null 不冒充零）：
@@ -467,13 +502,40 @@ async def subscription_volume(request: Request, days: int = 7) -> SubscriptionVo
         sync_rows = await db.fetch_all(
             "SELECT feed_url, MAX(published_at) AS overall_published, MAX(crawled_at) AS overall_crawled, MAX(fetched_at) AS latest_fetched FROM search_entries GROUP BY feed_url"
         )
+        # F034：投影口径的每源未读数（search_entries.read=0，派生可重建；
+        # 未覆盖 → None，不冒充零）。
+        unread_rows = await db.fetch_all(
+            "SELECT feed_url, COUNT(*) AS n FROM search_entries WHERE read = 0 GROUP BY feed_url"
+        )
+        unread_counts = {str(row["feed_url"]): int(row["n"]) for row in unread_rows}
     except Exception:  # noqa: BLE001 — 投影不可用时全部诚实降级为 null
         window_rows = []
         sync_rows = []
+        unread_counts = {}
     counts = {
         str(row["feed_url"]): (int(row["n"]), str(row["latest_published"]))
         for row in window_rows
     }
+    # F024/F025/F035：daily=true 时附每源按天分桶（发布时间口径，同
+    # publishedCount 的派生投影；投影未覆盖的源该值为 None）。日期为
+    # UTC 日（published_at 原文即 UTC ISO），窗口内无条目的日期不出现在
+    # 数组里——稀疏数组由前端补零渲染。
+    daily_buckets: dict[str, list[VolumeDailyBucket]] = {}
+    if daily:
+        daily_rows = await db.fetch_all(
+            "SELECT feed_url, substr(published_at, 1, 10) AS day, COUNT(*) AS n FROM search_entries WHERE published_at >= ? GROUP BY feed_url, substr(published_at, 1, 10)",
+            (since,),
+        )
+        grouped: dict[str, dict[str, int]] = {}
+        for row in daily_rows:
+            grouped.setdefault(str(row["feed_url"]), {})[str(row["day"])] = int(row["n"])
+        daily_buckets = {
+            feed_url: [
+                VolumeDailyBucket(date=day, count=count)
+                for day, count in sorted(days_map.items())
+            ]
+            for feed_url, days_map in grouped.items()
+        }
     timings: dict[str, dict[str, object]] = {}
     for row in sync_rows:
         crawled = row["overall_crawled"]
@@ -509,6 +571,12 @@ async def subscription_volume(request: Request, days: int = 7) -> SubscriptionVo
                 collectionTiming=(
                     CollectionTiming(**timing) if timing else None
                 ),
+                daily=(
+                    daily_buckets.get(subscription.feed_url)
+                    if daily
+                    else None
+                ),
+                unreadProjected=unread_counts.get(subscription.feed_url),
             )
         )
     return SubscriptionVolumeResponse(
@@ -557,3 +625,184 @@ def _latency_hint(published, crawled, projected_epoch) -> str | None:
     if seconds < 3600:
         return f"{label} ≈{int(seconds // 60)} 分钟"
     return f"{label} ≈{seconds / 3600:.1f} 小时"
+
+
+# ---- N014 自适应低活跃建议 ---------------------------------------------------
+
+
+class FreshnessAdvisoryApplyBody(BaseModel):
+    """POST /api/v1/sources/freshness-suggestions/apply body。"""
+
+    feedUrl: str
+
+
+@router.get(
+    "/api/v1/sources/freshness-suggestions",
+    response_model=FreshnessSuggestionsResponse,
+)
+async def freshness_suggestions(request: Request) -> dict[str, object]:
+    """N014：低活跃来源建议（只读；依据 = 派生投影 trailing 8 周画像）。
+
+    对每个订阅计算条目/周（yield）与相邻发布间隔中位数（medianGapDays），
+    yield < 0.5 且 gap > 14 天 → 建议「降低刷新频率」。诚实边界：FreshRSS
+    greader API 不暴露 per-feed 刷新频率（调度粒度由实例 CRON_MIN 决定），
+    因此本端点只产出建议；「应用」= 记录 refreshAdvisory=accepted 决定，
+    逐源频率需在 FreshRSS 原生界面调整（/api/v1/freshrss/native-url）。"""
+    from datetime import datetime, timedelta
+
+    from lumirss.models import FreshnessSuggestionItem
+    from lumirss.source_freshness import (
+        SCHEDULING_NOTE,
+        TRAILING_WEEKS,
+        compute_suggestions,
+    )
+    from lumirss.source_overrides import SourceOverrideStore
+
+    db = request.app.state.db
+    await db.migrate()
+    now = datetime.now(UTC)
+    cutoff = (now - timedelta(weeks=TRAILING_WEEKS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        window_rows = await db.fetch_all(
+            "SELECT feed_url, published_at FROM search_entries WHERE published_at >= ?",
+            (cutoff,),
+        )
+        pre_rows = await db.fetch_all(
+            "SELECT feed_url, MAX(published_at) AS published_at FROM search_entries WHERE published_at < ? GROUP BY feed_url",
+            (cutoff,),
+        )
+    except Exception:  # noqa: BLE001 — 投影不可用 → 诚实空建议
+        window_rows = []
+        pre_rows = []
+    suggestions = compute_suggestions(list(window_rows) + list(pre_rows), now=now)
+    if not suggestions:
+        return {
+            "items": [],
+            "schedulingNote": SCHEDULING_NOTE,
+            "basis": "search_entries 派生投影（published_at，trailing 8 周）",
+            "generatedAt": utc_now(),
+        }
+
+    feed_urls = {item["feedUrl"] for item in suggestions}
+    advisory_map: dict[str, str | None] = {}
+    for override in await SourceOverrideStore(db).list_overrides():
+        if override["feedUrl"] in feed_urls:
+            advisory_map[override["feedUrl"]] = override.get("refreshAdvisory")
+    by_url = {
+        subscription.feed_url: subscription
+        for subscription in await _get_adapter(request).list_subscriptions()
+    }
+    items: list[FreshnessSuggestionItem] = []
+    for item in suggestions:
+        subscription = by_url.get(item["feedUrl"])
+        if subscription is None:
+            continue  # 订阅已退订：建议失效（投影落后是暂态）
+        basis = item["basis"]
+        items.append(
+            FreshnessSuggestionItem(
+                feedUrl=item["feedUrl"],
+                subscriptionRef=subscription.subscription_ref,
+                title=subscription.title,
+                currentPattern=item["currentPattern"],
+                suggested=item["suggested"],
+                basis={
+                    "weeks": basis["weeks"],
+                    "yield": basis["yield"],
+                    "medianGapDays": basis["medianGapDays"],
+                },
+                refreshAdvisory=advisory_map.get(item["feedUrl"]),
+            )
+        )
+    return {
+        "items": items,
+        "schedulingNote": SCHEDULING_NOTE,
+        "basis": "search_entries 派生投影（published_at，trailing 8 周）",
+        "generatedAt": utc_now(),
+    }
+
+
+@router.post(
+    "/api/v1/sources/freshness-suggestions/apply",
+    response_model=FreshnessAdvisoryApplyResult,
+)
+async def apply_freshness_advisory(
+    body: FreshnessAdvisoryApplyBody, request: Request
+) -> dict[str, object]:
+    """N014：接受一条低活跃建议 = 在 Lumi 侧记录该决定。
+
+    诚实语义：**不改变任何抓取行为**——FreshRSS greader API 无 per-feed
+    ttl/timing 能力，调度粒度由实例 CRON_MIN 决定。记录结果在来源详情
+    呈现为「已接受低频建议」；重复接受是幂等的（同值 no-op）。未订阅的
+    feed → 404（不为不存在的来源记决定）。"""
+    from fastapi.responses import JSONResponse
+
+    from lumirss.source_freshness import SCHEDULING_NOTE
+    from lumirss.source_overrides import (
+        REFRESH_ADVISORY_ACCEPTED,
+        SourceOverrideStore,
+    )
+
+    subscribed = any(
+        subscription.feed_url == body.feedUrl
+        for subscription in await _get_adapter(request).list_subscriptions()
+    )
+    if not subscribed:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": {
+                    "type": "subscription_not_found",
+                    "message": "该来源不在当前账户的订阅中。",
+                }
+            },
+        )
+    store = SourceOverrideStore(request.app.state.db)
+    await store.set_refresh_advisory(body.feedUrl, REFRESH_ADVISORY_ACCEPTED)
+    return {
+        "feedUrl": body.feedUrl,
+        "refreshAdvisory": REFRESH_ADVISORY_ACCEPTED,
+        "schedulingNote": SCHEDULING_NOTE,
+    }
+
+
+# ---- N019 来源接入说明卡 -----------------------------------------------------
+
+
+@router.get("/api/v1/sources/access-card", response_model=SourceAccessCardView)
+async def get_source_access_card(
+    request: Request, feedUrl: str = Query(min_length=1, max_length=2048)
+) -> dict[str, object]:
+    """N019：单个来源的接入说明卡（无卡 → 全 null）。"""
+    from lumirss.source_access_cards import SourceAccessCardStore
+
+    return await SourceAccessCardStore(request.app.state.db).get_card(feedUrl)
+
+
+@router.get("/api/v1/sources/access-cards", response_model=SourceAccessCardList)
+async def list_source_access_cards(request: Request) -> dict[str, object]:
+    """N019：当前账户全部接入说明卡（per-user 库隔离，只见自己的）。"""
+    from lumirss.source_access_cards import SourceAccessCardStore
+
+    items = await SourceAccessCardStore(request.app.state.db).list_cards()
+    return {"items": items}
+
+
+@router.put("/api/v1/sources/access-card", response_model=SourceAccessCardView)
+async def put_source_access_card(
+    payload: SourceAccessCardUpdate, request: Request
+) -> dict[str, object]:
+    """N019：整卡 upsert（缺席字段 = 清空该字段）。
+
+    credentialOwnership 只接受归属标签 self/shared/none——**卡里没有
+    凭据值字段**（契约上不存在，schema 亦无 secret 列）；未知字段 → 422
+    invalid_access_card。"""
+    from lumirss.source_access_cards import SourceAccessCardStore
+
+    fields = {
+        key: getattr(payload, key)
+        for key in ("acquisition", "limits", "credentialOwnership", "maintenance")
+        if key in payload.model_fields_set
+    }
+    return await SourceAccessCardStore(request.app.state.db).put_card(
+        payload.feedUrl, fields
+    )

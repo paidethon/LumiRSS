@@ -62,6 +62,7 @@ import {
   SourceStaleAlertDialog,
   StaleSourcesPanel,
 } from '../SourceStaleAlert'
+import { SourceStatsDrawer } from '../SourceStatsDrawer'
 import {
   BatchMoveDialog,
   DuplicateSuspectsPanel,
@@ -217,6 +218,11 @@ export default function SubscriptionsPage() {
   // F001：异常来源筛选开关 + 新鲜度预警设置目标
   const [stalePanelOpen, setStalePanelOpen] = useState(false)
   const [staleTarget, setStaleTarget] = useState<{
+    feedUrl: string
+    title: string
+  } | null>(null)
+  // F023/F024/F025/F026/F035/F037/F038：来源统计与工具抽屉目标
+  const [statsTarget, setStatsTarget] = useState<{
     feedUrl: string
     title: string
   } | null>(null)
@@ -417,6 +423,12 @@ export default function SubscriptionsPage() {
         open={staleTarget !== null}
         onClose={() => setStaleTarget(null)}
         subscription={staleTarget}
+      />
+      <SourceStatsDrawer
+        open={statsTarget !== null}
+        onClose={() => setStatsTarget(null)}
+        feedUrl={statsTarget?.feedUrl ?? ''}
+        title={statsTarget?.title ?? ''}
       />
       <SourceNotesDialog
         open={notesTarget !== null}
@@ -887,6 +899,7 @@ export default function SubscriptionsPage() {
                             )}
                             items={[
                               { key: 'move', content: '移动到分类' },
+                              { key: 'stats', content: '统计与工具' },
                               { key: 'alias', content: '来源改名（别名）' },
                               { key: 'staleAlert', content: '新鲜度预警' },
                               { key: 'notes', content: '备注/维护记录' },
@@ -903,6 +916,11 @@ export default function SubscriptionsPage() {
                             ]}
                             onSelect={(key) => {
                               if (key === 'move') setMoveTarget(subscription)
+                              else if (key === 'stats')
+                                setStatsTarget({
+                                  feedUrl: subscription.feedUrl,
+                                  title: subscription.title,
+                                })
                               else if (key === 'alias') setAliasTarget(subscription)
                               else if (key === 'staleAlert')
                                 setStaleTarget({
@@ -934,6 +952,10 @@ export default function SubscriptionsPage() {
                                 })
                               else if (key === 'clearStart')
                                 overrideMutation.mutate({ feedUrl: subscription.feedUrl, showFrom: null })
+                              // N020：关注级别在来源设置对话框中设置（行菜单入口）。
+                              else if (key === 'sourcePolicy') setPolicyTarget(subscription)
+                              // N024：F047 路由参数对话框（行菜单入口；差异对照在其内）。
+                              else if (key === 'routeParams') setRouteParamsTarget(subscription)
                             }}
                           />
                         </li>

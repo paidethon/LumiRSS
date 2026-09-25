@@ -107,6 +107,30 @@ class NoActiveRun(Exception):
     """Cancel was requested but no turn is running for the thread."""
 
 
+class NotPaused(Exception):
+    """N164: resume was requested but the thread has no pause snapshot."""
+
+
+class ApprovalSuperseded(ApprovalInvalid):
+    """N167: the approval was revised — a newer approval row replaced it."""
+
+
+class StepNotFound(Exception):
+    """N169: no write-journal row for the requested step id."""
+
+
+class UndoUnsupported(Exception):
+    """N169: the recorded write tool has no undo semantics."""
+
+
+class UndoConflict(Exception):
+    """N169: the object was modified since the write — undo skipped."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
 def _new_id() -> str:
     return str(_uuid.uuid4())
 
@@ -417,6 +441,209 @@ class AgentStore:
         )
         return [str(r["key"])[len(_RUN_KEY_PREFIX) :] for r in rows]
 
+    # -- N164 pause snapshots (agent_threads.paused_state_json) --------------
+
+    async def save_pause_state(self, thread_id: str, state: dict[str, Any]) -> None:
+        await self._db.migrate()
+        await self._db.execute(
+            "UPDATE agent_threads SET paused_state_json = ? WHERE id = ?",
+            (json.dumps(state, ensure_ascii=False), thread_id),
+        )
+
+    async def load_pause_state(self, thread_id: str) -> dict[str, Any] | None:
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT paused_state_json FROM agent_threads WHERE id = ?",
+            (thread_id,),
+        )
+        if row is None or not row["paused_state_json"]:
+            return None
+        try:
+            state = json.loads(str(row["paused_state_json"]))
+        except json.JSONDecodeError:
+            return None
+        return state if isinstance(state, dict) else None
+
+    async def clear_pause_state(self, thread_id: str) -> None:
+        await self._db.migrate()
+        await self._db.execute(
+            "UPDATE agent_threads SET paused_state_json = NULL WHERE id = ?",
+            (thread_id,),
+        )
+
+    async def get_tool_result(
+        self, thread_id: str, call_id: str
+    ) -> dict[str, Any] | None:
+        """N164/N168: the newest executed tool row for a callId (its
+        recorded result is reused on resume/retry — side effects are
+        never re-executed because a transcript row already exists)."""
+        await self._db.migrate()
+        rows = await self._db.fetch_all(
+            "SELECT id, role, content FROM agent_messages WHERE thread_id = ? AND role = 'tool' ORDER BY seq ASC LIMIT 500",
+            (thread_id,),
+        )
+        found: dict[str, Any] | None = None
+        for row in rows:
+            try:
+                content = json.loads(str(row["content"]))
+            except json.JSONDecodeError:
+                continue
+            if str(content.get("callId") or "") != call_id:
+                continue
+            if content.get("result") is not None:
+                found = {
+                    "messageId": str(row["id"]),
+                    "content": content,
+                }
+        return found
+
+    # -- N165 thread budget (agent_threads.budget_json / budget_used_json) ---
+
+    async def get_budget(self, thread_id: str) -> dict[str, Any] | None:
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT budget_json FROM agent_threads WHERE id = ?", (thread_id,)
+        )
+        if row is None or not row["budget_json"]:
+            return None
+        try:
+            budget = json.loads(str(row["budget_json"]))
+        except json.JSONDecodeError:
+            return None
+        return budget if isinstance(budget, dict) else None
+
+    async def get_budget_used(self, thread_id: str) -> dict[str, Any]:
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT budget_used_json FROM agent_threads WHERE id = ?", (thread_id,)
+        )
+        if row is not None and row["budget_used_json"]:
+            try:
+                used = json.loads(str(row["budget_used_json"]))
+                if isinstance(used, dict):
+                    return used
+            except json.JSONDecodeError:
+                pass
+        # Fresh thread: nothing consumed yet. tokensKnown starts True —
+        # the "unknown" verdict comes from the first real round missing
+        # provider usage, never from an empty ledger.
+        return {"toolCalls": 0, "turns": 0, "tokens": 0, "tokensKnown": True}
+
+    async def set_budget_used(self, thread_id: str, used: dict[str, Any]) -> None:
+        await self._db.migrate()
+        await self._db.execute(
+            "UPDATE agent_threads SET budget_used_json = ? WHERE id = ?",
+            (json.dumps(used, ensure_ascii=False), thread_id),
+        )
+
+    # -- N167/N168/N169 write journal (agent_tool_writes) ---------------------
+
+    async def find_replayed_write(
+        self, thread_id: str, tool: str, args: dict[str, Any], turn_key: str
+    ) -> dict[str, Any] | None:
+        """N168: an executed successful write with the SAME
+        (tool, args_hash, turn_key) — its cached result must be reused;
+        the caller must NOT execute the write again."""
+        await self._db.migrate()
+        idempotency_key = f"{tool}:{args_hash(tool, args)}:{turn_key}"
+        row = await self._db.fetch_one(
+            "SELECT id, result_json FROM agent_tool_writes WHERE idempotency_key = ?",
+            (idempotency_key,),
+        )
+        if row is None:
+            return None
+        try:
+            cached = json.loads(str(row["result_json"] or "{}"))
+        except json.JSONDecodeError:
+            cached = {}
+        return {"id": str(row["id"]), "result": cached}
+
+    async def record_tool_write(
+        self,
+        thread_id: str,
+        call_id: str,
+        tool: str,
+        args: dict[str, Any],
+        turn_key: str,
+        *,
+        result: dict[str, Any],
+        before: dict[str, Any] | None = None,
+        after: dict[str, Any] | None = None,
+        undoable: bool = False,
+    ) -> dict[str, Any]:
+        """Insert one executed-write row (idempotency + undo evidence).
+
+        Returns the row dict (``id``). Callers pre-check
+        :meth:`find_replayed_write` — a racing duplicate insert is
+        impossible for serialized per-thread turns."""
+        await self._db.migrate()
+        hash_value = args_hash(tool, args)
+        idempotency_key = f"{tool}:{hash_value}:{turn_key}"
+        row_id = _new_id()
+        now = utc_now()
+        await self._db.execute(
+            "INSERT INTO agent_tool_writes (id, thread_id, call_id, tool, args_json, args_hash, turn_key, idempotency_key, before_json, after_json, undoable, result_json, undone_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)",
+            (
+                row_id,
+                thread_id,
+                call_id,
+                tool,
+                json.dumps(args, ensure_ascii=False),
+                hash_value,
+                turn_key,
+                idempotency_key,
+                json.dumps(before, ensure_ascii=False) if before is not None else None,
+                json.dumps(after, ensure_ascii=False) if after is not None else None,
+                1 if undoable else 0,
+                json.dumps(result, ensure_ascii=False),
+                now,
+            ),
+        )
+        return {"id": row_id, "result": result}
+
+    async def get_tool_write(self, thread_id: str, step_id: str) -> dict[str, Any] | None:
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT id, thread_id, call_id, tool, args_json, args_hash, turn_key, before_json, after_json, undoable, result_json, undone_at, created_at FROM agent_tool_writes WHERE id = ? AND thread_id = ?",
+            (step_id, thread_id),
+        )
+        if row is None:
+            return None
+        return self._tool_write_row(row)
+
+    @staticmethod
+    def _tool_write_row(row: Any) -> dict[str, Any]:
+        def _load(raw: Any) -> Any:
+            if not raw:
+                return None
+            try:
+                return json.loads(str(raw))
+            except json.JSONDecodeError:
+                return None
+
+        return {
+            "id": str(row["id"]),
+            "threadId": str(row["thread_id"]),
+            "callId": str(row["call_id"]),
+            "tool": str(row["tool"]),
+            "args": _load(row["args_json"]) or {},
+            "argsHash": str(row["args_hash"]),
+            "turnKey": str(row["turn_key"]),
+            "before": _load(row["before_json"]),
+            "after": _load(row["after_json"]),
+            "undoable": bool(row["undoable"]),
+            "result": _load(row["result_json"]),
+            "undoneAt": row["undone_at"],
+            "createdAt": str(row["created_at"]),
+        }
+
+    async def mark_tool_write_undone(self, step_id: str) -> None:
+        await self._db.migrate()
+        await self._db.execute(
+            "UPDATE agent_tool_writes SET undone_at = ? WHERE id = ?",
+            (utc_now(), step_id),
+        )
+
     # -- approvals ---------------------------------------------------------
 
     async def create_approval(
@@ -452,16 +679,22 @@ class AgentStore:
     ) -> dict[str, Any] | None:
         await self._db.migrate()
         row = await self._db.fetch_one(
-            "SELECT id, call_id, tool, status FROM agent_approvals WHERE id = ? AND thread_id = ?",
+            "SELECT id, call_id, tool, args_json, status, superseded_by FROM agent_approvals WHERE id = ? AND thread_id = ?",
             (approval_id, thread_id),
         )
         if row is None:
             return None
+        try:
+            args = json.loads(str(row["args_json"]))
+        except json.JSONDecodeError:
+            args = {}
         return {
             "approvalId": str(row["id"]),
             "callId": str(row["call_id"]),
             "tool": str(row["tool"]),
+            "args": args if isinstance(args, dict) else {},
             "status": str(row["status"]),
+            "supersededBy": row["superseded_by"],
         }
 
     async def take_approval(
@@ -476,14 +709,20 @@ class AgentStore:
         ``args_hash_expected`` (optional, legacy callers) must match the
         ROW's stored hash when supplied — the comparison target is the
         approval row, not a re-derivation from the message log.
+        A superseded approval (N167 revise) is unusable: 410, never a
+        silent execute of stale args.
         """
         await self._db.migrate()
         row = await self._db.fetch_one(
-            "SELECT id, call_id, tool, args_json, args_hash, status, created_at FROM agent_approvals WHERE id = ? AND thread_id = ?",
+            "SELECT id, call_id, tool, args_json, args_hash, status, superseded_by, created_at FROM agent_approvals WHERE id = ? AND thread_id = ?",
             (approval_id, thread_id),
         )
         if row is None:
             raise ApprovalInvalid("批准记录不存在。")
+        if str(row["status"]) == "superseded":
+            raise ApprovalSuperseded(
+                f"批准已被修订（新批准：{row['superseded_by'] or '—'}），本批准作废。"
+            )
         if str(row["status"]) != "pending":
             raise ApprovalInvalid("批准记录已被处理。")
         args = json.loads(str(row["args_json"]))
@@ -539,6 +778,63 @@ class AgentStore:
             (thread_id,),
         )
         return row is not None
+
+    async def get_pending_approval_id(self, thread_id: str) -> str | None:
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT id FROM agent_approvals WHERE thread_id = ? AND status = 'pending' ORDER BY created_at ASC LIMIT 1",
+            (thread_id,),
+        )
+        return str(row["id"]) if row is not None else None
+
+    async def revise_approval(
+        self, thread_id: str, approval_id: str, new_args: dict[str, Any]
+    ) -> dict[str, Any]:
+        """N167: supersede a pending approval with a NEW row bound to the
+        revised args (new args_hash).
+
+        The old row becomes status='superseded' (take → 410) and points
+        at its replacement; the new row keeps the same call_id so the
+        provider tool-call protocol still closes with exactly one result.
+        Expired/decided approvals are NOT revisable — raise honestly.
+        """
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT id, call_id, tool, args_json, status, created_at FROM agent_approvals WHERE id = ? AND thread_id = ?",
+            (approval_id, thread_id),
+        )
+        if row is None:
+            raise ApprovalInvalid("批准记录不存在。")
+        status = str(row["status"])
+        if status == "superseded":
+            raise ApprovalSuperseded("批准已被修订，请在最新批准上操作。")
+        created = datetime.fromisoformat(str(row["created_at"]))
+        if status == "pending" and datetime.fromisoformat(utc_now()) - created > timedelta(
+            minutes=APPROVAL_TTL_MINUTES
+        ):
+            await self._db.execute(
+                "UPDATE agent_approvals SET status = 'expired', decided_at = ? WHERE id = ? AND status = 'pending'",
+                (utc_now(), approval_id),
+            )
+            raise ApprovalInvalid("批准已超时，无法修订。")
+        if status != "pending":
+            raise ApprovalInvalid("批准记录已被处理，无法修订。")
+        # Mint the replacement FIRST so the superseded row can point at it.
+        fresh = await self.create_approval(
+            thread_id, str(row["call_id"]), str(row["tool"]), new_args
+        )
+
+        def _supersede(connection):
+            cursor = connection.execute(
+                "UPDATE agent_approvals SET status = 'superseded', superseded_by = ?, decided_at = ? WHERE id = ? AND thread_id = ? AND status = 'pending'",
+                (fresh["approvalId"], utc_now(), approval_id, thread_id),
+            )
+            return cursor.rowcount
+
+        superseded = await transaction(self._db, _supersede)
+        if not superseded:
+            raise ApprovalInvalid("批准记录已被处理，无法修订。")
+        return fresh
 
     async def expire_stale(self, thread_id: str | None = None) -> int:
         """Expire pending approvals past the TTL (optionally one thread)."""

@@ -1,6 +1,6 @@
 /** Gate F 测试 — 外观补全 + 阅读 P0/P1 + OrigRead 四页（AC10–AC27）。 */
 
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen , within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, expect, it, vi } from 'vitest'
 import SettingsModal from '../components/settings/SettingsModal'
@@ -270,9 +270,13 @@ describe('备份页（F5，AC26/AC27 纯函数层）', () => {
     expect(screen.getByRole('button', { name: /备份并上传 WebDAV/ })).toBeEnabled()
     expect(screen.getByText('备份历史')).toBeInTheDocument()
     expect(await screen.findByText('暂无备份')).toBeInTheDocument()
-    // WebDAV（写只读密码）
+    // WebDAV（写只读密码）——ns1 合并后数据设置页新增配额等其它
+    // 「保存」按钮，断言必须锚定在 WebDAV 卡片作用域内。
     expect(screen.getByText('WebDAV 远程备份')).toBeInTheDocument()
-    expect(await screen.findByRole('button', { name: '保存' })).toBeDisabled()
+    const webdavCard = screen.getByTestId('webdav-card')
+    expect(
+      await within(webdavCard).findByRole('button', { name: '保存' }),
+    ).toBeDisabled()
     // 0017 配置迁移能力保留（区块标题为「配置迁移（本设备 UI 设置）」）
     expect(screen.getByText('配置迁移（本设备 UI 设置）')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /导出配置/ })).toBeEnabled()

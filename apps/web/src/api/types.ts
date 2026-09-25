@@ -60,6 +60,10 @@ export type SourceDiscoveryResponse = Schemas['SourceDiscoveryResponse']
 export type RssHubParameter = Schemas['RssHubParameter']
 export type RssHubRoute = Schemas['RssHubRoute']
 export type RssHubRoutesResponse = Schemas['RssHubCatalog']
+// N023 路由依赖元数据（三态：true/false/null，null = 未知，诚实呈现）
+export type RssHubRequires = Schemas['RssHubRequires']
+// N024 路由变更差异预览（只读对照；应用走既有迁移端点）
+export type RssHubParamsDiffResult = Schemas['RssHubParamsDiffResult']
 // N021 路由收藏 / 最近使用（params 内敏感值只以 '***' 哨兵出现）
 export type RssHubFavoriteItem = Schemas['RssHubFavoriteItem']
 export type RssHubRecentItem = Schemas['RssHubRecentItem']
@@ -68,6 +72,16 @@ export type RssHubRouteRun = Schemas['RssHubRouteRun']
 export type RssHubRouteRuns = Schemas['RssHubRouteRuns']
 // N027 预览缓存控制（refresh 单路由强制重取）
 export type RssHubRefreshResult = Schemas['RssHubRefreshResult']
+// N029 路由与来源关系图（我的来源；管理员聚合只有计数）
+export type RssHubRouteSourceEntry = Schemas['RssHubRouteSourceEntry']
+export type RssHubRouteSourceItem = Schemas['RssHubRouteSourceItem']
+export type RssHubRouteMySources = Schemas['RssHubRouteMySources']
+export type RssHubRouteUsage = Schemas['RssHubRouteUsage']
+// N030 路由可复用参数方案（params 内敏感值只以 '***' 哨兵出现）
+export type RssHubParamPresetItem = Schemas['RssHubParamPresetItem']
+export type RssHubParamPresetApply = Schemas['RssHubParamPresetApply']
+// N035 重定向链（F044 迁移向导展示；url 的 query 凭据值服务端已掩码）
+export type RedirectHop = Schemas['RedirectHop']
 
 // ---- 0015/0016 AI ----
 
@@ -126,6 +140,18 @@ export type RemoteBackupsResponse = Schemas['RemoteBackupsResponse']
 export type RestorePreview = Schemas['RestorePreview']
 export type RestoreResult = Schemas['RestoreResult']
 
+// ---- N181 数据外发 / N185 备份范围 / N186 独立自检 / N188 到期提醒 ----
+
+export type DataFlowItem = Schemas['DataFlowItem']
+export type DataFlowsResponse = Schemas['DataFlowsResponse']
+export type BackupScopeInclude = Schemas['BackupScopeInclude']
+export type BackupScopePreview = Schemas['BackupScopePreview']
+export type BackupVerifyReport = Schemas['BackupVerifyReport']
+export type BackupVerifyFindings = Schemas['BackupVerifyFindings']
+export type BackupVerifyIssues = Schemas['BackupVerifyIssues']
+export type RetentionNoticeData = Schemas['RetentionNotice']
+export type RetentionPostponeData = Schemas['RetentionPostponeResult']
+
 // ---- 0022 Global Search ----
 
 export type SearchItem = Schemas['SearchItem']
@@ -146,6 +172,15 @@ export type SearchDistributionSource = Schemas['SearchDistributionSource']
 export type SearchDistributionDay = Schemas['SearchDistributionDay']
 export type TagMergePreview = Schemas['TagMergePreview']
 export type TagMergeResult = Schemas['TagMergeResult']
+// N141 搜索快照 / N149 主题演变时间线 / N150 标签合并撤销
+export type SearchSnapshotView = Schemas['SearchSnapshotView']
+export type SearchSnapshotList = Schemas['SearchSnapshotList']
+export type SearchSnapshotRankChange = Schemas['SearchSnapshotRankChange']
+export type SearchSnapshotCompareResult = Schemas['SearchSnapshotCompareResult']
+export type SearchTimelineMonth = Schemas['SearchTimelineMonth']
+export type SearchTimelineAnnotation = Schemas['SearchTimelineAnnotation']
+export type SearchTimelineResult = Schemas['SearchTimelineResult']
+export type TagMergeUndoResult = Schemas['TagMergeUndoResult']
 
 // ---- phase2 M1 Library domain ----
 

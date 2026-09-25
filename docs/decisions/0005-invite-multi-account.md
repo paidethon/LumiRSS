@@ -1,6 +1,13 @@
 # ADR 0005 — Invite-Based Multi-Account with Control and Per-User Databases
 
-Status: Accepted
+Status: Accepted（部分被 [ADR 0006](0006-public-registration.md) 取代）
+
+> **Partially superseded (2026-09):** [ADR 0006](0006-public-registration.md)
+> introduced optional public registration as an instance-level,
+> default-off policy, so this ADR's "invite-only, no public registration"
+> exclusivity no longer holds. Everything else here — the control
+> database + per-user databases split, server-derived identity, FreshRSS
+> pool provisioning — remains in force unchanged.
 
 ## Context
 
@@ -54,5 +61,7 @@ isolation.
   requires no global schema change.
 - Rolling back to a pre-multi-account image is NOT a drop-in: the data
   layout changed irreversibly; restore the pre-upgrade backup instead.
-- Multi-tenancy (public sign-up, quotas, tenant isolation guarantees,
-  public-internet hardening) remains out of scope — see the PRD.
+- Multi-tenancy (quotas, tenant isolation guarantees, public-internet
+  hardening) remains out of scope — see the PRD. (Optional, default-off
+  public registration later became a per-instance choice — see
+  [ADR 0006](0006-public-registration.md).)

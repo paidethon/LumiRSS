@@ -22,11 +22,13 @@ from fastapi.responses import JSONResponse
 
 from lumirss.api_source_store import ApiSourceStore
 from lumirss.api_sources import (
+    ApiSourceBudgetExhausted,
     ApiSourceExpressionError,
     ApiSourceFetchFailed,
     ApiSourceInvalid,
     ApiSourceNotFound,
     ApiSourcePreviewError,
+    ApiSourceRateLimited,
     atom_base,
     atom_path,
     compute_feed_updated,
@@ -40,29 +42,43 @@ from lumirss.api_sources import (
     parse_pagination,
     preview_atom_entries,
     validate_field_map,
+    validate_items_expr,
     validate_pagination,
+)
+from lumirss.credential_rotation import (
+    API_SOURCE_KIND,
+    CredentialTestFailed,
+    match_fallback,
+    store_fallback,
 )
 from lumirss.models import (
     ApiSource,
     ApiSourceConfirmSchemaResult,
     ApiSourceCreate,
+    ApiSourceCredentialResult,
+    ApiSourceCredentialTestRequest,
     ApiSourceListResponse,
     ApiSourcePaginationDryRun,
     ApiSourcePreviewRequest,
     ApiSourcePreviewResult,
+    ApiSourceSamplePreviewRequest,
     ApiSourceUpdate,
 )
 from lumirss.token_hash import verify_token
 
-from ..deps import _get_api_source_store, _get_control_adapter
+from ..deps import _get_api_source_store, _get_control_adapter, _user_secrets
 
 router = APIRouter()
 
 _PREVIEW_ITEM_LIMIT = 5
+# N130: the credential probe runs the real request shape under a tight
+# bound (bounded 5s) and never persists anything it sees.
+_PROBE_TIMEOUT_SECONDS = 5.0
 
 
 def _model(record, *, with_secret: bool = False) -> ApiSource:
     import json as _json
+    from datetime import UTC, datetime
 
     drift = None
     if record.schema_drift:
@@ -70,6 +86,18 @@ def _model(record, *, with_secret: bool = False) -> ApiSource:
             drift = _json.loads(record.schema_drift)
         except _json.JSONDecodeError:
             drift = None
+    # N129: only a FUTURE next_allowed_run is worth showing — a past one
+    # means the source may run again right now, so report None honestly.
+    next_allowed = record.next_allowed_run
+    if next_allowed is not None:
+        try:
+            target = datetime.fromisoformat(next_allowed.replace("Z", "+00:00"))
+            if target.tzinfo is None:
+                target = target.replace(tzinfo=UTC)
+            if target <= datetime.now(UTC):
+                next_allowed = None
+        except ValueError:
+            next_allowed = None
     return ApiSource(
         uuid=record.uuid,
         name=record.name,
@@ -86,6 +114,9 @@ def _model(record, *, with_secret: bool = False) -> ApiSource:
         pagination=_json.loads(record.pagination),
         confirmedSchema=bool(record.confirmed_schema),
         schemaDrift=drift,
+        maxRunsPerHour=record.max_runs_per_hour,
+        respectRetryAfter=record.respect_retry_after,
+        nextAllowedRun=next_allowed,
     )
 
 
@@ -139,6 +170,7 @@ async def create_source(payload: ApiSourceCreate, request: Request) -> ApiSource
         items_expr=payload.itemsExpr,
         field_map=payload.fieldMap,
         pagination=payload.pagination,
+        max_runs_per_hour=payload.maxRunsPerHour,
     )
     from lumirss.machine_auth import index_machine_token
 
@@ -175,6 +207,7 @@ async def update_source(
         field_map=payload.fieldMap,
         enabled=payload.enabled,
         pagination=payload.pagination,
+        max_runs_per_hour=payload.maxRunsPerHour,
     )
     if record is None:
         raise ApiSourceNotFound(source_uuid)
@@ -266,6 +299,171 @@ async def preview_source(
     )
 
 
+@router.post(
+    "/api/v1/api-sources/preview-sample",
+    response_model=ApiSourcePreviewResult,
+)
+async def preview_sample_source(
+    payload: ApiSourceSamplePreviewRequest, request: Request
+) -> ApiSourcePreviewResult:
+    """N128 离线样例预览：the SAME mapping + Atom-preview pipeline as the
+    live preview, run on the PASTED sample.
+
+    Zero network (the endpoint is never dialed), zero storage (nothing
+    about the request — payload, expressions, and there are no auth
+    headers in play at all — is written anywhere), and no header echo by
+    construction (the response model has no such field). ``sampleMode``
+    marks the response honestly as offline. A sample that maps to ZERO
+    items (missing id/title fields, wrong items expression) is surfaced
+    as a stable 422 — missing data is never fabricated."""
+    validate_items_expr(payload.itemsExpr)
+    validate_field_map(payload.fieldMap)
+    try:
+        items = map_items(payload.samplePayload, payload.itemsExpr.strip(), payload.fieldMap)
+    except ApiSourceExpressionError as exc:
+        raise ApiSourcePreviewError(str(exc)) from exc
+    if not items:
+        raise ApiSourcePreviewError(
+            "样例映射结果为空：请检查 items 表达式与 id/title 字段映射"
+            "（样例中缺失的字段不会被编造）。"
+        )
+    return ApiSourcePreviewResult(
+        items=[
+            {key: item.get(key) for key in item}
+            for item in items[:_PREVIEW_ITEM_LIMIT]
+        ],
+        totalAvailable=len(items),
+        atomPreview=preview_atom_entries(items),
+        sampleMode=True,
+    )
+
+
+# -- N130 来源秘密轮换预演 -----------------------------------------------------
+
+
+async def _probe_api_source_endpoint(record, request: Request) -> ApiSourceCredentialResult:
+    """Read-only dry probe of the source's endpoint (same request shape
+    as a real fetch, bounded 5s). No persistence: the probe writes
+    nothing to last_status/last-good — it is a rehearsal, not a run."""
+    import time
+
+    from lumirss.adapters.freshrss import (
+        AuthenticationError,
+        UpstreamConnectionError,
+    )
+
+    started = time.monotonic()
+
+    def _result(ok: bool, status_class: str) -> ApiSourceCredentialResult:
+        return ApiSourceCredentialResult(
+            ok=ok,
+            statusClass=status_class,
+            latencyMs=max(0, int((time.monotonic() - started) * 1000)),
+        )
+
+    try:
+        await fetch_json(
+            request.app.state.http_client,
+            record.endpoint,
+            timeout_seconds=_PROBE_TIMEOUT_SECONDS,
+        )
+    except ApiSourceRateLimited:
+        # A 429 IS a reachable, answering endpoint — the credential is
+        # not the problem. Honest class, probe not counted as failure.
+        return _result(True, "rate_limited")
+    except ApiSourceFetchFailed as exc:
+        if "HTTP 4" in str(exc) or "HTTP 5" in str(exc):
+            return _result(False, "http_error")
+        if "JSON" in str(exc):
+            return _result(False, "invalid_payload")
+        return _result(False, "network_error")
+    except (AuthenticationError, UpstreamConnectionError):
+        return _result(False, "network_error")
+    return _result(True, "ok")
+
+
+def _secrets(request: Request):
+    return _user_secrets(request)
+
+
+@router.post(
+    "/api/v1/api-sources/{source_uuid}/credentials/test",
+    response_model=ApiSourceCredentialResult,
+)
+async def test_api_source_credential(
+    source_uuid: str, payload: ApiSourceCredentialTestRequest, request: Request
+) -> ApiSourceCredentialResult:
+    """N130 轮换预演（API 来源）：shape check + read-only endpoint probe.
+
+    Nothing is swapped; the current credential stays live no matter the
+    outcome. The response is masked ({ok, statusClass, latencyMs}) — the
+    credential and every header stay unechoed."""
+    store: ApiSourceStore = _get_api_source_store(request)
+    record = await store.get(source_uuid)
+    if record is None:
+        raise ApiSourceNotFound(source_uuid)
+    return await _run_credential_test(payload, record, request)
+
+
+@router.post(
+    "/api/v1/api-sources/{source_uuid}/credentials/rotate",
+    response_model=ApiSourceCredentialResult,
+)
+async def rotate_api_source_credential(
+    source_uuid: str, payload: ApiSourceCredentialTestRequest, request: Request
+) -> ApiSourceCredentialResult:
+    """N130 测试并轮换（API 来源）：test first, then one-statement swap.
+
+    The probe (shape + endpoint reachability, read-only) runs INSIDE the
+    same request boundary before any write: a failure raises the stable
+    422 ``credential_test_failed`` and the current credential is
+    UNTOUCHED. On success the stored hash is swapped atomically, the new
+    token is indexed for the machine channel, and the OLD hash is parked
+    in the user's SecretsStore for a 10-minute fallback window (reads
+    prefer the new credential; a fallback hit is flagged on the source)
+    until the lazy sweep prunes it. The response is masked — no secret,
+    no atom path echo."""
+    store: ApiSourceStore = _get_api_source_store(request)
+    record = await store.get(source_uuid)
+    if record is None:
+        raise ApiSourceNotFound(source_uuid)
+    probe = await _run_credential_test(payload, record, request)
+    if not probe.ok:
+        raise CredentialTestFailed(
+            probe.statusClass,
+            f"新凭据预演未通过（{probe.statusClass}），当前凭据未改动。请先解决端点问题再轮换。",
+        )
+    from lumirss.machine_auth import index_machine_token
+
+    old_hash = await store.swap_secret_hash(source_uuid, payload.newCredential)
+    await index_machine_token(request, payload.newCredential, "api_source")
+    if old_hash is not None:
+        store_fallback(_secrets(request), API_SOURCE_KIND, source_uuid, old_hash)
+    return ApiSourceCredentialResult(
+        ok=True,
+        statusClass="ok",
+        latencyMs=probe.latencyMs,
+        note=(
+            "已轮换。新 Atom 地址 = /feeds/"
+            f"{source_uuid}.<新凭据>.atom（请在宽限期内替换 FreshRSS 订阅；"
+            "旧地址保留 10 分钟，之后失效）。"
+        ),
+    )
+
+
+async def _run_credential_test(
+    payload: ApiSourceCredentialTestRequest, record, request: Request
+) -> ApiSourceCredentialResult:
+    """Shared test-first step: shape gate then endpoint probe."""
+    try:
+        from lumirss.credential_rotation import validate_credential_shape
+
+        validate_credential_shape(payload.newCredential)
+    except CredentialTestFailed as exc:
+        raise CredentialTestFailed(exc.status_class, str(exc)) from exc
+    return await _probe_api_source_endpoint(record, request)
+
+
 async def _dry_run_pagination(
     payload: ApiSourcePreviewRequest, request: Request
 ) -> ApiSourcePreviewResult:
@@ -312,7 +510,15 @@ async def serve_atom(source_uuid: str, secret: str, request: Request) -> Respons
     content-derived monotonic feed updated and the matching ETag; an
     upstream failure serves that body with ``X-Lumi-Stale: 1`` (FreshRSS
     keeps its cached copy functional) and only a source with no last-good
-    body falls back to the 502 stub."""
+    body falls back to the 502 stub.
+
+    N129 限额友好：every upstream run consults a persisted per-source
+    token bucket (api_source_runs, trailing hour, pruned on consult);
+    over budget → 429 ``budget_exhausted`` + Retry-After (FreshRSS
+    backs off — that is the point). An upstream 429 with Retry-After
+    stores ``next_allowed_run`` and serves the last-good body. Lumi
+    never works around a rate limit (no alternate credentials, no
+    retries that dodge the upstream's verdict)."""
     from lumirss.machine_auth import resolve_machine_user
 
     uid = await resolve_machine_user(request, secret)
@@ -321,14 +527,35 @@ async def serve_atom(source_uuid: str, secret: str, request: Request) -> Respons
         raise ApiSourceNotFound(source_uuid)
     store: ApiSourceStore = _get_api_source_store(request)
     record = await store.get(source_uuid)
+    used_fallback = False
     if record is None or not verify_token(secret, record.secret):
-        raise ApiSourceNotFound(source_uuid)
+        # N130 fallback window: a just-rotated source honors the OLD
+        # credential for 10 minutes — the hit is flagged below (after the
+        # run outcome is recorded, so the flag survives mark_success).
+        # Existence never leaks (same 404 as an unknown token when
+        # neither matches).
+        if record is not None and match_fallback(
+            _secrets(request), API_SOURCE_KIND, source_uuid, secret
+        ):
+            used_fallback = True
+        else:
+            raise ApiSourceNotFound(source_uuid)
     if not record.enabled:
         return Response(status_code=404, media_type="application/xml")
+    # N129: the persisted token bucket decides whether this pull may
+    # hit the upstream at all.
+    blocked_until = await store.exhausted_until(
+        source_uuid, record.max_runs_per_hour
+    )
+    if blocked_until is not None:
+        await store.set_next_allowed_run(source_uuid, blocked_until)
+        raise ApiSourceBudgetExhausted(blocked_until)
     try:
         if parse_pagination(record.pagination).get("mode", "none") == "none":
+            await store.record_run(source_uuid)
             payloads = [await fetch_json(request.app.state.http_client, record.endpoint)]
         else:
+            await store.record_run(source_uuid)
             payloads, _stop_reason = await fetch_json_pages(
                 request.app.state.http_client,
                 record.endpoint,
@@ -338,6 +565,28 @@ async def serve_atom(source_uuid: str, secret: str, request: Request) -> Respons
         items: list[dict[str, object]] = []
         for payload in payloads:
             items.extend(map_items(payload, record.items_expr, record.field_map))
+    except ApiSourceRateLimited as exc:
+        # N129: honor the upstream's Retry-After — persist the verdict,
+        # serve the last-known-good body, never dodge the limit.
+        from datetime import UTC, datetime, timedelta
+
+        seconds = exc.retry_after_seconds if exc.retry_after_seconds is not None else 3600
+        next_allowed = (
+            datetime.now(UTC) + timedelta(seconds=seconds)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        await store.set_next_allowed_run(source_uuid, next_allowed)
+        await store.mark_error(
+            source_uuid,
+            "rate_limited",
+            f"上游限流（HTTP 429），下次允许运行时间：{next_allowed}。遇限流将等待，不使用替代密钥规避。",
+        )
+        if record.atom_body:
+            return _stale_atom_response(record, request)
+        return Response(
+            status_code=502,
+            media_type="application/xml",
+            content="<error>upstream rate limited</error>",
+        )
     except ApiSourceFetchFailed as exc:
         await store.mark_error(record.uuid, "fetch_failed", str(exc))
         if record.atom_body:
@@ -375,6 +624,14 @@ async def serve_atom(source_uuid: str, secret: str, request: Request) -> Respons
     atom = generate_atom(record, items, feed_updated, atom_base(), max_entries=max_entries)
     etag = feed_etag(atom)
     await store.mark_success(record.uuid, etag, atom, feed_updated)
+    if used_fallback:
+        # N130: flag AFTER mark_success so the fallback warning survives
+        # as the source's latest honest status.
+        await store.mark_error(
+            record.uuid,
+            "fallback_used",
+            "旧凭据在宽限期内被使用：请尽快更新 FreshRSS 订阅地址为新 Atom URL。",
+        )
     if_none_match = request.headers.get("if-none-match")
     if if_none_match is not None and if_none_match.strip() == etag:
         return Response(status_code=304, headers={"ETag": etag})

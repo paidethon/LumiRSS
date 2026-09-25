@@ -17,6 +17,11 @@ from lumirss.backup import (
     _job_json,
     assess_freshrss_backup,
 )
+from lumirss.backup_scope import (
+    ALWAYS_EXCLUDED,
+    normalize_include,
+    preview_scope_counts,
+)
 from lumirss.config import LumiSettings
 from lumirss.deps import (
     _get_backup_engine,
@@ -27,12 +32,16 @@ from lumirss.deps import (
 from lumirss.models import (
     BackupCapabilities,
     BackupJob,
+    BackupScopeInclude,
+    BackupScopePreview,
+    BackupVerifyReport,
     RemoteBackupsResponse,
     RestorePreview,
     RestoreResult,
     WebDavSettingsView,
     WebDavTestResult,
 )
+from lumirss.restore import verify_backup_findings
 from lumirss.webdav import WebDavError, WebDavNotConfigured
 
 router = APIRouter()
@@ -155,8 +164,18 @@ async def test_webdav(request: Request) -> dict[str, object]:
         await client.aclose()
 
 
+class BackupScopePreviewBody(BaseModel):
+    """POST /api/v1/backups/preview-scope 体（include 缺省 = 全包含）。"""
+
+    include: BackupScopeInclude | None = None
+
+
 class BackupCreate(BaseModel):
     target: Literal["local", "webdav"] = "local"
+    # N185：可选的用户数据范围；缺省 = 全包含（与历史行为一致）。
+    include: BackupScopeInclude | None = None
+
+
 
 
 @router.get(
@@ -226,7 +245,10 @@ async def create_backup(
     if guard is not None:
         return guard
     engine = _get_backup_engine(request)
-    job = await engine.submit_full_backup(body.target)
+    # N185：include 缺省传 None（默认全包含，行为与历史逐字节一致）；
+    # 显式给出时归一化为全键布尔再交给引擎。
+    include = normalize_include(body.include) if body.include is not None else None
+    job = await engine.submit_full_backup(body.target, include)
     return _job_json(job)
 
 
@@ -258,6 +280,65 @@ async def list_remote_backups(request: Request) -> dict[str, object]:
     }
 
 
+class RestorePreviewBody(BaseModel):
+    source: Literal["local", "remote"]
+    jobId: str | None = None
+    fileName: str | None = None
+
+
+class RestoreExecuteBody(BaseModel):
+    restoreSessionId: str = Field(min_length=1)
+    confirmation: str = Field(min_length=1)
+
+
+@router.get(
+    "/api/v1/backups/verify",
+    response_model=BackupVerifyReport,
+    response_model_exclude_none=False,
+)
+async def verify_backup_get(
+    request: Request,
+    source: Literal["local", "remote"] = "local",
+    jobId: str | None = None,
+    fileName: str | None = None,
+) -> dict[str, object]:
+    """N186（GET 形式）：独立完整性自检——校验报告，不建恢复会话。"""
+    return await _verify_backup_common(
+        RestorePreviewBody(source=source, jobId=jobId, fileName=fileName), request
+    )
+
+
+@router.post(
+    "/api/v1/backups/verify",
+    response_model=BackupVerifyReport,
+    response_model_exclude_none=False,
+)
+async def verify_backup_post(
+    body: RestorePreviewBody, request: Request
+) -> dict[str, object]:
+    """N186（POST 形式）：独立完整性自检——校验报告，不建恢复会话。
+
+    复用 restore.preview 的校验内核（manifest 结构/版本规则、流式
+    SHA-256、sqlite integrity），但逐项分类为发现而非首个失败即中断；
+    四项发现（checksumOk / manifestCountsMatch / readable /
+    versionCompatible）+ 具体问题（corruptFile / missingAttachment /
+    versionIncompatible）如实返回。绝不触发恢复，也不改任何文件。"""
+    return await _verify_backup_common(body, request)
+
+
+async def _verify_backup_common(
+    body: RestorePreviewBody, request: Request
+) -> dict[str, object]:
+    guard = await _require_admin(request)
+    if guard is not None:
+        return guard
+    zip_path, _name = await _locate_backup_package(body, request)
+    report = await asyncio.to_thread(
+        verify_backup_findings, zip_path, request.app.state.db
+    )
+    return report
+
+
 @router.get(
     "/api/v1/backups/{job_id}",
     response_model=BackupJob,
@@ -274,15 +355,30 @@ async def get_backup_job(job_id: str, request: Request) -> dict[str, object]:
     return _job_json(job)
 
 
-class RestorePreviewBody(BaseModel):
-    source: Literal["local", "remote"]
-    jobId: str | None = None
-    fileName: str | None = None
+@router.post(
+    "/api/v1/backups/preview-scope",
+    response_model=BackupScopePreview,
+)
+async def preview_backup_scope(
+    body: BackupScopePreviewBody, request: Request
+) -> dict[str, object]:
+    """N185：备份内容选择预览（只读）。
+
+    按请求的范围给出逐组件将进入备份的行数（当前用户库实时计数），
+    并如实列出永远排除的内容（凭据与密钥 / FreshRSS 内容）。本端点
+    不创建任务、不写任何文件。"""
+    guard = await _require_admin(request)
+    if guard is not None:
+        return guard
+    include = normalize_include(body.include)
+    counts = await preview_scope_counts(request.app.state.db, include)
+    return {
+        "scope": include,
+        "components": counts,
+        "alwaysExcluded": list(ALWAYS_EXCLUDED),
+    }
 
 
-class RestoreExecuteBody(BaseModel):
-    restoreSessionId: str = Field(min_length=1)
-    confirmation: str = Field(min_length=1)
 
 
 class BackupCompareBody(BaseModel):

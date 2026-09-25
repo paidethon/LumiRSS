@@ -624,6 +624,186 @@ def _safe_attachment_meta(raw: object) -> list[dict[str, object]]:
     ][:20]
 
 
+# -- N125/N126/N127 邮件详情（正文显示模式 / 附件 / 身份提示） ------------------
+
+
+def _json_list(raw: object) -> list:
+    import json as _json
+
+    if not raw:
+        return []
+    try:
+        parsed = _json.loads(str(raw))
+    except ValueError:
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
+def _json_obj(raw: object) -> dict | None:
+    import json as _json
+
+    if not raw:
+        return None
+    try:
+        parsed = _json.loads(str(raw))
+    except ValueError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+@router.get("/api/v1/mail/lists/{list_uuid}/messages")
+async def list_mail_messages(list_uuid: str, request: Request) -> Response:
+    """N125/126/127 配套：单列表的有界消息清单（≤50，新→旧）。
+
+    每行只带旗标（附件数 / 被阻止媒体数 / 身份提示存在），正文详情走
+    detail 端点。"""
+
+    store: MailBridgeStore = _get_mail_bridge_store(request)
+    if await store.get_list(list_uuid) is None:
+        raise MailBridgeNotFound(list_uuid)
+    entries = await store.list_entries(list_uuid)
+    items = []
+    for entry in entries:
+        meta = _json_list(entry.get("attachment_meta"))
+        items.append(
+            {
+                "messageId": str(entry["message_id"]),
+                "subject": str(entry["subject"]),
+                "sender": str(entry["sender"]),
+                "receivedAt": str(entry["received_at"]),
+                "attachmentCount": len(meta),
+                "skippedAttachments": sum(
+                    1
+                    for item in meta
+                    if isinstance(item, dict)
+                    and str(item.get("status", "")).startswith("skipped")
+                ),
+                "blockedMediaCount": len(_json_list(entry.get("blocked_media_json"))),
+                "hasIdentityHints": _json_obj(entry.get("identity_hints_json"))
+                is not None,
+            }
+        )
+    return JSONResponse(status_code=200, content={"items": items})
+
+
+@router.get("/api/v1/mail/lists/{list_uuid}/messages/{message_id}/detail")
+async def mail_message_detail(list_uuid: str, message_id: str, request: Request) -> Response:
+    """N125/N126/N127 邮件详情（只读）：
+
+    - text / html 两个正文形态（mail_bridge ingest 时已双双落库；html
+      是净化产物，渲染前客户端仍过 DOMPurify）；
+    - blockedMedia：ingest 时被剥离的外链媒体 URL（有界 ≤20）；
+    - attachments：已存附件（带下载 id）+ 被跳过附件的诚实清单；
+    - identityHints：服务端计算的中性身份提示（或 null）。"""
+    from lumirss.mail_attachments import MailAttachmentStore
+
+    store: MailBridgeStore = _get_mail_bridge_store(request)
+    if await store.get_list(list_uuid) is None:
+        raise MailBridgeNotFound(list_uuid)
+    entry = await store.get_entry(list_uuid, message_id)
+    if entry is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "not_found", "message": "邮件不存在。"}},
+        )
+    stored = await MailAttachmentStore(request.app.state.db).list_for_message(
+        list_uuid, message_id
+    )
+    skipped = [
+        {
+            "filename": str(item.get("filename", ""))[:120],
+            "bytes": int(item.get("bytes", -1)),
+            "mime": str(item.get("mime", "")),
+            "status": str(item.get("status", "")),
+            "reason": str(item.get("reason", "")),
+        }
+        for item in _json_list(entry.get("attachment_meta"))
+        if isinstance(item, dict)
+        and str(item.get("status", "")).startswith("skipped")
+    ]
+    attachments = [
+        {
+            "id": str(row["id"]),
+            "filename": str(row["filename"]),
+            "mime": str(row["mime"]),
+            "size": int(row["size"]),
+        }
+        for row in stored
+    ]
+    return JSONResponse(
+        status_code=200,
+        content={
+            "messageId": str(entry["message_id"]),
+            "listUuid": list_uuid,
+            "subject": str(entry["subject"]),
+            "sender": str(entry["sender"]),
+            "receivedAt": str(entry["received_at"]),
+            "text": str(entry.get("text") or ""),
+            "html": str(entry.get("html") or ""),
+            "blockedMedia": [
+                str(url)[:500] for url in _json_list(entry.get("blocked_media_json"))
+            ],
+            "attachments": attachments,
+            "skippedAttachments": skipped,
+            "identityHints": _json_obj(entry.get("identity_hints_json")),
+        },
+    )
+
+
+@router.get("/api/v1/mail/attachments/{attachment_id}")
+async def download_mail_attachment(attachment_id: str, request: Request) -> Response:
+    """N125：附件下载（用户作用域；跨用户/不存在 → 同型 404）。
+
+    Content-Disposition 恒为 attachment（绝不内联渲染）；响应体大小
+    以存储 size 为准并再查上限（防越界写入）。文件名经净化并按
+    RFC 5987 编码（非 ASCII 安全）。"""
+    from urllib.parse import quote
+
+    from lumirss.mail_attachments import (
+        MAX_ATTACHMENT_BYTES,
+        MailAttachmentStore,
+    )
+    from lumirss.mail_bridge import MailBridgeNotFound
+
+    row = await MailAttachmentStore(request.app.state.db).get(attachment_id)
+    if row is None:
+        raise MailBridgeNotFound(attachment_id)
+    size = int(row["size"])
+    if size < 0 or size > MAX_ATTACHMENT_BYTES:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {
+                    "type": "attachment_too_large",
+                    "message": "附件超出大小上限，拒绝下载。",
+                }
+            },
+        )
+    content = row["content"]
+    if content is None or len(bytes(content)) != size:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {
+                    "type": "attachment_corrupt",
+                    "message": "附件内容与记录大小不一致，拒绝下载。",
+                }
+            },
+        )
+    filename = str(row["filename"]).replace('"', "_") or "attachment"
+    return Response(
+        content=bytes(content),
+        media_type=str(row["mime"]) or "application/octet-stream",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{filename}"; '
+                f"filename*=UTF-8''{quote(filename)}"
+            ),
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 @router.get("/api/v1/mail/lists/{list_uuid}/messages/{message_id}/thread")
 async def mail_thread(list_uuid: str, message_id: str, request: Request) -> Response:
     """F110：同列表内沿 In-Reply-To/References 组装的有序会话链。"""

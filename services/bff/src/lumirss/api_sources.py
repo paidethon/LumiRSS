@@ -64,6 +64,31 @@ class ApiSourceFetchFailed(Exception):
     """The configured endpoint could not be fetched/parsed."""
 
 
+class ApiSourceRateLimited(ApiSourceFetchFailed):
+    """The upstream answered HTTP 429 (N129).
+
+    Carries the upstream ``Retry-After`` hint (seconds when parseable,
+    else None) so the fetch path can persist ``next_allowed_run`` and
+    back off instead of hammering a rate-limited API. The message keeps
+    the historical "HTTP 429" shape so the pagination abort path keeps
+    classifying it identically."""
+
+    def __init__(self, retry_after_seconds: int | None) -> None:
+        super().__init__("API 端点返回 HTTP 429。")
+        self.retry_after_seconds = retry_after_seconds
+
+
+class ApiSourceBudgetExhausted(Exception):
+    """N129: the per-source hourly fetch budget is spent (stable 429).
+
+    ``next_allowed_run`` is the honest RFC3339 moment the next token
+    refills (or the upstream Retry-After verdict, whichever is later)."""
+
+    def __init__(self, next_allowed_run: str) -> None:
+        super().__init__(f"本来源的每小时抓取预算已用完，下次允许运行时间：{next_allowed_run}")
+        self.next_allowed_run = next_allowed_run
+
+
 class ApiSourceExpressionError(Exception):
     """JMESPath expression failed to compile or evaluate."""
 
@@ -91,6 +116,10 @@ class ApiSourceRecord:
     pagination: str = '{"mode":"none"}'
     confirmed_schema: str | None = None
     schema_drift: str | None = None
+    # N129: per-source fetch budget (hourly token bucket + Retry-After).
+    max_runs_per_hour: int = 4
+    respect_retry_after: bool = True
+    next_allowed_run: str | None = None
 
     def to_dict(self, *, with_secret: bool = False) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -245,7 +274,29 @@ def _pinned_client() -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=PinnedAddressTransport(), trust_env=False)
 
 
-async def fetch_json(http_client: httpx.AsyncClient, endpoint: str) -> Any:
+def parse_retry_after(value: str | None) -> int | None:
+    """N129: Retry-After header → bounded whole seconds (None = absent or
+    unparseable). HTTP-date form is intentionally not decoded into a
+    duration here — only delta-seconds is honored, bounded to one hour so
+    a hostile upstream cannot pin ``next_allowed_run`` arbitrarily far."""
+    if value is None:
+        return None
+    text = value.strip()
+    if not text.isdigit():
+        return None
+    try:
+        seconds = int(text)
+    except ValueError:
+        return None
+    return min(seconds, 3600)
+
+
+async def fetch_json(
+    http_client: httpx.AsyncClient,
+    endpoint: str,
+    *,
+    timeout_seconds: float = _FETCH_TIMEOUT_SECONDS,
+) -> Any:
     """SSRF-checked, size-capped (streamed), JSON-only fetch of the endpoint.
 
     The response body is streamed with a hard cap instead of being read
@@ -253,7 +304,10 @@ async def fetch_json(http_client: httpx.AsyncClient, endpoint: str) -> Any:
     let an oversized endpoint OOM the BFF. The dial goes through the
     pinned-IP transport (P0-03/P0-05): validate_hop's getaddrinfo check
     alone is TOCTOU-racy — DNS may re-resolve between check and connect;
-    the transport re-validates and dials the verified address."""
+    the transport re-validates and dials the verified address.
+    N129: a 429 raises :class:`ApiSourceRateLimited` carrying the parsed
+    Retry-After hint; ``timeout_seconds`` lets the credential probe (N130)
+    run the same request shape under a tighter bound."""
     await validate_hop(endpoint)
     pinned_client = _pinned_client()
     try:
@@ -261,13 +315,17 @@ async def fetch_json(http_client: httpx.AsyncClient, endpoint: str) -> Any:
             "GET",
             endpoint,
             headers={"accept": "application/json"},
-            timeout=_FETCH_TIMEOUT_SECONDS,
+            timeout=timeout_seconds,
         )
         try:
             response = await pinned_client.send(request, stream=True, follow_redirects=False)
         except httpx.HTTPError as exc:
             raise ApiSourceFetchFailed("API 端点连接失败。") from exc
         try:
+            if response.status_code == 429:
+                raise ApiSourceRateLimited(
+                    parse_retry_after(response.headers.get("retry-after"))
+                )
             if response.status_code != 200:
                 raise ApiSourceFetchFailed(f"API 端点返回 HTTP {response.status_code}。")
             content_type = response.headers.get("content-type", "").lower()
@@ -515,6 +573,8 @@ async def fetch_json_pages(
                 return payloads, "max_pages"
             try:
                 payload = await fetch_json(http_client, target)
+            except ApiSourceRateLimited:
+                raise
             except ApiSourceFetchFailed as exc:
                 if "HTTP 429" in str(exc):
                     raise ApiSourceFetchFailed(f"分页在第 {page_number} 页被限流（HTTP 429），本次未发布任何条目。") from exc
@@ -535,6 +595,8 @@ async def fetch_json_pages(
     for _ in range(max_pages):
         try:
             payload = await fetch_json(http_client, target)
+        except ApiSourceRateLimited:
+            raise
         except ApiSourceFetchFailed as exc:
             if "HTTP 429" in str(exc):
                 raise ApiSourceFetchFailed("分页被限流（HTTP 429），本次未发布任何条目。") from exc

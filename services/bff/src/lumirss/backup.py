@@ -34,6 +34,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from lumirss.backup_scope import apply_scope_to_snapshot, is_full_scope
 from lumirss.config import LumiSettings
 from lumirss.secrets_store import SecretsStore
 from lumirss.storage import Database
@@ -581,6 +582,7 @@ def build_manifest(
     db_schema_version: int,
     files: list[dict[str, Any]],
     secret_configured: bool,
+    scope: dict[str, bool] | None = None,
 ) -> dict[str, Any]:
     settings = LumiSettings()
     # F37：对象类别数量（恢复前可读核对——与 files 一一对应；旧版备份
@@ -589,7 +591,7 @@ def build_manifest(
     for file in files:
         component = str(file["component"])
         component_counts[component] = component_counts.get(component, 0) + 1
-    return {
+    manifest: dict[str, Any] = {
         "backupSchemaVersion": BACKUP_SCHEMA_VERSION,
         "appName": APP_NAME,
         "createdAt": _utc_now(),
@@ -620,6 +622,11 @@ def build_manifest(
             for file in files
         ],
     }
+    # N185：非默认范围才写 scope 字段——默认备份的 manifest 与历史格式
+    # 逐字节保持一致（default unchanged）。
+    if scope is not None:
+        manifest["scope"] = scope
+    return manifest
 
 
 def _write_zip(
@@ -795,13 +802,18 @@ class BackupEngine:
             raise exc
         return _job_json(await self._jobs.get(job["id"]))
 
-    async def submit_full_backup(self, target: str) -> dict[str, Any]:
+    async def submit_full_backup(
+        self, target: str, include: dict[str, bool] | None = None
+    ) -> dict[str, Any]:
         """Create the job and start it in the background (bounded, single).
 
         AD-0018-7: the in-process ``_busy`` flag serializes this event loop;
         the DB guard catches jobs left running by a previous process (the
         guard runs the interrupted sweep first, so stale rows never wedge
-        new backups)."""
+        new backups).
+
+        N185：``include`` 是可选的用户数据范围（None = 默认全包含，行为
+        与历史完全一致）。"""
         if self._busy:
             raise BackupBusy("A backup or restore is already running.")
         # 先同步占住 _busy 再做 DB 守卫（await 期间不会放进第二个 job），
@@ -815,7 +827,7 @@ class BackupEngine:
         except Exception:
             self._busy = False
             raise
-        task = asyncio.create_task(self._run_full(job["id"], target))
+        task = asyncio.create_task(self._run_full(job["id"], target, include))
         self._tasks.add(task)
         task.add_done_callback(self._on_task_done)
         return job
@@ -836,9 +848,9 @@ class BackupEngine:
         finally:
             self._busy = False
 
-    async def _run_full(self, job_id: str, target: str) -> None:
+    async def _run_full(self, job_id: str, target: str, include: dict[str, bool] | None = None) -> None:
         try:
-            await self._run_full_locked(job_id, target)
+            await self._run_full_locked(job_id, target, include=include)
         except BackupFreshrssUnavailable as exc:
             await self._jobs.fail(job_id, str(exc))
         except BackupInvalid as exc:
@@ -847,7 +859,11 @@ class BackupEngine:
             await self._jobs.fail(job_id, "The backup failed unexpectedly.")
 
     async def _run_full_locked(
-        self, job_id: str, target: str, require_freshrss: bool = True
+        self,
+        job_id: str,
+        target: str,
+        require_freshrss: bool = True,
+        include: dict[str, bool] | None = None,
     ) -> dict[str, Any]:
         settings = LumiSettings()
         await self._db.migrate()
@@ -860,6 +876,14 @@ class BackupEngine:
             # 重 IO（SQLite snapshot / 目录遍历 / zip 写）放 worker 线程，
             # 大备份不再冻结事件循环（/health 等继续可用）。
             await asyncio.to_thread(_sqlite_backup, db_path, lumi_snapshot, False)
+
+            # N185：非默认范围在「快照副本」上裁剪（绝不触碰运行中的库），
+            # 且发生在 checksum 计算之前——manifest 描述的就是被归档的成员。
+            # include=None（默认）保持历史行为，不做任何额外写。
+            scoped = include is not None and not is_full_scope(include)
+            if scoped:
+                assert include is not None
+                await asyncio.to_thread(apply_scope_to_snapshot, lumi_snapshot, include)
 
             files: list[dict[str, Any]] = [
                 {
@@ -904,6 +928,8 @@ class BackupEngine:
                 db_schema_version=schema,
                 files=files,
                 secret_configured=self._webdav_settings.password_configured(),
+                # N185：只在非默认范围时携带 scope（default unchanged）
+                scope=include if scoped else None,
             )
             manifest_path = workdir / "manifest.json"
             manifest_path.write_text(
@@ -923,6 +949,8 @@ class BackupEngine:
                 "components": manifest["components"],
                 "fileCount": len(files),
             }
+            if scoped:
+                summary["scope"] = include
 
             if target == "webdav":
                 await self._jobs.update_stage(job_id, "uploading")

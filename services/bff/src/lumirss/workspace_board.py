@@ -1,9 +1,12 @@
-"""F085 工作区看板 —— 三列（todo/reading/done）状态持久化。
+"""F085 工作区看板 —— 状态列（todo/reading/done + N112 扩展状态）持久化。
 
 - 状态是 Lumi 自有元数据：绝不触碰 FreshRSS 的 read/star（负向断言
   依赖这一点）；
+- N112：三列扩展为五状态——todo（待处理）/ reading（阅读中）/
+  excerpted（待摘录）/ needs_verification（待验证）/ done（已完成）；
+  0098 迁移重建了 status 的 CHECK（旧行 1:1 迁移，绝不丢状态）；
 - 同一条目在不同工作区的状态独立（PK 为 (workspace_id, item_ref)）；
-- GET 返回三列各前 50 条 + 真实总数（分页提示由 UI 呈现）；
+- GET 返回各列前 50 条 + 真实总数（分页提示由 UI 呈现）；
 - PUT 幂等（重复写同状态无副作用）；非法状态 → BoardInvalid（422）；
 - 条目必须已是工作区成员（否则 not_found）。
 
@@ -18,7 +21,7 @@ from lumirss.itemref import parse_item_ref
 from lumirss.storage import Database
 from lumirss.util import utc_now
 
-BOARD_STATUSES = ("todo", "reading", "done")
+BOARD_STATUSES = ("todo", "reading", "excerpted", "needs_verification", "done")
 _COLUMN_PAGE = 50
 
 
@@ -69,7 +72,9 @@ class WorkspaceBoardStore:
         self, workspace_id: str, item_ref: str, status: str
     ) -> dict[str, Any]:
         if status not in BOARD_STATUSES:
-            raise BoardInvalid("status 必须是 todo|reading|done。")
+            raise BoardInvalid(
+                "status 必须是 todo|reading|excerpted|needs_verification|done。"
+            )
         try:
             clean_ref = parse_item_ref(item_ref).format()
         except ValueError as exc:

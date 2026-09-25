@@ -85,8 +85,11 @@ services:
     mem_reservation: ${LUMIRSS_BFF_MEM_RESERVATION:-128m}
     cpus: 1.0
 
+  # Digest pin (drift policy parity with rsshub below and caddy in
+  # apps/web/Dockerfile): ab6b363… = the 1.29.1 multi-arch index, so the
+  # tag cannot be re-pushed under us on a registry mirror.
   freshrss:
-    image: freshrss/freshrss:1.29.1
+    image: freshrss/freshrss:1.29.1@sha256:ab6b363102ccdbc39f6a62db926f567c61a5289bf25ba460f1c34423d8cc1a4d
     container_name: lumirss-freshrss
     restart: unless-stopped
     environment:

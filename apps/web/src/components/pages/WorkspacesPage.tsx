@@ -29,7 +29,7 @@
  */
 
 import { useCallback, useMemo, useRef, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Archive,
   ArrowDown,
@@ -40,6 +40,7 @@ import {
   FolderOpen,
   History,
   LayoutDashboard,
+  ListTree,
   Loader2,
   MoreVertical,
   Pencil,
@@ -65,7 +66,13 @@ import {
   useWorkspaces,
 } from '../../api/queries'
 import { ApiError, exportResearchPackMd, patchWorkspaceArchive } from '../../api/client'
+import {
+  addWorkspaceSectionItem,
+  createWorkspaceSection,
+  listWorkspaceSections,
+} from '../../api/client'
 import { WorkspaceBoardView } from '../WorkspaceBoard'
+import { WorkspaceOutlinePanel } from '../WorkspaceOutlinePanel'
 import {
   ArchivedBar,
   ResearchPackExportDialog,
@@ -389,6 +396,7 @@ function ContentCardRow({
   onItemOpened,
   onPreview,
   onMoveToGroup,
+  onMoveToSection,
   onRemoved,
   registerEl,
 }: {
@@ -410,6 +418,8 @@ function ContentCardRow({
   onPreview: (item: ResolvedItem) => void
   /** N101：打开「移动到分组」Dialog。 */
   onMoveToGroup: (item: ResolvedItem) => void
+  /** N113：打开「移动到分节」Dialog。 */
+  onMoveToSection: (item: ResolvedItem) => void
   /** N104：移除成功后回报（进入最近关闭 LRU）。 */
   onRemoved: (item: ResolvedItem) => void
   /** 注册 <li> DOM（续读 chip 点击时滚动定位） */
@@ -511,6 +521,7 @@ function ContentCardRow({
                   ),
                 },
                 { key: 'move-group', content: '移动到分组…' },
+                { key: 'move-section', content: '移动到分节…' },
                 {
                   key: 'remove',
                   content: (
@@ -530,6 +541,7 @@ function ContentCardRow({
                   })
                 }
                 if (key === 'move-group') onMoveToGroup(item)
+                if (key === 'move-section') onMoveToSection(item)
                 if (key === 'remove') {
                   remove.mutate(
                     { workspaceId, itemRef: item.ref },
@@ -715,6 +727,151 @@ function MoveToGroupDialog({
 /** 空内容占位（稳定引用，供 useMemo 依赖）。 */
 const EMPTY_RESOLVED_ITEMS: ResolvedItem[] = []
 
+/** N113：移动到分节 Dialog（行内菜单入口）。
+ * 同一条目可进入多个分节（服务端引用语义；已在节中的仍可重复加入，
+ * 幂等无副作用）；支持就地新建分节。 */
+function MoveToSectionDialog({
+  workspaceId,
+  item,
+  onClose,
+}: {
+  workspaceId: string
+  item: ResolvedItem
+  onClose: () => void
+}) {
+  const NEW_SECTION = '__new__'
+  const sections = useQuery({
+    queryKey: ['workspace-sections', workspaceId],
+    queryFn: ({ signal }) => listWorkspaceSections(workspaceId, signal),
+  })
+  const [selected, setSelected] = useState('')
+  const [newName, setNewName] = useState('')
+  const [done, setDone] = useState<string | null>(null)
+  const queryClient = useQueryClient()
+  const invalidate = async () => {
+    await queryClient.invalidateQueries({ queryKey: ['workspace-sections', workspaceId] })
+  }
+  const add = useMutation({
+    mutationFn: async (sectionId: string) => {
+      await addWorkspaceSectionItem(workspaceId, sectionId, item.ref)
+      return sectionId
+    },
+    onSuccess: async (sectionId) => {
+      await invalidate()
+      setDone(sectionId)
+    },
+  })
+  const create = useMutation({
+    mutationFn: async () => {
+      const section = await createWorkspaceSection(workspaceId, newName.trim())
+      await addWorkspaceSectionItem(workspaceId, section.id, item.ref)
+      return section.id
+    },
+    onSuccess: async (sectionId) => {
+      await invalidate()
+      setDone(sectionId)
+    },
+  })
+  const items = sections.data?.items ?? []
+  const inSections = new Set(
+    items.filter((s) => s.items.some((i) => i.itemRef === item.ref)).map((s) => s.id),
+  )
+  const busy = add.isPending || create.isPending
+
+  return (
+    <Dialog open onClose={onClose} title="移动到分节">
+      <p className="mb-2 text-xs text-[var(--lumi-text-secondary)]">
+        把「{item.title}」加入分节（可同时属于多个分节；只加入引用，不移除原位置）。
+      </p>
+      {done !== null ? (
+        <p role="status" data-testid="move-to-section-done" className="text-xs text-[var(--lumi-text-secondary)]">
+          已加入分节。
+        </p>
+      ) : (
+        <fieldset className="flex flex-col gap-1.5">
+          {sections.isPending && <Skeleton className="h-16 w-full" />}
+          {sections.isError && (
+            <p role="alert" className="text-xs text-[var(--lumi-danger)]">
+              分节加载失败，请先在大纲视图新建分节。
+            </p>
+          )}
+          {items.map((section) => (
+            <label
+              key={section.id}
+              className="flex items-center gap-2 text-sm text-[var(--lumi-text-primary)]"
+            >
+              <input
+                type="radio"
+                name="move-section-target"
+                value={section.id}
+                checked={selected === section.id}
+                onChange={() => setSelected(section.id)}
+              />
+              {section.title}
+              {inSections.has(section.id) && (
+                <span className="text-[10px] text-[var(--lumi-text-tertiary)]">已在该节</span>
+              )}
+            </label>
+          ))}
+          <label className="flex items-center gap-2 text-sm text-[var(--lumi-text-primary)]">
+            <input
+              type="radio"
+              name="move-section-target"
+              value={NEW_SECTION}
+              checked={selected === NEW_SECTION}
+              onChange={() => setSelected(NEW_SECTION)}
+            />
+            新建分节
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              maxLength={100}
+              aria-label="新分节名称"
+              placeholder="分节标题（≤100 字）"
+              onFocus={() => setSelected(NEW_SECTION)}
+              className={cx(
+                'min-h-7 flex-1 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2.5 text-xs',
+                'text-[var(--lumi-text-primary)] placeholder:text-[var(--lumi-text-tertiary)]',
+                'focus:outline-2 focus:-outline-offset-2 focus:outline-[var(--lumi-focus-ring)]',
+              )}
+            />
+          </label>
+        </fieldset>
+      )}
+      {(add.isError || create.isError) && (
+        <p role="alert" className="mt-2 text-xs text-[var(--lumi-danger)]">
+          {add.error instanceof Error || create.error instanceof Error
+            ? ((add.error ?? create.error) as Error).message
+            : '加入失败，请稍后重试。'}
+        </p>
+      )}
+      <div className="mt-3 flex justify-end gap-2">
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          {done !== null ? '关闭' : '取消'}
+        </Button>
+        {done === null && (
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={
+              busy ||
+              selected === '' ||
+              (selected === NEW_SECTION && newName.trim() === '')
+            }
+            onClick={() => {
+              if (selected === NEW_SECTION) create.mutate()
+              else add.mutate(selected)
+            }}
+          >
+            {busy ? '加入中…' : '加入分节'}
+          </Button>
+        )}
+      </div>
+    </Dialog>
+  )
+}
+
 export default function WorkspacesPage() {
   const workspaces = useWorkspaces()
   // 显式选择为 null 时派生为第一个工作区（read-later 通常 position 0）——
@@ -726,8 +883,8 @@ export default function WorkspacesPage() {
   // P0-10：重命名 / 删除（仅非保留工作区提供入口）。
   const [renameOpen, setRenameOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
-  // F085：列表 / 看板视图切换。
-  const [view, setView] = useState<'list' | 'board'>('list')
+  // F085：列表 / 看板视图切换。N113：大纲视图（分节 + 汇编 + 清理）。
+  const [view, setView] = useState<'list' | 'board' | 'outline'>('list')
   // F083：模板入口。F088：ZIP 导出对话框。
   const [templatesOpen, setTemplatesOpen] = useState(false)
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false)
@@ -779,6 +936,8 @@ export default function WorkspacesPage() {
   )
   // N101：移动到分组 Dialog 目标。
   const [moveGroupTarget, setMoveGroupTarget] = useState<ResolvedItem | null>(null)
+  // N113：移动到分节 Dialog 目标。
+  const [moveSectionTarget, setMoveSectionTarget] = useState<ResolvedItem | null>(null)
 
   // 换工作区：重载本机折叠状态 + 关闭预览（预览属于原工作区上下文）。
   const workspaceKey = effectiveSelectedId ?? ''
@@ -792,6 +951,7 @@ export default function WorkspacesPage() {
     setPreviewDraft('')
     setPreviewBlocked(false)
     setMoveGroupTarget(null)
+    setMoveSectionTarget(null)
   }
 
   // ---- P15：续读指针 + 跨设备并发诚实提示 ----
@@ -952,6 +1112,12 @@ export default function WorkspacesPage() {
     return refs
   }, [groupData, resolvedItems])
 
+  // N113：ref → 标题（大纲面板展示用；resolvedItems 是带标题的来源）。
+  const memberTitles = useMemo(
+    () => new Map(resolvedItems.map((item) => [item.ref, item.title])),
+    [resolvedItems],
+  )
+
   interface GroupSection {
     key: string
     label: string
@@ -1015,6 +1181,7 @@ export default function WorkspacesPage() {
         onItemOpened={handleItemOpened}
         onPreview={openPreview}
         onMoveToGroup={setMoveGroupTarget}
+        onMoveToSection={setMoveSectionTarget}
         onRemoved={handleItemRemoved}
         registerEl={(el) => {
           if (el === null) itemEls.current.delete(item.ref)
@@ -1042,15 +1209,26 @@ export default function WorkspacesPage() {
             模板
           </Button>
           {selectedWorkspace !== null && (
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-pressed={view === 'board'}
-              onClick={() => setView((v) => (v === 'board' ? 'list' : 'board'))}
-            >
-              <LayoutDashboard aria-hidden className="size-4" />
-              看板
-            </Button>
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-pressed={view === 'board'}
+                onClick={() => setView((v) => (v === 'board' ? 'list' : 'board'))}
+              >
+                <LayoutDashboard aria-hidden className="size-4" />
+                看板
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-pressed={view === 'outline'}
+                onClick={() => setView((v) => (v === 'outline' ? 'list' : 'outline'))}
+              >
+                <ListTree aria-hidden className="size-4" />
+                大纲
+              </Button>
+            </>
           )}
           {selectedWorkspace !== null && !selectedWorkspace.reserved && (
             <>
@@ -1298,8 +1476,13 @@ export default function WorkspacesPage() {
             </ul>
           </section>
         )}
-        {/* 选中工作区的内容：看板（F085/F086）或列表 */}
-        {effectiveSelectedId !== null && !workspaces.isError && view === 'board' ? (
+        {/* 选中工作区的内容：看板（F085/F086）或列表；大纲（N113-N120） */}
+        {effectiveSelectedId !== null && !workspaces.isError && view === 'outline' ? (
+          <WorkspaceOutlinePanel
+            workspaceId={effectiveSelectedId}
+            memberTitles={memberTitles}
+          />
+        ) : effectiveSelectedId !== null && !workspaces.isError && view === 'board' ? (
           <WorkspaceBoardView workspaceId={effectiveSelectedId} />
         ) : effectiveSelectedId !== null && !workspaces.isError && (
           contents.isPending ? (
@@ -1391,6 +1574,7 @@ export default function WorkspacesPage() {
                             onItemOpened={handleItemOpened}
                             onPreview={openPreview}
                             onMoveToGroup={setMoveGroupTarget}
+                            onMoveToSection={setMoveSectionTarget}
                             onRemoved={handleItemRemoved}
                             registerEl={(el) => {
                               if (el === null) itemEls.current.delete(item.ref)
@@ -1454,6 +1638,13 @@ export default function WorkspacesPage() {
             )?.name ?? null
           }
           onClose={() => setMoveGroupTarget(null)}
+        />
+      )}
+      {moveSectionTarget !== null && effectiveSelectedId !== null && (
+        <MoveToSectionDialog
+          workspaceId={effectiveSelectedId}
+          item={moveSectionTarget}
+          onClose={() => setMoveSectionTarget(null)}
         />
       )}
     </div>

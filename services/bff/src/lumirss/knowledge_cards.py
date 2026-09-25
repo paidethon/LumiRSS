@@ -99,6 +99,8 @@ async def delete_card(db: Any, search_writer: Any, card_id: str) -> bool:
     if row is None:
         return False
     await db.execute("DELETE FROM knowledge_cards WHERE id = ?", (card_id,))
+    # N076 级联：卡片删除 → 复习队列项删除（同 F058 批注级联口径）
+    await db.execute("DELETE FROM review_queue WHERE knowledge_card_id = ?", (card_id,))
     if search_writer is not None:
         with contextlib.suppress(Exception):
             await search_writer.delete(f"knowledge_card:{card_id}")

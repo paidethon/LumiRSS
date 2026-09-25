@@ -15,6 +15,7 @@ from lumirss.models import (
     TagMergePreview,
     TagMergeRequest,
     TagMergeResult,
+    TagMergeUndoResult,
     TagRenameRequest,
     TagSuggestionsResponse,
 )
@@ -95,13 +96,35 @@ async def merge_tag_preview(
 async def merge_tags(payload: TagMergeRequest, request: Request) -> TagMergeResult:
     """Merge source tag INTO target in one transaction (pool #16):
     duplicate bindings collapse, the rest re-point, the source tag is
-    deleted. Lumi-owned bindings only — FreshRSS categories untouched."""
+    deleted. Lumi-owned bindings only — FreshRSS categories untouched.
+
+    N150：合并执行前已在同一事务内快照源绑定（24h 内可撤销一次）。"""
     store: TagStore = _get_tag_store(request)
     result = await store.merge(payload.sourceId, payload.targetId)
     return TagMergeResult(
         targetId=payload.targetId,
         movedBindings=result["movedBindings"],
         dedupedBindings=result["dedupedBindings"],
+    )
+
+
+# N150：撤销最近一次合并 —— 静态路径必须声明在 /{tag_id} 之前
+#（与 /assign、/merge/preview 同一排序规则）。
+@router.post("/api/v1/tags/merge/undo", response_model=TagMergeUndoResult)
+async def undo_tag_merge(request: Request) -> TagMergeUndoResult:
+    """Undo the latest merge within 24h (N150): recreate the source tag
+    (new id) and restore its bindings exactly; the target keeps the
+    merged bindings. No snapshot / TTL expired → 404; source name
+    already taken again (including by a previous undo) → 409."""
+    store: TagStore = _get_tag_store(request)
+    # TagMergeUndoNotFound → 404、TagMergeSourceRecreated → 409 由
+    # errors.py 稳定映射，这里不吞不改。
+    result = await store.undo_merge()
+    return TagMergeUndoResult(
+        sourceTagId=result["sourceTagId"],
+        name=result["name"],
+        targetTagId=result["targetTagId"],
+        restoredBindings=result["restoredBindings"],
     )
 
 

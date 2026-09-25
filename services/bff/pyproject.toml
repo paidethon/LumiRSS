@@ -29,6 +29,7 @@ rag = [
 [dependency-groups]
 dev = [
     "aiosmtpd>=1.4.6",
+    "defusedxml>=0.7",
     "pytest>=8.0",
     "ruff>=0.8",
 ]

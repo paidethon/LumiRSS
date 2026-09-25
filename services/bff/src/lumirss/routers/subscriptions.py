@@ -5,6 +5,7 @@
 import time
 
 from fastapi import APIRouter, Query, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, model_validator
 
 from lumirss.deps import _get_control_adapter
@@ -71,6 +72,49 @@ class CategoryPatch(BaseModel):
     label: str = Field(min_length=1)
 
 
+async def _source_cap_denial(request: Request) -> JSONResponse | None:
+    """N191：订阅前的事前来源上限检查（管理员策略包）。
+
+    计数 = 当前用户投影 search_feeds 的真实行数（本地、无上游请求）；
+    无策略行 / 未设 maxSources = 放行。超额 → 429 quota_exceeded
+    （带 maxSources / current 事实字段，绝无 retry 语义——上限不随
+    时间重置）。任何 store 故障都不放行也不 500 化订阅路径：故障时
+    如实放行并在日志留痕（额度执行是 best-effort 边界，绝不能把
+    「计数不可用」变成全员无法订阅）。"""
+    from lumirss.user_quotas import UserQuotaStore
+    from lumirss.user_scope import current_user_id
+
+    uid = current_user_id()
+    if not uid:
+        return None
+    try:
+        caps = await UserQuotaStore(request.app.state.control_db).caps_for(uid)
+    except Exception:  # noqa: BLE001 — 计数故障不阻断订阅主路径
+        return None
+    max_sources = caps.get("maxSources")
+    if not max_sources:
+        return None
+    await request.app.state.db.migrate()
+    row = await request.app.state.db.fetch_one("SELECT COUNT(*) AS n FROM search_feeds", ())
+    current = int(row["n"]) if row else 0
+    if current < max_sources:
+        return None
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": {
+                "type": "quota_exceeded",
+                "message": (
+                    f"已达到管理员设置的来源上限（{current}/{max_sources}）。"
+                    "如需增加订阅来源，请联系运营者调整额度策略。"
+                ),
+                "maxSources": max_sources,
+                "current": current,
+            }
+        },
+    )
+
+
 @router.get(
     "/api/v1/subscriptions",
     response_model=list[Subscription],
@@ -113,13 +157,21 @@ async def categories(request: Request) -> list[dict[str, str]]:
 )
 async def create_subscription(
     subscription: SubscriptionCreate, request: Request
-) -> dict[str, object]:
+) -> dict[str, object] | JSONResponse:
     """Subscribe to a feed URL; returns the server-confirmed subscription.
 
     409 when already subscribed (checked before any write); 400 feed_rejected
     when FreshRSS cannot add the feed. The write is attempted exactly once
     (no retry on timeout — clients re-read and reconcile).
+
+    N191：管理员策略包（user_quotas.maxSources）在此事前拦截——按当前
+    用户投影 search_feeds 计数，第 N+1 个来源直接 429 quota_exceeded，
+    FreshRSS 侧零请求；成员没有任何路径可以提升该上限（设置端点是
+    admin-only，且本路由执行不读任何客户端提供的上限）。
     """
+    denial = await _source_cap_denial(request)
+    if denial is not None:
+        return denial
     control = _get_control_adapter(request)
     matched = _matched_catalog_route(subscription.feedUrl)
     started = time.monotonic()

@@ -57,6 +57,43 @@ export function formatReadingTime(text: string): string {
   return `约 ${Math.ceil(raw)} 分钟`
 }
 
+// ---- F075：剩余阅读时间（进度条联动） ----
+
+/** 阅读速度（可校准接口）：默认速度 = 上面两个全局常量；F051 校准速度
+ * （timeline 域）落地后可传入实测速度替换，调用方接口不变。 */
+export interface ReadingSpeed {
+  cjkPerMinute: number
+  latinWordsPerMinute: number
+}
+
+export const DEFAULT_READING_SPEED: ReadingSpeed = {
+  cjkPerMinute: CJK_CHARS_PER_MINUTE,
+  latinWordsPerMinute: LATIN_WORDS_PER_MINUTE,
+}
+
+export interface RemainingTimeInput {
+  /** 全文文本（评估输入，同 estimateReadingTime）。 */
+  text: string
+  /** 已读进度（0–1；非法值按 0 处理）。 */
+  ratio: number
+  /** 阅读速度（缺省 = 默认速度；预留 F051 校准速度接口）。 */
+  speed?: ReadingSpeed
+}
+
+/** 纯计算：按当前进度估算剩余阅读分钟数（进度 1 → 0；不足 1 分钟
+ * 的余量向上取整为 1，进度为 0 时返回全文估时）。 */
+export function estimateRemainingMinutes(input: RemainingTimeInput): number {
+  const speed = input.speed ?? DEFAULT_READING_SPEED
+  const cjk = (input.text.match(HAN_RE) ?? []).length
+  const latin = (input.text.match(LATIN_WORD_RE) ?? []).length
+  const totalMinutes = cjk / speed.cjkPerMinute + latin / speed.latinWordsPerMinute
+  const ratio =
+    Number.isFinite(input.ratio) ? Math.min(1, Math.max(0, input.ratio)) : 0
+  const remaining = totalMinutes * (1 - ratio)
+  if (remaining <= 0) return 0
+  return Math.max(1, Math.ceil(remaining))
+}
+
 /** 从已 sanitize 的文章 HTML 提取纯文本（评估输入用）：
  * 先移除 script/style（jsdom 的 DOMParser 会保留其文本），
  * 块级闭合边界补空格（避免词粘连影响词数），空格归一。 */

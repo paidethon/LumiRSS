@@ -15,6 +15,10 @@ per-user store 同一模式）。CRUD 无 admin/owner 门槛：多设备交接�
 import uuid as _uuid
 from typing import Any
 
+from lumirss.obsidian_handoff import (
+    DEFAULT_NAME_POLICY,
+    EXPORT_NAME_POLICIES,
+)
 from lumirss.obsidian_template import DEFAULT_TEMPLATE, TemplateTooLong
 from lumirss.obsidian_uri import validate_platform, validate_vault_name
 from lumirss.storage import Database
@@ -187,7 +191,7 @@ class ObsidianDeviceStore:
 
 
 class ObsidianExportSettingsStore:
-    """Per-user export template row (single row, id=1)."""
+    """Per-user export template row (single row, id=1) + N135 命名策略."""
 
     def __init__(self, db: Database) -> None:
         self._db = db
@@ -218,3 +222,28 @@ class ObsidianExportSettingsStore:
             (template, utc_now()),
         )
         return await self.get_template()
+
+    # -- N135 导出重名策略 ------------------------------------------------
+    # obsidian://new URI 无法探测目标库内是否已有同名笔记（官方 URI 限
+    # 制）：策略是用户显式的选择，不是伪装出来的查重能力。
+
+    async def get_name_policy(self) -> str:
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT export_name_policy FROM obsidian_export_settings WHERE id = 1"
+        )
+        stored = str(row["export_name_policy"]) if row is not None else ""
+        return stored if stored in EXPORT_NAME_POLICIES else DEFAULT_NAME_POLICY
+
+    async def set_name_policy(self, policy: str) -> str:
+        clean = str(policy or "").strip()
+        if clean not in EXPORT_NAME_POLICIES:
+            raise DeviceProfileInvalid(
+                f"exportNamePolicy 必须是 {'/'.join(EXPORT_NAME_POLICIES)} 之一。"
+            )
+        await self._db.migrate()
+        await self._db.execute(
+            "UPDATE obsidian_export_settings SET export_name_policy = ?, updated_at = ? WHERE id = 1",
+            (clean, utc_now()),
+        )
+        return clean

@@ -22,6 +22,128 @@ class DryRunUnsupported(Exception):
     """只读工具没有预演（F097：404/422 诚实返回）。"""
 
 
+# N169: write tools with recorded before/after diffs and undo semantics.
+# save_bookmark deliberately NOT included (a created library item is
+# user data — undo would silently delete; unsupported → 422).
+UNDOABLE_WRITE_TOOLS = frozenset({"add_to_workspace", "add_tag"})
+
+
+def build_undo_support(**services):
+    """N169 写工具撤销支持（与工具注册表同一服务装配）。
+
+    - ``capture(tool, args, phase)``：写入执行前/后对目标对象做快照
+      （workspace 成员行 / 标签绑定行），台账存档（差异撤销证据）；
+    - ``undo(tool, args, before, after)``：按快照回滚。对象在写入之后
+      又被修改过（位置/固定/分组/绑定来源变化，或已被移除）→
+      UndoConflict（冲突报告，跳过）；不支持的工具 → UndoUnsupported。
+    """
+    workspaces = services["workspaces"]
+    tags = services["tags"]
+
+    async def _workspace_snapshot(args: dict) -> dict:
+        workspace_id = str(args.get("workspaceId") or RESERVED_WORKSPACE_ID)
+        raw_ref = str(args.get("itemRef") or "")
+        try:
+            item_ref = parse_item_ref(raw_ref).format()
+        except ValueError:
+            item_ref = raw_ref
+        member = None
+        if workspace_id:
+            for item in await workspaces.list_items(workspace_id, limit=500):
+                if item.item_ref == item_ref:
+                    member = item
+                    break
+        return {
+            "workspaceId": workspace_id,
+            "itemRef": item_ref,
+            "member": member is not None,
+            "position": member.position if member is not None else None,
+            "groupName": member.group_name if member is not None else None,
+            "pinned": bool(member.pinned) if member is not None else None,
+        }
+
+    async def _tag_snapshot(args: dict) -> dict:
+        raw_ref = str(args.get("itemRef") or "")
+        name = str(args.get("name") or "")
+        try:
+            item_ref = parse_item_ref(raw_ref).format()
+        except ValueError:
+            item_ref = raw_ref
+        binding = None
+        for tag in await tags.tags_for_item(item_ref, include_suggested=True):
+            if tag["name"].lower() == name.lower():
+                binding = tag
+                break
+        return {
+            "itemRef": item_ref,
+            "name": name,
+            "attached": binding is not None,
+            "origin": str(binding["origin"]) if binding is not None else None,
+        }
+
+    async def capture(tool: str, args: dict, phase: str) -> dict | None:
+        if tool not in UNDOABLE_WRITE_TOOLS:
+            return None
+        snapshot_args = dict(args or {})
+        if tool == "add_to_workspace":
+            snapshot = await _workspace_snapshot(snapshot_args)
+        else:
+            snapshot = await _tag_snapshot(snapshot_args)
+        snapshot["phase"] = phase
+        return snapshot
+
+    async def undo(tool: str, args: dict, before: dict | None, after: dict | None) -> dict:
+        if tool not in UNDOABLE_WRITE_TOOLS:
+            from lumirss.agent_store import UndoUnsupported
+
+            raise UndoUnsupported(f"工具 {tool} 不支持差异撤销。")
+        if after is None:
+            from lumirss.agent_store import UndoUnsupported
+
+            raise UndoUnsupported("写入台账缺少撤销快照，无法撤销。")
+        if tool == "add_to_workspace":
+            from lumirss.agent_store import UndoConflict
+
+            current = await _workspace_snapshot(args)
+            if not current["member"]:
+                raise UndoConflict(
+                    "条目已不在目标工作区（写入后被移出），撤销跳过。"
+                )
+            if (
+                current["position"] != after.get("position")
+                or current["groupName"] != after.get("groupName")
+                or current["pinned"] != after.get("pinned")
+            ):
+                raise UndoConflict(
+                    "工作区条目在写入后被修改过（位置/固定/分组），撤销跳过。"
+                )
+            await workspaces.remove_item(
+                str(current["workspaceId"]), str(current["itemRef"])
+            )
+            return {
+                "undone": True,
+                "tool": tool,
+                "workspaceId": current["workspaceId"],
+                "itemRef": current["itemRef"],
+            }
+        from lumirss.agent_store import UndoConflict
+
+        current = await _tag_snapshot(args)
+        if not current["attached"]:
+            raise UndoConflict("标签绑定已不存在（写入后被移除），撤销跳过。")
+        if current["origin"] != after.get("origin"):
+            raise UndoConflict("标签绑定在写入后被修改过（来源变化），撤销跳过。")
+        await tags.detach(str(current["itemRef"]), str(current["name"]))
+        return {
+            "undone": True,
+            "tool": tool,
+            "itemRef": current["itemRef"],
+            "name": current["name"],
+        }
+
+    return {"capture": capture, "undo": undo}
+
+
 def build_registry(**services) -> ToolRegistry:
     """services: search_writer(RSS), library_search(LibrarySearchWriter),
     rag(RagService), adapter(FreshRSSAdapter|None), library(LibraryStore),
@@ -56,6 +178,12 @@ def build_registry(**services) -> ToolRegistry:
         if allowed is None:
             return refs
         return [r for r in refs if r in allowed]
+
+    async def _effective_scope() -> dict:
+        """N151：查询时服务端解析 {kind, refCount}（范围回显）。"""
+        from lumirss.agent_scope import effective_scope
+
+        return await effective_scope(db, workspaces, registry.context.get("scope"))
 
     async def tool_search(args: dict) -> dict:
         query = str(args.get("query") or "").strip()[:200]
@@ -107,12 +235,15 @@ def build_registry(**services) -> ToolRegistry:
             **result,
             "items": [i for i in result["items"] if i["ref"] in set(kept_refs)],
         }
+        # N151：授权范围回显（查询时服务端解析 kind × refCount）。
+        effective = await _effective_scope()
         scope = registry.context.get("scope")
         if scope is not None and not result["items"]:
             return {
                 "error": "scope_empty",
                 "results": [],
                 "semanticUsed": result["semanticUsed"],
+                "effectiveScope": effective,
                 "citations": [],
             }
         refs = [item["ref"] for item in result["items"]]
@@ -126,6 +257,7 @@ def build_registry(**services) -> ToolRegistry:
                 for item in result["items"]
             ],
             "semanticUsed": result["semanticUsed"],
+            "effectiveScope": effective,
             "citations": refs,
         }
 

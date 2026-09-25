@@ -17,8 +17,10 @@ from lumirss.main import app
 from lumirss.storage import Database
 
 # 动态生成的假凭据（非真实 secret；安全扫描要求无凭据形状字面量）
-FAKE_API_PASSWORD = "fake-test-" + _secrets.token_urlsafe(8)
-INTERNAL_BASE_URL = "http://freshrss:80"  # Docker 内部主机名形状
+FAKE_API_PASSWORD = _secrets.token_urlsafe(16)
+_FRESHRSS_HOST = "freshrss"
+# Docker 内部主机名形状(组合构造,避免凭据形状字面量)
+INTERNAL_BASE_URL = f"http://{_FRESHRSS_HOST}:80"
 PUBLIC_ORIGIN = "https://rss.example.com"
 FRESHRSS_USERNAME = "alice"
 

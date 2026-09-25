@@ -440,8 +440,10 @@ main() {
           --default-user e2e --environment production --base-url http://freshrss \
           --language en --auth-type form --api-enabled --db-type sqlite
       fi
+      # API 密码必须与 compose 的 FRESHRSS_API_PASSWORD 一致——BFF 用它
+      # 建/绑池账号；fresh 卷（down -v 后）尤其会暴露历史不一致。
       $COMPOSE exec -T freshrss php ./cli/create-user.php \
-        --user e2e --password e2e-api-pw-123456 --api-password e2e-api-pw-123456 \
+        --user e2e --password e2e-api-password-123456 --api-password e2e-api-password-123456 \
         --no-default-feeds >/dev/null 2>&1 || true
       # CLI user creation runs as root: Apache (www-data) must be able to
       # read the user's config, or every greader login 401s with

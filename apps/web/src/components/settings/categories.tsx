@@ -79,6 +79,7 @@ import { ReaderFontManager } from './reader/ReaderFontManager'
 import {
   ChineseTypographySettings,
   CodeHighlightSettings,
+  ReadingRhythmSettings,
   ReaderThemePackSettings,
 } from './reader/ReaderDeepControls'
 // 0017：连续排版 Slider + 恢复默认（设置 → 阅读）
@@ -96,8 +97,16 @@ import { exportLumiData } from '../../api/client'
 import { StorageUsageSection } from './StorageUsageSection'
 import { StorageRetentionSection } from './StorageRetentionSection'
 import { SettingsHistorySection } from './SettingsHistorySection'
+// N183：离线资料设备配额（仅本设备 Cache Storage，不触碰服务器数据）
+import { OfflineQuotaSection } from './OfflineQuotaSection'
+// N181：逐来源数据外发清单（来自真实配置，只读）
+import { PrivacyDataFlowsSection } from './PrivacyDataFlowsSection'
 // R03：来源显示别名（设备本地 Map<feedTitle, alias>，仅展示层替换）
 import { SourceAliasSettings } from '../SourceAliasSettings'
+// N067：触控操作练习区（手势重映射的安全练习台账）
+import { GesturePracticeSettings } from '../GesturePracticeSettings'
+// N069：选词词典来源配置（用户自选端点；未配置零外发）
+import { DictSourceSettings } from './DictSourceSettings'
 
 // ---- 分类定义 ----
 
@@ -292,9 +301,14 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         { type: 'title', value: '中文排版' },
         // 0012 Gate 4：中文深度排版（首行缩进/标点悬挂/简繁/阅读时间/词首强调）
         { type: 'custom', node: <ChineseTypographySettings /> },
+        // N069：选词词典来源（用户自选端点；未配置 = 零外发的诚实默认）
+        { type: 'title', value: '选词词典' },
+        { type: 'custom', node: <DictSourceSettings /> },
         // 0012 Gate 8：代码高亮（Shiki lazy）
         { type: 'custom', node: <CodeHighlightSettings /> },
         { type: 'title', value: '阅读行为' },
+        // R5 批3：F063 连续阅读护眼提醒（设备本计时）
+        { type: 'custom', node: <ReadingRhythmSettings /> },
         {
           // P0-2（2026-09 移动端专项）：正文读到底自动已读
           type: 'toggle',
@@ -368,6 +382,15 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
             { value: 'large', label: '大' },
           ] satisfies { value: ReaderTapZoneSize; label: string }[],
           onChange: (v) => update({ readerTapZoneSize: v as ReaderTapZoneSize }),
+        },
+        {
+          // N070：纯键盘阅读定位（固定键 Alt+↑/↓/Shift 组合；设备本地开关）
+          type: 'toggle',
+          label: '纯键盘阅读定位',
+          description:
+            '在正文中用 Alt+↑/↓ 在标题/链接/代码块/批注间跳转，Alt+Shift+↑/↓ 切换类别（顺序按会话记忆）。只定位，不改动已读状态。',
+          checked: settings.readerKeyNav,
+          onCheckedChange: (v) => update({ readerKeyNav: v }),
         },
         { type: 'title', value: '自定义' },
         // 0010a F7（AC14）：自定义 CSS（仅作用于正文，自动前缀）
@@ -482,6 +505,9 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           ] satisfies { value: CardSwipeAction; label: string }[],
           onChange: (v) => update({ cardSwipeAction: v as CardSwipeAction }),
         },
+        // N067：手势练习区入口（同一 card-swipe 调度器；动作只记台账）
+        { type: 'title', value: '手势' },
+        { type: 'custom', node: <GesturePracticeSettings /> },
         {
           type: 'toggle',
           label: '启动时仅看未读',
@@ -568,6 +594,8 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
             queryClient.clear()
           },
         },
+        // N183：离线资料设备配额（枚举/用量/清理预览/应用；只删本设备缓存条目）
+        { type: 'custom', node: <OfflineQuotaSection /> },
         { type: 'title', value: '设置' },
         {
           type: 'action',
@@ -595,9 +623,12 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         },
         // F36：存储用量（口径明确，只读统计 + 预算提醒展示）
         { type: 'custom', node: <StorageUsageSection /> },
-        // F114：派生数据保留策略（默认关；预览 → 应用）
+        // F114：派生数据保留策略（默认关；预览 → 应用；N188 到期提醒横幅）
         { type: 'custom', node: <StorageRetentionSection /> },
         { type: 'custom', node: <DataBackupSection /> },
+        { type: 'title', value: '隐私' },
+        // N181：逐来源数据外发清单（未配置 = 不发送）
+        { type: 'custom', node: <PrivacyDataFlowsSection /> },
       ]
     case 'services':
       // 0018 Gate 9：账户与服务 —— 会话账户安全（session 模式）+ 真实

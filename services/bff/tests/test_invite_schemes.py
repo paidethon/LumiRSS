@@ -130,7 +130,7 @@ def _add_pool(env, username):
         json={
             "freshrssUsername": username,
             "freshrssBaseUrl": "http://freshrss.test",
-            "apiPassword": "pool-secret-" + _secrets.token_urlsafe(6),
+            "apiPassword": "pool-" + _secrets.token_hex(12),
         },
         headers=env["owner"],
     )

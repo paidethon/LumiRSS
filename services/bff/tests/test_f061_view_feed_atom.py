@@ -8,7 +8,8 @@
 
 import asyncio
 import hashlib
-import xml.etree.ElementTree as ET
+
+from defusedxml import ElementTree as ET  # 拒绝实体展开(XXE 安全缺省)
 
 from lumirss.main import app
 

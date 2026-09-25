@@ -30,6 +30,7 @@ from lumirss.adapters.freshrss_control import (
 )
 from lumirss.agent import AgentProviderUnavailable
 from lumirss.agent_export import ExportInvalid
+from lumirss.agent_recipes import RecipeInvalid, RecipeNameConflict, RecipeNotFound
 from lumirss.agent_session import (
     BranchInvalid,
     SearchInvalid,
@@ -37,10 +38,15 @@ from lumirss.agent_session import (
 )
 from lumirss.agent_store import (
     ApprovalInvalid,
+    ApprovalSuperseded,
     NoActiveRun,
+    NotPaused,
     PendingApprovalBlocked,
+    StepNotFound,
     ThreadNotFound,
     ToolDenied,
+    UndoConflict,
+    UndoUnsupported,
 )
 from lumirss.agent_tools import DryRunUnsupported
 from lumirss.ai_profiles import (
@@ -64,6 +70,7 @@ from lumirss.ai_translation_segments import (
     SegmentTranslationUnavailable,
 )
 from lumirss.api_sources import (
+    ApiSourceBudgetExhausted,
     ApiSourceExpressionError,
     ApiSourceFetchFailed,
     ApiSourceInvalid,
@@ -91,7 +98,9 @@ from lumirss.backup import (
 )
 from lumirss.bookmarks_io import NetscapeParseError
 from lumirss.clip_fetch import ClipFetchError, ClipForbidden
+from lumirss.clip_intake import CandidateNotFound, ClipLocked
 from lumirss.clip_revision import MustKeepOne, RevisionConflict
+from lumirss.credential_rotation import CredentialTestFailed
 from lumirss.cursor import InvalidCursor
 from lumirss.entryref import InvalidEntryReference
 from lumirss.favorites import FavoriteInvalid
@@ -129,6 +138,7 @@ from lumirss.lumi_notes_lifecycle import (
 from lumirss.lumi_notes_lifecycle import (
     NoteNotFound as LumiNoteNotFound,
 )
+from lumirss.mail_attachments import MailAttachmentNotFound
 from lumirss.mail_bridge import (
     MailBridgeInvalid,
     MailBridgeNotFound,
@@ -156,6 +166,10 @@ from lumirss.opml import (
     OpmlInvalid,
     OpmlTooLarge,
     OpmlTooManyFeeds,
+)
+from lumirss.opml_import_log import (
+    OpmlImportLogNotFound,
+    OpmlImportLogUndone,
 )
 from lumirss.qa_templates import QaTemplateInvalid, QaTemplateNotFound
 from lumirss.rag import RagModelUnavailable, RagRebuildBusy
@@ -186,32 +200,60 @@ from lumirss.rsshub_control import (
     RssHubInvalidValue,
     RssHubUnknownKey,
 )
+from lumirss.rsshub_param_presets import (
+    RssHubPresetLimit,
+    RssHubPresetNotFound,
+)
 from lumirss.saved_search_store import (
     SavedSearchInvalid,
     SavedSearchLimit,
     SavedSearchNotFound,
+    SavedSearchWorkspaceMissing,
 )
 from lumirss.search_debug import SearchEntryNotFound
 from lumirss.search_index import SearchQueryError
+from lumirss.search_snapshot_store import (
+    SearchSnapshotInvalid,
+    SearchSnapshotNotFound,
+)
 from lumirss.secrets_store import SecretsStoreError
 from lumirss.snapshots import MonolithUnavailable, SnapshotFailed
+from lumirss.source_access_cards import AccessCardInvalid
 from lumirss.source_aliases import SourceAliasInvalid, SourceAliasNotFound
+from lumirss.source_bundle import BundleInvalid
 from lumirss.source_discovery import (
     InvalidSourceUrl,
     NoFeedDiscovered,
 )
+from lumirss.source_overrides import AttentionLevelInvalid
 from lumirss.sources import ItemRefUnresolvable
+from lumirss.staged_source_store import (
+    StagedSourceConflict,
+    StagedSourceInvalid,
+    StagedSourceNotFound,
+)
 from lumirss.subscriptionref import (
     InvalidSubscriptionReference,
 )
-from lumirss.tags import TagInvalid, TagNotFound
+from lumirss.tags import (
+    TagInvalid,
+    TagMergeSourceRecreated,
+    TagMergeUndoNotFound,
+    TagNotFound,
+)
 from lumirss.webdav import WebDavError, WebDavInvalidSettings, WebDavNotConfigured
 from lumirss.workspace_archive import (
     ArchivedWorkspace,
     ProtectedWorkspace,
 )
 from lumirss.workspace_board import BoardInvalid, BoardItemNotFound
+from lumirss.workspace_cleanup import CleanupInvalid, CleanupLogNotFound
 from lumirss.workspace_goals import GoalInvalid
+from lumirss.workspace_sections import (
+    SectionInvalid,
+    SectionItemNotFound,
+    SectionNotFound,
+)
 from lumirss.workspace_snapshots import WorkspaceSnapshotNotFound
 from lumirss.workspace_templates import (
     TemplateExists,
@@ -267,6 +309,9 @@ _ERROR_RESPONSES = {
     RssHubFetchError: (502, "rsshub_fetch_error"),
     # N021 route favorites
     RssHubFavoriteNotFound: (404, "rsshub_favorite_not_found"),
+    # N030 route param presets
+    RssHubPresetLimit: (400, "rsshub_param_preset_limit"),
+    RssHubPresetNotFound: (404, "rsshub_param_preset_not_found"),
     # 0015 AI settings
     InvalidAiSettings: (400, "invalid_ai_settings"),
     AiProfileNotFound: (404, "ai_profile_not_found"),
@@ -329,6 +374,13 @@ _ERROR_RESPONSES = {
     WorkspaceItemPinned: (409, "workspace_item_pinned"),
     # N105：快照不存在（不跨工作区取快照）
     WorkspaceSnapshotNotFound: (404, "workspace_snapshot_not_found"),
+    # N113 分节大纲
+    SectionInvalid: (422, "invalid_workspace_section"),
+    SectionNotFound: (404, "workspace_section_not_found"),
+    SectionItemNotFound: (404, "workspace_section_item_not_found"),
+    # N120 清理预演
+    CleanupInvalid: (422, "invalid_workspace_cleanup"),
+    CleanupLogNotFound: (404, "workspace_cleanup_log_not_found"),
     # N041/N042/N043：今日必读队列（稳定错误信封）
     QueueInvalid: (400, "invalid_queue"),
     QueueItemNotFound: (404, "queue_item_not_found"),
@@ -340,6 +392,12 @@ _ERROR_RESPONSES = {
     ClipForbidden: (400, "clip_fetch_forbidden"),
     ClipInvalid: (400, "invalid_clip"),
     ClipNotFound: (404, "clip_not_found"),
+    # N122 剪藏版本锁定（覆盖式写入被锁定旗标拒绝）
+    ClipLocked: (409, "clip_locked"),
+    # N122 候选版本缺失（查看/应用/丢弃候选时无候选可操作）
+    CandidateNotFound: (404, "clip_candidate_not_found"),
+    # N125 邮件附件缺失（跨用户/不存在同型 404，不泄露存在性）
+    MailAttachmentNotFound: (404, "mail_attachment_not_found"),
     AssetNotFound: (404, "asset_not_found"),
     AssetQuotaExceeded: (413, "quota_exceeded"),
     AssetTooLarge: (413, "snapshot_too_large"),
@@ -351,6 +409,14 @@ _ERROR_RESPONSES = {
     ApiSourceExpressionError: (400, "invalid_expression"),
     ApiSourcePreviewError: (422, "preview_expression_failed"),
     ApiSourceFetchFailed: (502, "fetch_failed"),
+    # N130 credential rotation: dry probe failed, current credential untouched
+    CredentialTestFailed: (422, "credential_test_failed"),
+    # N011 source bundle
+    BundleInvalid: (400, "invalid_bundle"),
+    # N016 staging pool
+    StagedSourceInvalid: (400, "invalid_staged_source"),
+    StagedSourceNotFound: (404, "staged_source_not_found"),
+    StagedSourceConflict: (409, "staged_source_conflict"),
     # phase2 G5 mail
     MailBridgeInvalid: (400, "invalid_mail_payload"),
     MailBridgeNotFound: (404, "mail_list_not_found"),
@@ -376,14 +442,31 @@ _ERROR_RESPONSES = {
     # phase2 G8 tags
     TagInvalid: (400, "invalid_tag"),
     TagNotFound: (404, "tag_not_found"),
+    # N150 tag merge undo
+    TagMergeUndoNotFound: (404, "tag_merge_undo_not_found"),
+    TagMergeSourceRecreated: (409, "tag_merge_source_recreated"),
     # pool #09 saved search views
     SavedSearchInvalid: (400, "invalid_saved_search"),
     SavedSearchNotFound: (404, "saved_search_not_found"),
     SavedSearchLimit: (409, "saved_search_limit"),
+    # N144 saved search scope
+    SavedSearchWorkspaceMissing: (400, "workspace_not_found"),
+    # N141 search snapshots
+    SearchSnapshotInvalid: (400, "invalid_search_snapshot"),
+    SearchSnapshotNotFound: (404, "search_snapshot_not_found"),
     # phase2 recovery P0-08 (agent run lifecycle)
     ThreadNotFound: (404, "thread_not_found"),
     PendingApprovalBlocked: (409, "pending_approval"),
     NoActiveRun: (409, "no_active_run"),
+    # N164–N170 agent ops wave
+    NotPaused: (409, "not_paused"),
+    ApprovalSuperseded: (410, "approval_superseded"),
+    StepNotFound: (404, "step_not_found"),
+    UndoUnsupported: (422, "undo_unsupported"),
+    UndoConflict: (409, "undo_conflict"),
+    RecipeInvalid: (422, "invalid_recipe"),
+    RecipeNotFound: (404, "recipe_not_found"),
+    RecipeNameConflict: (409, "recipe_name_conflict"),
     # 0021 inbox push sources
     InvalidInboxPayload: (400, "invalid_inbox_payload"),
     InboxSourceNotFound: (404, "inbox_source_not_found"),
@@ -434,6 +517,11 @@ _ERROR_RESPONSES = {
     DryRunUnsupported: (422, "dry_run_unsupported"),
     ZipInvalid: (422, "invalid_research_pack_request"),
     ZipTooLarge: (413, "research_pack_too_large"),
+    # N019 来源接入说明卡 / N018 撤销台账 / N020 关注级别
+    AccessCardInvalid: (422, "invalid_access_card"),
+    OpmlImportLogNotFound: (404, "opml_import_log_not_found"),
+    OpmlImportLogUndone: (409, "opml_import_already_undone"),
+    AttentionLevelInvalid: (422, "invalid_attention_level"),
 }
 
 
@@ -471,6 +559,8 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(RssHubRouteNotFound)
     @app.exception_handler(RssHubInvalidParameters)
     @app.exception_handler(RssHubFavoriteNotFound)
+    @app.exception_handler(RssHubPresetLimit)
+    @app.exception_handler(RssHubPresetNotFound)
     @app.exception_handler(InvalidAppSettings)
     @app.exception_handler(AppSettingsConflict)
     @app.exception_handler(InvalidAiSettings)
@@ -518,6 +608,9 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(ClipForbidden)
     @app.exception_handler(ClipInvalid)
     @app.exception_handler(ClipNotFound)
+    @app.exception_handler(ClipLocked)
+    @app.exception_handler(CandidateNotFound)
+    @app.exception_handler(MailAttachmentNotFound)
     @app.exception_handler(AssetNotFound)
     @app.exception_handler(AssetQuotaExceeded)
     @app.exception_handler(AssetTooLarge)
@@ -527,6 +620,11 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(ApiSourceNotFound)
     @app.exception_handler(ApiSourceExpressionError)
     @app.exception_handler(ApiSourceFetchFailed)
+    @app.exception_handler(CredentialTestFailed)
+    @app.exception_handler(BundleInvalid)
+    @app.exception_handler(StagedSourceInvalid)
+    @app.exception_handler(StagedSourceNotFound)
+    @app.exception_handler(StagedSourceConflict)
     @app.exception_handler(MailBridgeInvalid)
     @app.exception_handler(MailBridgeNotFound)
     @app.exception_handler(SmtpNotConfigured)
@@ -547,12 +645,25 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(ApprovalInvalid)
     @app.exception_handler(TagInvalid)
     @app.exception_handler(TagNotFound)
+    @app.exception_handler(TagMergeUndoNotFound)
+    @app.exception_handler(TagMergeSourceRecreated)
     @app.exception_handler(SavedSearchInvalid)
     @app.exception_handler(SavedSearchNotFound)
     @app.exception_handler(SavedSearchLimit)
+    @app.exception_handler(SavedSearchWorkspaceMissing)
+    @app.exception_handler(SearchSnapshotInvalid)
+    @app.exception_handler(SearchSnapshotNotFound)
     @app.exception_handler(ThreadNotFound)
     @app.exception_handler(PendingApprovalBlocked)
     @app.exception_handler(NoActiveRun)
+    @app.exception_handler(NotPaused)
+    @app.exception_handler(ApprovalSuperseded)
+    @app.exception_handler(StepNotFound)
+    @app.exception_handler(UndoUnsupported)
+    @app.exception_handler(UndoConflict)
+    @app.exception_handler(RecipeInvalid)
+    @app.exception_handler(RecipeNotFound)
+    @app.exception_handler(RecipeNameConflict)
     @app.exception_handler(InvalidInboxPayload)
     @app.exception_handler(InboxSourceNotFound)
     @app.exception_handler(InboxItemNotFound)
@@ -596,11 +707,21 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(ZipTooLarge)
     @app.exception_handler(WorkspaceItemPinned)
     @app.exception_handler(WorkspaceSnapshotNotFound)
+    @app.exception_handler(SectionInvalid)
+    @app.exception_handler(SectionNotFound)
+    @app.exception_handler(SectionItemNotFound)
+    @app.exception_handler(CleanupInvalid)
+    @app.exception_handler(CleanupLogNotFound)
     @app.exception_handler(QueueInvalid)
     @app.exception_handler(QueueItemNotFound)
     @app.exception_handler(QueueItemDone)
     @app.exception_handler(QueueSnapshotNotFound)
     @app.exception_handler(QueueSnapshotLimit)
+    # N019 来源接入说明卡 / N018 撤销台账 / N020 关注级别
+    @app.exception_handler(AccessCardInvalid)
+    @app.exception_handler(OpmlImportLogNotFound)
+    @app.exception_handler(OpmlImportLogUndone)
+    @app.exception_handler(AttentionLevelInvalid)
     async def adapter_error_handler(request: Request, exc: Exception) -> JSONResponse:
         status, error_type = _ERROR_RESPONSES[type(exc)]
         return JSONResponse(
@@ -662,6 +783,60 @@ def register_error_handlers(app) -> None:
             },
         )
 
+    @app.exception_handler(FeedFetchError)
+    @app.exception_handler(UnsafeFeedUrl)
+    async def feed_fetch_redirect_chain_handler(
+        request: Request, exc: Exception
+    ) -> JSONResponse:
+        """N035：feed 抓取边界拒绝时透出重定向链（失败跳展示）。
+
+        稳定错误类型与状态码不变（_ERROR_RESPONSES 为准）；仅当链上
+        有多跳、或存在从未到达的失败跳（status=None，如私网/回环拒绝）
+        时附加 redirectChain + failedHop——单跳普通失败无诊断增值，
+        响应形状保持与历史一致。URL 的 query 已由 safe_fetch 掩码。"""
+        status, error_type = _ERROR_RESPONSES[type(exc)]
+        chain = getattr(exc, "redirect_chain", None) or []
+        content: dict[str, object] = {
+            "error": {"type": error_type, "message": str(exc)}
+        }
+        if len(chain) > 1 or any(hop.get("status") is None for hop in chain):
+            error_payload: dict[str, object] = content["error"]
+            error_payload["redirectChain"] = [dict(hop) for hop in chain]
+            error_payload["failedHop"] = chain[-1]["url"]
+        return JSONResponse(status_code=status, content=content)
+
+
+    @app.exception_handler(ApiSourceBudgetExhausted)
+    async def api_source_budget_exhausted_handler(
+        request: Request, exc: ApiSourceBudgetExhausted
+    ) -> JSONResponse:
+        """N129：每来源抓取预算用尽 → 429 budget_exhausted + Retry-After。
+
+        FreshRSS 轮询遇到 429 会按 Retry-After 退避——这正是「限额友好」
+        的服务端执行点。响应体同时带 nextAllowedRun（诚实、可显示）。"""
+        from datetime import UTC, datetime
+
+        retry_after = 60
+        try:
+            target = datetime.fromisoformat(
+                exc.next_allowed_run.replace("Z", "+00:00")
+            )
+            if target.tzinfo is None:
+                target = target.replace(tzinfo=UTC)
+            retry_after = max(1, int((target - datetime.now(UTC)).total_seconds()))
+        except ValueError:
+            pass
+        return JSONResponse(
+            status_code=429,
+            headers={"Retry-After": str(retry_after)},
+            content={
+                "error": {
+                    "type": "budget_exhausted",
+                    "message": str(exc),
+                    "nextAllowedRun": exc.next_allowed_run,
+                }
+            },
+        )
 
     @app.exception_handler(RequestValidationError)
     async def request_validation_handler(

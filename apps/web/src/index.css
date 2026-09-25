@@ -57,6 +57,8 @@ body {
   /* 0010a F6：字体族/对齐（store 挂变量；默认跟随界面） */
   font-family: var(--lumi-reader-font-family, inherit);
   text-align: var(--lumi-reader-text-align, start);
+  /* F068：正文字重档位（300–700；store 挂变量，默认常规） */
+  font-weight: var(--lumi-reader-font-weight, 400);
   text-justify: inter-ideograph;
   color: var(--lumi-reader-text, var(--lumi-text-primary));
   word-break: break-word;
@@ -352,6 +354,35 @@ html[data-code-wrap='on'] .article-content pre code {
   word-break: break-word;
 }
 
+/* ---- F072：代码块等宽字号档位（S/M/L，相对正文 em） ---- */
+html[data-reader-code-font-size='s'] .article-content pre code {
+  font-size: 0.78em;
+}
+html[data-reader-code-font-size='m'] .article-content pre code {
+  font-size: 0.875em;
+}
+html[data-reader-code-font-size='l'] .article-content pre code {
+  font-size: 1em;
+}
+
+/* ---- F073：代码块行号（管线按行包 .lumi-code-line + CSS counter）----
+ * DOM 内不写数字（textContent 与原代码逐字一致 → 复制无行号污染）；
+ * 与换行共存：换行续行不重复编号（编号只出现在每行行首）。 */
+.article-content pre code[data-lumi-line-numbers='true'] {
+  counter-reset: lumi-code-line;
+}
+.article-content pre code[data-lumi-line-numbers='true'] .lumi-code-line::before {
+  counter-increment: lumi-code-line;
+  content: counter(lumi-code-line);
+  display: inline-block;
+  min-width: 2em;
+  margin-right: 0.75em;
+  text-align: right;
+  color: var(--lumi-text-tertiary);
+  opacity: 0.65;
+  user-select: none;
+}
+
 /* ---- F16：表格展开 ----
  * 过宽表格包一层定位容器，「展开查看」悬浮按钮挂在右上角（浮在
  * 表格上，不挤压正文流）。 */
@@ -383,6 +414,92 @@ html[data-code-wrap='on'] .article-content pre code {
   outline-offset: 1px;
 }
 
+/* ---- N057：代码块独立阅读页 ----
+ * 「展开代码」入口：pre 右上角、复制按钮左侧（复制按钮 min-width 44px
+ * 占据 right 0.375rem 起；本按钮再左移）。图标按钮：DOM 装饰内联 SVG，
+ * 可访问名由 aria-label 提供（同 .lumi-para-link 例外模式）。 */
+.article-content pre .lumi-code-expand-btn {
+  position: absolute;
+  top: 0.375rem;
+  right: 3.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--lumi-surface, var(--bg));
+  color: var(--lumi-text-secondary);
+  cursor: pointer;
+  z-index: 1;
+}
+.article-content pre .lumi-code-expand-btn:hover {
+  color: var(--lumi-text-primary);
+  background: var(--lumi-surface-selected);
+}
+.article-content pre .lumi-code-expand-btn:focus-visible {
+  outline: 2px solid var(--lumi-focus-ring);
+  outline-offset: 1px;
+}
+/* 面板内行号栏：sticky left（横向滚动时保持可见），实底防透字。 */
+.lumi-code-gutter {
+  position: sticky;
+  left: 0;
+  background: var(--lumi-surface);
+}
+/* 面板内搜索匹配：普通匹配浅底，当前匹配强调底（data-current）。 */
+.lumi-code-match {
+  background: var(--lumi-accent-soft);
+  color: inherit;
+  border-radius: 2px;
+}
+.lumi-code-match[data-current='true'] {
+  background: var(--lumi-accent);
+  color: var(--lumi-accent-contrast);
+}
+
+/* ---- N063：宽表面板行列聚焦 ----
+ * 表头 sticky top / 首列 sticky left（克隆表格内；实底防透字），
+ * 左上角同时两向 sticky 需要更高 z 序；触控行高 ≥ 44px。 */
+.lumi-wt-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--lumi-surface-elevated);
+}
+.lumi-wt-col0 {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--lumi-surface-elevated);
+}
+.lumi-wt-head.lumi-wt-col0 {
+  z-index: 3;
+}
+.lumi-wt-cell {
+  min-height: 44px;
+}
+.lumi-wt-focus {
+  background: var(--lumi-surface-selected);
+}
+
+/* ---- N064：公式专注视图 ----
+ * 正文公式（有 TeX 原文接线）的可点击暗示 + 键盘焦点；专注面板内
+ * 公式放大展示（复用 KaTeX 输出，仅字号放大）。 */
+.article-content [data-lumi-formula-ready] {
+  cursor: zoom-in;
+}
+.article-content [data-lumi-formula-ready]:focus-visible {
+  outline: 2px solid var(--lumi-focus-ring);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+.lumi-formula-focus .katex {
+  font-size: 2em;
+}
+
 /* ---- 专注阅读模式（Reader 会话级开关，article[data-lumi-focus]） ----
  * 视口中心块全亮，其余块降透明度；滚动帧内由 lib/reader-focus 打标。
  * 减少动效偏好下不做过渡。 */
@@ -394,6 +511,20 @@ html[data-code-wrap='on'] .article-content pre code {
   opacity: 1;
 }
 html[data-motion-reduce='true'] .lumi-reader-article[data-lumi-focus='on'] .article-content :is(p, li, pre, blockquote, h1, h2, h3, h4, h5, h6, table, figure) {
+  transition: none;
+}
+
+/* ---- F062：逐段专注模式（article[data-lumi-para-focus]） ----
+ * 用户步进指定的当前段全亮，其余块降透明；当前段标记由
+ * lib/reader-para-focus 管理（j/k/点击步进，Esc 退出）。 */
+.lumi-reader-article[data-lumi-para-focus='on'] .article-content :is(p, li, pre, blockquote, h1, h2, h3, h4, h5, h6, table, figure) {
+  opacity: 0.16;
+  transition: opacity var(--lumi-motion-slow, 200ms) var(--lumi-ease, ease);
+}
+.lumi-reader-article[data-lumi-para-focus='on'] .article-content [data-lumi-para-focus-active] {
+  opacity: 1;
+}
+html[data-motion-reduce='true'] .lumi-reader-article[data-lumi-para-focus='on'] .article-content :is(p, li, pre, blockquote, h1, h2, h3, h4, h5, h6, table, figure) {
   transition: none;
 }
 
@@ -413,8 +544,71 @@ html[data-motion-reduce='true'] .lumi-reader-article[data-lumi-focus='on'] .arti
 }
 
 .article-content img {
-  max-width: 100%; /* 图片适应 Reader 宽度 */
+  max-width: var(--lumi-reader-image-max-width, 100%); /* F069：图片宽度档位（默认适应 Reader 宽度） */
   height: auto;
+}
+
+/* ---- F069：图片最大宽度档位（<100% 时居中，避免靠左失衡） ---- */
+html[data-reader-image-max-width='75%'] .article-content img,
+html[data-reader-image-max-width='60%'] .article-content img {
+  display: block;
+  margin-inline: auto;
+}
+
+/* ---- F070：首图破格满宽（管线给第一张 img 打 data-lumi-first-image；
+ * 桌面 ≥1024px 破出页边距满宽——移动端窄屏破格意义小且易溢出）。
+ * max-width: none 抵消 F069 档位约束（破格是显式用户选择）。 ---- */
+@media (min-width: 1024px) {
+  html[data-reader-first-image-full-bleed='true'] .article-content img[data-lumi-first-image] {
+    max-width: none;
+    width: calc(100% + 2 * var(--lumi-reader-page-margin, 2rem));
+    margin-inline: calc(-1 * var(--lumi-reader-page-margin, 2rem));
+  }
+}
+
+/* ---- F071：figure caption（figcaption）显示模式 ----
+ * show：默认（既有观感）；hidden：整段隐藏；hover：默认隐藏，
+ * figure 悬停 / 键盘聚焦（focus-within）时淡入。 ---- */
+html[data-reader-caption-mode='hidden'] .article-content figcaption {
+  display: none;
+}
+html[data-reader-caption-mode='hover'] .article-content figcaption {
+  opacity: 0;
+  transition: opacity var(--lumi-motion-fast, 150ms) var(--lumi-ease, ease);
+}
+html[data-reader-caption-mode='hover'] .article-content figure:hover figcaption,
+html[data-reader-caption-mode='hover'] .article-content figure:focus-within figcaption {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-reader-caption-mode='hover'] .article-content figcaption {
+    transition: none;
+  }
+}
+
+/* ---- F064：纸张质感纹理（纯 CSS 噪点，不引图片资源）----
+ * 只叠在 paper 背景档（light #fffefb / dark #1d1f24）上；两层错位
+ * 圆点渐变模拟纸纤维，中性灰低透明度在明暗两套纸色上都成立。 ---- */
+html[data-reader-paper-texture='true'][data-reader-bg-preset='paper'] .lumi-reader-bg-image {
+  background-image:
+    radial-gradient(rgba(127, 112, 84, 0.055) 1px, transparent 1.3px),
+    radial-gradient(rgba(0, 0, 0, 0.04) 1px, transparent 1.3px),
+    linear-gradient(
+      color-mix(
+        in srgb,
+        var(--lumi-reader-bg) calc(var(--lumi-reader-bg-overlay, 0) * 100%),
+        transparent
+      ),
+      color-mix(
+        in srgb,
+        var(--lumi-reader-bg) calc(var(--lumi-reader-bg-overlay, 0) * 100%),
+        transparent
+      )
+    ),
+    var(--lumi-reader-bg-image, none);
+  background-size: 23px 23px, 17px 17px, cover, cover;
+  background-position: 0 0, 8px 11px, center, center;
+  background-repeat: repeat, repeat, no-repeat, no-repeat;
 }
 
 .article-content figure {
@@ -451,6 +645,19 @@ html[data-motion-reduce='true'] .lumi-reader-article[data-lumi-focus='on'] .arti
   margin: 1.5em 0;
   border: 0;
   border-top: 1px solid var(--border);
+}
+
+/* ---- F077：正文/原网页分屏（Reader 根挂 .lumi-reader-split）----
+ * 仅 ≥1024px 双栏：正文滚动容器与原网页 iframe 各占一半；
+ * <1024px 自动退回单栏（调用方在移动端也不渲染分屏栏）。 */
+@media (min-width: 1024px) {
+  .lumi-reader-split {
+    display: flex;
+  }
+  .lumi-reader-split > .lumi-reader-scroll {
+    flex: 1 1 50%;
+    min-width: 0;
+  }
 }
 
 /* 0011 修正补充 §17/§18：文章行动作 hover 增强。
@@ -765,6 +972,25 @@ button.lumi-blocked-image {
   cursor: pointer;
 }
 button.lumi-blocked-image:hover {
+  background: var(--lumi-surface-hover);
+}
+
+/* N066：仅手动媒体占位按钮（与 F009 拦截占位同一形态；44px 触控目标） */
+button.lumi-manual-media {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 6px 12px;
+  margin: 4px 0;
+  border: 1px dashed var(--lumi-border);
+  border-radius: var(--lumi-radius-md);
+  background: var(--lumi-surface-selected);
+  color: var(--lumi-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+button.lumi-manual-media:hover {
   background: var(--lumi-surface-hover);
 }
 

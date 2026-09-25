@@ -55,7 +55,12 @@ class TemplateRenderResult:
 
 
 def _render_annotations(value) -> str:  # noqa: ANN001 — list of dicts or str
-    """批注 bullet 列表；空 →「（无标注）」占位。"""
+    """批注 bullet 列表；空 →「（无标注）」占位。
+
+    N134 块级回跳：每条批注 bullet 以 `` ^lumi-<paraId>`` 结尾（Obsidian
+    官方块 id 语法——块 id 必须是块内最后一个 token，因此反链在它之前），
+    并在存在 LUMIRSS_PUBLIC_URL 时注入绝对反链（→ LumiRSS 原文）；
+    public_url 未配置或批注无段落锚点时诚实省略对应部分。"""
     if value is None:
         return NO_ANNOTATIONS_PLACEHOLDER
     if isinstance(value, str):
@@ -65,10 +70,20 @@ def _render_annotations(value) -> str:  # noqa: ANN001 — list of dicts or str
         if isinstance(annotation, dict):
             quote = str(annotation.get("quote") or "").strip()
             link = str(annotation.get("link") or "").strip()
+            backlink = str(annotation.get("backlink") or "").strip()
+            block_id = str(annotation.get("blockId") or "").strip()
             if link:
                 line = f'- 「{quote}」([定位]({link}))' if quote else f"- ([定位]({link}))"
             else:
                 line = f"- 「{quote}」" if quote else ""
+            if backlink:
+                if line:
+                    line += f" [→ LumiRSS 原文]({backlink})"
+                else:
+                    line = f"- [→ LumiRSS 原文]({backlink})"
+            if block_id:
+                # 块 id 永远收尾（Obsidian 要求块内最后一个 token）。
+                line = f"{line} ^{block_id}" if line else f"- ^{block_id}"
             if line:
                 items.append(line)
         elif str(annotation).strip():

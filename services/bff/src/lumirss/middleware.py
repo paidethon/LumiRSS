@@ -8,6 +8,7 @@ layer (LUMIRSS_AUTH_MODE=session). Registered on the app in main.py.
 
 import asyncio
 import contextlib
+import json
 import logging
 import re
 import time
@@ -39,6 +40,7 @@ _REQUEST_ID_HEADER = b"x-request-id"
 _SAFE_REQUEST_ID = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 
 _logger = logging.getLogger("lumirss.request")
+_access_logger = logging.getLogger("lumirss.access")
 
 
 def current_request_id() -> str | None:
@@ -182,6 +184,7 @@ class RequestSizeLimitMiddleware:
 
 _RATE_RULES: tuple[tuple[str, str, str, int, int], ...] = (
     # (method, path prefix, bucket, max requests, window seconds)
+    ("POST", "/api/v1/auth/register", "register", 10, 60),
     ("POST", "/api/v1/restore", "restore", 10, 60),
     ("POST", "/api/v1/backups/webdav", "backup_webdav", 10, 60),
     ("POST", "/api/v1/backups", "backup", 12, 60),
@@ -330,6 +333,7 @@ PLAIN_SESSION_COOKIE_NAME = "lumirss_session"
 SESSION_PUBLIC_PATHS = frozenset(
     {
         "/api/v1/auth/login",
+        "/api/v1/auth/register",
         "/api/v1/auth/session",
         "/api/v1/auth/activate",
         "/api/v1/auth/activation-preview",
@@ -680,5 +684,70 @@ def login_retry_after_s(scope) -> int:
         return 1
     elapsed = time.monotonic() - max(stamps)
     return max(1, int(LOGIN_FAILURE_WINDOW_S - elapsed))
+
+
+# ---------------------------------------------------------------------------
+# E01 structured access log: one JSON line per request on
+# "lumirss.access". Fields are exactly what an operator needs to
+# reconstruct a request (correlation id, matched route template, status,
+# duration, server-derived actor, exception class) — and nothing else:
+# query strings (activation/reset tokens ride there), bodies, headers and
+# credentials are never logged. LUMIRSS_ACCESS_LOG=off silences it.
+# Registered INSIDE the correlation layer, so the request-id contextvar
+# is still set when the record is emitted.
+
+
+class RequestLogMiddleware:
+    """Structured request log (E01)."""
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        if LumiSettings().LUMIRSS_ACCESS_LOG == "off":
+            await self.app(scope, receive, send)
+            return
+        start = time.perf_counter()
+        status: list[int] = [0]
+
+        async def send_with_capture(message) -> None:
+            if message["type"] == "http.response.start":
+                status[0] = message["status"]
+            await send(message)
+
+        error_class: str | None = None
+        try:
+            await self.app(scope, receive, send_with_capture)
+        except Exception as exc:  # noqa: BLE001 — recorded, then re-raised
+            error_class = type(exc).__name__
+            raise
+        finally:
+            duration_ms = int((time.perf_counter() - start) * 1000)
+            principal = scope.get("lumi_principal") or {}
+            # Matched route template after routing; raw path only when
+            # unrouted (404) — query strings are deliberately excluded.
+            route = getattr(scope.get("route"), "path", None) or scope.get("path", "")
+            record = {
+                "event": "access",
+                "component": "http",
+                "request_id": current_request_id(),
+                "method": scope.get("method", ""),
+                "route": route,
+                "status": status[0],
+                "duration_ms": duration_ms,
+                "user_id": principal.get("user_id"),
+                "role": principal.get("role"),
+                "error": error_class,
+            }
+            if status[0] >= 500 or error_class:
+                level = logging.ERROR
+            elif status[0] >= 400:
+                level = logging.WARNING
+            else:
+                level = logging.INFO
+            _access_logger.log(level, json.dumps(record, ensure_ascii=False))
 
 

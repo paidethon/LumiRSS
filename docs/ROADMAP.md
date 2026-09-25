@@ -51,11 +51,34 @@
   横向滚动元素不翻页）——「按屏翻页」开关由此演进为「阅读模式」
   select；阅读标尺增强（宽度/深浅三档持久化 + 全键盘操作）；中文排版
   细化（首行缩进按块类型扩展到列表/引用 + 避头尾，CSS-only）。
+- **NW1 阅读辅助批次（2026-09-25，全部设备本地）**：附件下载队列
+  （enclosure 白名单类型（音频/视频/图片/PDF/EPUB；脚本/可执行拒绝）
+  加入本机下载队列，名称/大小/进度/取消/重试一次，200MB 上限 LRU 逐出
+  并诚实提示，文件名净化保留 CJK，元数据 localStorage、二进制不落
+  localStorage）；按源媒体仅手动加载（图片/视频/音频先进 DOM 前摘除
+  加载属性——初始渲染零外部媒体请求，点击占位只加载该一个元素，按
+  feedUrl 记忆）；触控操作练习区（设置「手势」区 3 张示例卡复用与文章
+  列表完全相同的手势调度器，动作只记练习台账，绝不发起真实变更）；
+  结构视图（标题大纲 h1–h6 文档序 + 链接/图片/表格/代码块/批注计数，
+  sr-only/aria-hidden 子树剔除，标题可跳转，打开状态设备本地）；选词
+  词典卡（单个词选区弹卡，词典端点由用户自配（缺 {word} 占位符视为
+  未配置），未配置/离线诚实提示且零请求，查询只发送所选单词，发音走
+  既有朗读链路）；纯键盘阅读定位（Alt+↑/↓ 类别内循环、Alt+Shift+↑/↓
+  切换标题/链接/代码块/批注，指示 chip，输入框/IME/模态守卫，只定位
+  不改已读状态，设置开关默认关）。
 - **邀请制多账户（0.2.0）**：运营者经 `/admin` 发一次性限时邀请，受邀者
   在 `/activate` 激活独立账号（订阅/阅读状态/资料库/AI/设置/FreshRSS
   绑定按账号隔离）；FreshRSS 账号池预建与原子分配；数据层拆分为控制库
   + 每用户库（[ADR 0005](decisions/0005-invite-multi-account.md)）。
   运营者操作见 [how-to/invite-members.md](how-to/invite-members.md)。
+- **公开注册（默认关闭）已实现**：实例级开关
+  `allow_public_registration` 存控制库（迁移 0089），升级与全新安装
+  均保持关闭，由 admin 经注册策略 API 显式开启；注册只创建 member，
+  FreshRSS 池原子分配、空池诚实 pending，服务端强制、关闭时统一 403
+  不构成用户名 oracle（[ADR 0006](decisions/0006-public-registration.md)）。
+- **BFF 结构化访问日志已实现**：每请求一行 JSON（request_id/路由/
+  status/duration_ms/actor），`LUMIRSS_ACCESS_LOG=off` 可静默，绝记
+  query string / 请求体 / header。
 - **来源管理增强（N012/N013/N015）**：退订影响预览（只读聚合工作区
   引用/看板状态/RSS 书签/批注/投影未读/收件箱规则命中；DELETE 支持
   `keep_artifacts`：true 保留工件（冻结 ref 以 stale 卡片呈现）、false
@@ -64,14 +87,26 @@
   赢、localStorage 只作离线回退）；来源分时静音（每周循环窗口
   `mute_windows`，与 hiddenUntil/showFrom 同消费点——只影响通用时间线，
   抓取/搜索/阅读不受影响）。
-- 明确不做：WebDAV vault、Bergamot 本地翻译（无中文模型）、公开注册 /
-  多租户形态、外部向量库服务（sqlite-vec 单文件已够）。
+- **Agent 任务运维批次（N164–N170，迁移 0112/0113/0114）**：任务暂停与
+  续接（工具间检查点冻结 {completedSteps, pendingPlan}，续接复用
+  transcript 已执行结果绝不重复副作用；暂停期间过期的批准在续接时要求
+  重新确认）；线程级任务预算 {maxToolCalls, maxTurns}（budget_exhausted
+  终态 + 消耗摘要，token 未上报时诚实显示 unknown）；工具执行时间线
+  （durationMs / ≤80 字脱敏参数摘要 / resultType）；批准内容修改
+  （修订 → 新批准行绑定新 args_hash，旧行 superseded、take → 410）；
+  失败步骤单独重试（写工具幂等键 args_hash+turn，成功写重放返回缓存
+  结果）；任务结果差异撤销（add_to_workspace / add_tag 前后快照，
+  对象被改动过 → 冲突报告跳过；不支持工具 → 422）；任务配方（名称/
+  输入/工具白名单/范围，白名单服务端强制执行，运行 = 新会话 + 首条
+  消息 + 运行前预览）。
+- 明确不做：WebDAV vault、Bergamot 本地翻译（无中文模型）、多租户形态、
+  外部向量库服务（sqlite-vec 单文件已够）。
 
 ## Next（候选，立项由用户批准的 spec 决定）
 
-- BFF 结构化日志与关联 ID（发布时已知限制，operations/status 已含延迟
-  与错误分类）；
-- BFF 生产镜像依赖 pin；web（Caddy）服务 healthcheck（发布时已知限制）；
+- web（Caddy）服务 healthcheck（发布时已知限制；FreshRSS/RSSHub 的
+  compose healthcheck 与 BFF 生产镜像依赖 pin——uv.lock 冻结安装——
+  均已落地）；
 - Agent 消息 / RAG 状态端点补 `response_model`（OpenAPI 未收录，
   Web 侧暂以本地 interface 对照维护）；
 - 剪藏/快照阅读体验打磨；
@@ -80,7 +115,8 @@
 
 ## Explicitly deferred / rejected
 
-- 公开注册 / 多租户、公共互联网硬化（邀请制小规模多账户已实现；
+- 多租户形态、公共互联网硬化（邀请制小规模多账户与默认关闭的可选公开
+  注册已实现，见 [ADR 0006](decisions/0006-public-registration.md)；
   对公网开放前的加固仍不在范围内）；
 - PWA Push / 后台同步（app-shell 离线缓存已实现；其余明确延后）；
 - Folo 产品克隆、社区/社交、算法推荐、原生移动 App；

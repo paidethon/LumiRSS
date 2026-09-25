@@ -1,21 +1,54 @@
 /** F047 RSSHub 路由参数编辑 —— 行菜单「路由参数」。
  *
  * 从 /api/v1/rsshub/routes 元数据匹配当前路由（pathTemplate 前缀匹配）：
- * - 命中 → 按参数定义（必填/枚举）生成表单，改参生成新地址预览；
- * - 未命中 → 退化为仅允许编辑 query 参数的通用表单。
- * token/key 类 query 值脱敏显示（***）；确认前用 feed-preview 预览新
- * 地址（失败不应用）；确认走 F044 迁移端点（旧源 replaced_by）。
+ * - 命中 → 按参数定义（必填/枚举）生成表单（{key} 模板参数从现有
+ *   feedUrl 反推初值），改参先做 N024 新旧参数对照差异（双侧有界
+ *   预览，严格只读），确认后走 F044 迁移端点（旧源 replaced_by）；
+ * - 未命中 → 退化为仅允许编辑 query 参数的通用表单（预览门 = 既有
+ *   feed-preview 校验）。
+ * token/key 类 query 值脱敏显示（***）；取消（关闭/重置）不产生任何
+ * 变更——对照端点本身零写入，应用由用户显式确认。
+ * N023：命中路由与目录行一样显示依赖 chips（true=需要 / null=未知）。
+ * N030：命中路由时可把当前参数组合「保存为方案」，并从「我的方案」
+ * 一键回填——敏感参数值服务端只存 '***' 哨兵，回填后必须重新输入
+ * （requiresRebind）才能预览；路径占位符参数不参与回填（本对话框
+ * 不改路径段）。
  */
 
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
-import { AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react'
-import { getRssHubRoutes, migrateSubscription, previewFeed } from '../api/client'
-import type { Subscription } from '../api/types'
+import { useEffect, useMemo, useState } from 'react'
+import { AlertCircle, CheckCircle2, RefreshCw, Save, Trash2 } from 'lucide-react'
+import {
+  applyRssHubParamPreset,
+  diffRssHubParams,
+  getRssHubRoutes,
+  migrateSubscription,
+  previewFeed,
+} from '../api/client'
+import {
+  useCreateRssHubParamPresetMutation,
+  useDeleteRssHubParamPresetMutation,
+  useRssHubParamPresets,
+} from '../api/queries'
+import type {
+  RssHubParamPresetApply,
+  RssHubParamPresetItem,
+  RssHubParamsDiffResult,
+  Subscription,
+} from '../api/types'
 import { Button } from './ui/Button'
 import { Dialog } from './ui/Dialog'
+import { IconButton } from './ui/IconButton'
 import { cx } from './ui/cx'
-import { SENSITIVE_QUERY, maskQuery, matchRoute } from '../lib/rsshub-params'
+import {
+  SENSITIVE_QUERY,
+  maskQuery,
+  matchRoute,
+  extractPathParams,
+  extractTemplateParams,
+  pathPlaceholderKeys,
+} from '../lib/rsshub-params'
+import { RssHubRequiresChips } from './rsshub-requires-chips'
 
 const inputCls =
   'w-full rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2.5 py-1.5 text-sm text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]'
@@ -28,6 +61,27 @@ interface RouteParamDef {
   type?: string | null
   enum?: string[] | null
   description?: string | null
+}
+
+/** N024：差异列表段（added/removed 共用形状）。 */
+function DiffList({ label, titles }: { label: string; titles: string[] }) {
+  return (
+    <div className="min-w-0 flex-1" data-testid={`params-diff-${label}`}>
+      <p className="text-[11px] font-medium text-[var(--lumi-text-secondary)]">
+        {label}（{titles.length}）
+      </p>
+      <ul className="mt-1 flex max-h-28 flex-col gap-0.5 overflow-y-auto">
+        {titles.length === 0 && (
+          <li className="text-[11px] text-[var(--lumi-text-tertiary)]">无</li>
+        )}
+        {titles.map((title) => (
+          <li key={title} className="truncate text-[11px] text-[var(--lumi-text-primary)]" title={title}>
+            {title}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
 }
 
 export function RsshubRouteParamsDialog({
@@ -48,6 +102,11 @@ export function RsshubRouteParamsDialog({
   const [queryDraft, setQueryDraft] = useState<Record<string, string>>({})
   const [newQueryPairs, setNewQueryPairs] = useState<{ key: string; value: string }[]>([])
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [diff, setDiff] = useState<RssHubParamsDiffResult | null>(null)
+  // N030：方案保存名 + 需重新绑定的敏感键（回填后必须重输才能预览）。
+  const [presetName, setPresetName] = useState('')
+  const [rebindKeys, setRebindKeys] = useState<string[]>([])
+  const [presetNotice, setPresetNotice] = useState<string | null>(null)
 
   // 路由匹配：feedUrl 路径与 pathTemplate 前缀匹配（:param 段通配）
   const matchedRoute = useMemo(
@@ -58,28 +117,74 @@ export function RsshubRouteParamsDialog({
   const paramDefs: RouteParamDef[] = useMemo(() => {
     const raw = (matchedRoute?.parameters ?? []) as {
       name?: string
+      key?: string
       required?: boolean
       type?: string
       enum?: string[]
       description?: string
     }[]
-    return raw
-      .filter((param) => typeof param.name === 'string' && param.name !== '')
-      .map((param) => ({
-        name: param.name as string,
+    const defs: RouteParamDef[] = []
+    for (const param of raw) {
+      const name =
+        typeof param.key === 'string' && param.key !== '' ? param.key : param.name
+      if (typeof name !== 'string' || name === '') continue
+      defs.push({
+        name,
         required: param.required === true,
         type: param.type ?? null,
         enum: param.enum ?? null,
         description: param.description ?? null,
-      }))
+      })
+    }
+    return defs
   }, [matchedRoute])
+
+  // {key} 模板参数初值：从现有 feedUrl 反推（N024 对照需要新旧两侧）。
+  const currentPathParams = useMemo(
+    () =>
+      matchedRoute === null
+        ? null
+        : extractTemplateParams(matchedRoute.pathTemplate, feedUrl),
+    [matchedRoute, feedUrl],
+  )
+
+  useEffect(() => {
+    if (open && currentPathParams !== null) {
+      setQueryDraft((prev) => ({ ...currentPathParams, ...prev }))
+    }
+    // 打开对话框时注入模板参数初值；用户编辑保留（prev 展开在后）。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, matchedRoute?.pathTemplate])
+
+  // N030：当前路由模板下保存的方案（路径占位符不入表单，仅 query 生效）。
+  const presetsQuery = useRssHubParamPresets(open && matchedRoute !== null)
+  const createPresetMutation = useCreateRssHubParamPresetMutation()
+  const deletePresetMutation = useDeleteRssHubParamPresetMutation()
+  const applyPresetMutation = useMutation({
+    mutationFn: (preset: RssHubParamPresetItem) => applyRssHubParamPreset(preset.id),
+    onSuccess: (applied, preset) => applyPresetToForm(applied, preset.name),
+  })
+
+  const routePresets = useMemo(
+    () =>
+      (presetsQuery.data ?? []).filter(
+        (preset) => matchedRoute !== null && preset.templateId === matchedRoute.id,
+      ),
+    [presetsQuery.data, matchedRoute],
+  )
 
   // 新地址：现有 query + 修改后的 query 对 + 新增对（不改路径段——路径
   // 参数场景由 matchedRoute 分支用 pathOverrides 重建路径）。
+  // 路径占位符键不进 query：N024 会把模板参数现值种进 queryDraft 供
+  // 对照，若此处不过滤会把路径参数重复追加成 query（真实 bug：应用
+  // 方案后合成 URL 出现 ?user=DIYgod）。
   const builtUrl = useMemo(() => {
     try {
       const parts = new URL(feedUrl)
+      const placeholderKeys =
+        matchedRoute !== null ? pathPlaceholderKeys(matchedRoute.pathTemplate) : []
       for (const [key, value] of Object.entries(queryDraft)) {
+        if (placeholderKeys.includes(key)) continue
         if (value === '') parts.searchParams.delete(key)
         else parts.searchParams.set(key, value)
       }
@@ -90,7 +195,7 @@ export function RsshubRouteParamsDialog({
     } catch {
       return feedUrl
     }
-  }, [feedUrl, queryDraft, newQueryPairs])
+  }, [feedUrl, queryDraft, newQueryPairs, matchedRoute])
 
   const existingQuery = useMemo(() => {
     try {
@@ -100,10 +205,33 @@ export function RsshubRouteParamsDialog({
     }
   }, [feedUrl])
 
+  // N030：预览被阻止——存在尚未重新输入的敏感键（哨兵永不外发）。
+  const rebindPending = rebindKeys.some(
+    (key) => (queryDraft[key] ?? '').trim() === '',
+  )
+
   const previewMutation = useMutation({
     mutationFn: () => previewFeed(builtUrl),
     onSuccess: () => setPreviewUrl(builtUrl),
   })
+
+  // N024：命中目录路由 → 新旧参数双侧对照（newParams = 模板参数现值）。
+  const diffMutation = useMutation({
+    mutationFn: () => {
+      const newParams: Record<string, string> = {}
+      for (const def of paramDefs) {
+        const value = queryDraft[def.name]
+        if (value != null && value !== '') newParams[def.name] = value
+      }
+      return diffRssHubParams({
+        oldFeedUrl: feedUrl,
+        routeId: matchedRoute?.id ?? '',
+        newParams,
+      })
+    },
+    onSuccess: (result) => setDiff(result),
+  })
+
   const applyMutation = useMutation({
     mutationFn: () => migrateSubscription(subscription.subscriptionRef, builtUrl),
     onSuccess: async () => {
@@ -116,7 +244,68 @@ export function RsshubRouteParamsDialog({
     setQueryDraft({})
     setNewQueryPairs([])
     setPreviewUrl(null)
+    setDiff(null)
+    setRebindKeys([])
+    setPresetNotice(null)
   }
+
+  /** N030：把方案参数回填进表单（路径占位符跳过；敏感键进重新绑定）。 */
+  function applyPresetToForm(applied: RssHubParamPresetApply, presetName: string) {
+    const placeholders =
+      matchedRoute !== null ? pathPlaceholderKeys(matchedRoute.pathTemplate) : []
+    const draft: Record<string, string> = {}
+    const sensitive: string[] = []
+    for (const [key, value] of Object.entries(applied.params)) {
+      if (placeholders.includes(key)) continue // 本对话框不改路径段
+      if (value === '' || value === '***' || SENSITIVE_QUERY.test(key)) {
+        if (value !== '') sensitive.push(key)
+        continue
+      }
+      draft[key] = value
+    }
+    setQueryDraft((prev) => ({ ...prev, ...draft }))
+    setNewQueryPairs([])
+    setPreviewUrl(null)
+    setRebindKeys(sensitive)
+    setPresetNotice(
+      sensitive.length > 0
+        ? `已回填「${presetName}」。敏感参数需重新输入：${sensitive.join('、')}`
+        : `已回填「${presetName}」。`,
+    )
+  }
+
+  /** N030：当前参数组合（模板路径参数 + 新地址 query）→ 保存为方案。 */
+  function currentPresetParams(): Record<string, string> | null {
+    if (matchedRoute === null) return null
+    const pathParams = extractPathParams(matchedRoute.pathTemplate, feedUrl)
+    if (pathParams === null) return null
+    let queryPairs: [string, string][] = []
+    try {
+      queryPairs = [...new URL(builtUrl).searchParams.entries()]
+    } catch {
+      return null
+    }
+    return { ...pathParams, ...Object.fromEntries(queryPairs) }
+  }
+
+  function savePreset() {
+    const params = currentPresetParams()
+    if (matchedRoute === null || params === null || presetName.trim() === '') return
+    createPresetMutation.mutate(
+      { routeId: matchedRoute.id, params, name: presetName.trim() },
+      {
+        onSuccess: (preset) => {
+          setPresetName('')
+          setPresetNotice(`已保存方案「${preset.name}」。`)
+        },
+      },
+    )
+  }
+
+  // 应用门：命中路由 → 已完成对照差异；未命中 → 既有预览通过。
+  const diffReady = matchedRoute !== null && diff !== null
+  const applyEnabled =
+    (matchedRoute !== null ? diffReady : previewUrl !== null) && !applyMutation.isPending
 
   return (
     <Dialog open={open} onClose={onClose} title={`路由参数 — ${subscription.title}`}>
@@ -131,6 +320,8 @@ export function RsshubRouteParamsDialog({
           <div className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-2.5 text-xs">
             <p className="font-medium text-[var(--lumi-text-primary)]">{matchedRoute.title}</p>
             <p className="mt-0.5 text-[var(--lumi-text-tertiary)]">{matchedRoute.pathTemplate}</p>
+            {/* N023：依赖 chips（与目录行同源；null = 未知诚实呈现） */}
+            <RssHubRequiresChips requires={matchedRoute.requires} className="mt-1.5" />
           </div>
         )}
 
@@ -216,10 +407,171 @@ export function RsshubRouteParamsDialog({
           添加参数
         </Button>
 
+        {/* N030：需重新绑定的敏感键（方案回填后必须重输，哨兵永不外发） */}
+        {rebindKeys.map((key) => (
+          <label key={key} className="flex items-center gap-2 text-xs text-[var(--lumi-text-secondary)]">
+            <span className="w-28 shrink-0 truncate font-mono">{key}</span>
+            <input
+              className={cx(inputCls, 'flex-1 border-[var(--lumi-accent)]')}
+              aria-label={`重新输入 ${key}`}
+              autoComplete="off"
+              placeholder="敏感参数不保存，需重新输入"
+              value={queryDraft[key] ?? ''}
+              onChange={(e) => {
+                setQueryDraft((prev) => ({ ...prev, [key]: e.target.value }))
+                setPresetNotice(null)
+              }}
+            />
+          </label>
+        ))}
+        {rebindPending && (
+          <p role="alert" className="flex items-start gap-1.5 text-xs text-[var(--lumi-danger)]">
+            <AlertCircle aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+            敏感参数未保存原值——重新输入后才能预览。
+          </p>
+        )}
+
+        {/* N030：我的方案（仅当前路由模板；点击回填，垃圾桶删除） */}
+        {matchedRoute !== null && (
+          <section aria-label="我的方案" className="flex flex-col gap-1.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-2.5">
+            <p className="text-xs font-medium text-[var(--lumi-text-primary)]">我的方案</p>
+            {presetsQuery.isPending && (
+              <p className="text-xs text-[var(--lumi-text-tertiary)]">加载方案…</p>
+            )}
+            {presetsQuery.isError && (
+              <p role="alert" className="text-xs text-[var(--lumi-danger)]">
+                方案加载失败。
+                <button
+                  type="button"
+                  className="ml-1 underline"
+                  onClick={() => presetsQuery.refetch()}
+                >
+                  重试
+                </button>
+              </p>
+            )}
+            {presetsQuery.isSuccess && routePresets.length === 0 && (
+              <p className="text-xs text-[var(--lumi-text-tertiary)]">该路由暂无保存的方案。</p>
+            )}
+            {routePresets.map((preset) => {
+              const summary = Object.entries(preset.params)
+                .map(([key, value]) => `${key}=${value}`)
+                .join('  ')
+              return (
+                <div key={preset.id} className="flex min-h-9 items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={applyPresetMutation.isPending}
+                    onClick={() => {
+                      setPresetNotice(null)
+                      applyPresetMutation.mutate(preset)
+                    }}
+                    className={cx(
+                      'min-w-0 flex-1 rounded-[var(--lumi-radius-sm)] px-2 py-1.5 text-left',
+                      'transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)]',
+                      'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+                    )}
+                  >
+                    <span className="block truncate text-xs text-[var(--lumi-text-primary)]">
+                      {preset.name}
+                      {preset.hasSensitive && (
+                        <span className="ml-1.5 text-[11px] text-[var(--lumi-text-tertiary)]">
+                          需重新绑定
+                        </span>
+                      )}
+                    </span>
+                    {summary !== '' && (
+                      <span className="block truncate font-mono text-[11px] text-[var(--lumi-text-tertiary)]">
+                        {summary}
+                      </span>
+                    )}
+                  </button>
+                  <IconButton
+                    icon={<Trash2 aria-hidden className="size-3.5" />}
+                    label={`删除方案 ${preset.name}`}
+                    size="sm"
+                    disabled={deletePresetMutation.isPending}
+                    onClick={() => deletePresetMutation.mutate(preset.id)}
+                  />
+                </div>
+              )
+            })}
+            <div className="flex items-center gap-2 border-t border-[var(--lumi-border)] pt-2">
+              <input
+                className={cx(inputCls, 'flex-1')}
+                aria-label="方案名称"
+                placeholder="方案名称"
+                value={presetName}
+                maxLength={80}
+                onChange={(e) => setPresetName(e.target.value)}
+              />
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={
+                  presetName.trim() === '' ||
+                  currentPresetParams() === null ||
+                  createPresetMutation.isPending
+                }
+                onClick={savePreset}
+              >
+                <Save aria-hidden className="size-3.5" />
+                {createPresetMutation.isPending ? '保存中…' : '保存为方案'}
+              </Button>
+            </div>
+            {createPresetMutation.isError && (
+              <p role="alert" className="text-xs text-[var(--lumi-danger)]">
+                {createPresetMutation.error instanceof Error
+                  ? createPresetMutation.error.message
+                  : '方案保存失败'}
+              </p>
+            )}
+          </section>
+        )}
+        {presetNotice !== null && (
+          <p role="status" className="text-xs text-[var(--lumi-text-secondary)]">
+            {presetNotice}
+          </p>
+        )}
+
         <div className="rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-hover)] p-2.5 text-xs">
           <p className="text-[var(--lumi-text-tertiary)]">新地址预览（敏感参数已脱敏）</p>
           <p className="mt-0.5 break-all font-mono text-[var(--lumi-text-primary)]">{maskQuery(builtUrl)}</p>
         </div>
+
+        {/* N024：命中路由 → 新旧参数双侧对照差异（严格只读；取消零变更）。 */}
+        {matchedRoute !== null && (
+          <div className="flex flex-col gap-2" data-testid="params-diff-section">
+            {diffMutation.isPending && (
+              <p className="text-xs text-[var(--lumi-text-tertiary)]" role="status">
+                正在对照新旧参数的 feed 内容…
+              </p>
+            )}
+            {diffMutation.isError && (
+              <p role="alert" className="text-xs text-[var(--lumi-danger)]">
+                对照失败：{diffMutation.error instanceof Error ? diffMutation.error.message : '请稍后重试'}
+              </p>
+            )}
+            {diff !== null && (
+              <div className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-2.5">
+                <div className="flex gap-3">
+                  <DiffList label="新增条目" titles={diff.added} />
+                  <DiffList label="将消失条目" titles={diff.removed} />
+                  <DiffList label="两侧共有" titles={diff.duplicates} />
+                </div>
+                {(diff.old.error != null || diff.new.error != null) && (
+                  <p className="mt-1.5 text-[11px] text-[var(--lumi-text-tertiary)]">
+                    {diff.old.error != null && `旧地址对照失败：${diff.old.error}`}
+                    {diff.new.error != null && `新地址对照失败：${diff.new.error}`}
+                  </p>
+                )}
+                <p className="mt-1.5 text-[11px] text-[var(--lumi-text-tertiary)]">
+                  {diff.note}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         {previewMutation.isError && (
           <p role="alert" className="flex items-start gap-1.5 text-xs text-[var(--lumi-danger)]">
@@ -227,7 +579,7 @@ export function RsshubRouteParamsDialog({
             预览失败（地址不可达或非法）：{previewMutation.error instanceof Error ? previewMutation.error.message : '请检查参数'}
           </p>
         )}
-        {previewUrl !== null && (
+        {previewUrl !== null && matchedRoute === null && (
           <p className="flex items-center gap-1.5 text-xs text-[var(--lumi-text-secondary)]">
             <CheckCircle2 aria-hidden className="size-3.5" /> 预览通过——确认后将新建订阅并保留旧订阅（可自行退订）。
           </p>
@@ -239,14 +591,31 @@ export function RsshubRouteParamsDialog({
         )}
         <div className="flex items-center justify-end gap-2">
           <Button size="sm" variant="ghost" onClick={reset}>重置</Button>
-          <Button size="sm" variant="secondary" disabled={previewMutation.isPending} onClick={() => previewMutation.mutate()}>
-            <RefreshCw aria-hidden className="size-3.5" />
-            {previewMutation.isPending ? '预览中…' : '预览'}
-          </Button>
+          {matchedRoute !== null ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={diffMutation.isPending}
+              onClick={() => diffMutation.mutate()}
+            >
+              <RefreshCw aria-hidden className="size-3.5" />
+              {diffMutation.isPending ? '对照中…' : '对照新旧参数'}
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={previewMutation.isPending || rebindPending}
+              onClick={() => previewMutation.mutate()}
+            >
+              <RefreshCw aria-hidden className="size-3.5" />
+              {previewMutation.isPending ? '预览中…' : '预览'}
+            </Button>
+          )}
           <Button
             size="sm"
             variant="primary"
-            disabled={previewUrl === null || applyMutation.isPending}
+            disabled={!applyEnabled}
             onClick={() => applyMutation.mutate()}
           >
             {applyMutation.isPending ? '应用中…' : '应用'}

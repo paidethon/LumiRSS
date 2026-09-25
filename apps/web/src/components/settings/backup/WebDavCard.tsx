@@ -84,7 +84,7 @@ export function WebDavCard() {
   }
 
   return (
-    <div className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3.5">
+    <div data-testid="webdav-card" className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3.5">
       <div className="flex items-center gap-2">
         <CloudUpload aria-hidden className="size-4 shrink-0 text-[var(--lumi-text-tertiary)]" />
         <h3 className="text-sm font-medium text-[var(--lumi-text-primary)]">WebDAV 远程备份</h3>

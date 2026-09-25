@@ -23,11 +23,16 @@
  * O157：登录成功先 resetAccountState 清上一账号的本地足迹与缓存，
  * 再翻认证门——换账号绝不串号。basic 模式永远到不了本页
  * （AuthGate 对 mode=basic 直接放行）。
+ *
+ * F015 认证前目标：登录前 URL 带 ?next=/path（同源路径，经
+ * isSafeAuthRedirectPath 校验：单 / 开头、禁 //、禁 scheme）时，登录
+ * 成功后回到该目标；非法或缺失回退应用首页。注册/激活入口在下方
+ * 链接（/register、/activate 同属未认证顶层页）。
  */
 
 import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Eye, EyeOff, Fingerprint, LogIn } from 'lucide-react'
+import { Eye, EyeOff, Fingerprint, LogIn, UserPlus } from 'lucide-react'
 import {
   ApiError,
   beginPasskeyLogin,
@@ -39,7 +44,13 @@ import {
 } from '../api/client'
 import { identityFromSession, useAuthStore } from '../store/auth'
 import { resetAccountState } from '../lib/auth-reset'
-import { navigateAppRoute, readAppRoute } from '../lib/app-route'
+import {
+  isSafeAuthRedirectPath,
+  navigateAppRoute,
+  navigateToPath,
+  readAppRoute,
+  readAuthRedirectTarget,
+} from '../lib/app-route'
 import {
   decodeRequestOptions,
   encodeAssertionResponse,
@@ -115,7 +126,8 @@ export default function LoginScreen() {
     }
   }, [username, totpPendingToken])
 
-  /** 登录成功共同路径：服务端核实身份 → 清上一账号足迹 → 翻门。 */
+  /** 登录成功共同路径：服务端核实身份 → 清上一账号足迹 → 翻门。
+   * F015：带合法 ?next=（同源路径）时回到认证前目标，否则进应用首页。 */
   async function finishLogin() {
     let identity = null
     try {
@@ -125,7 +137,12 @@ export default function LoginScreen() {
     }
     resetAccountState(queryClient)
     useAuthStore.getState().setIdentity(identity)
-    if (readAppRoute() !== 'app') navigateAppRoute('app', true)
+    const next = readAuthRedirectTarget()
+    if (next !== null && isSafeAuthRedirectPath(next)) {
+      navigateToPath(next, true)
+    } else if (readAppRoute() !== 'app') {
+      navigateAppRoute('app', true)
+    }
     setPassword('')
     setTotpCode('')
     setTotpPendingToken(null)
@@ -370,6 +387,30 @@ export default function LoginScreen() {
             <p className="mt-1 text-center text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
               登录后在此设备保持登录，无需反复输入密码。
             </p>
+
+            <div className="mt-1 flex flex-col items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  // 去注册页时把合法 ?next= 带上（F020：注册成功后仍回认证前目标）。
+                  const next = readAuthRedirectTarget()
+                  if (next !== null) navigateToPath(`/register?next=${encodeURIComponent(next)}`)
+                  else navigateAppRoute('register')
+                }}
+                data-testid="login-register-link"
+                className="flex min-h-11 items-center gap-1.5 text-sm font-medium text-[var(--lumi-accent-text)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+              >
+                <UserPlus aria-hidden className="size-4" />
+                没有账号？注册新账号
+              </button>
+              <button
+                type="button"
+                onClick={() => navigateAppRoute('activate')}
+                className="min-h-11 text-xs text-[var(--lumi-text-tertiary)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+              >
+                有邀请链接？前往激活
+              </button>
+            </div>
           </form>
         ) : (
           <form onSubmit={handleTotpSubmit} className="flex flex-col gap-3" noValidate data-lumi-totp-step="">

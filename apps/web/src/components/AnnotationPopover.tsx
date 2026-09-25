@@ -34,6 +34,8 @@ export interface AnnotationPopoverProps {
   initialColor?: AnnotationColor
   onSave: (note: string, color: AnnotationColor) => void
   onCancel: () => void
+  /** N074：记为问题（编辑已有批注时提供；取当前备注文本）。 */
+  onMarkQuestion?: (question: string) => void
 }
 
 export function AnnotationPopover({
@@ -41,6 +43,7 @@ export function AnnotationPopover({
   initialColor = 'yellow',
   onSave,
   onCancel,
+  onMarkQuestion,
 }: AnnotationPopoverProps) {
   const [note, setNote] = useState(initialNote)
   const [color, setColor] = useState<AnnotationColor>(initialColor)
@@ -144,6 +147,15 @@ export function AnnotationPopover({
         </div>
       </div>
       <div className="mt-3 flex items-center justify-end gap-2">
+        {onMarkQuestion !== undefined && (
+          <Button
+            variant="secondary"
+            className="min-h-11"
+            onClick={() => onMarkQuestion(note.trim())}
+          >
+            记为问题
+          </Button>
+        )}
         <Button variant="secondary" className="min-h-11" onClick={onCancel}>
           取消
         </Button>

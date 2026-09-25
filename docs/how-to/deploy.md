@@ -186,6 +186,20 @@ sudo ./lumirss set-password          # 安装/轮换 owner 密码；或 stdin / 
   （防止半配置静默关闭访问控制）。Tailscale / Cloudflare Access 等外层
   方案可替换内置 basic auth，但不要无意叠加多套认证。
 
+### 5c. 注册策略（可选公开注册，默认关闭）
+
+- **升级后默认关闭，需 admin 显式开启**：实例级开关
+  `allow_public_registration` 存控制库（不走 env），存量实例升级与全新
+  部署都保持邀请制；经注册策略管理 API 显式开启：
+  `PUT /api/v1/admin/registration-policy`（body
+  `{"allowPublicRegistration": true}`，admin 会话；`GET` 查看当前值，
+  变更落审计）。
+- 开启后 `POST /api/v1/auth/register` 自助注册**只创建 member**（角色
+  不可指定），FreshRSS 池原子分配、空池诚实 pending；关闭时统一 403。
+  是否在公网实例开启由运营者自行评估暴露面（见
+  [invite-members.md](invite-members.md) 与
+  [ADR 0006](../decisions/0006-public-registration.md)）。
+
 ### 通用
 
 - **TLS 三态**：真实域名 → Let's Encrypt；`localhost` → 自签 + 强制
@@ -213,13 +227,22 @@ sudo ./lumirss set-password          # 安装/轮换 owner 密码；或 stdin / 
 
 ## 6. Health / readiness / 日志
 
+- 容器 HEALTHCHECK：`bff` 探测 `GET /health/live`（镜像内置）；
+  `web` 探测容器内部 `:9137/index.html`（Caddy 以同一 `/srv` 根渲染的
+  专用 HTTP 站点，探针同时校验响应体含 Vite 构建的 `/assets/` 引用）。
+  该端口不经 basic auth、不受 auto-HTTPS 308 影响，且 compose 从不发布，
+  四种部署形态（DOMAIN / `:80` / external-caddy / basic-auth）下语义一致；
+  `docker compose ps` 的 healthy 状态即来自这两项检查。
 - `GET /health/live` — 进程存活（仅容器内）。
 - `GET /health/ready` — 核心依赖（lumi.sqlite）不可用才 503；
   FreshRSS/RSSHub 故障不影响 readiness（失败隔离）。
 - `GET /api/v1/operations/status` — 各依赖真实探测（延迟/类型化错误），
   经 Caddy 对外可达；UI 在「设置 → 账户与服务」展示。
 - 日志：`json-file` 轮转（10 MB × 3）；`./lumirss logs bff` 查看；
-  日志不含秘密，错误消息为脱敏安全文本。
+  日志不含秘密，错误消息为脱敏安全文本。BFF 访问日志（`lumirss.access`）
+  每请求一行结构化 JSON（request_id/路由/status/耗时/服务端 actor），
+  绝不记录 query string / 请求体 / header；`LUMIRSS_ACCESS_LOG=off`
+  可静默（默认 `json`）。
 
 ## 7. 升级与回滚
 

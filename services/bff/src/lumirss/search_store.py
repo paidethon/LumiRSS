@@ -197,6 +197,16 @@ _SQL_DIST_DAYS = (
     " GROUP BY day ORDER BY day ASC"
 )
 
+# N149 主题演变时间线：与 _SQL_DIST_DAYS 同链同口径，仅分桶粒度为月
+# （substr(published_at, 1, 7) = YYYY-MM；ISO 文本前缀比较即时间序）。
+_SQL_DIST_MONTHS = (
+    "SELECT substr(s.published_at, 1, 7) AS month, COUNT(*) AS n"
+    " FROM search_entries s"
+    + _SQL_DIST_WHERE
+    + " AND s.published_at >= ? AND s.published_at < ?"
+    " GROUP BY month ORDER BY month ASC"
+)
+
 _SQL_DIST_TOTAL = (
     "SELECT COUNT(*) AS n FROM search_entries s" + _SQL_DIST_WHERE
 )
@@ -311,6 +321,29 @@ class SearchStore:
             (entry_ref,),
         )
 
+    async def entry_refs_existing(self, refs: list[str]) -> set[str]:
+        """Which of the given refs resolve in THIS account's projection
+        (N141 permissionLost 口径：per-user 库里查不到 = 不再可解析，
+        与 404 语义一致，绝不泄露他人条目存在性)。
+
+        Chunked bound-parameter IN（占位符 join 的先例见
+        entry_history.py）；SQL 本体保持内联字面量，占位符不含用户输入。"""
+        await self._db.migrate()
+        found: set[str] = set()
+        chunk_size = 500
+        for start in range(0, len(refs), chunk_size):
+            chunk = [str(ref) for ref in refs[start : start + chunk_size]]
+            if not chunk:
+                continue
+            placeholders = ",".join("?" for _ in chunk)
+            rows = await self._db.fetch_all(
+                f"SELECT entry_ref FROM search_entries WHERE entry_ref IN ({placeholders})",
+                tuple(chunk),
+            )
+            found.update(str(row["entry_ref"]) for row in rows)
+        return found
+
+
     async def meta_get(self, key: str) -> str | None:
         row = await self._db.fetch_one(
             "SELECT value FROM search_meta WHERE key = ?", (key,)
@@ -385,6 +418,42 @@ class SearchStore:
         )
         params.extend([day_from, day_to])
         return await self._db.fetch_all(_SQL_DIST_DAYS, tuple(params))
+
+    async def distribution_months(
+        self,
+        *,
+        terms: list[str],
+        month_from: str,
+        month_to: str,
+        intitle_terms: list[str] | None = None,
+        phrase: str | None = None,
+        exclude_terms: list[str] | None = None,
+        feed_url: str | None = None,
+        category_id: str | None = None,
+        unread_only: bool = False,
+        starred_only: bool = False,
+        published_from: str | None = None,
+        published_to: str | None = None,
+        has_summary: bool | None = None,
+    ) -> list[Any]:
+        """窗口内逐月计数（[month_from, month_to) 排他上界；SQL 分桶）。
+
+        N149：与逐日聚合同一过滤链与绑定口径，仅分桶粒度为月。"""
+        params = _filter_params(
+            terms=terms,
+            intitle_terms=intitle_terms,
+            phrase=phrase,
+            exclude_terms=exclude_terms,
+            feed_url=feed_url,
+            category_id=category_id,
+            unread_only=unread_only,
+            starred_only=starred_only,
+            published_from=published_from,
+            published_to=published_to,
+            has_summary=has_summary,
+        )
+        params.extend([month_from, month_to])
+        return await self._db.fetch_all(_SQL_DIST_MONTHS, tuple(params))
 
     async def distribution_total(
         self,

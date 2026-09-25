@@ -11,6 +11,8 @@ import { ApiError } from '../../api/client'
 import type { RetentionApplyResult, RetentionPreview } from '../../api/client'
 import {
   useRetentionApplyMutation,
+  useRetentionNotice,
+  useRetentionPostponeMutation,
   useRetentionPreviewMutation,
   useSaveStorageRetentionMutation,
   useStorageRetention,
@@ -23,6 +25,86 @@ function fmtBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+/** N188：到期提醒横幅（只读 notice；推迟只延迟「提醒」，不改策略，
+ * 也绝不自动触发清理——应用始终需要人工点击）。 */
+function RetentionNoticeBanner() {
+  const notice = useRetentionNotice()
+  const postpone = useRetentionPostponeMutation()
+
+  if (notice.isPending) {
+    return (
+      <div className="mb-2" aria-label="正在检查保留策略到期状态">
+        <Skeleton className="h-10 w-full" />
+      </div>
+    )
+  }
+  if (notice.isError || notice.data === undefined) return null
+  const data = notice.data
+  if (!data.enabled) return null
+  const counts = data.affectedCounts as {
+    aiVersions: { count: number }
+    taskLog: { count: number }
+  }
+
+  if (!data.dueSoon && !data.postponedUntil) return null
+
+  return (
+    <div
+      role={data.dueSoon ? 'status' : undefined}
+      className={`mb-2 rounded-[var(--lumi-radius-md)] border px-3 py-2 text-xs leading-relaxed ${
+        data.dueSoon
+          ? 'border-[var(--lumi-accent)] bg-[var(--lumi-accent-soft)]'
+          : 'border-[var(--lumi-border)]'
+      }`}
+      data-retention-notice=""
+      data-retention-due-soon={data.dueSoon ? 'true' : 'false'}
+    >
+      {data.dueSoon ? (
+        <>
+          <p className="text-[var(--lumi-text-primary)]">
+            保留策略即将到期：部分派生数据（AI 历史版本 / 任务日志）将在{' '}
+            {data.dueAt ? data.dueAt.slice(0, 10) : '7 天内'}达到保留边界。
+            将影响：AI 历史版本 {counts.aiVersions.count} 条、任务日志{' '}
+            {counts.taskLog.count} 条（应用前可在下方「预览」核对）。
+          </p>
+          <p className="mt-0.5 text-[var(--lumi-text-tertiary)]">
+            永不清理：文章收藏、人工笔记、批注、卡片、凭据与运行中任务。清理只会因你在下方手动点击「应用」而发生。
+          </p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              data-retention-postpone="7"
+              disabled={postpone.isPending}
+              onClick={() => postpone.mutate(7)}
+            >
+              推迟 7 天
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              data-retention-postpone="30"
+              disabled={postpone.isPending}
+              onClick={() => postpone.mutate(30)}
+            >
+              推迟 30 天
+            </Button>
+          </div>
+        </>
+      ) : (
+        <p className="text-[var(--lumi-text-secondary)]" data-retention-postponed="">
+          到期提醒已推迟至 {data.postponedUntil?.slice(0, 10)}（只延迟提醒；策略边界与手动应用不变）。
+        </p>
+      )}
+      {postpone.isError && (
+        <p role="alert" className="mt-1 text-[var(--lumi-danger)]">
+          推迟失败：{postpone.error instanceof Error ? postpone.error.message : '请稍后重试。'}
+        </p>
+      )}
+    </div>
+  )
 }
 
 function clampOrNull(value: string, low: number, high: number): number | null {
@@ -79,6 +161,7 @@ export function StorageRetentionSection() {
 
   return (
     <div className="py-3" data-storage-retention="">
+      <RetentionNoticeBanner />
       <div className="flex items-center justify-between gap-2">
         <div className="text-sm font-medium text-[var(--lumi-text-primary)]">派生数据保留策略</div>
         <Switch

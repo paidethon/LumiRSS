@@ -33,6 +33,8 @@ import { useOpmlExportFlow, useOpmlImportFlow } from '../../lib/opml-import'
 import { managementErrorText } from '../../lib/management-errors'
 import { useReaderUi } from '../../store/reader-ui'
 import { requestCloseSettings } from './settings-bridge'
+import { BundleExportBlock, BundleImportBlock } from './SourceBundleBlocks'
+import { CleanupSuggestionsPanel } from './CleanupSuggestionsPanel'
 import { Button } from '../ui/Button'
 import { Skeleton } from '../ui/Skeleton'
 
@@ -284,6 +286,11 @@ export function SourcesSettingsSection() {
     <div className="flex flex-col gap-4 py-1">
       <OpmlExportBlock />
       <OpmlImportBlock />
+      {/* N011：来源组合包（凭据无关导出 / 预览式导入） */}
+      <BundleExportBlock />
+      <BundleImportBlock />
+      {/* N017：清理建议（只读建议 + 显式勾选应用；绝不自动退订） */}
+      <CleanupSuggestionsPanel />
       <FreshRssStatusBlock />
     </div>
   )

@@ -171,6 +171,37 @@ class LumiSettings(BaseSettings):
     # CSRF Origin check behind reverse proxies; blank = compare against the
     # forwarded Host header (both Caddys preserve it in this stack).
     LUMIRSS_PUBLIC_ORIGIN: str = ""
+    # N134 块级回跳：批注导出到 Obsidian 时「→ LumiRSS 原文」反链的绝对
+    # 基底（如 https://rss.example.com）。空串 = 不注入反链（诚实省略，
+    # 绝不生成打不开的相对路径链接）。浏览器可达性由运营者保证：与
+    # FRESHRSS_PUBLIC_URL 同一验证（绝对 http(s)、无凭据/query/fragment）。
+    LUMIRSS_PUBLIC_URL: str = ""
+    # N195 升级影响预览：release-manifest.json 的绝对路径（发布流水线
+    # 产物，由运营者放置/挂载）。空串 = 未配置 → 预览如实 available:false。
+    LUMIRSS_RELEASE_MANIFEST: str = ""
+    # N196 升级进度页：./lumirss update 写入阶段 JSON 的绝对路径（BFF
+    # 与脚本共享的挂载文件）。空串 = 未配置 → 端点如实 available:false。
+    LUMIRSS_DEPLOY_STATUS_FILE: str = ""
+    # N198 版本功能导览：release-notes.json 的显式路径覆盖；空串 = 按包内
+    # / 仓库相对位置发现（dev checkout 直接命中 docs/release-notes.json）。
+    LUMIRSS_RELEASE_NOTES: str = ""
+
+    @field_validator("LUMIRSS_PUBLIC_URL")
+    @classmethod
+    def _sane_public_url(cls, value: str) -> str:
+        clean = value.strip()
+        if not clean:
+            return ""
+        parts = urllib.parse.urlsplit(clean)
+        if parts.scheme not in ("http", "https") or not parts.netloc:
+            raise ValueError("must be an absolute http(s) URL")
+        if parts.username or parts.password or parts.query or parts.fragment:
+            raise ValueError("must not carry credentials, a query or a fragment")
+        return clean.rstrip("/")
+
+    # E01 access log: "json" (default) emits one structured line per
+    # request on the lumirss.access logger; "off" silences it.
+    LUMIRSS_ACCESS_LOG: Literal["json", "off"] = "json"
 
     @field_validator("LUMIRSS_SESSION_MAX_AGE_DAYS")
     @classmethod

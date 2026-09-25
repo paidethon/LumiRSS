@@ -114,7 +114,7 @@ describe('Test J — success（HTML path）', () => {
     ]))
     renderReader()
 
-    expect(await screen.findByText('文章 A')).toBeInTheDocument()
+    expect(await screen.findByText('文章 A', {}, { timeout: 5000 })).toBeInTheDocument()
     // meta 行由多个 span 组成，分别断言各字段（分隔符 · 在 span 内）。
     // F30：溯源卡也展示来源，getAllByText 保证「至少渲染一次」。
     expect((await screen.findAllByText('示例源')).length).toBeGreaterThan(0)

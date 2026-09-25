@@ -38,7 +38,8 @@ from lumirss.storage import Database
 PENDING_TTL_S = 300  # two-step login must finish within 5 minutes
 RECOVERY_CODE_COUNT = 8
 RECOVERY_CODE_LEN = 10  # hex chars per code
-TOTP_SECRET_KEY = "totp_secret"
+# SecretsStore 槽位名(每用户 secrets.json 内的键,非凭据本身)
+TOTP_SECRET_SLOT = "totp_secret"
 TOTP_STEPS = 30  # seconds (RFC 6238 default; pyotp default)
 TOTP_DIGITS = 6
 
@@ -76,16 +77,16 @@ def _slice_at(epoch: int) -> int:
 
 def read_secret(store) -> str | None:
     """TOTP shared secret from the routing secrets store (base32)."""
-    value = store.get(TOTP_SECRET_KEY)
+    value = store.get(TOTP_SECRET_SLOT)
     return value or None
 
 
 def write_secret(store, secret: str) -> None:
-    store.set(TOTP_SECRET_KEY, secret)
+    store.set(TOTP_SECRET_SLOT, secret)
 
 
 def delete_secret(store) -> None:
-    store.delete(TOTP_SECRET_KEY)
+    store.delete(TOTP_SECRET_SLOT)
 
 
 def new_secret() -> str:
@@ -289,7 +290,7 @@ __all__ = [
     "CodeInvalid",
     "PENDING_TTL_S",
     "PendingTokenInvalid",
-    "TOTP_SECRET_KEY",
+    "TOTP_SECRET_SLOT",
     "TotpAlreadyEnabled",
     "TotpError",
     "TotpNotConfigured",

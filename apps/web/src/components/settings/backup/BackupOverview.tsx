@@ -8,8 +8,15 @@
  * - 页面刷新后 job 状态从服务端恢复（TanStack Query refetch）。
  */
 
-import { useBackupCapabilities, useCreateBackupMutation, useBackups, useOperationsStatus } from '../../../api/queries'
-import type { BackupJob } from '../../../api/types'
+import { useState } from 'react'
+import {
+  useBackupCapabilities,
+  useCreateBackupMutation,
+  useBackups,
+  useOperationsStatus,
+  usePreviewBackupScopeMutation,
+} from '../../../api/queries'
+import type { BackupJob, BackupScopeInclude, BackupScopePreview } from '../../../api/types'
 import { Button } from '../../ui/Button'
 import { Skeleton } from '../../ui/Skeleton'
 import { cx } from '../../ui/cx'
@@ -21,6 +28,24 @@ import {
   freshrssReasonText,
   jobStageText,
 } from './backup-format'
+
+const SCOPE_ITEMS: { key: keyof BackupScopeInclude; label: string }[] = [
+  { key: 'workspaces', label: '工作区' },
+  { key: 'notes', label: '人工笔记' },
+  { key: 'annotations', label: '批注' },
+  { key: 'sourceConfig', label: '来源配置' },
+]
+
+function isFullScope(include: BackupScopeInclude): boolean {
+  return SCOPE_ITEMS.every((item) => include[item.key])
+}
+
+const SCOPE_COMPONENT_LABELS: Record<string, string> = {
+  workspaces: '工作区',
+  notes: '人工笔记',
+  annotations: '批注',
+  sourceConfig: '来源配置',
+}
 
 function isActiveJob(job: BackupJob | undefined): boolean {
   return job !== undefined && (job.status === 'queued' || job.status === 'running')
@@ -51,6 +76,17 @@ export function BackupOverview() {
   const jobs = useBackups()
   const capabilities = useBackupCapabilities()
   const create = useCreateBackupMutation()
+  const scopePreview = usePreviewBackupScopeMutation()
+
+  // N185：备份内容选择（默认全包含 = 与历史行为一致）+ 预览步骤
+  const [include, setInclude] = useState<BackupScopeInclude>({
+    workspaces: true,
+    notes: true,
+    annotations: true,
+    sourceConfig: true,
+  })
+  const scoped = !isFullScope(include)
+  const scopePreviewData: BackupScopePreview | undefined = scopePreview.data
 
   const activeJob = jobs.data?.find((job) => isActiveJob(job))
   const busy = activeJob !== undefined || create.isPending
@@ -155,13 +191,66 @@ export function BackupOverview() {
         </dl>
       )}
 
+      {/* N185：备份内容选择 + 预览（默认全包含；凭据 / FreshRSS 内容
+          永远排除，预览如实列出） */}
+      <div className="mt-3" data-backup-scope="">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          <span className="text-xs text-[var(--lumi-text-secondary)]">备份内容：</span>
+          {SCOPE_ITEMS.map((item) => (
+            <label key={item.key} className="flex items-center gap-1.5 text-xs">
+              <input
+                type="checkbox"
+                checked={include[item.key]}
+                onChange={(event) =>
+                  setInclude((current) => ({ ...current, [item.key]: event.target.checked }))
+                }
+                className="size-3.5"
+              />
+              {item.label}
+            </label>
+          ))}
+          <Button
+            variant="secondary"
+            size="sm"
+            data-scope-preview=""
+            disabled={scopePreview.isPending}
+            onClick={() => scopePreview.mutate(include)}
+          >
+            {scopePreview.isPending ? '预览中…' : '预览备份内容'}
+          </Button>
+        </div>
+        {scopePreview.isError && (
+          <p role="alert" className="mt-1 text-xs text-[var(--lumi-danger)]">
+            预览失败：{scopePreview.error instanceof Error ? scopePreview.error.message : '请稍后重试。'}
+          </p>
+        )}
+        {scopePreviewData && (
+          <div
+            className="mt-1.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-2.5 text-xs"
+            data-scope-preview-result=""
+          >
+            <p className="text-[var(--lumi-text-secondary)]">
+              将包含：
+              {scopePreviewData.components.map((component) => (
+                <span key={component.component} data-scope-component={component.component}>
+                  {' '}{SCOPE_COMPONENT_LABELS[component.component] ?? component.component} {component.count} 行；
+                </span>
+              ))}
+            </p>
+            <p className="mt-0.5 text-[var(--lumi-text-tertiary)]">
+              永远排除：{scopePreviewData.alwaysExcluded.join('；')}。
+            </p>
+          </div>
+        )}
+      </div>
+
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Button
           size="sm"
           disabled={busy || fullBackupReady === false}
-          onClick={() => create.mutate('local')}
+          onClick={() => create.mutate({ target: 'local', include: scoped ? include : undefined })}
         >
-          {create.isPending && create.variables === 'local' ? (
+          {create.isPending && create.variables?.target === 'local' ? (
             <Loader2 aria-hidden className="size-3.5 animate-spin" />
           ) : (
             <HardDriveUpload aria-hidden className="size-3.5" />
@@ -172,9 +261,9 @@ export function BackupOverview() {
           size="sm"
           variant="secondary"
           disabled={busy || fullBackupReady === false}
-          onClick={() => create.mutate('webdav')}
+          onClick={() => create.mutate({ target: 'webdav', include: scoped ? include : undefined })}
         >
-          {create.isPending && create.variables === 'webdav' ? (
+          {create.isPending && create.variables?.target === 'webdav' ? (
             <Loader2 aria-hidden className="size-3.5 animate-spin" />
           ) : (
             <HardDriveUpload aria-hidden className="size-3.5" />
@@ -182,6 +271,11 @@ export function BackupOverview() {
           备份并上传 WebDAV
         </Button>
       </div>
+      {scoped && (
+        <p className="mt-1.5 text-xs leading-relaxed text-[var(--lumi-text-tertiary)]" data-scope-note="">
+          已缩小备份范围（仅勾选的用户数据组件会被包含）；默认全包含时行为与完整备份完全一致。
+        </p>
+      )}
       {fullBackupReady === false && (
         <p role="alert" className={cx('mt-2 text-xs leading-relaxed text-[var(--lumi-danger)]')}>
           {freshrssReason ?? '完整备份当前不可用。'}

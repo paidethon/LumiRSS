@@ -2,7 +2,7 @@ import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useS
 import {
   BookMarked,
   Camera, Check, Clock, ExternalLink, FileCode, FileText, Languages,
-  Link2, Loader2, MessageSquare, MoreHorizontal, Pause, Play, Printer, Quote,
+  Link2, ListTree, Loader2, MessageSquare, MoreHorizontal, PanelRight, Pause, Play, Printer, Quote,
   Search, Settings2, Share2, Square, Star, Volume2, X,
 } from 'lucide-react'
 import type { EntryDetail } from '../api/types'
@@ -50,6 +50,8 @@ import {
   type SpeechBookmark,
 } from '../lib/speech-bookmarks'
 import SpeechSelectionLayer from './SpeechSelectionLayer'
+// N069：选词词典卡（用户自配端点；未配置/离线零外发）。
+const DictSelectionLayer = lazy(() => import('./DictSelectionLayer'))
 import { Switch } from './ui/Switch'
 import type { AppSettings } from '../store/app-settings'
 import {
@@ -64,6 +66,9 @@ import {
 } from '../lib/reader-toolbar'
 // 工具栏定制是低频动作——懒加载分包，不进首屏 chunk（bundle guard）。
 const ReaderToolbarCustomizeDialog = lazy(() => import('./ReaderToolbarCustomizeDialog'))
+// N068：结构视图（辅助朗读结构检查面板；打开状态设备本地）。
+const ArticleOutlineDialog = lazy(() => import('./ArticleOutlineDialog'))
+import { readStructureViewOpen, writeStructureViewOpen } from '../lib/article-outline'
 import ReaderAaPanel from './ReaderAaPanel'
 import type { ReaderViewMode } from '../lib/translation-blocks'
 import { Button } from './ui/Button'
@@ -1134,6 +1139,12 @@ export default function ReaderHeader({
   onAutoScrollToggle,
   focusMode,
   onFocusModeChange,
+  outlineRootRef,
+  paraFocusMode,
+  onParaFocusModeChange,
+  splitOriginalOpen,
+  onToggleSplitOriginal,
+  sessionStartedAt,
 }: {
   detail: EntryDetail
   /** Gate：语言视图（由 Reader 持有；工具栏与内容区共享同一状态）。 */
@@ -1154,9 +1165,23 @@ export default function ReaderHeader({
   /** 专注阅读（Reader 会话级状态，透传给 Aa 面板）。 */
   focusMode?: boolean
   onFocusModeChange?: (value: boolean) => void
+  /** N068：结构视图的正文容器入口（与 AnnotationsLayer 同一 ref 双写）。 */
+  outlineRootRef?: React.RefObject<HTMLElement | null>
+  /** F062：逐段专注（Reader 会话级状态，透传给 Aa 面板）。 */
+  paraFocusMode?: boolean
+  onParaFocusModeChange?: (value: boolean) => void
+  /** F077：原文分屏（Reader 持有开关状态；桌面 ≥1024px 才提供入口）。 */
+  splitOriginalOpen?: boolean
+  onToggleSplitOriginal?: () => void
+  /** F080：当前会话起始时间戳（本篇打开时刻；Aa 面板显示累计时长）。
+   * ReaderHeader 按 entryRef 重挂载（key），挂载时取值即打开时刻。 */
+  sessionStartedAt?: number
 }) {
   const mutation = useEntryStateMutation()
   const queryClient = useQueryClient()
+  // F080：会话起始（本篇打开时刻）——ReaderHeader 按 entryRef 重挂载
+  //（key），挂载时刻即打开时刻；prop 仅作测试/覆写入参。
+  const [sessionStart] = useState(() => sessionStartedAt ?? Date.now())
   // F20：读/未读切换的短时撤销（撤销前核对服务器状态，防跨设备覆盖）
   const pushUndo = useUndo((s) => s.push)
   const { isReadLater, toggleReadLater, pendingFor, errorFor } = useToggleReadLater()
@@ -1179,6 +1204,18 @@ export default function ReaderHeader({
   const [customizeOpen, setCustomizeOpen] = useState(false)
   // P16：导出到 Obsidian 对话框（与导出 Markdown/HTML 同一「更多操作」出口）。
   const [obsidianExportOpen, setObsidianExportOpen] = useState(false)
+  // N068：结构视图开关（设备本地：下次打开文章自动还原）。
+  const [outlineOpen, setOutlineOpen] = useState(() => readStructureViewOpen())
+  const toggleOutline = useCallback((open: boolean) => {
+    setOutlineOpen(open)
+    writeStructureViewOpen(open)
+  }, [])
+  const getOutlineContainer = useCallback(
+    () =>
+      outlineRootRef?.current ??
+      (document.querySelector('.lumi-reader-article') as HTMLElement | null),
+    [outlineRootRef],
+  )
   // P0-11：本地引擎支持门控——engine=browser 且此浏览器没有 Translator
   // API（localTranslatorAvailable() 此前导出零调用）→ 控件禁用 + 原因。
   const aiSettings = useAiSettings()
@@ -1381,6 +1418,8 @@ export default function ReaderHeader({
     }
   }
   // F18/F22：自动滚屏 / 导出（原「更多操作」三项，两断点共有）。
+  // N068：结构视图入口在工具栏（Aa 面板旁的独立按钮，不进 O127 菜单
+  // ——既有菜单序是测试锁定的契约）。
   if (onAutoScrollToggle !== undefined) {
     moreItems.push({
       key: 'autoscroll',
@@ -1420,6 +1459,18 @@ export default function ReaderHeader({
       ),
     },
   )
+  // F077：正文/原网页分屏（仅桌面 ≥1024px 提供菜单项；状态由 Reader 持有）。
+  if (!isMobile && articleUrl !== null && onToggleSplitOriginal !== undefined) {
+    moreItems.push({
+      key: 'split-original',
+      content: (
+        <span className="flex items-center gap-2">
+          <PanelRight aria-hidden className="size-4" />
+          {splitOriginalOpen ? '关闭原文分屏' : '原文分屏'}
+        </span>
+      ),
+    })
+  }
   // P16：导出到 Obsidian（选设备 → obsidian://new 交接；tooLong → 文件）。
   moreItems.push({
     key: 'export-obsidian',
@@ -1497,6 +1548,10 @@ export default function ReaderHeader({
     }
     if (key === 'export-obsidian') {
       setObsidianExportOpen(true)
+      return
+    }
+    if (key === 'split-original') {
+      onToggleSplitOriginal?.()
       return
     }
     if (key === 'customize') {
@@ -1797,9 +1852,25 @@ export default function ReaderHeader({
         })}
 
         {/* 0012 Gate 7：Reader 内快速阅读样式面板（Aa）；与设置中心
-            同一 settings source，不遮挡正文关键操作。F15/F17/专注：
-            代码换行 / 按屏翻页 / 专注阅读开关挂同一面板。 */}
-        <ReaderAaPanel focusMode={focusMode} onFocusModeChange={onFocusModeChange} />
+            同一 settings source，不遮挡正文关键操作。F15/F17/专注/F062/
+            F080：代码换行 / 阅读模式 / 专注 / 逐段专注与会话时长挂同一面板。
+            N068：结构视图开关（辅助朗读结构检查；设备本地记忆）。 */}
+        <Tooltip content={outlineOpen ? '关闭结构视图' : '结构视图'}>
+          <IconButton
+            icon={<ListTree aria-hidden className={cx(outlineOpen && 'text-[var(--lumi-accent-text)]')} />}
+            label={outlineOpen ? '关闭结构视图' : '结构视图'}
+            aria-pressed={outlineOpen}
+            touch
+            onClick={() => toggleOutline(!outlineOpen)}
+          />
+        </Tooltip>
+        <ReaderAaPanel
+          focusMode={focusMode}
+          onFocusModeChange={onFocusModeChange}
+          paraFocusMode={paraFocusMode}
+          onParaFocusModeChange={onParaFocusModeChange}
+          sessionStartedAt={sessionStart}
+        />
 
         {/* F19 朗读错误（两断点共用：移动端入口在菜单里，错误仍在
             工具栏行内诚实透出） */}
@@ -1855,6 +1926,19 @@ export default function ReaderHeader({
         />
       )}
 
+      {/* N068：结构视图面板（辅助朗读结构检查；打开状态设备本地）。
+          仅打开时挂载（lazy chunk），正文容器经 outlineRootRef 惰性解析。 */}
+      {outlineOpen && (
+        <Suspense fallback={null}>
+          <ArticleOutlineDialog
+            open
+            onClose={() => toggleOutline(false)}
+            entryRef={detail.entryRef}
+            getContainer={getOutlineContainer}
+          />
+        </Suspense>
+      )}
+
       {/* P16：导出到 Obsidian（选设备档案 → 服务端渲染模板 + URI/file 裁决）。
           仅打开时挂载——设备列表查询不随阅读页空跑；实现走懒 chunk。 */}
       {obsidianExportOpen && (
@@ -1876,6 +1960,12 @@ export default function ReaderHeader({
           onSpeakFromBlock={speech.speakFromBlock}
         />
       )}
+
+      {/* N069：选词词典卡（单个词的选区出现；查询端点由用户配置，
+          未配置/离线时诚实提示且零请求；发音走 P18 朗读链路）。 */}
+      <Suspense fallback={null}>
+        <DictSelectionLayer />
+      </Suspense>
 
       {/* NF1 N092：续听 chip——本篇有听读书签且未在朗读时出现。点击从
           保存的段开头继续（浏览器语音无法句中定位——诚实按段续读，

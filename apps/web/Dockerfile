@@ -34,3 +34,16 @@ COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 EXPOSE 80 443
 ENTRYPOINT ["/docker-entrypoint.sh"]
+
+# E06 real healthcheck (the image previously had NONE — `docker compose ps`
+# reported "running" for a crash-looped Caddy, the exact failure the digest
+# pin above was added for). The entrypoint appends an internal :9137 site
+# serving the same /srv root, so this one probe proves BOTH that Caddy's
+# HTTP stack answers AND that the static build artifact is served (grep the
+# body for Vite's hashed /assets/ references; an empty or mis-mounted /srv
+# fails the check). A dedicated port keeps it true in every mode: with a
+# real DOMAIN the public :80 is a 308 auto-HTTPS redirect and https depends
+# on ACME; in basic-auth mode public paths answer 401; Caddy has no built-in
+# HTTP health endpoint. 9137 is never published by compose.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD wget -q -O - http://127.0.0.1:9137/index.html | grep -q "/assets/"

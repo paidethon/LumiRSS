@@ -47,6 +47,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/capacity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Capacity
+         * @description N192：池 {ready, held, assigned} + 邀请 {pending, held} + 用户
+         *     {active, paused} 的真实行聚合。lowCapacity（ready+held < pending）
+         *     是唯一服务端定义——可交付的 FreshRSS 名额追不上待激活邀请时为真，
+         *     管理台据它亮出「容量不足」警示。只读计数，绝无邀请码。
+         */
+        get: operations["admin_capacity_api_v1_admin_capacity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/deploy-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Deploy Status
+         * @description N196：./lumirss update 写入的阶段 JSON 只读透传（admin-gated）。
+         *
+         *     未配置/尚无记录/坏文件都是诚实 available:false + 原因；内容本身
+         *     由脚本写入（阶段名/状态/时间戳/imageTag，绝无秘密）。本端点没有
+         *     也永远不会有执行控件——升级只由运维侧 ./lumirss update 触发。
+         */
+        get: operations["admin_deploy_status_api_v1_admin_deploy_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/invite-funnel": {
         parameters: {
             query?: never;
@@ -214,6 +261,81 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/registration-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Registration Policy */
+        get: operations["get_registration_policy_api_v1_admin_registration_policy_get"];
+        /** Set Registration Policy */
+        put: operations["set_registration_policy_api_v1_admin_registration_policy_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/rsshub/routes/{route_key}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rsshub Route Usage Admin
+         * @description N029 管理员聚合：一个路由模板在**全体活跃用户**中的使用计数。
+         *
+         *     隐私边界（结构保证，非靠 UI 隐藏）：响应只含计数——绝不返回其他
+         *     用户的订阅标题 / feed URL / 用户名。跨用户读取仅限派生投影的
+         *     feed_url 匹配与条目计数（投影本就是可重建的本地派生数据）。
+         *     member 403；遍历每用户库（邀请制小规模部署，行数有界）。
+         */
+        get: operations["rsshub_route_usage_admin_api_v1_admin_rsshub_routes__route_key__usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/rsshub/upgrade-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Rsshub Upgrade Checks
+         * @description N028 最近检查报告（新→旧，≤3；admin-gated，存本人用户库）。
+         */
+        get: operations["list_rsshub_upgrade_checks_api_v1_admin_rsshub_upgrade_check_get"];
+        put?: never;
+        /**
+         * Run Rsshub Upgrade Check
+         * @description N028 预升级路由兼容基线（admin-gated；只读探测 + 报告落库）。
+         *
+         *     诚实范围（测试固定）：
+         *     - 探测对象 = **管理员本人**用户库可见的路由键（订阅 URL 反推 +
+         *       本人收藏/最近使用），每次最多 12 条真实 preview（其余 skipped）；
+         *     - 只对**当前运行实例**探测——targetImage 恒记 pending（Lumi 无
+         *       Docker 视角，绝不臆造「新镜像已生效」）；逐路由状态锚定到
+         *       checkedImage（目录快照的固定镜像 sha）；
+         *     - keep-old = 默认：本端点零镜像/容器操作，只写报告（keep-last-3）。
+         */
+        post: operations["run_rsshub_upgrade_check_api_v1_admin_rsshub_upgrade_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/system": {
         parameters: {
             query?: never;
@@ -229,6 +351,30 @@ export interface paths {
          *     /api/v1/operations/* endpoints stay own-scope by design.
          */
         get: operations["system_status_api_v1_admin_system_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/upgrade-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Upgrade Preview
+         * @description N195：发布清单 × 当前版本 × 迁移差异的只读推演。
+         *
+         *     LUMIRSS_RELEASE_MANIFEST 未配置/文件不可读时如实 available:false；
+         *     不兼容（同版本/降级/库超前于目标）→ blocked:true + 原因。绝不
+         *     触发任何升级动作——这是预览，执行权只在 ./lumirss update。
+         */
+        get: operations["admin_upgrade_preview_api_v1_admin_upgrade_preview_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -254,6 +400,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/users/{user_id}/background-pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Background Pause User
+         * @description N193：暂停单个成员的重型后台任务（登录/阅读不受影响）。
+         *
+         *     与整账户暂停（O152）同源的两条硬边界：owner 不可定位；这里刻意
+         *     不撤销任何会话——被暂停成员的会话与阅读必须继续有效。
+         */
+        post: operations["background_pause_user_api_v1_admin_users__user_id__background_pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/background-resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Background Resume User */
+        post: operations["background_resume_user_api_v1_admin_users__user_id__background_resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/users/{user_id}/pause": {
         parameters: {
             query?: never;
@@ -266,6 +452,25 @@ export interface paths {
         /** Pause User */
         post: operations["pause_user_api_v1_admin_users__user_id__pause_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/quota": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get User Quota */
+        get: operations["get_user_quota_api_v1_admin_users__user_id__quota_get"];
+        /** Set User Quota */
+        put: operations["set_user_quota_api_v1_admin_users__user_id__quota_put"];
+        post?: never;
+        /** Clear User Quota */
+        delete: operations["clear_user_quota_api_v1_admin_users__user_id__quota_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -356,6 +561,107 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/recipes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Recipes */
+        get: operations["list_recipes_api_v1_agent_recipes_get"];
+        put?: never;
+        /**
+         * Create Recipe
+         * @description N170：保存配方（白名单校验：unknown → 422，绝不支持越权）。
+         */
+        post: operations["create_recipe_api_v1_agent_recipes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/recipes/{recipe_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Recipe */
+        delete: operations["delete_recipe_api_v1_agent_recipes__recipe_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/recipes/{recipe_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Recipe
+         * @description N170：运行前预览（零写入）：将创建的会话设置 + 首条消息概要。
+         */
+        post: operations["preview_recipe_api_v1_agent_recipes__recipe_id__preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/recipes/{recipe_id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Recipe
+         * @description N170：运行配方 = 创建新会话（scope + 白名单 toolPolicy 落库）
+         *     + 首条消息开启回合。白名单在服务端 evaluate_policy 强制执行。
+         */
+        post: operations["run_recipe_api_v1_agent_recipes__recipe_id__run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/scope-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Scope
+         * @description N151：授权范围摘要（kind × refCount × toolCount）——工作台范围
+         *     选择器保存前的服务端预览；refCount 查询时解析（有界），toolCount
+         *     与回合执行前的权限评估同口径（白名单 ∩ policy，readonly 剔除写）。
+         */
+        post: operations["preview_scope_api_v1_agent_scope_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent/threads": {
         parameters: {
             query?: never;
@@ -410,7 +716,7 @@ export interface paths {
         head?: never;
         /**
          * Update Thread Settings
-         * @description F094/F098：会话设置（scope / toolPolicy / 标题）。下轮生效。
+         * @description F094/F098/N165：会话设置（scope / toolPolicy / budget / 标题）。下轮生效。
          */
         patch: operations["update_thread_settings_api_v1_agent_threads__thread_id__patch"];
         trace?: never;
@@ -446,6 +752,27 @@ export interface paths {
          * @description F097：写操作预演（零业务写入；预演不改变审批流）。
          */
         post: operations["preview_approval_api_v1_agent_threads__thread_id__approvals__approval_id__preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/threads/{thread_id}/approvals/{approval_id}/revise": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revise Approval
+         * @description N167：批准内容修改——修订产生 NEW 审批行（绑定新 args_hash），
+         *     旧行标记 superseded（take → 410）。
+         */
+        post: operations["revise_approval_api_v1_agent_threads__thread_id__approvals__approval_id__revise_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -505,7 +832,9 @@ export interface paths {
          * @description Real-time SSE: storage replay after `after`, then live deltas from
          *     the running turn until it reaches a terminal state. Disconnects never
          *     abort the server-side run — clients reconnect with `after` and get the
-         *     persisted rows.
+         *     persisted rows. (``response_class``/``responses`` are for OpenAPI
+         *     documentation only; the hand-rolled generator below owns
+         *     replay/keep-alive.)
          */
         get: operations["stream_events_api_v1_agent_threads__thread_id__events_get"];
         put?: never;
@@ -562,6 +891,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/threads/{thread_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause Turn
+         * @description N164：任务暂停。运行中的回合在下一个工具间检查点冻结为快照
+         *     （{completedSteps, pendingPlan}）；仅停留在批准上的回合同样可暂停
+         *     （批准 id 进入快照）。二者皆无 → 409 no_active_run。
+         */
+        post: operations["pause_turn_api_v1_agent_threads__thread_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/threads/{thread_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume Turn
+         * @description N164：任务续接。已执行的步骤绝不重复执行（transcript 结果复用）；
+         *     暂停期间过期的批准 → 重新确认（铸造新批准行，旧批准作废）。
+         */
+        post: operations["resume_turn_api_v1_agent_threads__thread_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/threads/{thread_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Failed Steps
+         * @description N168：失败步骤单独重试——只重跑失败/未完成的步骤；已完成步骤
+         *     的结果从 transcript 复用；写工具经幂等台账（args_hash+turn）防止
+         *     重复副作用（需重新批准）。
+         */
+        post: operations["retry_failed_steps_api_v1_agent_threads__thread_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/threads/{thread_id}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Undo Step
+         * @description N169：任务结果差异撤销——按写台账前后快照回滚；对象在写入后
+         *     又被修改过 → 冲突报告并跳过；不支持撤销的工具 → 422。
+         */
+        post: operations["undo_step_api_v1_agent_threads__thread_id__undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ai/tasks": {
         parameters: {
             query?: never;
@@ -603,11 +1018,38 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Annotations */
+        /**
+         * List Annotations
+         * @description 跨篇检索/单篇列表；N073：可选 color= 过滤（调色板原始色名）。
+         */
         get: operations["list_annotations_api_v1_annotations_get"];
         put?: never;
         /** Create Annotation */
         post: operations["create_annotation_api_v1_annotations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/annotations/color-labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Color Labels
+         * @description 全调色板颜色标签（label 空 = 未命名 → Web 诚实显示原始色名）。
+         */
+        get: operations["get_color_labels_api_v1_annotations_color_labels_get"];
+        /**
+         * Put Color Label
+         * @description upsert 单个颜色标签；返回全调色板最新标签。
+         */
+        put: operations["put_color_label_api_v1_annotations_color_labels_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -625,9 +1067,52 @@ export interface paths {
         put?: never;
         /**
          * Export Annotations
-         * @description F052：批注汇编导出（Markdown 下载）。空选择 → 422。
+         * @description F052：批注汇编导出（Markdown 下载）。空选择 → 422。N075：
+         *     citeBibliography=true 时每篇文章追加引用格式行（缺失项「不详」）。
          */
         post: operations["export_annotations_api_v1_annotations_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/annotations/export-delta": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Annotations Export Delta
+         * @description N137：增量导出预览 —— 水位之后的新增/修改批注计数（可按文章
+         *     收窄）。从未导出 → lastExportedAt=null 且全部计为新增（诚实）。
+         */
+        get: operations["annotations_export_delta_api_v1_annotations_export_delta_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/annotations/export-mark": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark Annotations Exported
+         * @description N137：成功导出后回标水位（幂等：重复调用只追加日志行，水位只
+         *     前进，增量查询不会重复计数）。ids 为空 → 422。
+         */
+        post: operations["mark_annotations_exported_api_v1_annotations_export_mark_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -650,6 +1135,50 @@ export interface paths {
         head?: never;
         /** Update Annotation */
         patch: operations["update_annotation_api_v1_annotations__annotation_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/annotations/{annotation_id}/repair": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Repair Annotation
+         * @description 按用户选定的块重新绑定（anchor + anchor_hash 更新；旧锚点进
+         *     annotation_repair_log，cap 10）。当前正文里最高相似度 < 0.5 → 422
+         *     （repair_refused：只支持手动修复，不假装命中）。
+         */
+        post: operations["repair_annotation_api_v1_annotations__annotation_id__repair_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/annotations/{annotation_id}/repair-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Annotation Repair Candidates
+         * @description 重检存量引文在当前正文块中的位置：exact/prefix/fuzzy ≥0.8 →
+         *     候选列表（最多 5 条，分数降序）。引文为空 / 原文不可达 → 422 诚实
+         *     拒绝（不猜）。
+         */
+        get: operations["annotation_repair_candidates_api_v1_annotations__annotation_id__repair_candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/api-sources": {
@@ -692,6 +1221,35 @@ export interface paths {
          *     no such field by construction).
          */
         post: operations["preview_source_api_v1_api_sources_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/api-sources/preview-sample": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Sample Source
+         * @description N128 离线样例预览：the SAME mapping + Atom-preview pipeline as the
+         *     live preview, run on the PASTED sample.
+         *
+         *     Zero network (the endpoint is never dialed), zero storage (nothing
+         *     about the request — payload, expressions, and there are no auth
+         *     headers in play at all — is written anywhere), and no header echo by
+         *     construction (the response model has no such field). ``sampleMode``
+         *     marks the response honestly as offline. A sample that maps to ZERO
+         *     items (missing id/title fields, wrong items expression) is surfaced
+         *     as a stable 422 — missing data is never fabricated.
+         */
+        post: operations["preview_sample_source_api_v1_api_sources_preview_sample_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -743,6 +1301,60 @@ export interface paths {
          *     drift warnings clear with it. Nothing else changes.
          */
         post: operations["confirm_schema_api_v1_api_sources__source_uuid__confirm_schema_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/api-sources/{source_uuid}/credentials/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate Api Source Credential
+         * @description N130 测试并轮换（API 来源）：test first, then one-statement swap.
+         *
+         *     The probe (shape + endpoint reachability, read-only) runs INSIDE the
+         *     same request boundary before any write: a failure raises the stable
+         *     422 ``credential_test_failed`` and the current credential is
+         *     UNTOUCHED. On success the stored hash is swapped atomically, the new
+         *     token is indexed for the machine channel, and the OLD hash is parked
+         *     in the user's SecretsStore for a 10-minute fallback window (reads
+         *     prefer the new credential; a fallback hit is flagged on the source)
+         *     until the lazy sweep prunes it. The response is masked — no secret,
+         *     no atom path echo.
+         */
+        post: operations["rotate_api_source_credential_api_v1_api_sources__source_uuid__credentials_rotate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/api-sources/{source_uuid}/credentials/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Api Source Credential
+         * @description N130 轮换预演（API 来源）：shape check + read-only endpoint probe.
+         *
+         *     Nothing is swapped; the current credential stays live no matter the
+         *     outcome. The response is masked ({ok, statusClass, latencyMs}) — the
+         *     credential and every header stay unechoed.
+         */
+        post: operations["test_api_source_credential_api_v1_api_sources__source_uuid__credentials_test_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1032,6 +1644,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register
+         * @description Open registration (P0): self-serve MEMBER account, gated by the
+         *     instance-level ``allow_public_registration`` policy (control DB,
+         *     default OFF — upgraded instances and fresh installs alike stay
+         *     closed until the operator flips /admin/registration-policy).
+         *
+         *     Deliberately mirrors /auth/activate without an invite: role is
+         *     hardcoded ``member`` (the client can never request a role), the
+         *     FreshRSS pool assigns atomically or the account starts with an
+         *     honest pending binding, and the server derives every identity.
+         *     Enforcement here is the only gate — a hidden frontend button is
+         *     not trusted.
+         */
+        post: operations["register_api_v1_auth_register_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/session": {
         parameters: {
             query?: never;
@@ -1315,6 +1957,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/backups/preview-scope": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Backup Scope
+         * @description N185：备份内容选择预览（只读）。
+         *
+         *     按请求的范围给出逐组件将进入备份的行数（当前用户库实时计数），
+         *     并如实列出永远排除的内容（凭据与密钥 / FreshRSS 内容）。本端点
+         *     不创建任务、不写任何文件。
+         */
+        post: operations["preview_backup_scope_api_v1_backups_preview_scope_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/backups/remote": {
         parameters: {
             query?: never;
@@ -1329,6 +1995,36 @@ export interface paths {
         get: operations["list_remote_backups_api_v1_backups_remote_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/backups/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Verify Backup Get
+         * @description N186（GET 形式）：独立完整性自检——校验报告，不建恢复会话。
+         */
+        get: operations["verify_backup_get_api_v1_backups_verify_get"];
+        put?: never;
+        /**
+         * Verify Backup Post
+         * @description N186（POST 形式）：独立完整性自检——校验报告，不建恢复会话。
+         *
+         *     复用 restore.preview 的校验内核（manifest 结构/版本规则、流式
+         *     SHA-256、sqlite integrity），但逐项分类为发现而非首个失败即中断；
+         *     四项发现（checksumOk / manifestCountsMatch / readable /
+         *     versionCompatible）+ 具体问题（corruptFile / missingAttachment /
+         *     versionIncompatible）如实返回。绝不触发恢复，也不改任何文件。
+         */
+        post: operations["verify_backup_post_api_v1_backups_verify_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2483,10 +3179,14 @@ export interface paths {
         get?: never;
         /**
          * Revise Gpt Digest Issue
-         * @description F08：人工编辑标题/条目/排序后重新发布同一期。
+         * @description F08 + N173：人工修订同一期后重新发布。
          *
-         *     修订沿用既有引用（sourceIds 必须存在于生成时的引用集，不可凭空
-         *     新增）；entry id 不变、updated 前移，订阅端不产生新刊次。
+         *     - F08 全量：提交 title+sections（sourceIds 必须存在于生成时的引用
+         *       集，不可凭空新增）；entry id 不变、updated 前移。
+         *     - N173 逐句：``sentenceOps``（revise 改写 / delete 删除）直接作用
+         *       在当前内容上（省略 title/sections 时）；改写后的句子匹配不到生
+         *       成时引用 → 映射重算为待核实——绝不凭空延续引用。
+         *     两种路径都会重算句子映射并重渲染 body_html（Atom 订阅同步）。
          */
         put: operations["revise_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__put"];
         post?: never;
@@ -2579,6 +3279,52 @@ export interface paths {
          *     引用集）：校验失败保留 draft 并报 422，绝不半发布。
          */
         post: operations["publish_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/retry-polish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Polish Gpt Digest Issue
+         * @description N172：仅重跑润色阶段（选材/总结成果保留不动）。
+         *
+         *     语义：同 issue_key 修订（entry id 不变、updated 前移、状态不变）；
+         *     成功清除 meta.polishFailed。失败 502 polish_failed，期号保持原样。
+         */
+        post: operations["retry_polish_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__retry_polish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/trim-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Trim Preview Gpt Digest Issue
+         * @description N175：阅读时长裁剪预览——展示 before/after 与将移入素材篮的条目。
+         *
+         *     零写入、零模型调用（对已存期号按当前配置现算）；未配置
+         *     targetReadingMinutes 时诚实说明并返回原样。
+         */
+        get: operations["trim_preview_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__trim_preview_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3093,6 +3839,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/inbox/sources/{source_uuid}/credentials/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate Inbox Source Credential
+         * @description N130 测试并轮换（收件连接器）：test first, then one-statement swap.
+         *
+         *     A failed probe raises the stable 422 ``credential_test_failed`` and
+         *     the current bearer secret is UNTOUCHED. On success the stored hash
+         *     is swapped atomically, the new token is indexed for the machine
+         *     channel and the OLD hash is parked in the user's SecretsStore for a
+         *     10-minute fallback window: ingests verifying against the new secret
+         *     fail over ONCE to the old one and the source is flagged
+         *     (fallback_used) so the operator knows a push script lags behind.
+         *     The response is masked — the new secret is never echoed.
+         */
+        post: operations["rotate_inbox_source_credential_api_v1_inbox_sources__source_uuid__credentials_rotate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/inbox/sources/{source_uuid}/credentials/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Inbox Source Credential
+         * @description N130 轮换预演（收件连接器）。
+         *
+         *     Push model: there is no upstream to dial — the "real fetch" shape is
+         *     the ingest POST itself, which a rehearsal must not perform (it would
+         *     create content). The probe therefore covers everything a rehearsal
+         *     CAN cover without side effects: the source exists/answers and the
+         *     proposed credential passes the structural gate. Masked response, no
+         *     echo; nothing is swapped.
+         */
+        post: operations["test_inbox_source_credential_api_v1_inbox_sources__source_uuid__credentials_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/inbox/sources/{source_uuid}/events": {
         parameters: {
             query?: never;
@@ -3385,6 +4187,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library/bulk-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bulk Links
+         * @description 批量粘贴链接：逐条规范化（url_normalize 去追踪参数做批内去重键）
+         *     后创建书签或剪藏。
+         *
+         *     单条失败绝不回滚整批：每条独立 created | duplicate | failed（failed
+         *     必带 reason）。剪藏目标的正文由服务端管线重取重导出（与单个创建
+         *     同一信任边界）；抓取失败按 failed 如实上报。
+         */
+        post: operations["bulk_links_api_v1_library_bulk_links_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/library/clips": {
         parameters: {
             query?: never;
@@ -3433,6 +4260,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library/clips/preview-cleanup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Clip Cleanup
+         * @description N123：清理预览（零写入）：{html} ≤200KB → 每块 {keep, reason}。
+         *
+         *     确认后的保存走既有 PATCH revision（同一 sanitize_html 管线）；
+         *     预览本身绝不改动任何存储内容（原始版本在确认前不变）。
+         */
+        post: operations["preview_clip_cleanup_api_v1_library_clips_preview_cleanup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/library/clips/{item_uuid}": {
         parameters: {
             query?: never;
@@ -3451,6 +4301,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library/clips/{item_uuid}/candidate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Clip Candidate
+         * @description N122：查看候选版本（零写入；渲染前客户端仍过 DOMPurify）。
+         */
+        get: operations["get_clip_candidate_api_v1_library_clips__item_uuid__candidate_get"];
+        put?: never;
+        post?: never;
+        /**
+         * Discard Clip Candidate
+         * @description N122：丢弃候选版本（保留当前展示版本不动）。
+         */
+        delete: operations["discard_clip_candidate_api_v1_library_clips__item_uuid__candidate_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/clips/{item_uuid}/candidate/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Clip Candidate
+         * @description N122：应用候选（锁定 → 409 clip_locked；可带 keepIds 走同一净化）。
+         */
+        post: operations["apply_clip_candidate_api_v1_library_clips__item_uuid__candidate_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/library/clips/{item_uuid}/full": {
         parameters: {
             query?: never;
@@ -3460,11 +4354,55 @@ export interface paths {
         };
         /**
          * Get Clip Full
-         * @description F089 详情：content（当前展示）+ original（原始，不可变）+ revised。
+         * @description F089 详情 + N122：content（当前展示）+ original（原始，不可变）
+         *     + revised + locked + candidate。
          */
         get: operations["get_clip_full_api_v1_library_clips__item_uuid__full_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/clips/{item_uuid}/lock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Clip Lock
+         * @description N122：显式锁定/解锁（locked 旗标唯一写路径）。
+         */
+        put: operations["set_clip_lock_api_v1_library_clips__item_uuid__lock_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/clips/{item_uuid}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh Clip
+         * @description N122：重新抓取当前剪藏 URL（服务端管线）。
+         *
+         *     未锁定 → 直接应用（写入 F089 修订槽，原始永不覆盖）；已锁定 →
+         *     只存候选，展示版本不动；内容未变 → unchanged。
+         */
+        post: operations["refresh_clip_api_v1_library_clips__item_uuid__refresh_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3495,6 +4433,8 @@ export interface paths {
         /**
          * Save Clip Revision
          * @description 保存修订（保留块重组 + 净化；全移除需 force；原始版本不动）。
+         *
+         *     N122：锁定中的剪藏拒绝覆盖式写入（409 clip_locked）。
          */
         patch: operations["save_clip_revision_api_v1_library_clips__item_uuid__revision_patch"];
         trace?: never;
@@ -3948,6 +4888,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/mail/attachments/{attachment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Mail Attachment
+         * @description N125：附件下载（用户作用域；跨用户/不存在 → 同型 404）。
+         *
+         *     Content-Disposition 恒为 attachment（绝不内联渲染）；响应体大小
+         *     以存储 size 为准并再查上限（防越界写入）。文件名经净化并按
+         *     RFC 5987 编码（非 ASCII 安全）。
+         */
+        get: operations["download_mail_attachment_api_v1_mail_attachments__attachment_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/mail/bridge-lists": {
         parameters: {
             query?: never;
@@ -4057,6 +5021,55 @@ export interface paths {
          *     report — error text carries the failure kind, never credentials.
          */
         post: operations["test_mail_imap_api_v1_mail_imap_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mail/lists/{list_uuid}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Mail Messages
+         * @description N125/126/127 配套：单列表的有界消息清单（≤50，新→旧）。
+         *
+         *     每行只带旗标（附件数 / 被阻止媒体数 / 身份提示存在），正文详情走
+         *     detail 端点。
+         */
+        get: operations["list_mail_messages_api_v1_mail_lists__list_uuid__messages_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mail/lists/{list_uuid}/messages/{message_id}/detail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Mail Message Detail
+         * @description N125/N126/N127 邮件详情（只读）：
+         *
+         *     - text / html 两个正文形态（mail_bridge ingest 时已双双落库；html
+         *       是净化产物，渲染前客户端仍过 DOMPurify）；
+         *     - blockedMedia：ingest 时被剥离的外链媒体 URL（有界 ≤20）；
+         *     - attachments：已存附件（带下载 id）+ 被跳过附件的诚实清单；
+         *     - identityHints：服务端计算的中性身份提示（或 null）。
+         */
+        get: operations["mail_message_detail_api_v1_mail_lists__list_uuid__messages__message_id__detail_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4178,6 +5191,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/obsidian/block-refs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Block Refs */
+        get: operations["list_block_refs_api_v1_obsidian_block_refs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/obsidian/devices": {
         parameters: {
             query?: never;
@@ -4231,8 +5261,34 @@ export interface paths {
          *     built (the USER's Obsidian does any writing after confirmation);
          *     ``mode='file'`` with reason='tooLong' means the content exceeded the
          *     URI budget and the client falls back to download + clipboard.
+         *
+         *     N137：交接组装成功后回标导出水位（mark 幂等，重复导出无害）；
+         *     N135：命名策略体现在 filename（timestamp_suffix 追加 -YYYYMMDD-HHmm）；
+         *     N140：自动落一条 pending 交接记录（confirmed 只能由用户显式确认）。
          */
         post: operations["export_obsidian_handoff_api_v1_obsidian_export_handoff_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/obsidian/export-handoff/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Validate Obsidian Export
+         * @description N139 导出侧链接校验（只读报告）：对组装好的 Markdown 检查
+         *     断链 wikilink / 缺失附件 / 重复块 id。绝不改写用户 Vault 文件，
+         *     不交接、不落交接日志、不推进导出水位。
+         */
+        post: operations["validate_obsidian_export_api_v1_obsidian_export_handoff_validate_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4275,6 +5331,51 @@ export interface paths {
          *     honestly instead of passing through silently.
          */
         post: operations["preview_obsidian_export_template_api_v1_obsidian_export_template_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/obsidian/handoff-log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Obsidian Handoff Log */
+        get: operations["list_obsidian_handoff_log_api_v1_obsidian_handoff_log_get"];
+        put?: never;
+        /**
+         * Create Obsidian Handoff Log
+         * @description 显式记录 open / import_confirm 交接（export 自动落库，不接受手工
+         *     伪造方向）。pending 记录同样只能通过 confirm 端点显式确认。
+         */
+        post: operations["create_obsidian_handoff_log_api_v1_obsidian_handoff_log_post"];
+        /** Clear Obsidian Handoff Log */
+        delete: operations["clear_obsidian_handoff_log_api_v1_obsidian_handoff_log_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/obsidian/handoff/{handoff_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Obsidian Handoff
+         * @description 显式确认（用户在 Obsidian 中保存后亲自触发）——confirmed 的唯一
+         *     路径。页面可见性 / 重新加载等被动事件绝不调用这里。幂等：对已确认
+         *     行重复确认返回原行；不存在 → 404。
+         */
+        post: operations["confirm_obsidian_handoff_api_v1_obsidian_handoff__handoff_id__confirm_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4537,6 +5638,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opml/import/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Opml Import Log List
+         * @description N018：最近撤销台账（≤5 行，新→旧；undoneAt 非 null = 已撤销）。
+         */
+        get: operations["opml_import_log_list_api_v1_opml_import_log_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/opml/import/preview": {
         parameters: {
             query?: never;
@@ -4557,6 +5678,100 @@ export interface paths {
          *     POST /api/v1/opml/import.
          */
         post: operations["opml_import_preview_api_v1_opml_import_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opml/import/tree-apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Opml Tree Apply
+         * @description N018：应用树对照计划（订阅新 feed → 建类/移动随行）。
+         *
+         *     以执行时刻的服务器状态为准（预览是建议，不是陈旧契约）。每次
+         *     执行写一行撤销台账（opml_import_log，cap 5），撤销走
+         *     POST /api/v1/opml/import/{id}/undo。
+         */
+        post: operations["opml_tree_apply_api_v1_opml_import_tree_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opml/import/tree-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Opml Tree Preview
+         * @description N018：OPML 分类树对照预览——严格只读。
+         *
+         *     解析上传 OPML 的分类结构，对照当前 FreshRSS 分类，产出计划：
+         *     createCategories / reuseCategories / moveFeeds / duplicateFeeds
+         *     （skip|update 策略见 OpmlService._build_tree_plan 的确定性规则）。
+         *     不订阅、不移动、不建类；应用走 tree-apply。
+         */
+        post: operations["opml_tree_preview_api_v1_opml_import_tree_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opml/import/{log_id}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Opml Import Undo
+         * @description N018：撤销一次树对照导入（feed 移回原分类）。
+         *
+         *     每行至多撤销一次；被移动 feed 的原分类已消失 / feed 已退订时逐项
+         *     如实汇报原因。新建分类无法经 greader API 删除（无该端点，诚实
+         *     边界）——响应 categoriesNotDeleted 如实列出，可在 FreshRSS 原生
+         *     界面清理。
+         */
+        post: operations["opml_import_undo_api_v1_opml_import__log_id__undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/privacy/data-flows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Data Flows
+         * @description N181：逐来源数据外发清单（来自真实配置，只读，无网络请求）。
+         */
+        get: operations["get_data_flows_api_v1_privacy_data_flows_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4848,6 +6063,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/rag/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rag Ask
+         * @description 同步 RAG 问答（N151/N154/N155）。
+         *
+         *     - 范围：threadId 提供时继承该会话 F094 范围（服务端解析；
+         *       effectiveScope 回显）；refs 越界 → 403 out_of_scope；
+         *     - refs 不存在于任何投影 → 422 citation_invalid（捏造引用拦截）；
+         *     - mode=excerpt：零 provider 调用，只回原文片段（摘录 ≠ 回答）；
+         *     - mode=answer：一次有界 provider 调用；回答主张 vs 引用文本重叠
+         *       分级（direct/partial/none）；有文档事实主张但零有效引用 →
+         *       unverifiable:true reason no_valid_citations（诚实呈现，绝不假通过）。
+         */
+        post: operations["rag_ask_api_v1_rag_ask_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rag/chunk-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rag Chunk Preview
+         * @description N153：ref 的分块可视预览——索引「将会」产生的分块（ord/文本/
+         *     源文本坐标）+ 只读方案元数据。ref 不在投影中 → 404 ref_not_found。
+         */
+        post: operations["rag_chunk_preview_api_v1_rag_chunk_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rag/coverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rag Coverage
+         * @description N152：语料 ↔ rag_chunks 覆盖分桶（indexable/indexed/stale 来自
+         *     真实行与 content_hash；failed 来自最近 rag_jobs skipped 记录；
+         *     unsupported 按 kind 分组给原因）。纯只读盘点。
+         */
+        get: operations["rag_coverage_api_v1_rag_coverage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/rag/disable": {
         parameters: {
             query?: never;
@@ -5019,7 +6305,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Rag Search */
+        /**
+         * Rag Search
+         * @description Hybrid search. N151：传 threadId 时服务端解析该会话的 F094
+         *     范围——结果服务端过滤 + effectiveScope 回显（kind × refCount，
+         *     查询时解析、有界）；不传 = 未锁定（kind=all, refCount=null）。
+         */
         get: operations["rag_search_api_v1_rag_search_get"];
         put?: never;
         post?: never;
@@ -5066,6 +6357,42 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reading-questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Reading Questions */
+        get: operations["list_reading_questions_api_v1_reading_questions_get"];
+        put?: never;
+        /** Create Reading Question */
+        post: operations["create_reading_question_api_v1_reading_questions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reading-questions/{question_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Reading Question */
+        delete: operations["delete_reading_question_api_v1_reading_questions__question_id__delete"];
+        options?: never;
+        head?: never;
+        /** Patch Reading Question */
+        patch: operations["patch_reading_question_api_v1_reading_questions__question_id__patch"];
         trace?: never;
     };
     "/api/v1/relations": {
@@ -5221,6 +6548,27 @@ export interface paths {
         put?: never;
         /** Postpone Review Queue Item */
         post: operations["postpone_review_queue_item_api_v1_review_queue__queue_id__postpone_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/review-queue/{queue_id}/view": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * View Review Queue Item
+         * @description N077：揭示答案时刻 → last_viewed_at（来源追踪；只记时间，
+         *     不缓存任何原文内容）。
+         */
+        post: operations["view_review_queue_item_api_v1_review_queue__queue_id__view_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5417,6 +6765,107 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/rsshub/param-presets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Rsshub Param Presets
+         * @description N030 我的方案（每用户私有；敏感值只以 '***' 哨兵出现）。
+         */
+        get: operations["list_rsshub_param_presets_api_v1_rsshub_param_presets_get"];
+        put?: never;
+        /**
+         * Create Rsshub Param Preset
+         * @description 保存当前参数组合为方案（cap 20/用户；敏感值入库前哨兵化）。
+         *
+         *     校验在**真实值**上做（与 preview 同 pattern 规则），存储一律
+         *     mask_params——DB 与响应里都查不到敏感原文。
+         */
+        post: operations["create_rsshub_param_preset_api_v1_rsshub_param_presets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/param-presets/{preset_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Rsshub Param Preset
+         * @description 删除一个方案；404 当该用户没有此方案（跨用户即 404）。
+         */
+        delete: operations["delete_rsshub_param_preset_api_v1_rsshub_param_presets__preset_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/param-presets/{preset_id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Rsshub Param Preset
+         * @description N030 应用方案 → 参数表单回填数据（create-draft；纯只读）。
+         *
+         *     hasSensitive 方案要求敏感键重新输入（requiresRebind=true +
+         *     sensitiveKeys）——服务端从未存过真实值，哨兵回填本就会被 preview
+         *     的 pattern 校验拒绝；这里把契约显式化，UI 据此标「需重新绑定」。
+         */
+        post: operations["apply_rsshub_param_preset_api_v1_rsshub_param_presets__preset_id__apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/params-diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rsshub Params Diff
+         * @description N024：编辑既有 RSSHub 来源参数前的差异对照（零写入）。
+         *
+         *     同一次请求内有界抓取旧参数 feed 与新参数 feed（都走实例配置 origin
+         *     的 origin-locked 路径），离线解析标题并做集合 diff：
+         *     - added = 仅新 feed 有的标题；removed = 仅旧 feed 有的标题；
+         *       duplicates = 两侧都有（标题为对照键——entry id 不跨参数稳定）；
+         *     - 一侧抓取/解析失败 → 该侧 error 如实说明，titles=null，diff 基于
+         *       可用一侧诚实计算（绝不臆造空 = 全量增删的假差异）；
+         *     - newUrl 是 FreshRSS 面向的订阅地址（与 preview 同一构造）；
+         *     - 应用语义与 F047 相同：确认走迁移端点（新建订阅 + 旧源保留），
+         *       本端点本身绝不改任何状态（取消 = 什么都没发生）。
+         */
+        post: operations["rsshub_params_diff_api_v1_rsshub_params_diff_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/rsshub/preview": {
         parameters: {
             query?: never;
@@ -5598,6 +7047,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/rsshub/routes/{route_key}/my-sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rsshub Route My Sources
+         * @description N029：该路由模板生成的**本人**订阅（路由 → 来源关系图）。
+         *
+         *     仅当前用户作用域：control 适配器的订阅列表 + search_entries 投影
+         *     都按请求身份路由，其他账户的数据在这里结构上不可达。
+         */
+        get: operations["rsshub_route_my_sources_api_v1_rsshub_routes__route_key__my_sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/search": {
         parameters: {
             query?: never;
@@ -5728,6 +7200,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/search/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Search Snapshots
+         * @description N141：快照列表（最新优先；引用计数而非引用清单，出站有界）。
+         */
+        get: operations["list_search_snapshots_api_v1_search_snapshots_get"];
+        put?: never;
+        /**
+         * Create Search Snapshot
+         * @description N141 冻结：对当前查询+过滤作用域做一次 keyset 全量迭代（≤2000
+         *     条，触界诚实标注 truncated），把引用清单存入 per-user 快照表
+         *     （cap 20，超界自动淘汰最老）。查询为空/非法 → 400。
+         */
+        post: operations["create_search_snapshot_api_v1_search_snapshots_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search/snapshots/{snapshot_id}/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compare Search Snapshot
+         * @description N141 比较：对快照存储的作用域原样复跑（存什么跑什么，绝不
+         *     重新解释），与冻结清单做差分：
+         *
+         *     - added / removed：双向集合差（保持 newest-first 顺序；列表 ≤200
+         *       条，counts 为全量诚实计数）；
+         *     - rankChanges：两侧共同引用按位置排名，|位移| > 5 才列入；
+         *     - permissionLost：removed 中在本账户投影已不再解析的引用——
+         *       per-user 库查不到与 404 同语义，绝不泄露他人条目存在性；
+         *     - 任一侧触界截断 → complete=false。快照缺失 → 404。
+         */
+        post: operations["compare_search_snapshot_api_v1_search_snapshots__snapshot_id__compare_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/search/synonyms": {
         parameters: {
             query?: never;
@@ -5782,6 +7308,30 @@ export interface paths {
         head?: never;
         /** Update Synonym */
         patch: operations["update_synonym_api_v1_search_synonyms__synonym_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/search/timeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Timeline
+         * @description N149：与 GET /search 相同的权限与过滤作用域（per-user DB 路由 +
+         *     同一过滤链），24 个月逐月计数在 SQL 完成（GROUP BY 月份前缀）——
+         *     只回每月计数，绝不搬运正文。批注腿只含本人批注（annotations 表在
+         *     per-user 库中），excerpt/note LIKE 匹配查询，≤10 条 + 超界诚实
+         *     标注。同义词扩展不参与（聚合口径 = 基础词条过滤链，与 N145 一致）。
+         */
+        get: operations["search_timeline_api_v1_search_timeline_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/search/views": {
@@ -5914,6 +7464,28 @@ export interface paths {
         head?: never;
         /** Reorder Pinned View */
         patch: operations["reorder_pinned_view_api_v1_search_views__view_id__pin_order_patch"];
+        trace?: never;
+    };
+    "/api/v1/search/views/{view_id}/scope/unlink": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unlink Saved Search Scope
+         * @description N144：解除已失效的工作区关联（scopeBroken 后的用户显式动作）。
+         *
+         *     只清 workspace_id——内容类型范围保留；视图缺失 → 404。
+         */
+        post: operations["unlink_saved_search_scope_api_v1_search_views__view_id__scope_unlink_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/search/views/{view_id}/token/enable": {
@@ -6215,6 +7787,9 @@ export interface paths {
         /**
          * Get Ai Quota
          * @description F064：当前用量限制配置 + 本窗口已用/剩余/重置时间（本地时区）。
+         *
+         *     N191：上限是管理员策略包与成员自设配置的合成结果（更低者生效，
+         *     成员未配置时管理员日上限单独生效）——这里如实反映有效口径。
          */
         get: operations["get_ai_quota_api_v1_settings_ai_quota_get"];
         put?: never;
@@ -6262,6 +7837,9 @@ export interface paths {
          *     该条记录的 after 值（之后又被改过），则跳过该键并如实返回；
          *     其余键应用 before 值。回退本身作为一次 update 记入历史（可再
          *     次撤销）；至少一个键被应用时才有实际写入。
+         *
+         *     N184 显式化：冲突键不再只以 skipped 映射出现——响应带 restored
+         *     （已回退键列表）与 conflicts（键 + 原因清单），由 UI 明示。
          */
         post: operations["revert_settings_history_api_v1_settings_history__history_id__revert_post"];
         delete?: never;
@@ -6356,6 +7934,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sources/access-card": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Source Access Card
+         * @description N019：单个来源的接入说明卡（无卡 → 全 null）。
+         */
+        get: operations["get_source_access_card_api_v1_sources_access_card_get"];
+        /**
+         * Put Source Access Card
+         * @description N019：整卡 upsert（缺席字段 = 清空该字段）。
+         *
+         *     credentialOwnership 只接受归属标签 self/shared/none——**卡里没有
+         *     凭据值字段**（契约上不存在，schema 亦无 secret 列）；未知字段 → 422
+         *     invalid_access_card。
+         */
+        put: operations["put_source_access_card_api_v1_sources_access_card_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/access-cards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Source Access Cards
+         * @description N019：当前账户全部接入说明卡（per-user 库隔离，只见自己的）。
+         */
+        get: operations["list_source_access_cards_api_v1_sources_access_cards_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sources/alias": {
         parameters: {
             query?: never;
@@ -6423,6 +8049,159 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sources/bundle/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Export Source Bundle
+         * @description Credential-free bundle of the requested subscriptions (download).
+         *
+         *     Lumi-generated feeds (api/mail) are sanitized to stable URNs — the
+         *     FreshRSS-side Atom URLs embed per-source secrets that must never
+         *     leave the server. URLs matching no subscription are reported in
+         *     ``missing`` (honest, no fabrication).
+         */
+        post: operations["export_source_bundle_api_v1_sources_bundle_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/bundle/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Source Bundle
+         * @description Import a bundle — dry-run preview BY DEFAULT.
+         *
+         *     ``?apply=true`` commits: RSS rows subscribe once (merge-only, same
+         *     channel as OPML import), types needing credentials land as disabled
+         *     drafts in the staging pool. Existing rows report ``exists`` —
+         *     re-importing the same bundle converges (idempotent). Secrets are
+         *     never copied: a bundle cannot carry them, so nothing can leak.
+         */
+        post: operations["import_source_bundle_api_v1_sources_bundle_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/cleanup-suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cleanup Suggestions
+         * @description Advisory list: long-unopened sources that still deliver entries.
+         *
+         *     Own-data stats only (read recency projection × projection yield);
+         *     nothing here mutates anything. Unknown read history is reported as
+         *     such — absence of a read timestamp is NOT claimed as "never read".
+         */
+        get: operations["cleanup_suggestions_api_v1_sources_cleanup_suggestions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/cleanup-suggestions/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Cleanup Suggestions
+         * @description Apply ONLY the user-confirmed (feedUrl, action) pairs.
+         *
+         *     mute → source_overrides hiddenUntil far future (the existing
+         *     timeline-hide channel — reversible by clearing the override).
+         *     demote_category → the existing move-to-category control path with a
+         *     NEW named category (create-on-move, same as OPML import). Everything
+         *     else is rejected; unknown feeds are reported per item. There is no
+         *     auto-unsubscribe and no batch-everything mode.
+         */
+        post: operations["apply_cleanup_suggestions_api_v1_sources_cleanup_suggestions_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/freshness-suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Freshness Suggestions
+         * @description N014：低活跃来源建议（只读；依据 = 派生投影 trailing 8 周画像）。
+         *
+         *     对每个订阅计算条目/周（yield）与相邻发布间隔中位数（medianGapDays），
+         *     yield < 0.5 且 gap > 14 天 → 建议「降低刷新频率」。诚实边界：FreshRSS
+         *     greader API 不暴露 per-feed 刷新频率（调度粒度由实例 CRON_MIN 决定），
+         *     因此本端点只产出建议；「应用」= 记录 refreshAdvisory=accepted 决定，
+         *     逐源频率需在 FreshRSS 原生界面调整（/api/v1/freshrss/native-url）。
+         */
+        get: operations["freshness_suggestions_api_v1_sources_freshness_suggestions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/freshness-suggestions/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Freshness Advisory
+         * @description N014：接受一条低活跃建议 = 在 Lumi 侧记录该决定。
+         *
+         *     诚实语义：**不改变任何抓取行为**——FreshRSS greader API 无 per-feed
+         *     ttl/timing 能力，调度粒度由实例 CRON_MIN 决定。记录结果在来源详情
+         *     呈现为「已接受低频建议」；重复接受是幂等的（同值 no-op）。未订阅的
+         *     feed → 404（不为不存在的来源记决定）。
+         */
+        post: operations["apply_freshness_advisory_api_v1_sources_freshness_suggestions_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sources/overrides": {
         parameters: {
             query?: never;
@@ -6471,6 +8250,72 @@ export interface paths {
         get: operations["replacement_preview_api_v1_sources_replacement_preview_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/staging": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Staged Sources
+         * @description The staging pool (staging rows first-class; bundle drafts included
+         *     and honestly flagged with origin/enabled).
+         */
+        get: operations["list_staged_sources_api_v1_sources_staging_get"];
+        put?: never;
+        /**
+         * Stage Source
+         * @description Park a URL for later evaluation: one bounded preview fetch, then a
+         *     staging row. NOT subscribed, NOT counted in unread — nothing in the
+         *     RSS domain changes at all.
+         */
+        post: operations["stage_source_api_v1_sources_staging_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/staging/{source_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Discard Staged Source */
+        delete: operations["discard_staged_source_api_v1_sources_staging__source_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/staging/{source_id}/subscribe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Subscribe Staged Source
+         * @description Promote a staged row through the NORMAL subscribe path — exactly
+         *     once. An existing subscription converges to ``exists`` (idempotent
+         *     retries); either way the staging row is removed after the outcome.
+         */
+        post: operations["subscribe_staged_source_api_v1_sources_staging__source_id__subscribe_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6574,6 +8419,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/storage/retention/notice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Retention Notice
+         * @description N188：到期提醒（只读）。策略启用且将有行在提醒窗口（7 天）内到期
+         *     （或已到期）→ dueSoon=true + dueAt + 将影响计数（F114 预览口径）；
+         *     保护类（收藏/人工笔记/批注/卡片/凭据/运行中任务）如实列出。推迟
+         *     生效期内提醒被抑制。本端点绝不删除任何数据——apply 保持人工唯一
+         *     入口，没有任何后台调度会调用它。
+         */
+        get: operations["retention_notice_api_v1_storage_retention_notice_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/storage/retention/postpone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Postpone Retention
+         * @description N188：推迟到期提醒（days 钳制到 1–30；超过上界按 30 天收敛）。
+         *     只推迟「提醒」，不改变策略边界，也不影响手动 apply。
+         */
+        post: operations["postpone_retention_api_v1_storage_retention_postpone_post"];
+        /**
+         * Cancel Retention Postpone
+         * @description N188：取消推迟（提醒恢复按 dueAt 出现）。
+         */
+        delete: operations["cancel_retention_postpone_api_v1_storage_retention_postpone_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/storage/retention/preview": {
         parameters: {
             query?: never;
@@ -6638,6 +8532,11 @@ export interface paths {
          *     409 when already subscribed (checked before any write); 400 feed_rejected
          *     when FreshRSS cannot add the feed. The write is attempted exactly once
          *     (no retry on timeout — clients re-read and reconcile).
+         *
+         *     N191：管理员策略包（user_quotas.maxSources）在此事前拦截——按当前
+         *     用户投影 search_feeds 计数，第 N+1 个来源直接 429 quota_exceeded，
+         *     FreshRSS 侧零请求；成员没有任何路径可以提升该上限（设置端点是
+         *     admin-only，且本路由执行不读任何客户端提供的上限）。
          */
         post: operations["create_subscription_api_v1_subscriptions_post"];
         delete?: never;
@@ -6922,6 +8821,8 @@ export interface paths {
          * @description Merge source tag INTO target in one transaction (pool #16):
          *     duplicate bindings collapse, the rest re-point, the source tag is
          *     deleted. Lumi-owned bindings only — FreshRSS categories untouched.
+         *
+         *     N150：合并执行前已在同一事务内快照源绑定（24h 内可撤销一次）。
          */
         post: operations["merge_tags_api_v1_tags_merge_post"];
         delete?: never;
@@ -6945,6 +8846,29 @@ export interface paths {
         get: operations["merge_tag_preview_api_v1_tags_merge_preview_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tags/merge/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Undo Tag Merge
+         * @description Undo the latest merge within 24h (N150): recreate the source tag
+         *     (new id) and restore its bindings exactly; the target keeps the
+         *     merged bindings. No snapshot / TTL expired → 404; source name
+         *     already taken again (including by a previous undo) → 409.
+         */
+        post: operations["undo_tag_merge_api_v1_tags_merge_undo_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7084,6 +9008,23 @@ export interface paths {
          *     from the browser (see also the web build commit on the About page).
          */
         get: operations["version_api_v1_version_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/whats-new": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whats New */
+        get: operations["whats_new_api_v1_whats_new_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -7312,6 +9253,134 @@ export interface paths {
         /** Put Board */
         put: operations["put_board_api_v1_workspaces__workspace_id__board_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/cleanup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Workspace Cleanup Apply
+         * @description N120：应用选中的清理类目（快照先行，可撤销）。
+         *
+         *     只删 Lumi 自有元数据行（stale rss 成员行 / 空组名 / 悬空分节引用）；
+         *     绝不触碰 FreshRSS 数据；library: 域引用受保护（即使解析不到）。
+         */
+        post: operations["workspace_cleanup_apply_api_v1_workspaces__workspace_id__cleanup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/cleanup-logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Workspace Cleanup Logs
+         * @description 清理日志（新→旧，上限 5；供撤销入口选择）。
+         */
+        get: operations["workspace_cleanup_logs_api_v1_workspaces__workspace_id__cleanup_logs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/cleanup-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Workspace Cleanup Preview
+         * @description N120：只读清理预演——每项带原因，绝不静默；只报告不删除。
+         */
+        get: operations["workspace_cleanup_preview_api_v1_workspaces__workspace_id__cleanup_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/cleanup/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Workspace Cleanup Undo
+         * @description N120：按日志恢复被移除的行（缺省 = 最近一条；重复 undo 幂等）。
+         */
+        post: operations["workspace_cleanup_undo_api_v1_workspaces__workspace_id__cleanup_undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/compile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compile Workspace
+         * @description N114：按大纲汇编草稿（纯预览，绝不落库）。
+         *
+         *     - 每个分节：标题 + 成员（标题 / 摘录 ≤200 / 引文链接 / 自有笔记）；
+         *     - 无分节（或全部为空大纲）→ 单一隐式节（工作区名，平铺全部成员）；
+         *     - 已消失 / 未授权的引用诚实排除并计数（excluded + excludedMissing），
+         *       绝不冒充内容。
+         */
+        post: operations["compile_workspace_api_v1_workspaces__workspace_id__compile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/compile/markdown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compile Workspace Markdown
+         * @description N114：汇编草稿的 Markdown 文本版（同样纯预览不落库）。
+         */
+        post: operations["compile_workspace_markdown_api_v1_workspaces__workspace_id__compile_markdown_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7576,6 +9645,128 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspace_id}/sections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Workspace Sections
+         * @description N113：分节大纲（sort_index 序）。成员引用以 item_ref 引用而非复制；
+         *     同一条目可出现在多个分节；引用已不是工作区成员 → 行保留并诚实标记
+         *     ``unresolved``（绝不静默隐藏，N113 契约）。
+         */
+        get: operations["list_workspace_sections_api_v1_workspaces__workspace_id__sections_get"];
+        put?: never;
+        /** Create Workspace Section */
+        post: operations["create_workspace_section_api_v1_workspaces__workspace_id__sections_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/sections/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reorder Workspace Sections
+         * @description N113：分节顺序持久化（PUT 全量 1..N；真实变化 bump revision）。
+         */
+        put: operations["reorder_workspace_sections_api_v1_workspaces__workspace_id__sections_order_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/sections/{section_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Workspace Section */
+        delete: operations["delete_workspace_section_api_v1_workspaces__workspace_id__sections__section_id__delete"];
+        options?: never;
+        head?: never;
+        /** Rename Workspace Section */
+        patch: operations["rename_workspace_section_api_v1_workspaces__workspace_id__sections__section_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/sections/{section_id}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Workspace Section Item
+         * @description 把一个工作区成员引用进分节（幂等；同一 ref 可进入多个分节——
+         *     引用而非复制，ADR 0004）。非成员 → 404。
+         */
+        post: operations["add_workspace_section_item_api_v1_workspaces__workspace_id__sections__section_id__items_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/sections/{section_id}/items/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reorder Workspace Section Items
+         * @description N113：节内条目顺序持久化（PUT 全量 1..N）。
+         */
+        put: operations["reorder_workspace_section_items_api_v1_workspaces__workspace_id__sections__section_id__items_order_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/sections/{section_id}/items/{item_ref}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove Workspace Section Item
+         * @description 从分节移除一个引用（只拆引用，绝不删除工作区成员本身）。
+         */
+        delete: operations["remove_workspace_section_item_api_v1_workspaces__workspace_id__sections__section_id__items__item_ref__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspace_id}/snapshots": {
         parameters: {
             query?: never;
@@ -7732,6 +9923,14 @@ export interface paths {
          *     upstream failure serves that body with ``X-Lumi-Stale: 1`` (FreshRSS
          *     keeps its cached copy functional) and only a source with no last-good
          *     body falls back to the 502 stub.
+         *
+         *     N129 限额友好：every upstream run consults a persisted per-source
+         *     token bucket (api_source_runs, trailing hour, pruned on consult);
+         *     over budget → 429 ``budget_exhausted`` + Retry-After (FreshRSS
+         *     backs off — that is the point). An upstream 429 with Retry-After
+         *     stores ``next_allowed_run`` and serves the last-good body. Lumi
+         *     never works around a rate limit (no alternate credentials, no
+         *     retries that dodge the upstream's verdict).
          */
         get: operations["serve_atom_feeds__source_uuid___secret__atom_get"];
         put?: never;
@@ -7820,6 +10019,30 @@ export interface components {
             url: string;
         };
         /**
+         * AgentApprovalContent
+         * @description role=approval message body (server-minted by create_approval).
+         */
+        AgentApprovalContent: {
+            /** Approvalid */
+            approvalId: string;
+            /** Args */
+            args: {
+                [key: string]: unknown;
+            };
+            /** Callid */
+            callId: string;
+            /** Expiresinminutes */
+            expiresInMinutes?: number | null;
+            /** Reconfirmof */
+            reconfirmOf?: string | null;
+            /** Status */
+            status: string;
+            /** Threadid */
+            threadId: string;
+            /** Tool */
+            tool: string;
+        };
+        /**
          * AgentApprovalDecision
          * @description POST /api/v1/agent/threads/{id}/approvals.
          */
@@ -7830,6 +10053,112 @@ export interface components {
             decision: string;
         };
         /**
+         * AgentApprovalPreview
+         * @description F097 POST .../approvals/{id}/preview — 预演不执行业务写入。
+         */
+        AgentApprovalPreview: {
+            /** Approvalid */
+            approvalId: string;
+            /**
+             * Changes
+             * @default []
+             */
+            changes: components["schemas"]["AgentApprovalPreviewChange"][];
+            /** Note */
+            note: string;
+            /** Target */
+            target: string;
+            /** Tool */
+            tool: string;
+            /**
+             * Uncertain
+             * @default []
+             */
+            uncertain: string[];
+        };
+        /**
+         * AgentApprovalPreviewChange
+         * @description F097 预演逐字段变化（from → to；敏感值已打码为 ***）。
+         */
+        AgentApprovalPreviewChange: {
+            /** Field */
+            field: string;
+            /** From */
+            from?: string | null;
+            /** To */
+            to?: string | null;
+        };
+        /**
+         * AgentApprovalResult
+         * @description POST /api/v1/agent/threads/{id}/approvals — honest terminal
+         *     variants: rejected / tool_denied / completed.
+         */
+        AgentApprovalResult: {
+            message?: components["schemas"]["AgentMessage"] | null;
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "rejected" | "tool_denied" | "completed";
+        };
+        /**
+         * AgentApprovalReviseRequest
+         * @description N167 POST .../approvals/{id}/revise — 批准前的参数修订。
+         */
+        AgentApprovalReviseRequest: {
+            /** Newargs */
+            newArgs: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * AgentApprovalReviseResult
+         * @description N167 修订产生 NEW 审批行（绑定新 args_hash）；旧行 superseded。
+         */
+        AgentApprovalReviseResult: {
+            approval: components["schemas"]["AgentApprovalContent"];
+            /** Supersededapprovalid */
+            supersededApprovalId: string;
+        };
+        /**
+         * AgentAssistantContent
+         * @description role=assistant message body (streaming marker / cancel note /
+         *     branch-truncation notice / toolCalls while the loop is mid-turn).
+         *
+         *     N154/N155：evidenceStrength（direct|partial|none，引用文本 vs 主张
+         *     重叠分级——绝不用「置信度」措辞）；unverifiable/unverifiableReason
+         *     标记「有文档事实主张但零有效引用」的回答（no_valid_citations）。
+         *     N165：budgetExhausted = 预算耗尽的消耗摘要（tokens unknown 时为
+         *     null + tokensKnown=false，绝不谎报 0）。
+         */
+        AgentAssistantContent: {
+            /** Branchtruncated */
+            branchTruncated?: boolean | null;
+            /** Budgetexhausted */
+            budgetExhausted?: {
+                [key: string]: unknown;
+            } | null;
+            /** Cancelled */
+            cancelled?: boolean | null;
+            /** Evidencestrength */
+            evidenceStrength?: ("direct" | "partial" | "none") | null;
+            /** Streaming */
+            streaming?: boolean | null;
+            /** Text */
+            text: string;
+            /**
+             * Toolcalls
+             * @default []
+             */
+            toolCalls: components["schemas"]["AgentToolCall"][];
+            /** Unverifiable */
+            unverifiable?: boolean | null;
+            /** Unverifiablereason */
+            unverifiableReason?: string | null;
+        };
+        /**
          * AgentBranchRequest
          * @description F099 从指定消息分支。
          */
@@ -7838,12 +10167,297 @@ export interface components {
             messageIndex: number;
         };
         /**
+         * AgentBranchResult
+         * @description F099 POST /api/v1/agent/threads/{id}/branch 响应。
+         */
+        AgentBranchResult: {
+            /** Branchof */
+            branchOf: string;
+            /** Copiedmessages */
+            copiedMessages: number;
+            thread: components["schemas"]["AgentThread"];
+            /** Truncated */
+            truncated: boolean;
+        };
+        /**
+         * AgentCancelResult
+         * @description POST /api/v1/agent/threads/{id}/cancel.
+         */
+        AgentCancelResult: {
+            /** Cancelled */
+            cancelled: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "cancelling" | "cancelled";
+        };
+        /**
+         * AgentCitationDetail
+         * @description One citation ref resolved through the shared Source Registry.
+         */
+        AgentCitationDetail: {
+            /** Datetime */
+            datetime?: string | null;
+            /** Domain */
+            domain: string;
+            /** Excerpt */
+            excerpt?: string | null;
+            /** Kind */
+            kind: string;
+            /**
+             * Payload
+             * @default {}
+             */
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Ref */
+            ref: string;
+            /** Source */
+            source: string;
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /** Stalereason */
+            staleReason?: string | null;
+            /** Title */
+            title: string;
+            /** Url */
+            url?: string | null;
+        };
+        /**
+         * AgentEntryRefsScope
+         * @description F094 范围锁定：锁定到显式条目列表。
+         */
+        AgentEntryRefsScope: {
+            /** Entryrefs */
+            entryRefs: string[];
+        };
+        /**
+         * AgentMessage
+         * @description One persisted conversation message (storage row, wire format).
+         */
+        AgentMessage: {
+            /**
+             * Citations
+             * @default []
+             */
+            citations: string[];
+            /** Content */
+            content: components["schemas"]["AgentUserContent"] | components["schemas"]["AgentAssistantContent"] | components["schemas"]["AgentToolContent"] | components["schemas"]["AgentApprovalContent"];
+            /** Createdat */
+            createdAt: string;
+            /** Id */
+            id: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "user" | "assistant" | "tool" | "approval";
+            /** Seq */
+            seq: number;
+            /** Threadid */
+            threadId: string;
+        };
+        /**
          * AgentMessageCreate
          * @description POST /api/v1/agent/threads/{id}/messages.
          */
         AgentMessageCreate: {
             /** Text */
             text: string;
+        };
+        /**
+         * AgentMessageListResponse
+         * @description Envelope for GET /api/v1/agent/threads/{id}/messages.
+         */
+        AgentMessageListResponse: {
+            /**
+             * Citationdetails
+             * @default []
+             */
+            citationDetails: components["schemas"]["AgentCitationDetail"][];
+            /** Items */
+            items: components["schemas"]["AgentMessage"][];
+        };
+        /**
+         * AgentPauseResult
+         * @description N164 POST /api/v1/agent/threads/{id}/pause.
+         */
+        AgentPauseResult: {
+            /** Paused */
+            paused: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pausing" | "paused";
+        };
+        /**
+         * AgentRecipe
+         * @description N170 一条任务配方（whitelist ⊆ 注册表白名单）。
+         */
+        AgentRecipe: {
+            /** Createdat */
+            createdAt: string;
+            /** Id */
+            id: string;
+            /** Input */
+            input: string;
+            /** Name */
+            name: string;
+            /** Scope */
+            scope?: {
+                [key: string]: unknown;
+            } | null;
+            /** Toolwhitelist */
+            toolWhitelist: string[];
+            /** Updatedat */
+            updatedAt: string;
+        };
+        /**
+         * AgentRecipeCreate
+         * @description N170 POST /api/v1/agent/recipes。
+         */
+        AgentRecipeCreate: {
+            /** Input */
+            input: string;
+            /** Name */
+            name: string;
+            /** Scope */
+            scope?: {
+                [key: string]: unknown;
+            } | null;
+            /** Toolwhitelist */
+            toolWhitelist: string[];
+        };
+        /**
+         * AgentRecipeListResponse
+         * @description Envelope for GET /api/v1/agent/recipes.
+         */
+        AgentRecipeListResponse: {
+            /** Items */
+            items: components["schemas"]["AgentRecipe"][];
+        };
+        /**
+         * AgentRecipePreview
+         * @description N170 运行前预览：将创建的会话设置（白名单 → toolPolicy +
+         *     scope）与首条消息概要；unknownTools 非空 = 白名单越界（运行被拒）。
+         */
+        AgentRecipePreview: {
+            /** Input */
+            input: string;
+            /** Name */
+            name: string;
+            /** Note */
+            note: string;
+            /** Recipeid */
+            recipeId: string;
+            /** Scope */
+            scope?: {
+                [key: string]: unknown;
+            } | null;
+            /** Threadtitle */
+            threadTitle: string;
+            toolPolicy?: components["schemas"]["AgentToolPolicy"] | null;
+            /** Toolwhitelist */
+            toolWhitelist: string[];
+            /**
+             * Unknowntools
+             * @default []
+             */
+            unknownTools: string[];
+        };
+        /**
+         * AgentRecipeRunResult
+         * @description N170 POST .../run — 创建新会话并以配方 input 开启第一回合。
+         */
+        AgentRecipeRunResult: {
+            /** Recipeid */
+            recipeId: string;
+            /**
+             * Status
+             * @constant
+             */
+            status: "processing";
+            thread: components["schemas"]["AgentThread"];
+        };
+        /**
+         * AgentResumeResult
+         * @description N164 POST /api/v1/agent/threads/{id}/resume — honest variants:
+         *     resumed (loop continues), awaiting_approval (user decision needed,
+         *     possibly a RE-CONFIRM minted for an approval expired mid-pause).
+         */
+        AgentResumeResult: {
+            approval?: components["schemas"]["AgentApprovalContent"] | null;
+            message?: components["schemas"]["AgentMessage"] | null;
+            /**
+             * Reconfirmrequired
+             * @default false
+             */
+            reconfirmRequired: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "processing" | "awaiting_approval";
+        };
+        /**
+         * AgentRetryResult
+         * @description N168 POST .../retry — 只重跑失败/未完成的步骤。
+         */
+        AgentRetryResult: {
+            approval?: components["schemas"]["AgentApprovalContent"] | null;
+            /**
+             * Retried
+             * @default []
+             */
+            retried: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Skipped
+             * @default []
+             */
+            skipped: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "completed" | "awaiting_approval";
+        };
+        /**
+         * AgentScopePreviewRequest
+         * @description N151 POST /api/v1/agent/scope-preview body（工作台范围选择器的
+         *     授权范围摘要卡：kind × refCount × toolCount）。
+         */
+        AgentScopePreviewRequest: {
+            /** Scope */
+            scope?: components["schemas"]["AgentWorkspaceScope"] | components["schemas"]["AgentEntryRefsScope"] | null;
+            toolPolicy?: components["schemas"]["AgentToolPolicy"] | null;
+        };
+        /**
+         * AgentScopeSummary
+         * @description N151 授权范围摘要（服务端解析，绝不在前端伪造计数）。
+         */
+        AgentScopeSummary: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "all" | "workspace" | "entryRefs";
+            /** Refcount */
+            refCount?: number | null;
+            /**
+             * Toolcount
+             * @default 0
+             */
+            toolCount: number;
         };
         /**
          * AgentThread
@@ -7858,6 +10472,16 @@ export interface components {
             title: string;
         };
         /**
+         * AgentThreadBudget
+         * @description N165 线程级预算 {maxToolCalls, maxTurns}（键皆可缺省）。
+         */
+        AgentThreadBudget: {
+            /** Maxtoolcalls */
+            maxToolCalls?: number | null;
+            /** Maxturns */
+            maxTurns?: number | null;
+        };
+        /**
          * AgentThreadListResponse
          * @description Envelope for GET /api/v1/agent/threads.
          */
@@ -7866,12 +10490,62 @@ export interface components {
             items: components["schemas"]["AgentThread"][];
         };
         /**
+         * AgentThreadSearchHit
+         * @description F095 一条会话消息搜索命中（snippet 含前后文）。
+         */
+        AgentThreadSearchHit: {
+            /** Messageindex */
+            messageIndex: number;
+            /** Role */
+            role: string;
+            /** Snippet */
+            snippet: string;
+            /** Threadid */
+            threadId: string;
+            /** Threadtitle */
+            threadTitle: string;
+        };
+        /**
+         * AgentThreadSearchResponse
+         * @description Envelope for GET /api/v1/agent/threads/search.
+         */
+        AgentThreadSearchResponse: {
+            /** Items */
+            items: components["schemas"]["AgentThreadSearchHit"][];
+            /** Truncated */
+            truncated: boolean;
+        };
+        /**
+         * AgentThreadSettings
+         * @description PATCH /api/v1/agent/threads/{id} response（下轮生效）。
+         */
+        AgentThreadSettings: {
+            /** Branchof */
+            branchOf?: string | null;
+            budget?: components["schemas"]["AgentThreadBudget"] | null;
+            /** Id */
+            id: string;
+            /** Scope */
+            scope?: components["schemas"]["AgentWorkspaceScope"] | components["schemas"]["AgentEntryRefsScope"] | null;
+            /** Title */
+            title: string;
+            toolPolicy?: components["schemas"]["AgentToolPolicy"] | null;
+        };
+        /**
          * AgentThreadUpdate
-         * @description F094/F098 会话设置（scope / toolPolicy；None = 清除/不修改按键）。
-         *
-         *     scope=None 显式清除范围锁定；键缺省 = 不修改。
+         * @description F094/F098 会话设置（scope / toolPolicy / N165 budget；None =
+         *     清除/不修改按键）。scope=None 显式清除范围锁定；键缺省 = 不修改。
          */
         AgentThreadUpdate: {
+            /** Budget */
+            budget?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Clearbudget
+             * @default false
+             */
+            clearBudget: boolean;
             /**
              * Clearscope
              * @default false
@@ -7892,6 +10566,136 @@ export interface components {
             toolPolicy?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /**
+         * AgentToolCall
+         * @description One assistant tool invocation; arguments stay raw protocol text.
+         */
+        AgentToolCall: {
+            /** Argumentstext */
+            argumentsText: string;
+            /** Callid */
+            callId: string;
+            /** Name */
+            name: string;
+        };
+        /**
+         * AgentToolContent
+         * @description role=tool message body.
+         *
+         *     ``result`` is the untrusted envelope (or a bare string in branched
+         *     transcripts); ``callId`` is dropped when a branch copies the row as
+         *     a non-executable transcript record.
+         *
+         *     N166 执行时间线：durationMs（真实执行耗时）、maskedArgsSummary
+         *     （≤80 字符、F097 _redact 脱敏——密钥形态值绝不出现）、resultType
+         *     （result|error）。N168：retried（重试步骤）/replayed（幂等缓存命
+         *     中）。N169：stepId（写台账行 id）+ undoable（可撤销）。
+         */
+        AgentToolContent: {
+            /** Approved */
+            approved?: boolean | null;
+            /** Branchtranscript */
+            branchTranscript?: boolean | null;
+            /** Callid */
+            callId?: string | null;
+            /** Durationms */
+            durationMs?: number | null;
+            /** Error */
+            error?: string | null;
+            /** Maskedargssummary */
+            maskedArgsSummary?: string | null;
+            /** Name */
+            name: string;
+            /** Replayed */
+            replayed?: boolean | null;
+            /** Result */
+            result?: components["schemas"]["AgentToolResult"] | string | null;
+            /** Resulttype */
+            resultType?: string | null;
+            /** Retried */
+            retried?: boolean | null;
+            /** Stepid */
+            stepId?: string | null;
+            /** Undoable */
+            undoable?: boolean | null;
+        };
+        /**
+         * AgentToolPolicy
+         * @description F098 会话工具权限（键皆可缺省；validate_tool_policy 只落提供的键）。
+         */
+        AgentToolPolicy: {
+            /** Allowedtools */
+            allowedTools?: string[] | null;
+            /** Maxopsperturn */
+            maxOpsPerTurn?: number | null;
+            /** Mode */
+            mode?: ("all" | "readonly") | null;
+        };
+        /**
+         * AgentToolResult
+         * @description Tool output wrapped as untrusted data (injection boundary).
+         */
+        AgentToolResult: {
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Untrusted */
+            untrusted: boolean;
+        };
+        /**
+         * AgentTurnAccepted
+         * @description 202 body for POST /api/v1/agent/threads/{id}/messages.
+         */
+        AgentTurnAccepted: {
+            /**
+             * Status
+             * @constant
+             */
+            status: "processing";
+        };
+        /**
+         * AgentUndoRequest
+         * @description N169 POST .../undo — 按写台账 stepId 差异撤销。
+         */
+        AgentUndoRequest: {
+            /** Stepid */
+            stepId: string;
+        };
+        /**
+         * AgentUndoResult
+         * @description N169 撤销结果：undone=false 时 conflictReason 说明跳过原因。
+         */
+        AgentUndoResult: {
+            /** Conflictreason */
+            conflictReason?: string | null;
+            /** Result */
+            result?: {
+                [key: string]: unknown;
+            } | null;
+            /** Stepid */
+            stepId: string;
+            /** Tool */
+            tool: string;
+            /** Undone */
+            undone: boolean;
+        };
+        /**
+         * AgentUserContent
+         * @description role=user message body.
+         */
+        AgentUserContent: {
+            /** Text */
+            text: string;
+        };
+        /**
+         * AgentWorkspaceScope
+         * @description F094 范围锁定：锁定到单个工作区。
+         */
+        AgentWorkspaceScope: {
+            /** Workspaceid */
+            workspaceId: string;
         };
         /**
          * AiProfile
@@ -8101,6 +10905,40 @@ export interface components {
             translationLanguage: "zh-CN" | "en";
         };
         /**
+         * AnnotationColorLabelItem
+         * @description 一个颜色的语义标签（label 空 = 未命名，Web 诚实显示原始色名）。
+         */
+        AnnotationColorLabelItem: {
+            /** Color */
+            color: string;
+            /** Label */
+            label: string;
+        };
+        /**
+         * AnnotationColorLabelList
+         * @description GET /api/v1/annotations/color-labels 响应（全调色板稳定顺序）。
+         */
+        AnnotationColorLabelList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["AnnotationColorLabelItem"][];
+        };
+        /**
+         * AnnotationColorLabelPut
+         * @description PUT /api/v1/annotations/color-labels body（单色 upsert）。
+         */
+        AnnotationColorLabelPut: {
+            /** Color */
+            color: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+        };
+        /**
          * AnnotationCreate
          * @description POST /api/v1/annotations body。
          */
@@ -8122,14 +10960,120 @@ export interface components {
             note?: string | null;
         };
         /**
+         * AnnotationExportDelta
+         * @description GET /api/v1/annotations/export-delta 响应（增量预览：新增/修改）。
+         */
+        AnnotationExportDelta: {
+            /**
+             * Addedcount
+             * @default 0
+             */
+            addedCount: number;
+            /** Lastexportedat */
+            lastExportedAt?: string | null;
+            /**
+             * Modifiedcount
+             * @default 0
+             */
+            modifiedCount: number;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+        };
+        /**
+         * AnnotationExportMarkRequest
+         * @description POST /api/v1/annotations/export-mark body（N137 导出水位回标）。
+         */
+        AnnotationExportMarkRequest: {
+            /** Ids */
+            ids: string[];
+        };
+        /**
+         * AnnotationExportMarkResult
+         * @description N137：mark 结果（诚实计数：只含实际存在的批注）。
+         */
+        AnnotationExportMarkResult: {
+            /** Count */
+            count: number;
+            /**
+             * Entryrefs
+             * @default []
+             */
+            entryRefs: string[];
+            /** Exportedat */
+            exportedAt: string;
+            /**
+             * Ids
+             * @default []
+             */
+            ids: string[];
+        };
+        /**
          * AnnotationExportRequest
          * @description POST /api/v1/annotations/export body（范围：全部 / 当前筛选）。
          */
         AnnotationExportRequest: {
+            /**
+             * Citebibliography
+             * @default false
+             */
+            citeBibliography: boolean;
             /** Entryrefs */
             entryRefs?: string[] | null;
             /** Q */
             q?: string | null;
+        };
+        /**
+         * AnnotationRepairCandidate
+         * @description 一个候选正文块（score = exact/前缀包含 1.0，difflib 模糊比）。
+         */
+        AnnotationRepairCandidate: {
+            /** Blockindex */
+            blockIndex: number;
+            /** Excerpt */
+            excerpt: string;
+            /** Score */
+            score: number;
+        };
+        /**
+         * AnnotationRepairCandidatesResult
+         * @description GET /api/v1/annotations/{id}/repair-candidates 响应。
+         */
+        AnnotationRepairCandidatesResult: {
+            /** Annotationid */
+            annotationId: string;
+            /**
+             * Candidates
+             * @default []
+             */
+            candidates: components["schemas"]["AnnotationRepairCandidate"][];
+            /** Entryref */
+            entryRef: string;
+            /** Quote */
+            quote: string;
+        };
+        /**
+         * AnnotationRepairRequest
+         * @description POST /api/v1/annotations/{id}/repair body（用户从候选中选定）。
+         */
+        AnnotationRepairRequest: {
+            /** Blockindex */
+            blockIndex: number;
+            /** Quotetext */
+            quoteText: string;
+        };
+        /**
+         * AnnotationRepairResult
+         * @description POST /api/v1/annotations/{id}/repair 响应（更新后的批注 + 本次绑定）。
+         */
+        AnnotationRepairResult: {
+            annotation: components["schemas"]["AnnotationView"];
+            /** Blockindex */
+            blockIndex: number;
+            /** Score */
+            score: number;
         };
         /**
          * AnnotationUpdate
@@ -8142,6 +11086,32 @@ export interface components {
             excerpt?: string | null;
             /** Note */
             note?: string | null;
+        };
+        /**
+         * AnnotationView
+         * @description 批注行的稳定投影（annotations CRUD 现行响应形状）。
+         */
+        AnnotationView: {
+            /** Anchor */
+            anchor: {
+                [key: string]: unknown;
+            };
+            /** Anchorhash */
+            anchorHash: string;
+            /** Color */
+            color: string;
+            /** Createdat */
+            createdAt: string;
+            /** Entryref */
+            entryRef: string;
+            /** Excerpt */
+            excerpt: string;
+            /** Id */
+            id: string;
+            /** Note */
+            note: string;
+            /** Updatedat */
+            updatedAt: string;
         };
         /**
          * ApiSource
@@ -8173,12 +11143,24 @@ export interface components {
             lastStatus?: string | null;
             /** Lastsuccessat */
             lastSuccessAt?: string | null;
+            /**
+             * Maxrunsperhour
+             * @default 4
+             */
+            maxRunsPerHour: number;
             /** Name */
             name: string;
+            /** Nextallowedrun */
+            nextAllowedRun?: string | null;
             /** Pagination */
             pagination?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Respectretryafter
+             * @default true
+             */
+            respectRetryAfter: boolean;
             /** Schemadrift */
             schemaDrift?: {
                 [key: string]: string[];
@@ -8213,6 +11195,11 @@ export interface components {
             };
             /** Itemsexpr */
             itemsExpr: string;
+            /**
+             * Maxrunsperhour
+             * @default 4
+             */
+            maxRunsPerHour: number;
             /** Name */
             name: string;
             /** Pagination */
@@ -8224,6 +11211,32 @@ export interface components {
              * @default true
              */
             subscribe: boolean;
+        };
+        /**
+         * ApiSourceCredentialResult
+         * @description N130 masked credential probe / rotation result.
+         *
+         *     Deliberately minimal: no credential material, no request or response
+         *     header echo — only the honest verdict, a coarse status class and the
+         *     probe latency.
+         */
+        ApiSourceCredentialResult: {
+            /** Latencyms */
+            latencyMs: number;
+            /** Note */
+            note?: string | null;
+            /** Ok */
+            ok: boolean;
+            /** Statusclass */
+            statusClass: string;
+        };
+        /**
+         * ApiSourceCredentialTestRequest
+         * @description Body for .../credentials/test and .../credentials/rotate (N130).
+         */
+        ApiSourceCredentialTestRequest: {
+            /** Newcredential */
+            newCredential: string;
         };
         /**
          * ApiSourceListResponse
@@ -8285,8 +11298,32 @@ export interface components {
                 [key: string]: unknown;
             }[];
             paginationDryRun?: components["schemas"]["ApiSourcePaginationDryRun"] | null;
+            /**
+             * Samplemode
+             * @default false
+             */
+            sampleMode: boolean;
             /** Totalavailable */
             totalAvailable: number;
+        };
+        /**
+         * ApiSourceSamplePreviewRequest
+         * @description POST /api/v1/api-sources/preview-sample (N128).
+         *
+         *     Runs the EXACT same mapping + Atom-preview pipeline on a PASTED
+         *     sample payload: no network, no fetch, no headers — nothing about the
+         *     request is stored. ``samplePayload`` is the raw JSON document the
+         *     upstream would return (object or array of objects).
+         */
+        ApiSourceSamplePreviewRequest: {
+            /** Fieldmap */
+            fieldMap: {
+                [key: string]: string;
+            };
+            /** Itemsexpr */
+            itemsExpr: string;
+            /** Samplepayload */
+            samplePayload: unknown;
         };
         /**
          * ApiSourceUpdate
@@ -8303,6 +11340,8 @@ export interface components {
             } | null;
             /** Itemsexpr */
             itemsExpr?: string | null;
+            /** Maxrunsperhour */
+            maxRunsPerHour?: number | null;
             /** Name */
             name?: string | null;
             /** Pagination */
@@ -8677,6 +11716,15 @@ export interface components {
             count: number;
         };
         /**
+         * BackgroundPauseRequest
+         * @description POST /admin/users/{id}/background-pause body。原因必填——
+         *     「为什么他的后台任务停了」必须留下人读答案（同步落 audit_log）。
+         */
+        BackgroundPauseRequest: {
+            /** Reason */
+            reason: string;
+        };
+        /**
          * BacklogApplyRequest
          * @description POST /api/v1/entries/backlog-apply body — must carry the one-shot
          *     preview token (30s) so the applied condition cannot drift.
@@ -8782,6 +11830,7 @@ export interface components {
         };
         /** BackupCreate */
         BackupCreate: {
+            include?: components["schemas"]["BackupScopeInclude"] | null;
             /**
              * Target
              * @default local
@@ -8845,6 +11894,128 @@ export interface components {
             target?: string | null;
         } & {
             [key: string]: unknown;
+        };
+        /** BackupScopeComponent */
+        BackupScopeComponent: {
+            /** Component */
+            component: string;
+            /** Count */
+            count: number;
+            /** Included */
+            included: boolean;
+        };
+        /**
+         * BackupScopeInclude
+         * @description N185：备份用户数据范围（缺省全 True = 与历史默认一致）。
+         */
+        BackupScopeInclude: {
+            /**
+             * Annotations
+             * @default true
+             */
+            annotations: boolean;
+            /**
+             * Notes
+             * @default true
+             */
+            notes: boolean;
+            /**
+             * Sourceconfig
+             * @default true
+             */
+            sourceConfig: boolean;
+            /**
+             * Workspaces
+             * @default true
+             */
+            workspaces: boolean;
+        };
+        /**
+         * BackupScopePreview
+         * @description POST /api/v1/backups/preview-scope — 范围选择预览（只读）。
+         *
+         *     per-component 计数 + always-excluded 清单（凭据 / FreshRSS 内容）。
+         */
+        BackupScopePreview: {
+            /**
+             * Alwaysexcluded
+             * @default []
+             */
+            alwaysExcluded: string[];
+            /**
+             * Components
+             * @default []
+             */
+            components: components["schemas"]["BackupScopeComponent"][];
+            scope: components["schemas"]["BackupScopeInclude"];
+        };
+        /**
+         * BackupScopePreviewBody
+         * @description POST /api/v1/backups/preview-scope 体（include 缺省 = 全包含）。
+         */
+        BackupScopePreviewBody: {
+            include?: components["schemas"]["BackupScopeInclude"] | null;
+        };
+        /**
+         * BackupVerifyFindings
+         * @description N186：独立完整性自检四项发现（全部为真才算健康）。
+         */
+        BackupVerifyFindings: {
+            /** Checksumok */
+            checksumOk: boolean;
+            /** Manifestcountsmatch */
+            manifestCountsMatch: boolean;
+            /** Readable */
+            readable: boolean;
+            /** Versioncompatible */
+            versionCompatible: boolean;
+        };
+        /**
+         * BackupVerifyIssues
+         * @description 具体问题：损坏成员 / 缺失附件 / 版本不兼容（健康时全空/None）。
+         */
+        BackupVerifyIssues: {
+            /**
+             * Corruptfile
+             * @default []
+             */
+            corruptFile: string[];
+            /**
+             * Missingattachment
+             * @default []
+             */
+            missingAttachment: string[];
+            /** Versionincompatible */
+            versionIncompatible?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** BackupVerifyManifest */
+        BackupVerifyManifest: {
+            /**
+             * Components
+             * @default []
+             */
+            components: string[];
+            /** Createdat */
+            createdAt?: string | null;
+            /** Currentdbschemaversion */
+            currentDbSchemaVersion?: number | null;
+            /** Lumidbschemaversion */
+            lumiDbSchemaVersion?: number | null;
+            /** Lumiversion */
+            lumiVersion?: string | null;
+        };
+        /**
+         * BackupVerifyReport
+         * @description GET/POST /api/v1/backups/verify — 独立自检报告（不建恢复会话）。
+         */
+        BackupVerifyReport: {
+            findings: components["schemas"]["BackupVerifyFindings"];
+            issues: components["schemas"]["BackupVerifyIssues"];
+            manifest?: components["schemas"]["BackupVerifyManifest"] | null;
+            /** Ok */
+            ok: boolean;
         };
         /** BatchEditApplyItem */
         BatchEditApplyItem: {
@@ -9100,6 +12271,175 @@ export interface components {
             /** Title */
             title?: string | null;
         };
+        /**
+         * BulkLinkResultItem
+         * @description 逐条结果：created | duplicate | failed（failed 必带 reason）。
+         */
+        BulkLinkResultItem: {
+            /** Reason */
+            reason?: string | null;
+            /** Ref */
+            ref?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "created" | "duplicate" | "failed";
+            /** Url */
+            url: string;
+        };
+        /**
+         * BulkLinksRequest
+         * @description POST /api/v1/library/bulk-links — 批量粘贴（≤50 条，一条失败不回滚）。
+         */
+        BulkLinksRequest: {
+            /**
+             * Target
+             * @enum {string}
+             */
+            target: "bookmark" | "clip";
+            /** Urls */
+            urls: string[];
+        };
+        /**
+         * BulkLinksResponse
+         * @description Envelope for POST /api/v1/library/bulk-links。
+         */
+        BulkLinksResponse: {
+            /** Created */
+            created: number;
+            /** Duplicate */
+            duplicate: number;
+            /** Failed */
+            failed: number;
+            /** Items */
+            items: components["schemas"]["BulkLinkResultItem"][];
+            /**
+             * Target
+             * @enum {string}
+             */
+            target: "bookmark" | "clip";
+        };
+        /**
+         * BundleDocument
+         * @description The portable bundle document itself.
+         */
+        BundleDocument: {
+            /** Generatedat */
+            generatedAt?: string | null;
+            /**
+             * Missing
+             * @default []
+             */
+            missing: string[];
+            /**
+             * Sources
+             * @default []
+             */
+            sources: components["schemas"]["BundleSourceEntry"][];
+            /**
+             * Version
+             * @default 1
+             */
+            version: number;
+        };
+        /**
+         * BundleExportRequest
+         * @description POST /api/v1/sources/bundle/export.
+         */
+        BundleExportRequest: {
+            /** Feedurls */
+            feedUrls: string[];
+        };
+        /**
+         * BundleImportItem
+         * @description Per-item import/preview verdict.
+         */
+        BundleImportItem: {
+            /**
+             * Categoryaction
+             * @default none
+             */
+            categoryAction: string;
+            /** Feedurl */
+            feedUrl: string;
+            /** Note */
+            note?: string | null;
+            /** Status */
+            status: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Type
+             * @default rss
+             */
+            type: string;
+        };
+        /**
+         * BundleImportRequest
+         * @description POST /api/v1/sources/bundle/import body (the bundle document).
+         */
+        BundleImportRequest: {
+            /** Sources */
+            sources: components["schemas"]["BundleSourceEntry"][];
+            /**
+             * Version
+             * @default 1
+             */
+            version: number;
+        };
+        /**
+         * BundleImportResult
+         * @description Preview (apply=false) and committed import (apply=true) share it.
+         */
+        BundleImportResult: {
+            /**
+             * Applied
+             * @default false
+             */
+            applied: boolean;
+            /**
+             * Counts
+             * @default {}
+             */
+            counts: {
+                [key: string]: number;
+            };
+            imported?: components["schemas"]["BundleDocument"] | null;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["BundleImportItem"][];
+        };
+        /**
+         * BundleSourceEntry
+         * @description One credential-free bundle row AS WRITTEN IN THE PORTABLE FILE
+         *     (snake_case per the bundle format: {feed_url, title, category, type,
+         *     notes?}). Deliberately NOT the camelCase API DTO style — this model
+         *     describes the on-disk document.
+         */
+        BundleSourceEntry: {
+            /** Category */
+            category?: string | null;
+            /** Feed Url */
+            feed_url: string;
+            /** Notes */
+            notes?: string | null;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Type
+             * @default rss
+             */
+            type: string;
+        };
         /** CardCandidate */
         CardCandidate: {
             /** Concept */
@@ -9182,6 +12522,71 @@ export interface components {
         CategoryPatch: {
             /** Label */
             label: string;
+        };
+        /** CleanupApplyItem */
+        CleanupApplyItem: {
+            /** Error */
+            error?: string | null;
+            /** Feedurl */
+            feedUrl: string;
+            /** Ok */
+            ok: boolean;
+        };
+        /**
+         * CleanupApplyRequest
+         * @description POST /api/v1/sources/cleanup-suggestions/apply — ONLY the
+         *     explicitly selected feeds are touched; nothing auto-runs.
+         */
+        CleanupApplyRequest: {
+            /** Action */
+            action: string;
+            /** Feedurls */
+            feedUrls: string[];
+            /** Targetcategorylabel */
+            targetCategoryLabel?: string | null;
+        };
+        /** CleanupApplyResult */
+        CleanupApplyResult: {
+            /**
+             * Applied
+             * @default 0
+             */
+            applied: number;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["CleanupApplyItem"][];
+        };
+        /**
+         * CleanupSuggestion
+         * @description N017: one long-unopened, still-yielding source.
+         */
+        CleanupSuggestion: {
+            /** Basis */
+            basis?: string | null;
+            /** Feedurl */
+            feedUrl: string;
+            /** Lastreadat */
+            lastReadAt?: string | null;
+            /** Suggestion */
+            suggestion: string;
+            /** Title */
+            title: string;
+            /** Weeklyyield */
+            weeklyYield: number;
+        };
+        /** CleanupSuggestionsResponse */
+        CleanupSuggestionsResponse: {
+            /** Basis */
+            basis: string;
+            /** Generatedat */
+            generatedAt: string;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["CleanupSuggestion"][];
         };
         /**
          * Clip
@@ -9415,6 +12820,78 @@ export interface components {
              */
             uncertainties: string[];
         };
+        /** CompileExcluded */
+        CompileExcluded: {
+            /** Itemref */
+            itemRef: string;
+            /** Reason */
+            reason: string;
+        };
+        /** CompileItem */
+        CompileItem: {
+            /** Citation */
+            citation: string;
+            /**
+             * Excerpt
+             * @default
+             */
+            excerpt: string;
+            /** Itemref */
+            itemRef: string;
+            /** Note */
+            note?: string | null;
+            /** Title */
+            title: string;
+        };
+        /**
+         * CompileRequest
+         * @description N114 汇编预览（纯预览不落库；sectionIds 缺省 = 全部大纲分节）。
+         */
+        CompileRequest: {
+            /** Sectionids */
+            sectionIds?: string[] | null;
+        };
+        /** CompileResponse */
+        CompileResponse: {
+            /**
+             * Excluded
+             * @default []
+             */
+            excluded: components["schemas"]["CompileExcluded"][];
+            /**
+             * Excludedmissing
+             * @default 0
+             */
+            excludedMissing: number;
+            /** Generatedat */
+            generatedAt: string;
+            /**
+             * Includedcount
+             * @default 0
+             */
+            includedCount: number;
+            /**
+             * Sections
+             * @default []
+             */
+            sections: components["schemas"]["CompileSection"][];
+            /** Workspaceid */
+            workspaceId: string;
+            /** Workspacename */
+            workspaceName: string;
+        };
+        /** CompileSection */
+        CompileSection: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["CompileItem"][];
+            /** Sectionid */
+            sectionId?: string | null;
+            /** Title */
+            title: string;
+        };
         /**
          * ComponentError
          * @description Redacted component error detail (only ``type`` ever leaves the BFF).
@@ -9494,6 +12971,43 @@ export interface components {
             maxChars?: number | null;
             /** Question */
             question: string;
+        };
+        /**
+         * DataFlowItem
+         * @description 一个能力的数据外发实况（N181，来自当前真实配置）。
+         *
+         *     configured=true 时给出 providerHost（仅主机名，绝不含路径/密钥/
+         *     用户名）与数据类别；configured=false 时其余字段缺省——UI 显示
+         *     「不发送」。local=true 表示数据不离开本机（如浏览器 TTS）。
+         */
+        DataFlowItem: {
+            /** Capability */
+            capability: string;
+            /**
+             * Configured
+             * @default false
+             */
+            configured: boolean;
+            /**
+             * Datacategories
+             * @default []
+             */
+            dataCategories: string[];
+            /**
+             * Local
+             * @default false
+             */
+            local: boolean;
+            /** Providerhost */
+            providerHost?: string | null;
+        };
+        /** DataFlowsResponse */
+        DataFlowsResponse: {
+            /**
+             * Flows
+             * @default []
+             */
+            flows: components["schemas"]["DataFlowItem"][];
         };
         /**
          * DigestPreview
@@ -10138,6 +13652,8 @@ export interface components {
              * @enum {string}
              */
             format: "rss" | "atom";
+            /** Redirectchain */
+            redirectChain?: components["schemas"]["RedirectHop"][] | null;
             /** Siteurl */
             siteUrl?: string | null;
             /** Title */
@@ -10165,6 +13681,74 @@ export interface components {
         FreshRssUiInfo: {
             /** Url */
             url?: string | null;
+        };
+        /**
+         * FreshnessAdvisoryApplyBody
+         * @description POST /api/v1/sources/freshness-suggestions/apply body。
+         */
+        FreshnessAdvisoryApplyBody: {
+            /** Feedurl */
+            feedUrl: string;
+        };
+        /**
+         * FreshnessAdvisoryApplyResult
+         * @description POST /api/v1/sources/freshness-suggestions/apply（记录决定）。
+         */
+        FreshnessAdvisoryApplyResult: {
+            /** Feedurl */
+            feedUrl: string;
+            /** Refreshadvisory */
+            refreshAdvisory: string | null;
+            /** Schedulingnote */
+            schedulingNote: string;
+        };
+        /**
+         * FreshnessSuggestionBasis
+         * @description N014 建议依据（全部来自派生投影，可重建）。
+         */
+        FreshnessSuggestionBasis: {
+            /** Mediangapdays */
+            medianGapDays: number;
+            /** Weeks */
+            weeks: number;
+            /** Yield */
+            yield: number;
+        };
+        /**
+         * FreshnessSuggestionItem
+         * @description N014：一条低活跃建议（含已记录决定状态 + 诚实调度说明）。
+         */
+        FreshnessSuggestionItem: {
+            basis: components["schemas"]["FreshnessSuggestionBasis"];
+            /** Currentpattern */
+            currentPattern: string;
+            /** Feedurl */
+            feedUrl: string;
+            /** Refreshadvisory */
+            refreshAdvisory?: string | null;
+            /** Subscriptionref */
+            subscriptionRef: string;
+            /** Suggested */
+            suggested: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * FreshnessSuggestionsResponse
+         * @description GET /api/v1/sources/freshness-suggestions（只读）。
+         */
+        FreshnessSuggestionsResponse: {
+            /** Basis */
+            basis: string;
+            /** Generatedat */
+            generatedAt: string;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["FreshnessSuggestionItem"][];
+            /** Schedulingnote */
+            schedulingNote: string;
         };
         /**
          * FreshrssDataBackupCapability
@@ -10310,18 +13894,54 @@ export interface components {
             items: components["schemas"]["GlossaryTerm"][];
         };
         /**
+         * GptDigestColumn
+         * @description N174：一个固定栏目（名称精确参与校验；count=条目上限）。
+         */
+        GptDigestColumn: {
+            /**
+             * Count
+             * @default 5
+             */
+            count: number;
+            /**
+             * Emptypolicy
+             * @default hide
+             * @enum {string}
+             */
+            emptyPolicy: "hide" | "placeholder";
+            /** Name */
+            name: string;
+        };
+        /**
          * GptDigestConfig
          * @description F01/F02：一份主题日报配置（token 不在此响应中）。
          *
          *     ``slots`` 为发布小时列表（升序、最多 4 个）；空列表 = 单时点
          *     （用 hour），期号退化为日期。
+         *     N171：``days`` 为发布日集合（0=周一…6=周日；空 = 每天）；
+         *     ``weekendHours`` 为周六/周日的独立时点（空 = 沿用平日计划）。
          */
         GptDigestConfig: {
+            /**
+             * Clusterenabled
+             * @default false
+             */
+            clusterEnabled: boolean;
+            /**
+             * Columns
+             * @default []
+             */
+            columns: components["schemas"]["GptDigestColumn"][];
             /**
              * Createdat
              * @default
              */
             createdAt: string;
+            /**
+             * Days
+             * @default []
+             */
+            days: number[];
             /** Enabled */
             enabled: boolean;
             /**
@@ -10365,10 +13985,27 @@ export interface components {
              */
             sourceKind: string;
             /**
+             * Stagemodels
+             * @default {}
+             */
+            stageModels: {
+                [key: string]: string;
+            };
+            /**
+             * Targetreadingminutes
+             * @default 0
+             */
+            targetReadingMinutes: number;
+            /**
              * Timezone
              * @default
              */
             timezone: string;
+            /**
+             * Weekendhours
+             * @default []
+             */
+            weekendHours: number[];
             /**
              * Windowhours
              * @default 24
@@ -10388,6 +14025,12 @@ export interface components {
          * @description PUT /api/v1/gpt-digest/configs/{id} — partial（enabled=false = 暂停）。
          */
         GptDigestConfigUpdate: {
+            /** Clusterenabled */
+            clusterEnabled?: boolean | null;
+            /** Columns */
+            columns?: components["schemas"]["GptDigestColumn"][] | null;
+            /** Days */
+            days?: number[] | null;
             /** Enabled */
             enabled?: boolean | null;
             /** Feedurlallow */
@@ -10406,8 +14049,16 @@ export interface components {
             slots?: number[] | null;
             /** Sourcekind */
             sourceKind?: string | null;
+            /** Stagemodels */
+            stageModels?: {
+                [key: string]: string;
+            } | null;
+            /** Targetreadingminutes */
+            targetReadingMinutes?: number | null;
             /** Timezone */
             timezone?: string | null;
+            /** Weekendhours */
+            weekendHours?: number[] | null;
             /** Windowhours */
             windowHours?: number | null;
         };
@@ -10416,6 +14067,12 @@ export interface components {
          * @description POST /api/v1/gpt-digest/configs（新配置默认 paused）。
          */
         GptDigestCreate: {
+            /** Clusterenabled */
+            clusterEnabled?: boolean | null;
+            /** Columns */
+            columns?: components["schemas"]["GptDigestColumn"][] | null;
+            /** Days */
+            days?: number[] | null;
             /** Feedurlallow */
             feedUrlAllow?: string | null;
             /** Hour */
@@ -10432,8 +14089,16 @@ export interface components {
             slots?: number[] | null;
             /** Sourcekind */
             sourceKind?: string | null;
+            /** Stagemodels */
+            stageModels?: {
+                [key: string]: string;
+            } | null;
+            /** Targetreadingminutes */
+            targetReadingMinutes?: number | null;
             /** Timezone */
             timezone?: string | null;
+            /** Weekendhours */
+            weekendHours?: number[] | null;
             /** Windowhours */
             windowHours?: number | null;
         };
@@ -10471,6 +14136,11 @@ export interface components {
         /**
          * GptDigestIssue
          * @description 一期日报；列表与详情共用（列表 limit 小、正文不重）。
+         *
+         *     N172：``meta`` 携带运行元数据（分阶段模型标签 / polishFailed /
+         *     N174 栏目注释 / N175 素材篮与时长 / N176 聚合信息）。
+         *     N173：``sentenceMap`` 为逐句事实检查映射（人工改写未匹配到的句子
+         *     verified=False → UI 标注「待核实」）。
          */
         GptDigestIssue: {
             /**
@@ -10480,6 +14150,13 @@ export interface components {
             createdAt: string;
             /** Issuekey */
             issueKey: string;
+            /**
+             * Meta
+             * @default {}
+             */
+            meta: {
+                [key: string]: unknown;
+            };
             /**
              * Model
              * @default
@@ -10502,6 +14179,11 @@ export interface components {
              * @default []
              */
             sections: components["schemas"]["GptDigestSection"][];
+            /**
+             * Sentencemap
+             * @default []
+             */
+            sentenceMap: components["schemas"]["GptDigestSentence"][];
             /** Status */
             status: string;
             /** Title */
@@ -10522,17 +14204,24 @@ export interface components {
         };
         /**
          * GptDigestIssueRevise
-         * @description PUT /api/v1/gpt-digest/configs/{id}/issues/{key} — F08 人工修订。
+         * @description PUT /api/v1/gpt-digest/configs/{id}/issues/{key} — 人工修订。
          *
-         *     sections 结构沿用生成时 schema；sourceIds 只能引用既有引用集。
+         *     两种用法（可并用）：F08 全量提交（title+sections）；N173 逐句操作
+         *     （sentenceOps——省略 title/sections 时在当前内容上应用）。sections
+         *     结构沿用生成时 schema；sourceIds 只能引用既有引用集。
          */
         GptDigestIssueRevise: {
             /** Sections */
-            sections: {
+            sections?: {
                 [key: string]: unknown;
-            }[];
+            }[] | null;
+            /**
+             * Sentenceops
+             * @default []
+             */
+            sentenceOps: components["schemas"]["GptDigestSentenceOp"][];
             /** Title */
-            title: string;
+            title?: string | null;
         };
         /** GptDigestItem */
         GptDigestItem: {
@@ -10545,6 +14234,29 @@ export interface components {
             summary: string;
             /** Uncertainty */
             uncertainty?: string | null;
+        };
+        /**
+         * GptDigestLeftoverItem
+         * @description N175：素材篮条目——被裁剪的完整条目（绝不静默删除）。
+         */
+        GptDigestLeftoverItem: {
+            /**
+             * Refs
+             * @default []
+             */
+            refs: components["schemas"]["GptDigestRef"][];
+            /**
+             * Sectionheading
+             * @default
+             */
+            sectionHeading: string;
+            /**
+             * Sourceids
+             * @default []
+             */
+            sourceIds: string[];
+            /** Summary */
+            summary: string;
         };
         /**
          * GptDigestPoolInvalid
@@ -10665,6 +14377,47 @@ export interface components {
             items: components["schemas"]["GptDigestItem"][];
         };
         /**
+         * GptDigestSentence
+         * @description N173：事实检查视图里的一句总结 + 其来源引用。
+         */
+        GptDigestSentence: {
+            /**
+             * Refs
+             * @default []
+             */
+            refs: string[];
+            /** Sentence */
+            sentence: string;
+            /**
+             * Verified
+             * @default true
+             */
+            verified: boolean;
+        };
+        /**
+         * GptDigestSentenceOp
+         * @description N173：逐句修订操作（revise 改写文本 / delete 删除整句）。
+         *
+         *     索引为 (sectionIndex, itemIndex, sentenceIndex)；revise 必须给出
+         *     非空 text。改写/新增的句子匹配不到生成时引用 → 待核实（服务端
+         *     重算映射，不凭空延续引用）。
+         */
+        GptDigestSentenceOp: {
+            /** Itemindex */
+            itemIndex: number;
+            /**
+             * Op
+             * @enum {string}
+             */
+            op: "revise" | "delete";
+            /** Sectionindex */
+            sectionIndex: number;
+            /** Sentenceindex */
+            sentenceIndex: number;
+            /** Text */
+            text?: string | null;
+        };
+        /**
          * GptDigestSettings
          * @description GPT 日报配置（订阅 token 不在此响应中，见 /api/v1/gpt-digest/feed）。
          */
@@ -10715,6 +14468,25 @@ export interface components {
             timezone?: string | null;
             /** Windowhours */
             windowHours?: number | null;
+        };
+        /**
+         * GptDigestTrimPreview
+         * @description GET …/trim-preview — N175 裁剪预览（零写入、零模型调用）。
+         */
+        GptDigestTrimPreview: {
+            /** Afterminutes */
+            afterMinutes: number;
+            /** Beforeminutes */
+            beforeMinutes: number;
+            /**
+             * Moved
+             * @default []
+             */
+            moved: components["schemas"]["GptDigestLeftoverItem"][];
+            /** Note */
+            note?: string | null;
+            /** Targetreadingminutes */
+            targetReadingMinutes: number;
         };
         /**
          * GraphEdge
@@ -11608,6 +15380,42 @@ export interface components {
             wikilinks?: string[] | null;
         };
         /**
+         * ObsidianBlockRef
+         * @description N134：一条块引用（哪篇投影笔记内嵌了 ^lumi-<paraId>）。
+         */
+        ObsidianBlockRef: {
+            /**
+             * Indexedat
+             * @default
+             */
+            indexedAt: string;
+            /** Noteuuid */
+            noteUuid: string;
+            /** Paraid */
+            paraId: string;
+            /**
+             * Relpath
+             * @default
+             */
+            relPath: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+        };
+        /**
+         * ObsidianBlockRefsResponse
+         * @description GET /api/v1/obsidian/block-refs?paraId= 响应。
+         */
+        ObsidianBlockRefsResponse: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["ObsidianBlockRef"][];
+        };
+        /**
          * ObsidianDeviceProfile
          * @description One device where the user runs Obsidian (URI generation ONLY).
          *
@@ -11668,12 +15476,20 @@ export interface components {
         /**
          * ObsidianExportHandoffRequest
          * @description POST /api/v1/obsidian/export-handoff body.
+         *
+         *     ``onlySinceLastExport``（N137 增量导出）：只携带上次导出水位之后
+         *     有新增/修改的批注（水位来自 annotation_export_log）。
          */
         ObsidianExportHandoffRequest: {
             /** Deviceid */
             deviceId: string;
             /** Entryref */
             entryRef: string;
+            /**
+             * Onlysincelastexport
+             * @default false
+             */
+            onlySinceLastExport: boolean;
         };
         /**
          * ObsidianExportHandoffResult
@@ -11684,6 +15500,11 @@ export interface components {
          *     ``filename`` + clipboard fallback instead.
          */
         ObsidianExportHandoffResult: {
+            /**
+             * Annotationcount
+             * @default 0
+             */
+            annotationCount: number;
             /** Content */
             content: string;
             /**
@@ -11709,12 +15530,30 @@ export interface components {
             uri?: string | null;
         };
         /**
+         * ObsidianExportIssue
+         * @description N139：一条校验问题（只读报告；绝不改写用户 Vault 文件）。
+         */
+        ObsidianExportIssue: {
+            /** Detail */
+            detail: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "broken_wikilink" | "missing_attachment" | "duplicate_block_id";
+            /** Suggestion */
+            suggestion: string;
+        };
+        /**
          * ObsidianExportTemplateUpdate
-         * @description PUT /api/v1/obsidian/export-template body.
+         * @description PUT /api/v1/obsidian/export-template body — template 与命名策略
+         *     均可单独更新（None = 保持现状；二者皆缺是无操作，返回现状）。
          */
         ObsidianExportTemplateUpdate: {
+            /** Exportnamepolicy */
+            exportNamePolicy?: ("timestamp_suffix" | "exact") | null;
             /** Template */
-            template: string;
+            template?: string | null;
         };
         /**
          * ObsidianExportTemplateView
@@ -11725,8 +15564,131 @@ export interface components {
             allowedVars: string[];
             /** Defaulttemplate */
             defaultTemplate: string;
+            /**
+             * Exportnamepolicy
+             * @default timestamp_suffix
+             * @enum {string}
+             */
+            exportNamePolicy: "timestamp_suffix" | "exact";
             /** Template */
             template: string;
+        };
+        /**
+         * ObsidianExportValidateRequest
+         * @description POST /api/v1/obsidian/export-handoff/validate body（N139 只读校验，
+         *     与 export-handoff 相同的组装路径，但不交接、不落日志、不 mark）。
+         */
+        ObsidianExportValidateRequest: {
+            /** Deviceid */
+            deviceId: string;
+            /** Entryref */
+            entryRef: string;
+            /**
+             * Onlysincelastexport
+             * @default false
+             */
+            onlySinceLastExport: boolean;
+        };
+        /**
+         * ObsidianExportValidateResult
+         * @description N139：校验结果（issues 为空 = 通过；vaultChecked=false 表示 Vault
+         *     不可达、附件存在性未核对——诚实局限，不冒充查过）。
+         */
+        ObsidianExportValidateResult: {
+            /**
+             * Issues
+             * @default []
+             */
+            issues: components["schemas"]["ObsidianExportIssue"][];
+            /**
+             * Vaultchecked
+             * @default false
+             */
+            vaultChecked: boolean;
+        };
+        /**
+         * ObsidianHandoffLogClearResult
+         * @description DELETE /api/v1/obsidian/handoff-log 响应（如实报告删除条数）。
+         */
+        ObsidianHandoffLogClearResult: {
+            /** Cleared */
+            cleared: number;
+        };
+        /**
+         * ObsidianHandoffLogCreate
+         * @description POST /api/v1/obsidian/handoff-log body — 显式记录 open /
+         *     import_confirm 交接（export 由 export-handoff 路由自动落库）。
+         */
+        ObsidianHandoffLogCreate: {
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "open" | "import_confirm";
+            /**
+             * Entryref
+             * @default
+             */
+            entryRef: string;
+            /**
+             * Notename
+             * @default
+             */
+            noteName: string;
+            /**
+             * Policy
+             * @default
+             */
+            policy: string;
+        };
+        /**
+         * ObsidianHandoffLogEntry
+         * @description N140：一条双向交接记录（pending → confirmed 仅靠显式确认）。
+         */
+        ObsidianHandoffLogEntry: {
+            /** Confirmedat */
+            confirmedAt?: string | null;
+            /** Createdat */
+            createdAt: string;
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "export" | "open" | "import_confirm";
+            /**
+             * Entryref
+             * @default
+             */
+            entryRef: string;
+            /** Id */
+            id: string;
+            /**
+             * Notename
+             * @default
+             */
+            noteName: string;
+            /**
+             * Policy
+             * @default
+             */
+            policy: string;
+            /**
+             * Status
+             * @default pending
+             * @enum {string}
+             */
+            status: "pending" | "confirmed";
+        };
+        /**
+         * ObsidianHandoffLogList
+         * @description GET /api/v1/obsidian/handoff-log 响应（新→旧）。
+         */
+        ObsidianHandoffLogList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["ObsidianHandoffLogEntry"][];
         };
         /**
          * ObsidianNoteSetting
@@ -11747,6 +15709,7 @@ export interface components {
             changed: number;
             /** Elapsedms */
             elapsedMs: number;
+            files?: components["schemas"]["ObsidianScanFiles"] | null;
             /** Removed */
             removed: number;
             /** Renames */
@@ -11765,6 +15728,56 @@ export interface components {
              * @default
              */
             vaultPath: string;
+        };
+        /**
+         * ObsidianScanFileList
+         * @description N138：一类文件级诊断列表（≤50 条 + 诚实截断标志）。
+         */
+        ObsidianScanFileList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: string[];
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
+        };
+        /**
+         * ObsidianScanFiles
+         * @description N138：最近一次扫描的文件级诊断（新增/更改/删除/跳过）。
+         */
+        ObsidianScanFiles: {
+            /**
+             * @default {
+             *       "items": [],
+             *       "truncated": false
+             *     }
+             */
+            added: components["schemas"]["ObsidianScanFileList"];
+            /**
+             * @default {
+             *       "items": [],
+             *       "truncated": false
+             *     }
+             */
+            changed: components["schemas"]["ObsidianScanFileList"];
+            /**
+             * @default {
+             *       "items": [],
+             *       "truncated": false
+             *     }
+             */
+            removed: components["schemas"]["ObsidianScanFileList"];
+            /**
+             * @default {
+             *       "items": [],
+             *       "truncated": false
+             *     }
+             */
+            skipped: components["schemas"]["ObsidianScanFileList"];
         };
         /**
          * ObsidianSettings
@@ -11790,6 +15803,7 @@ export interface components {
             lastError?: string | null;
             /** Lastscanat */
             lastScanAt?: string | null;
+            lastScanFiles?: components["schemas"]["ObsidianScanFiles"] | null;
             /**
              * Notecount
              * @default 0
@@ -11946,6 +15960,38 @@ export interface components {
             title: string;
         };
         /**
+         * OpmlImportLogEntry
+         * @description 一条 N018 撤销台账（cap 5；undoneAt 非 null = 已撤销过）。
+         */
+        OpmlImportLogEntry: {
+            /**
+             * Createdcategorylabels
+             * @default []
+             */
+            createdCategoryLabels: string[];
+            /** Id */
+            id: number;
+            /** Importedat */
+            importedAt: string;
+            /**
+             * Movedfeeds
+             * @default []
+             */
+            movedFeeds: {
+                [key: string]: unknown;
+            }[];
+            /** Undoneat */
+            undoneAt?: string | null;
+        };
+        /** OpmlImportLogList */
+        OpmlImportLogList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["OpmlImportLogEntry"][];
+        };
+        /**
          * OpmlImportPreview
          * @description POST /api/v1/opml/import/preview (strictly non-mutating).
          */
@@ -12027,6 +16073,192 @@ export interface components {
             reason: string;
             /** Title */
             title: string;
+        };
+        /**
+         * OpmlTreeApplyAdded
+         * @description 树对照 apply 中新订阅的 feed。
+         */
+        OpmlTreeApplyAdded: {
+            /** Categoryapplied */
+            categoryApplied: boolean;
+            /** Categorylabel */
+            categoryLabel?: string | null;
+            /** Feedurl */
+            feedUrl: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * OpmlTreeApplyFailed
+         * @description 树对照 apply 中失败的一步（kind: subscribe | category）。
+         */
+        OpmlTreeApplyFailed: {
+            /** Error */
+            error: string;
+            /** Feedurl */
+            feedUrl: string;
+            /** Kind */
+            kind: string;
+        };
+        /**
+         * OpmlTreeApplyResult
+         * @description POST /api/v1/opml/import/tree-apply（logId 供 undo）。
+         */
+        OpmlTreeApplyResult: {
+            /**
+             * Added
+             * @default []
+             */
+            added: components["schemas"]["OpmlTreeApplyAdded"][];
+            /**
+             * Categoriescreated
+             * @default []
+             */
+            categoriesCreated: string[];
+            /**
+             * Failed
+             * @default []
+             */
+            failed: components["schemas"]["OpmlTreeApplyFailed"][];
+            /** Logid */
+            logId: number;
+            /**
+             * Moved
+             * @default []
+             */
+            moved: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Skipped
+             * @default []
+             */
+            skipped: {
+                [key: string]: unknown;
+            }[];
+        };
+        /**
+         * OpmlTreeDuplicateFeed
+         * @description 树对照计划中的已订阅 feed（action: skip = 不动 | update = 随分类移动）。
+         */
+        OpmlTreeDuplicateFeed: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "skip" | "update";
+            /** Feed */
+            feed: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * OpmlTreeMoveFeed
+         * @description 树对照计划中「将移动分类」的已订阅 feed（from 为 null = 当前未分组）。
+         */
+        OpmlTreeMoveFeed: {
+            /** Feed */
+            feed: string;
+            /** From */
+            from?: string | null;
+            /** Subscriptionref */
+            subscriptionRef: string;
+            /** To */
+            to: string;
+            /** Tocategoryid */
+            toCategoryId: string;
+        };
+        /**
+         * OpmlTreeNewFeed
+         * @description 树对照计划中「将新订阅」的 feed（分类为有效 label 或 null）。
+         */
+        OpmlTreeNewFeed: {
+            /** Categorylabel */
+            categoryLabel?: string | null;
+            /** Feedurl */
+            feedUrl: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * OpmlTreePlan
+         * @description POST /api/v1/opml/import/tree-preview（严格只读的对照计划）。
+         */
+        OpmlTreePlan: {
+            /**
+             * Createcategories
+             * @default []
+             */
+            createCategories: string[];
+            /**
+             * Duplicatefeeds
+             * @default []
+             */
+            duplicateFeeds: components["schemas"]["OpmlTreeDuplicateFeed"][];
+            /**
+             * Invalidentries
+             * @default 0
+             */
+            invalidEntries: number;
+            /**
+             * Movefeeds
+             * @default []
+             */
+            moveFeeds: components["schemas"]["OpmlTreeMoveFeed"][];
+            /**
+             * Newfeeds
+             * @default []
+             */
+            newFeeds: components["schemas"]["OpmlTreeNewFeed"][];
+            /**
+             * Notes
+             * @default []
+             */
+            notes: string[];
+            /**
+             * Reusecategories
+             * @default []
+             */
+            reuseCategories: string[];
+            /** Totalfeeds */
+            totalFeeds: number;
+        };
+        /**
+         * OpmlUndoResult
+         * @description POST /api/v1/opml/import/{id}/undo（逐项如实汇报；建类不删——
+         *     greader API 无分类删除端点，诚实边界）。
+         */
+        OpmlUndoResult: {
+            /**
+             * Categoriesdeleted
+             * @default []
+             */
+            categoriesDeleted: string[];
+            /**
+             * Categoriesnotdeleted
+             * @default []
+             */
+            categoriesNotDeleted: {
+                [key: string]: unknown;
+            }[];
+            /** Logid */
+            logId: number;
+            /**
+             * Movedback
+             * @default []
+             */
+            movedBack: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Notrestored
+             * @default []
+             */
+            notRestored: {
+                [key: string]: unknown;
+            }[];
+            /** Note */
+            note: string;
         };
         /**
          * PasskeyDeleteRequest
@@ -12447,6 +16679,228 @@ export interface components {
             quizId: string;
         };
         /**
+         * RagAskCitation
+         * @description N155 一条有效引用：编号（1 起）+ ref。
+         */
+        RagAskCitation: {
+            /** Index */
+            index: number;
+            /** Ref */
+            ref: string;
+        };
+        /**
+         * RagAskExcerpt
+         * @description N155 摘录模式的一条原文片段（labeled：摘录 ≠ 回答）。
+         */
+        RagAskExcerpt: {
+            /**
+             * Ord
+             * @default 0
+             */
+            ord: number;
+            /** Ref */
+            ref: string;
+            /** Text */
+            text: string;
+            /** Title */
+            title?: string | null;
+        };
+        /**
+         * RagAskRequest
+         * @description POST /api/v1/rag/ask body（N151/N154/N155）。
+         *
+         *     - threadId：提供则继承该会话的 F094 范围（服务端解析、越界 403）；
+         *     - refs：显式指定依据条目（≤8）；不提供则走检索；
+         *     - mode=excerpt：只取原文片段（零 provider 调用）。
+         */
+        RagAskRequest: {
+            /**
+             * K
+             * @default 6
+             */
+            k: number;
+            /**
+             * Mode
+             * @default answer
+             * @enum {string}
+             */
+            mode: "answer" | "excerpt";
+            /** Question */
+            question: string;
+            /**
+             * Refs
+             * @default []
+             */
+            refs: string[];
+            /** Threadid */
+            threadId?: string | null;
+        };
+        /**
+         * RagAskResponse
+         * @description POST /api/v1/rag/ask 响应（N151 effectiveScope / N154 强弱 /
+         *     N155 unverifiable + 摘录）。
+         */
+        RagAskResponse: {
+            /** Answer */
+            answer?: string | null;
+            /**
+             * Citations
+             * @default []
+             */
+            citations: components["schemas"]["RagAskCitation"][];
+            effectiveScope?: components["schemas"]["RagEffectiveScope"];
+            /** Evidencestrength */
+            evidenceStrength?: ("direct" | "partial" | "none") | null;
+            /**
+             * Excerpts
+             * @default []
+             */
+            excerpts: components["schemas"]["RagAskExcerpt"][];
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "answer" | "excerpt";
+            /** Question */
+            question: string;
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Semanticused
+             * @default false
+             */
+            semanticUsed: boolean;
+            /**
+             * Unverifiable
+             * @default false
+             */
+            unverifiable: boolean;
+        };
+        /**
+         * RagChunkPreview
+         * @description POST /api/v1/rag/chunk-preview —— 索引「将会」产生的分块。
+         */
+        RagChunkPreview: {
+            /**
+             * Chunks
+             * @default []
+             */
+            chunks: components["schemas"]["RagChunkPreviewChunk"][];
+            /** Kind */
+            kind: string;
+            /** Ref */
+            ref: string;
+            scheme: components["schemas"]["RagChunkScheme"];
+            /** Title */
+            title?: string | null;
+        };
+        /**
+         * RagChunkPreviewChunk
+         * @description N153 一条预览分块：text 截断到预览上限（≤400 字符）。
+         */
+        RagChunkPreviewChunk: {
+            /** Charend */
+            charEnd: number;
+            /** Charstart */
+            charStart: number;
+            /** Ord */
+            ord: number;
+            /** Text */
+            text: string;
+        };
+        /**
+         * RagChunkPreviewRequest
+         * @description POST /api/v1/rag/chunk-preview body（N153）。
+         */
+        RagChunkPreviewRequest: {
+            /** Ref */
+            ref: string;
+        };
+        /**
+         * RagChunkScheme
+         * @description N153 只读分块方案元数据（当前 chunker 无重叠，诚实为 0）。
+         */
+        RagChunkScheme: {
+            /** Maxlen */
+            maxLen: number;
+            /** Overlap */
+            overlap: number;
+        };
+        /**
+         * RagCoverage
+         * @description GET /api/v1/rag/coverage —— 语料 ↔ 索引的真实分桶（N152）。
+         *
+         *     indexable/indexed/stale 来自行与 content_hash，failed 来自最近
+         *     rag_jobs 作业的 skipped 记录。
+         */
+        RagCoverage: {
+            /**
+             * Failed
+             * @default 0
+             */
+            failed: number;
+            /**
+             * Indexable
+             * @default 0
+             */
+            indexable: number;
+            /**
+             * Indexed
+             * @default 0
+             */
+            indexed: number;
+            /** Modelid */
+            modelId: string;
+            /**
+             * Stale
+             * @default 0
+             */
+            stale: number;
+            unsupported?: components["schemas"]["RagCoverageUnsupported"];
+        };
+        /**
+         * RagCoverageUnsupported
+         * @description N152 不可索引语料分组计数。
+         */
+        RagCoverageUnsupported: {
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /**
+             * Kinds
+             * @default []
+             */
+            kinds: components["schemas"]["RagCoverageUnsupportedKind"][];
+        };
+        /**
+         * RagCoverageUnsupportedKind
+         * @description N152 一种不可索引 kind 及原因（empty_text = 正文为空）。
+         */
+        RagCoverageUnsupportedKind: {
+            /** Kind */
+            kind: string;
+            /** Reason */
+            reason: string;
+        };
+        /**
+         * RagEffectiveScope
+         * @description N151 查询时服务端解析的授权范围回显。
+         *
+         *     kind: all（未锁定，refCount=None）| workspace | entryRefs；
+         *     refCount = scope 实际解析到的 ref 数（有界）。
+         */
+        RagEffectiveScope: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "all" | "workspace" | "entryRefs";
+            /** Refcount */
+            refCount?: number | null;
+        };
+        /**
          * RagEnableResult
          * @description Explicit model-enable acknowledgement.
          */
@@ -12511,6 +16965,42 @@ export interface components {
             modelId: string;
         };
         /**
+         * RagJobSummary
+         * @description F093 最近一次重建作业的进度段（stage/done/remaining）。
+         */
+        RagJobSummary: {
+            /**
+             * Done
+             * @default 0
+             */
+            done: number;
+            /** Jobid */
+            jobId: string;
+            /** Kind */
+            kind: string;
+            /** Remaining */
+            remaining?: number | null;
+            /** Stage */
+            stage?: string | null;
+            /** Status */
+            status: string;
+            /** Updatedat */
+            updatedAt: string;
+        };
+        /**
+         * RagRebuildPauseResult
+         * @description F093 POST /api/v1/rag/rebuild/pause — paused=false 表示没有
+         *     可暂停的作业（jobId/status 同时缺省）。
+         */
+        RagRebuildPauseResult: {
+            /** Jobid */
+            jobId?: string | null;
+            /** Paused */
+            paused: boolean;
+            /** Status */
+            status?: string | null;
+        };
+        /**
          * RagRebuildResult
          * @description Bounded rebuild report（F093 起为作业感知：jobId/status）。
          */
@@ -12570,12 +17060,40 @@ export interface components {
          * @description Envelope for GET /api/v1/rag/search (honest degradation flags).
          */
         RagSearchResponse: {
+            effectiveScope?: components["schemas"]["RagEffectiveScope"];
             /** Items */
             items: components["schemas"]["RagSearchItem"][];
             /** Semanticerror */
             semanticError?: string | null;
             /** Semanticused */
             semanticUsed: boolean;
+        };
+        /**
+         * RagStatus
+         * @description GET /api/v1/rag/status — everything the enable/rebuild UI needs.
+         */
+        RagStatus: {
+            /** Chunks */
+            chunks: number;
+            /** Dim */
+            dim: number;
+            /** Enabled */
+            enabled: boolean;
+            /** Fastembedavailable */
+            fastembedAvailable: boolean;
+            job?: components["schemas"]["RagJobSummary"] | null;
+            /** Lasterror */
+            lastError?: string | null;
+            /** Lastrebuildat */
+            lastRebuildAt?: string | null;
+            /** Model */
+            model: string;
+            /** Modelloaded */
+            modelLoaded: boolean;
+            /** Vecrows */
+            vecRows: number;
+            /** Vectable */
+            vecTable: boolean;
         };
         /**
          * ReadLaterItem
@@ -12709,6 +17227,63 @@ export interface components {
             pct: number;
         };
         /**
+         * ReadingQuestionCreate
+         * @description POST /api/v1/reading-questions body（链接字段全部可选）。
+         */
+        ReadingQuestionCreate: {
+            /** Annotationid */
+            annotationId?: string | null;
+            /** Entryref */
+            entryRef?: string | null;
+            /** Question */
+            question: string;
+            /** Workspaceid */
+            workspaceId?: string | null;
+        };
+        /**
+         * ReadingQuestionList
+         * @description GET /api/v1/reading-questions 响应。
+         */
+        ReadingQuestionList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["ReadingQuestionView"][];
+        };
+        /**
+         * ReadingQuestionPatch
+         * @description PATCH /api/v1/reading-questions/{id} body（改文本或 open/done）。
+         */
+        ReadingQuestionPatch: {
+            /** Question */
+            question?: string | null;
+            /** Status */
+            status?: string | null;
+        };
+        /**
+         * ReadingQuestionView
+         * @description 一个问题行。
+         */
+        ReadingQuestionView: {
+            /** Annotationid */
+            annotationId?: string | null;
+            /** Createdat */
+            createdAt: string;
+            /** Entryref */
+            entryRef?: string | null;
+            /** Id */
+            id: string;
+            /** Question */
+            question: string;
+            /** Status */
+            status: string;
+            /** Updatedat */
+            updatedAt: string;
+            /** Workspaceid */
+            workspaceId?: string | null;
+        };
+        /**
          * RecoverPasswordRequest
          * @description POST /auth/recover — recovery invite redemption.
          */
@@ -12717,6 +17292,53 @@ export interface components {
             newPassword: string;
             /** Token */
             token: string;
+        };
+        /**
+         * RedirectHop
+         * @description N035 重定向链的一跳（url 的 query 凭据值已由服务端掩码）。
+         */
+        RedirectHop: {
+            /**
+             * Final
+             * @default false
+             */
+            final: boolean;
+            /** Status */
+            status?: number | null;
+            /** Url */
+            url: string;
+        };
+        /**
+         * RegisterRequest
+         * @description POST /auth/register (P0 public registration).
+         */
+        RegisterRequest: {
+            /** Displayname */
+            displayName?: string | null;
+            /** Password */
+            password: string;
+            /** Username */
+            username: string;
+        };
+        /**
+         * RegistrationPolicyRequest
+         * @description PUT /admin/registration-policy.
+         */
+        RegistrationPolicyRequest: {
+            /** Allowpublicregistration */
+            allowPublicRegistration: boolean;
+        };
+        /**
+         * RegistrationPolicyResponse
+         * @description GET / PUT /admin/registration-policy (instance-level switch).
+         */
+        RegistrationPolicyResponse: {
+            /** Allowpublicregistration */
+            allowPublicRegistration: boolean;
+            /** Updatedat */
+            updatedAt?: string | null;
+            /** Updatedby */
+            updatedBy?: string | null;
         };
         /**
          * RelationCreate
@@ -12974,14 +17596,74 @@ export interface components {
             safetyBackupId?: string | null;
         };
         /**
+         * RetentionNotice
+         * @description N188：数据保留到期提醒（只读；推迟生效期内 dueSoon=false）。
+         */
+        RetentionNotice: {
+            /**
+             * Affectedcounts
+             * @default {}
+             */
+            affectedCounts: {
+                [key: string]: unknown;
+            };
+            /** Dueat */
+            dueAt?: string | null;
+            /** Duesoon */
+            dueSoon: boolean;
+            /** Enabled */
+            enabled: boolean;
+            /** Noticewindowdays */
+            noticeWindowDays: number;
+            /** Postponeduntil */
+            postponedUntil?: string | null;
+            /**
+             * Protected
+             * @default []
+             */
+            protected: string[];
+            /**
+             * Quiznote
+             * @default
+             */
+            quizNote: string;
+        };
+        /**
+         * RetentionPostponeBody
+         * @description N188：推迟天数（超出 1–30 的部分在服务端钳制收敛）。
+         */
+        RetentionPostponeBody: {
+            /** Days */
+            days: number;
+        };
+        /**
+         * RetentionPostponeResult
+         * @description N188：POST /storage/retention/postpone 的返回（实际生效的推迟）。
+         */
+        RetentionPostponeResult: {
+            /** Days */
+            days: number;
+            /** Postponeduntil */
+            postponedUntil?: string | null;
+        };
+        /**
          * ReviewQueueAdd
-         * @description POST /api/v1/review-queue body。
+         * @description POST /api/v1/review-queue body（N076 泛化：批注或知识卡片）。
+         *
+         *     向后兼容：缺省 kind='annotation' 且仍以 annotationId 排期。
          */
         ReviewQueueAdd: {
             /** Annotationid */
-            annotationId: string;
+            annotationId?: string | null;
             /** Dueat */
             dueAt: string;
+            /**
+             * Kind
+             * @default annotation
+             */
+            kind: string;
+            /** Knowledgecardid */
+            knowledgeCardId?: string | null;
         };
         /**
          * ReviewQueuePostpone
@@ -13188,6 +17870,70 @@ export interface components {
             routeId: string;
         };
         /**
+         * RssHubParamPresetApply
+         * @description POST .../param-presets/{id}/apply — 回填数据（不抓取、不订阅）。
+         *
+         *     requiresRebind=True 时 sensitiveKeys 里的参数必须重新输入后才能
+         *     预览（服务端从不存储敏感值，哨兵回填会被 pattern 校验拒绝）。
+         */
+        RssHubParamPresetApply: {
+            /** Hassensitive */
+            hasSensitive: boolean;
+            /** Id */
+            id: string;
+            /** Params */
+            params: {
+                [key: string]: string;
+            };
+            /** Requiresrebind */
+            requiresRebind: boolean;
+            /** Routekey */
+            routeKey: string;
+            /**
+             * Sensitivekeys
+             * @default []
+             */
+            sensitiveKeys: string[];
+            /** Templateid */
+            templateId: string;
+        };
+        /**
+         * RssHubParamPresetCreate
+         * @description POST /api/v1/rsshub/param-presets body（方案名 + 参数组合）。
+         */
+        RssHubParamPresetCreate: {
+            /** Name */
+            name: string;
+            /** Params */
+            params?: {
+                [key: string]: string;
+            };
+            /** Routeid */
+            routeId: string;
+        };
+        /**
+         * RssHubParamPresetItem
+         * @description 一个参数方案（params 里的敏感值在服务端已替换为 '***' 哨兵）。
+         */
+        RssHubParamPresetItem: {
+            /** Createdat */
+            createdAt: string;
+            /** Hassensitive */
+            hasSensitive: boolean;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Params */
+            params: {
+                [key: string]: string;
+            };
+            /** Routekey */
+            routeKey: string;
+            /** Templateid */
+            templateId: string;
+        };
+        /**
          * RssHubParameter
          * @description One RSSHub route parameter descriptor (form-renderable).
          */
@@ -13204,6 +17950,61 @@ export interface components {
             pattern: string;
             /** Required */
             required: boolean;
+        };
+        /**
+         * RssHubParamsDiffRequest
+         * @description POST /api/v1/rsshub/params-diff body（N024：变更前对照，只读）。
+         */
+        RssHubParamsDiffRequest: {
+            /** Newparams */
+            newParams?: {
+                [key: string]: string;
+            };
+            /** Oldfeedurl */
+            oldFeedUrl: string;
+            /** Routeid */
+            routeId: string;
+        };
+        /**
+         * RssHubParamsDiffResult
+         * @description N024：新旧参数 feed 的标题级差异（bounded；cancelled 前零写入）。
+         */
+        RssHubParamsDiffResult: {
+            /**
+             * Added
+             * @default []
+             */
+            added: string[];
+            /**
+             * Duplicates
+             * @default []
+             */
+            duplicates: string[];
+            new: components["schemas"]["RssHubParamsDiffSide"];
+            /** Newurl */
+            newUrl: string;
+            /** Note */
+            note: string;
+            old: components["schemas"]["RssHubParamsDiffSide"];
+            /**
+             * Removed
+             * @default []
+             */
+            removed: string[];
+        };
+        /**
+         * RssHubParamsDiffSide
+         * @description 对照的一侧（old/new；抓取失败 → error 如实说明，titles 为 null）。
+         */
+        RssHubParamsDiffSide: {
+            /** Entrycount */
+            entryCount?: number | null;
+            /** Error */
+            error?: string | null;
+            /** Titles */
+            titles?: string[] | null;
+            /** Url */
+            url: string;
         };
         /**
          * RssHubPreviewRequest
@@ -13229,7 +18030,8 @@ export interface components {
          *
          *     N021/N025: the key (template id + masked params signature) is built
          *     server-side; clients use it for favorites/recents/history/refresh
-         *     and never assemble it themselves. N027 adds cache freshness.
+         *     and never assemble it themselves. N027 adds cache freshness. N023
+         *     adds dependency metadata + the zero-entry honest hint.
          */
         RssHubPreviewResult: {
             /** Alreadysubscribed */
@@ -13245,12 +18047,17 @@ export interface components {
              * @enum {string}
              */
             format: "rss" | "atom";
+            /** Redirectchain */
+            redirectChain?: components["schemas"]["RedirectHop"][] | null;
+            requires?: components["schemas"]["RssHubRequires"] | null;
             /** Routekey */
             routeKey: string;
             /** Siteurl */
             siteUrl?: string | null;
             /** Title */
             title: string;
+            /** Zeroentryhint */
+            zeroEntryHint?: string | null;
         };
         /**
          * RssHubRecentItem
@@ -13296,6 +18103,24 @@ export interface components {
             title: string;
         };
         /**
+         * RssHubRequires
+         * @description N023：路由依赖元数据（curated 静态数据；null = 未知，诚实呈现）。
+         *
+         *     ``login`` 需要登录账号 / ``cookies`` 需要 Cookie / ``render`` 需要
+         *     浏览器渲染（puppeteer）/ ``extraService`` 需要额外服务（如 API key
+         *     配置）。三态：true（需要）/ false（不需要）/ None（未知）。
+         */
+        RssHubRequires: {
+            /** Cookies */
+            cookies?: boolean | null;
+            /** Extraservice */
+            extraService?: boolean | null;
+            /** Login */
+            login?: boolean | null;
+            /** Render */
+            render?: boolean | null;
+        };
+        /**
          * RssHubRoute
          * @description One Lumi-owned RSSHub route descriptor (path built server-side).
          */
@@ -13308,8 +18133,24 @@ export interface components {
             parameters: components["schemas"]["RssHubParameter"][];
             /** Pathtemplate */
             pathTemplate: string;
+            requires?: components["schemas"]["RssHubRequires"] | null;
             /** Title */
             title: string;
+        };
+        /**
+         * RssHubRouteMySources
+         * @description GET /api/v1/rsshub/routes/{routeKey}/my-sources — 仅本人作用域。
+         */
+        RssHubRouteMySources: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["RssHubRouteSourceItem"][];
+            /** Routekey */
+            routeKey: string;
+            /** Templateid */
+            templateId: string;
         };
         /**
          * RssHubRouteRun
@@ -13343,6 +18184,127 @@ export interface components {
             /** Items */
             items: components["schemas"]["RssHubRouteRun"][];
         };
+        /**
+         * RssHubRouteSourceEntry
+         * @description 该路由下某来源的最近条目（派生投影；≤5 条，只读）。
+         */
+        RssHubRouteSourceEntry: {
+            /** Published */
+            published: string;
+            /** Ref */
+            ref: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * RssHubRouteSourceItem
+         * @description N029 我的来源：由该路由模板 + 参数生成的本账户订阅。
+         */
+        RssHubRouteSourceItem: {
+            /** Feedurl */
+            feedUrl: string;
+            /**
+             * Recententries
+             * @default []
+             */
+            recentEntries: components["schemas"]["RssHubRouteSourceEntry"][];
+            /** Title */
+            title: string;
+            /** Unreadcount */
+            unreadCount: number;
+        };
+        /**
+         * RssHubRouteUsage
+         * @description GET /api/v1/admin/rsshub/routes/{routeKey}/usage — 跨用户聚合，
+         *     只有计数：绝不返回其他用户的标题 / 名称 / URL。
+         */
+        RssHubRouteUsage: {
+            /** Basis */
+            basis: string;
+            /** Routekey */
+            routeKey: string;
+            /** Sourcecount */
+            sourceCount: number;
+            /** Templateid */
+            templateId: string;
+            /** Totalentries */
+            totalEntries: number;
+            /** Usercount */
+            userCount: number;
+        };
+        /**
+         * RssHubUpgradeCheckReport
+         * @description 一次升级兼容检查报告（keep-last-3）。
+         *
+         *     checkedImage = 目录快照（rsshub_routes.generated.json）生成时所在
+         *     的固定镜像——逐路由状态锚定到这个已知的镜像证据；targetImage 是
+         *     运营者声明的目标镜像，targetStatus 恒为 'pending'：检查只对当前
+         *     运行实例探测，新镜像生效与否由运维侧确认（Lumi 无 Docker 视角，
+         *     绝不臆造「已生效」）。
+         */
+        RssHubUpgradeCheckReport: {
+            /** Checkedimage */
+            checkedImage?: string | null;
+            /** Failedcount */
+            failedCount: number;
+            /** Id */
+            id: number;
+            /** Okcount */
+            okCount: number;
+            /** Ranat */
+            ranAt: string;
+            /** Routecount */
+            routeCount: number;
+            /**
+             * Routes
+             * @default []
+             */
+            routes: components["schemas"]["RssHubUpgradeCheckRoute"][];
+            /** Skippedcount */
+            skippedCount: number;
+            /** Targetimage */
+            targetImage?: string | null;
+            /** Targetstatus */
+            targetStatus?: string | null;
+        };
+        /**
+         * RssHubUpgradeCheckRequest
+         * @description POST /api/v1/admin/rsshub/upgrade-check body。
+         */
+        RssHubUpgradeCheckRequest: {
+            /** Targetimage */
+            targetImage?: string | null;
+        };
+        /**
+         * RssHubUpgradeCheckRoute
+         * @description 单路由探测结果（params 已脱敏；routeKey 即存储键）。
+         */
+        RssHubUpgradeCheckRoute: {
+            /** Entrycount */
+            entryCount?: number | null;
+            /** Failureclass */
+            failureClass?: string | null;
+            /** Origin */
+            origin: string;
+            /** Routekey */
+            routeKey: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "failed" | "skipped";
+        };
+        /**
+         * RssHubUpgradeChecks
+         * @description GET /api/v1/admin/rsshub/upgrade-check — 最近报告（新→旧，≤3）。
+         */
+        RssHubUpgradeChecks: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["RssHubUpgradeCheckReport"][];
+        };
         /** SaveAsTemplateRequest */
         SaveAsTemplateRequest: {
             /** Name */
@@ -13373,6 +18335,8 @@ export interface components {
              * @default
              */
             categoryKey: string;
+            /** Contenttypes */
+            contentTypes?: string[] | null;
             /** Filters */
             filters?: {
                 [key: string]: string | boolean | null;
@@ -13386,6 +18350,8 @@ export interface components {
              * @default all
              */
             view: string;
+            /** Workspaceid */
+            workspaceId?: string | null;
         };
         /**
          * SavedSearchList
@@ -13412,6 +18378,14 @@ export interface components {
             name: string;
         };
         /**
+         * SavedSearchScopeUnlinkResult
+         * @description POST …/views/{id}/scope/unlink（N144）——解除已失效的工作区关联
+         *     （内容类型范围保留）；返回更新后的视图。
+         */
+        SavedSearchScopeUnlinkResult: {
+            view: components["schemas"]["SavedSearchView"];
+        };
+        /**
          * SavedSearchView
          * @description One saved search view (pool #09): query + filter intent, never a
          *     result snapshot — opening a view re-runs the search.
@@ -13422,6 +18396,8 @@ export interface components {
              * @default
              */
             categoryKey: string;
+            /** Contenttypes */
+            contentTypes?: string[] | null;
             /** Createdat */
             createdAt: string;
             /** Filters */
@@ -13446,6 +18422,11 @@ export interface components {
             pinned: boolean;
             /** Query */
             query: string;
+            /**
+             * Scopebroken
+             * @default false
+             */
+            scopeBroken: boolean;
             /** Updatedat */
             updatedAt: string;
             /**
@@ -13453,6 +18434,8 @@ export interface components {
              * @default all
              */
             view: string;
+            /** Workspaceid */
+            workspaceId?: string | null;
         };
         /**
          * SearchDistributionDay
@@ -13711,6 +18694,185 @@ export interface components {
             nextCursor: string | null;
         };
         /**
+         * SearchSnapshotCompareResult
+         * @description N141 差分：added/removed（引用清单，≤200 条 + 全量 counts）、
+         *     rankChanges（|位移| > 5）、permissionLost（快照引用在本账户投影中
+         *     已不再解析——与 404 同语义，绝不泄露他人条目存在性）。
+         *     任一侧冻结/复跑触界截断 → complete=false 诚实标注。
+         */
+        SearchSnapshotCompareResult: {
+            /**
+             * Added
+             * @default []
+             */
+            added: string[];
+            /**
+             * Complete
+             * @default true
+             */
+            complete: boolean;
+            /**
+             * Counts
+             * @default {}
+             */
+            counts: {
+                [key: string]: number;
+            };
+            /**
+             * Permissionlost
+             * @default []
+             */
+            permissionLost: string[];
+            /**
+             * Rankchanges
+             * @default []
+             */
+            rankChanges: components["schemas"]["SearchSnapshotRankChange"][];
+            /**
+             * Removed
+             * @default []
+             */
+            removed: string[];
+        };
+        /**
+         * SearchSnapshotCreate
+         * @description POST /api/v1/search/snapshots body（N141）——与 GET /search 同参
+         *     （除分页/同义词扩展；快照口径 = 基础词条过滤链，与 N143/N145 一致）。
+         */
+        SearchSnapshotCreate: {
+            /** Categoryid */
+            categoryId?: string | null;
+            /** Exclude */
+            exclude?: string | null;
+            /**
+             * Favorite
+             * @default false
+             */
+            favorite: boolean;
+            /** Feedurl */
+            feedUrl?: string | null;
+            /** From */
+            from?: string | null;
+            /** Hassummary */
+            hasSummary?: boolean | null;
+            /** Intitle */
+            intitle?: string | null;
+            /** Phrase */
+            phrase?: string | null;
+            /** Q */
+            q: string;
+            /** State */
+            state?: string | null;
+            /** To */
+            to?: string | null;
+        };
+        /**
+         * SearchSnapshotList
+         * @description GET /api/v1/search/snapshots。
+         */
+        SearchSnapshotList: {
+            /** Items */
+            items: components["schemas"]["SearchSnapshotView"][];
+        };
+        /**
+         * SearchSnapshotRankChange
+         * @description 一个共同引用的排名变化（绝对位移 > 5 才列入）。
+         */
+        SearchSnapshotRankChange: {
+            /** Entryref */
+            entryRef: string;
+            /** Newrank */
+            newRank: number;
+            /** Oldrank */
+            oldRank: number;
+        };
+        /**
+         * SearchSnapshotView
+         * @description 一个已冻结的搜索快照（N141）：查询 + 过滤作用域 + 结果引用计数
+         *     （引用清单本身绝不在列表中出站，仅 compare 内部使用）。
+         */
+        SearchSnapshotView: {
+            /** Createdat */
+            createdAt: string;
+            /**
+             * Filters
+             * @default {}
+             */
+            filters: {
+                [key: string]: string | boolean;
+            };
+            /** Id */
+            id: string;
+            /** Query */
+            query: string;
+            /** Refcount */
+            refCount: number;
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
+        };
+        /**
+         * SearchTimelineAnnotation
+         * @description N149：与查询匹配的一条本人批注（excerpt/note LIKE 命中）。
+         */
+        SearchTimelineAnnotation: {
+            /** Color */
+            color: string;
+            /** Createdat */
+            createdAt: string;
+            /** Entryref */
+            entryRef: string;
+            /** Excerpt */
+            excerpt: string;
+            /** Id */
+            id: string;
+            /** Note */
+            note: string;
+            /** Updatedat */
+            updatedAt: string;
+        };
+        /**
+         * SearchTimelineMonth
+         * @description N149：单月命中计数（YYYY-MM；窗口内补零后逐月出）。
+         */
+        SearchTimelineMonth: {
+            /** Count */
+            count: number;
+            /** Month */
+            month: string;
+        };
+        /**
+         * SearchTimelineResult
+         * @description N149 主题演变时间线：24 个月逐月计数（SQL 聚合，无正文出站）+
+         *     匹配查询的本人批注（LIKE，≤10 条；超界 annotationsComplete=false
+         *     诚实标注——仅本人批注，per-user DB 天然隔离他人）。
+         */
+        SearchTimelineResult: {
+            /**
+             * Annotations
+             * @default []
+             */
+            annotations: components["schemas"]["SearchTimelineAnnotation"][];
+            /**
+             * Annotationscomplete
+             * @default true
+             */
+            annotationsComplete: boolean;
+            /** Monthfrom */
+            monthFrom: string;
+            /** Monthto */
+            monthTo: string;
+            /**
+             * Months
+             * @default []
+             */
+            months: components["schemas"]["SearchTimelineMonth"][];
+            /** Total */
+            total: number;
+        };
+        /**
          * SearchWhyMissedBody
          * @description POST /api/v1/search/why-missed body（N143）——与 GET /search 同参
          *     （除分页/同义词）；entryRef 必须属于当前用户，否则 404。
@@ -13880,8 +19042,22 @@ export interface components {
             items: components["schemas"]["SettingsHistoryEntry"][];
         };
         /**
+         * SettingsRevertConflict
+         * @description N184：一个未能回退的键与原因（显式清单，不再静默）。
+         */
+        SettingsRevertConflict: {
+            /** Key */
+            key: string;
+            /** Reason */
+            reason: string;
+        };
+        /**
          * SettingsRevertResult
-         * @description 回退结果：applied=已应用的键值；skipped=因新修改被跳过的键。
+         * @description 回退结果。
+         *
+         *     - applied / skipped：历史线格式（键值映射），保持兼容；
+         *     - N184 显式化：restored=已回退的键列表；conflicts=未能回退的键与
+         *       原因（键在记录之后又被改过 → 回退不覆盖新修改）。
          */
         SettingsRevertResult: {
             /**
@@ -13891,6 +19067,16 @@ export interface components {
             applied: {
                 [key: string]: unknown;
             };
+            /**
+             * Conflicts
+             * @default []
+             */
+            conflicts: components["schemas"]["SettingsRevertConflict"][];
+            /**
+             * Restored
+             * @default []
+             */
+            restored: string[];
             /**
              * Skipped
              * @default {}
@@ -13950,6 +19136,52 @@ export interface components {
             url: string;
             /** Uuid */
             uuid: string;
+        };
+        /** SourceAccessCardList */
+        SourceAccessCardList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["SourceAccessCardView"][];
+        };
+        /**
+         * SourceAccessCardUpdate
+         * @description PUT /api/v1/sources/access-card — 整卡 upsert（缺席字段=清空）。
+         *
+         *     credentialOwnership 只接受 'self' | 'shared' | 'none'（归属标签，
+         *     不是凭据值）；未知字段键 → 422（extra=forbid：契约上不存在凭据值
+         *     字段，超集直接拒绝）。
+         */
+        SourceAccessCardUpdate: {
+            /** Acquisition */
+            acquisition?: string | null;
+            /** Credentialownership */
+            credentialOwnership?: string | null;
+            /** Feedurl */
+            feedUrl: string;
+            /** Limits */
+            limits?: string | null;
+            /** Maintenance */
+            maintenance?: string | null;
+        };
+        /**
+         * SourceAccessCardView
+         * @description N019：一个来源的接入说明卡（凭据只存归属标签，绝无凭据值）。
+         */
+        SourceAccessCardView: {
+            /** Acquisition */
+            acquisition?: string | null;
+            /** Credentialownership */
+            credentialOwnership?: string | null;
+            /** Feedurl */
+            feedUrl: string;
+            /** Limits */
+            limits?: string | null;
+            /** Maintenance */
+            maintenance?: string | null;
+            /** Updatedat */
+            updatedAt?: string | null;
         };
         /**
          * SourceAliasHistoryItem
@@ -14083,6 +19315,11 @@ export interface components {
              */
             aiDisabled: boolean;
             /**
+             * Attentionlevel
+             * @default normal
+             */
+            attentionLevel: string;
+            /**
              * Extractpolicy
              * @default rss
              */
@@ -14091,6 +19328,8 @@ export interface components {
             feedUrl: string;
             /** Hiddenuntil */
             hiddenUntil?: string | null;
+            /** Language */
+            language?: string | null;
             /** Mutewindows */
             muteWindows?: {
                 [key: string]: unknown;
@@ -14099,10 +19338,16 @@ export interface components {
             readerStyle?: {
                 [key: string]: unknown;
             } | null;
+            /** Refreshadvisory */
+            refreshAdvisory?: string | null;
             /** Showfrom */
             showFrom?: string | null;
             /** Stalealerthours */
             staleAlertHours?: number | null;
+            /** Syncpriority */
+            syncPriority?: number | null;
+            /** Unreadalertthreshold */
+            unreadAlertThreshold?: number | null;
             /**
              * Updatedat
              * @default
@@ -14116,12 +19361,16 @@ export interface components {
         SourceOverrideUpdate: {
             /** Aidisabled */
             aiDisabled?: boolean | null;
+            /** Attentionlevel */
+            attentionLevel?: string | null;
             /** Extractpolicy */
             extractPolicy?: string | null;
             /** Feedurl */
             feedUrl: string;
             /** Hiddenuntil */
             hiddenUntil?: string | null;
+            /** Language */
+            language?: string | null;
             /** Mutewindows */
             muteWindows?: {
                 [key: string]: unknown;
@@ -14134,6 +19383,10 @@ export interface components {
             showFrom?: string | null;
             /** Stalealerthours */
             staleAlertHours?: number | null;
+            /** Syncpriority */
+            syncPriority?: number | null;
+            /** Unreadalertthreshold */
+            unreadAlertThreshold?: number | null;
         };
         /**
          * SourceRegistryEntry
@@ -14163,6 +19416,89 @@ export interface components {
             generatedAt: string;
             /** Sources */
             sources: components["schemas"]["SourceRegistryEntry"][];
+        };
+        /**
+         * StagedSource
+         * @description One staging-pool row (never a subscription, never counts unread).
+         */
+        StagedSource: {
+            /** Addedat */
+            addedAt: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Id */
+            id: string;
+            /** Note */
+            note?: string | null;
+            /**
+             * Origin
+             * @default staging
+             */
+            origin: string;
+            /**
+             * Sample
+             * @default []
+             */
+            sample: components["schemas"]["StagedSourceSampleEntry"][];
+            /**
+             * Sourcetype
+             * @default rss
+             */
+            sourceType: string;
+            /**
+             * Subscribed
+             * @default false
+             */
+            subscribed: boolean;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+        };
+        /**
+         * StagedSourceCreateRequest
+         * @description POST /api/v1/sources/staging.
+         */
+        StagedSourceCreateRequest: {
+            /** Note */
+            note?: string | null;
+            /** Url */
+            url: string;
+        };
+        /** StagedSourceListResponse */
+        StagedSourceListResponse: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["StagedSource"][];
+        };
+        /**
+         * StagedSourceSampleEntry
+         * @description One bounded preview snapshot entry (N016; metadata only).
+         */
+        StagedSourceSampleEntry: {
+            /** Link */
+            link?: string | null;
+            /** Published */
+            published?: string | null;
+            /** Summary */
+            summary?: string | null;
+            /** Title */
+            title: string;
+        };
+        /**
+         * StagedSourceSubscribeResult
+         * @description Idempotent subscribe outcome (existing sub → status=exists).
+         */
+        StagedSourceSubscribeResult: {
+            /** Feedurl */
+            feedUrl: string;
+            /** Status */
+            status: string;
         };
         /**
          * StaleSourceItem
@@ -14295,6 +19631,8 @@ export interface components {
          */
         SubscriptionVolumeItem: {
             collectionTiming?: components["schemas"]["CollectionTiming"] | null;
+            /** Daily */
+            daily?: components["schemas"]["VolumeDailyBucket"][] | null;
             /** Feedurl */
             feedUrl: string;
             /** Lastpublishedat */
@@ -14305,6 +19643,8 @@ export interface components {
             publishedCount?: number | null;
             /** Title */
             title: string;
+            /** Unreadprojected */
+            unreadProjected?: number | null;
         };
         /**
          * SubscriptionVolumeResponse
@@ -14459,6 +19799,23 @@ export interface components {
             movedBindings: number;
             /** Targetid */
             targetId: number;
+        };
+        /**
+         * TagMergeUndoResult
+         * @description POST /api/v1/tags/merge/undo（N150）——撤销最近一次合并：
+         *     重建源标签（新 id）并恢复其绑定；目标保留合并来的绑定。
+         *     无快照/超 24h 窗口 → 404；源标签名已被占用（含上一次 undo 自身
+         *     的重建）→ 409。
+         */
+        TagMergeUndoResult: {
+            /** Name */
+            name: string;
+            /** Restoredbindings */
+            restoredBindings: number;
+            /** Sourcetagid */
+            sourceTagId: number;
+            /** Targettagid */
+            targetTagId: number;
         };
         /**
          * TagRenameRequest
@@ -14733,6 +20090,17 @@ export interface components {
             items: components["schemas"]["TrashItem"][];
         };
         /**
+         * UserQuotaPutRequest
+         * @description PUT /admin/users/{id}/quota body。缺省键 = 清除该上限；
+         *     正整数（1..上限界）才是有效设置。未知键 → 422。
+         */
+        UserQuotaPutRequest: {
+            /** Aiquotaperday */
+            aiQuotaPerDay?: number | null;
+            /** Maxsources */
+            maxSources?: number | null;
+        };
+        /**
          * UserRoleRequest
          * @description POST /admin/users/{id}/role — owner-only provisioning body.
          *
@@ -14812,6 +20180,16 @@ export interface components {
              * @default true
              */
             hasFeedToken: boolean;
+        };
+        /**
+         * VolumeDailyBucket
+         * @description F024：单日发布量（UTC 日，窗口内无条目的日期不出现——稀疏）。
+         */
+        VolumeDailyBucket: {
+            /** Count */
+            count: number;
+            /** Date */
+            date: string;
         };
         /**
          * WebDavSettingsPut
@@ -14911,6 +20289,85 @@ export interface components {
             /** Workspaceid */
             workspaceId: string;
         };
+        /** WorkspaceCleanupApplyRequest */
+        WorkspaceCleanupApplyRequest: {
+            /** Categories */
+            categories: string[];
+        };
+        /** WorkspaceCleanupApplyResult */
+        WorkspaceCleanupApplyResult: {
+            /** Logid */
+            logId: string;
+            /**
+             * Removed
+             * @default {}
+             */
+            removed: {
+                [key: string]: unknown;
+            };
+        };
+        /** WorkspaceCleanupCategory */
+        WorkspaceCleanupCategory: {
+            /** Category */
+            category: string;
+            /**
+             * Items
+             * @default []
+             */
+            items: {
+                [key: string]: unknown;
+            }[];
+        };
+        /** WorkspaceCleanupLogList */
+        WorkspaceCleanupLogList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: {
+                [key: string]: unknown;
+            }[];
+        };
+        /** WorkspaceCleanupPreviewResponse */
+        WorkspaceCleanupPreviewResponse: {
+            /**
+             * Actionable
+             * @default []
+             */
+            actionable: string[];
+            /**
+             * Categories
+             * @default []
+             */
+            categories: components["schemas"]["WorkspaceCleanupCategory"][];
+            /**
+             * Reportonly
+             * @default []
+             */
+            reportOnly: string[];
+            /** Workspaceid */
+            workspaceId: string;
+        };
+        /** WorkspaceCleanupUndoRequest */
+        WorkspaceCleanupUndoRequest: {
+            /** Logid */
+            logId?: string | null;
+        };
+        /** WorkspaceCleanupUndoResult */
+        WorkspaceCleanupUndoResult: {
+            /** Logid */
+            logId: string;
+            /**
+             * Restoredrefs
+             * @default 0
+             */
+            restoredRefs: number;
+            /**
+             * Restoredsectionrefs
+             * @default 0
+             */
+            restoredSectionRefs: number;
+        };
         /**
          * WorkspaceCreate
          * @description POST /api/v1/workspaces.
@@ -14935,10 +20392,21 @@ export interface components {
             skippedExampleRefs: string[];
             workspace: components["schemas"]["Workspace"];
         };
-        /** WorkspaceGoalPut */
+        /**
+         * WorkspaceGoalPut
+         * @description F086 目标写入 + N111 扩展。
+         *
+         *     goalText / conditions 缺省（键未出现）= 保留既有值（旧调用方绝不
+         *     无意清空 N111 数据）；显式 null / 空串 / 空数组 = 清除。路由用
+         *     ``model_fields_set`` 区分「未携带」与「显式 null」。
+         */
         WorkspaceGoalPut: {
+            /** Conditions */
+            conditions?: string[] | null;
             /** Deadline */
             deadline?: string | null;
+            /** Goaltext */
+            goalText?: string | null;
             /** Targetcount */
             targetCount: number;
         };
@@ -15114,6 +20582,74 @@ export interface components {
             /** Workspaceid */
             workspaceId: string;
         };
+        /** WorkspaceSectionCreate */
+        WorkspaceSectionCreate: {
+            /** Title */
+            title: string;
+        };
+        /**
+         * WorkspaceSectionItem
+         * @description 分节成员（引用而非复制；unresolved = 已不是工作区成员，诚实标记）。
+         */
+        WorkspaceSectionItem: {
+            /** Addedat */
+            addedAt: string;
+            /** Itemref */
+            itemRef: string;
+            /** Position */
+            position: number;
+            /**
+             * Unresolved
+             * @default false
+             */
+            unresolved: boolean;
+        };
+        /** WorkspaceSectionItemAddRequest */
+        WorkspaceSectionItemAddRequest: {
+            /** Itemref */
+            itemRef: string;
+        };
+        /** WorkspaceSectionItemsOrderPut */
+        WorkspaceSectionItemsOrderPut: {
+            /** Itemrefs */
+            itemRefs: string[];
+        };
+        /** WorkspaceSectionList */
+        WorkspaceSectionList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["WorkspaceSectionView"][];
+        };
+        /** WorkspaceSectionOrderPut */
+        WorkspaceSectionOrderPut: {
+            /** Sectionids */
+            sectionIds: string[];
+        };
+        /** WorkspaceSectionPatch */
+        WorkspaceSectionPatch: {
+            /** Title */
+            title: string;
+        };
+        /** WorkspaceSectionView */
+        WorkspaceSectionView: {
+            /** Createdat */
+            createdAt: string;
+            /** Id */
+            id: string;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["WorkspaceSectionItem"][];
+            /** Sortindex */
+            sortIndex: number;
+            /** Title */
+            title: string;
+            /** Workspaceid */
+            workspaceId: string;
+        };
         /**
          * WorkspaceSnapshot
          * @description N105：一个命名会话快照（元数据视图；payload 留在服务端）。
@@ -15277,6 +20813,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_capacity_api_v1_admin_capacity_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    admin_deploy_status_api_v1_admin_deploy_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
@@ -15568,7 +21144,164 @@ export interface operations {
             };
         };
     };
+    get_registration_policy_api_v1_admin_registration_policy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistrationPolicyResponse"];
+                };
+            };
+        };
+    };
+    set_registration_policy_api_v1_admin_registration_policy_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegistrationPolicyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistrationPolicyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rsshub_route_usage_admin_api_v1_admin_rsshub_routes__route_key__usage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubRouteUsage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_rsshub_upgrade_checks_api_v1_admin_rsshub_upgrade_check_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubUpgradeChecks"];
+                };
+            };
+        };
+    };
+    run_rsshub_upgrade_check_api_v1_admin_rsshub_upgrade_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RssHubUpgradeCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubUpgradeCheckReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     system_status_api_v1_admin_system_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    admin_upgrade_preview_api_v1_admin_upgrade_preview_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -15608,7 +21341,170 @@ export interface operations {
             };
         };
     };
+    background_pause_user_api_v1_admin_users__user_id__background_pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackgroundPauseRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    background_resume_user_api_v1_admin_users__user_id__background_resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     pause_user_api_v1_admin_users__user_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_user_quota_api_v1_admin_users__user_id__quota_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_user_quota_api_v1_admin_users__user_id__quota_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserQuotaPutRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_user_quota_api_v1_admin_users__user_id__quota_delete: {
         parameters: {
             query?: never;
             header?: never;
@@ -15767,6 +21663,183 @@ export interface operations {
             };
         };
     };
+    list_recipes_api_v1_agent_recipes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRecipeListResponse"];
+                };
+            };
+        };
+    };
+    create_recipe_api_v1_agent_recipes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentRecipeCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRecipe"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_recipe_api_v1_agent_recipes__recipe_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recipe_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_recipe_api_v1_agent_recipes__recipe_id__preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recipe_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRecipePreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_recipe_api_v1_agent_recipes__recipe_id__run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recipe_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRecipeRunResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_scope_api_v1_agent_scope_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentScopePreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentScopeSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_threads_api_v1_agent_threads_get: {
         parameters: {
             query?: never;
@@ -15824,7 +21897,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AgentThreadSearchResponse"];
                 };
             };
             /** @description Validation Error */
@@ -15888,7 +21961,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AgentThreadSettings"];
                 };
             };
             /** @description Validation Error */
@@ -15923,7 +21996,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AgentApprovalResult"];
                 };
             };
             /** @description Validation Error */
@@ -15955,7 +22028,43 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AgentApprovalPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revise_approval_api_v1_agent_threads__thread_id__approvals__approval_id__revise_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                approval_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentApprovalReviseRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentApprovalReviseResult"];
                 };
             };
             /** @description Validation Error */
@@ -15990,7 +22099,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AgentBranchResult"];
                 };
             };
             /** @description Validation Error */
@@ -16021,7 +22130,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AgentCancelResult"];
                 };
             };
             /** @description Validation Error */
@@ -16048,13 +22157,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Successful Response */
+            /** @description SSE stream: message/delta/done events; keep-alive comments */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "text/event-stream": string;
                 };
             };
             /** @description Validation Error */
@@ -16088,7 +22197,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "text/markdown; charset=utf-8": string;
                 };
             };
             /** @description Validation Error */
@@ -16121,7 +22230,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AgentMessageListResponse"];
                 };
             };
             /** @description Validation Error */
@@ -16156,7 +22265,135 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AgentTurnAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pause_turn_api_v1_agent_threads__thread_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentPauseResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_turn_api_v1_agent_threads__thread_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentResumeResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_failed_steps_api_v1_agent_threads__thread_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRetryResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undo_step_api_v1_agent_threads__thread_id__undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentUndoRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentUndoResult"];
                 };
             };
             /** @description Validation Error */
@@ -16239,6 +22476,7 @@ export interface operations {
             query?: {
                 entryRef?: string | null;
                 q?: string | null;
+                color?: string | null;
                 cursor?: string | null;
             };
             header?: never;
@@ -16300,6 +22538,59 @@ export interface operations {
             };
         };
     };
+    get_color_labels_api_v1_annotations_color_labels_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationColorLabelList"];
+                };
+            };
+        };
+    };
+    put_color_label_api_v1_annotations_color_labels_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotationColorLabelPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationColorLabelList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     export_annotations_api_v1_annotations_export_post: {
         parameters: {
             query?: never;
@@ -16320,6 +22611,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    annotations_export_delta_api_v1_annotations_export_delta_get: {
+        parameters: {
+            query?: {
+                entryRef?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationExportDelta"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_annotations_exported_api_v1_annotations_export_mark_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotationExportMarkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationExportMarkResult"];
                 };
             };
             /** @description Validation Error */
@@ -16397,6 +22752,72 @@ export interface operations {
             };
         };
     };
+    repair_annotation_api_v1_annotations__annotation_id__repair_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                annotation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotationRepairRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationRepairResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    annotation_repair_candidates_api_v1_annotations__annotation_id__repair_candidates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                annotation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationRepairCandidatesResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_sources_api_v1_api_sources_get: {
         parameters: {
             query?: never;
@@ -16460,6 +22881,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ApiSourcePreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiSourcePreviewResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_sample_source_api_v1_api_sources_preview_sample_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiSourceSamplePreviewRequest"];
             };
         };
         responses: {
@@ -16565,6 +23019,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiSourceConfirmSchemaResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rotate_api_source_credential_api_v1_api_sources__source_uuid__credentials_rotate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiSourceCredentialTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiSourceCredentialResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_api_source_credential_api_v1_api_sources__source_uuid__credentials_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiSourceCredentialTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiSourceCredentialResult"];
                 };
             };
             /** @description Validation Error */
@@ -16956,6 +23480,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["RecoverPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    register_api_v1_auth_register_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterRequest"];
             };
         };
         responses: {
@@ -17442,6 +23999,39 @@ export interface operations {
             };
         };
     };
+    preview_backup_scope_api_v1_backups_preview_scope_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackupScopePreviewBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupScopePreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_remote_backups_api_v1_backups_remote_get: {
         parameters: {
             query?: never;
@@ -17458,6 +24048,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RemoteBackupsResponse"];
+                };
+            };
+        };
+    };
+    verify_backup_get_api_v1_backups_verify_get: {
+        parameters: {
+            query?: {
+                source?: "local" | "remote";
+                jobId?: string | null;
+                fileName?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupVerifyReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_backup_post_api_v1_backups_verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestorePreviewBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupVerifyReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -17735,6 +24391,7 @@ export interface operations {
                 cursor?: string | null;
                 includeHidden?: boolean;
                 sort?: "received" | null;
+                attention?: ("must_read" | "excl_low") | null;
             };
             header?: never;
             path?: never;
@@ -19572,6 +26229,70 @@ export interface operations {
             };
         };
     };
+    retry_polish_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__retry_polish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                config_id: number;
+                issue_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trim_preview_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__trim_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                config_id: number;
+                issue_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GptDigestTrimPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     missing_digest_dates_api_v1_gpt_digest_configs__config_id__missing_dates_get: {
         parameters: {
             query?: {
@@ -20531,6 +27252,76 @@ export interface operations {
             };
         };
     };
+    rotate_inbox_source_credential_api_v1_inbox_sources__source_uuid__credentials_rotate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiSourceCredentialTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiSourceCredentialResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_inbox_source_credential_api_v1_inbox_sources__source_uuid__credentials_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiSourceCredentialTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiSourceCredentialResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_inbox_events_api_v1_inbox_sources__source_uuid__events_get: {
         parameters: {
             query?: {
@@ -21021,6 +27812,39 @@ export interface operations {
             };
         };
     };
+    bulk_links_api_v1_library_bulk_links_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkLinksRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkLinksResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_clips_api_v1_library_clips_get: {
         parameters: {
             query?: {
@@ -21119,6 +27943,26 @@ export interface operations {
             };
         };
     };
+    preview_clip_cleanup_api_v1_library_clips_preview_cleanup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     get_clip_api_v1_library_clips__item_uuid__get: {
         parameters: {
             query?: never;
@@ -21179,7 +28023,160 @@ export interface operations {
             };
         };
     };
+    get_clip_candidate_api_v1_library_clips__item_uuid__candidate_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_clip_candidate_api_v1_library_clips__item_uuid__candidate_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_clip_candidate_api_v1_library_clips__item_uuid__candidate_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_clip_full_api_v1_library_clips__item_uuid__full_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_clip_lock_api_v1_library_clips__item_uuid__lock_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_clip_api_v1_library_clips__item_uuid__refresh_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -22210,6 +29207,37 @@ export interface operations {
             };
         };
     };
+    download_mail_attachment_api_v1_mail_attachments__attachment_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attachment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_bridge_lists_api_v1_mail_bridge_lists_get: {
         parameters: {
             query?: never;
@@ -22401,6 +29429,69 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MailImapTestResult"];
+                };
+            };
+        };
+    };
+    list_mail_messages_api_v1_mail_lists__list_uuid__messages_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                list_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mail_message_detail_api_v1_mail_lists__list_uuid__messages__message_id__detail_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                list_uuid: string;
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -22655,6 +29746,37 @@ export interface operations {
             };
         };
     };
+    list_block_refs_api_v1_obsidian_block_refs_get: {
+        parameters: {
+            query?: {
+                paraId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianBlockRefsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_obsidian_devices_api_v1_obsidian_devices_get: {
         parameters: {
             query?: never;
@@ -22805,6 +29927,39 @@ export interface operations {
             };
         };
     };
+    validate_obsidian_export_api_v1_obsidian_export_handoff_validate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObsidianExportValidateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianExportValidateResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_obsidian_export_template_api_v1_obsidian_export_template_get: {
         parameters: {
             query?: never;
@@ -22878,6 +30033,121 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ObsidianTemplatePreviewResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_obsidian_handoff_log_api_v1_obsidian_handoff_log_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianHandoffLogList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_obsidian_handoff_log_api_v1_obsidian_handoff_log_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObsidianHandoffLogCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianHandoffLogEntry"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_obsidian_handoff_log_api_v1_obsidian_handoff_log_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianHandoffLogClearResult"];
+                };
+            };
+        };
+    };
+    confirm_obsidian_handoff_api_v1_obsidian_handoff__handoff_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handoff_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianHandoffLogEntry"];
                 };
             };
             /** @description Validation Error */
@@ -23227,6 +30497,26 @@ export interface operations {
             };
         };
     };
+    opml_import_log_list_api_v1_opml_import_log_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpmlImportLogList"];
+                };
+            };
+        };
+    };
     opml_import_preview_api_v1_opml_import_preview_post: {
         parameters: {
             query?: never;
@@ -23243,6 +30533,97 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpmlImportPreview"];
+                };
+            };
+        };
+    };
+    opml_tree_apply_api_v1_opml_import_tree_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpmlTreeApplyResult"];
+                };
+            };
+        };
+    };
+    opml_tree_preview_api_v1_opml_import_tree_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpmlTreePlan"];
+                };
+            };
+        };
+    };
+    opml_import_undo_api_v1_opml_import__log_id__undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                log_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpmlUndoResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_data_flows_api_v1_privacy_data_flows_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataFlowsResponse"];
                 };
             };
         };
@@ -23783,6 +31164,92 @@ export interface operations {
             };
         };
     };
+    rag_ask_api_v1_rag_ask_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RagAskRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagAskResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rag_chunk_preview_api_v1_rag_chunk_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RagChunkPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagChunkPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rag_coverage_api_v1_rag_coverage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagCoverage"];
+                };
+            };
+        };
+    };
     rag_disable_api_v1_rag_disable_post: {
         parameters: {
             query?: never;
@@ -23931,7 +31398,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RagRebuildPauseResult"];
                 };
             };
         };
@@ -23995,6 +31462,7 @@ export interface operations {
                 q: string;
                 k?: number;
                 kind?: string | null;
+                threadId?: string | null;
             };
             header?: never;
             path?: never;
@@ -24037,9 +31505,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["RagStatus"];
                 };
             };
         };
@@ -24094,6 +31560,136 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_reading_questions_api_v1_reading_questions_get: {
+        parameters: {
+            query?: {
+                status?: string | null;
+                entryRef?: string | null;
+                annotationId?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadingQuestionList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_reading_question_api_v1_reading_questions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReadingQuestionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_reading_question_api_v1_reading_questions__question_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_reading_question_api_v1_reading_questions__question_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReadingQuestionPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
             };
             /** @description Validation Error */
             422: {
@@ -24407,6 +32003,37 @@ export interface operations {
                 "application/json": components["schemas"]["ReviewQueuePostpone"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    view_review_queue_item_api_v1_review_queue__queue_id__view_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                queue_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -24779,6 +32406,152 @@ export interface operations {
             };
         };
     };
+    list_rsshub_param_presets_api_v1_rsshub_param_presets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubParamPresetItem"][];
+                };
+            };
+        };
+    };
+    create_rsshub_param_preset_api_v1_rsshub_param_presets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RssHubParamPresetCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubParamPresetItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_rsshub_param_preset_api_v1_rsshub_param_presets__preset_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                preset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_rsshub_param_preset_api_v1_rsshub_param_presets__preset_id__apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                preset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubParamPresetApply"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rsshub_params_diff_api_v1_rsshub_params_diff_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RssHubParamsDiffRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubParamsDiffResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     rsshub_preview_api_v1_rsshub_preview_post: {
         parameters: {
             query?: never;
@@ -24999,6 +32772,37 @@ export interface operations {
             };
         };
     };
+    rsshub_route_my_sources_api_v1_rsshub_routes__route_key__my_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubRouteMySources"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     search_api_v1_search_get: {
         parameters: {
             query: {
@@ -25171,6 +32975,90 @@ export interface operations {
             };
         };
     };
+    list_search_snapshots_api_v1_search_snapshots_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchSnapshotList"];
+                };
+            };
+        };
+    };
+    create_search_snapshot_api_v1_search_snapshots_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchSnapshotCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchSnapshotView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compare_search_snapshot_api_v1_search_snapshots__snapshot_id__compare_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                snapshot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchSnapshotCompareResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_synonyms_api_v1_search_synonyms_get: {
         parameters: {
             query?: never;
@@ -25312,6 +33200,47 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_timeline_api_v1_search_timeline_get: {
+        parameters: {
+            query: {
+                q: string;
+                feedUrl?: string | null;
+                categoryId?: string | null;
+                state?: string | null;
+                favorite?: boolean | null;
+                from?: string | null;
+                to?: string | null;
+                intitle?: string | null;
+                phrase?: string | null;
+                exclude?: string | null;
+                hasSummary?: boolean | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchTimelineResult"];
                 };
             };
             /** @description Validation Error */
@@ -25579,6 +33508,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SavedSearchView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unlink_saved_search_scope_api_v1_search_views__view_id__scope_unlink_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                view_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedSearchScopeUnlinkResult"];
                 };
             };
             /** @description Validation Error */
@@ -26320,6 +34280,90 @@ export interface operations {
             };
         };
     };
+    get_source_access_card_api_v1_sources_access_card_get: {
+        parameters: {
+            query: {
+                feedUrl: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceAccessCardView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_source_access_card_api_v1_sources_access_card_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourceAccessCardUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceAccessCardView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_source_access_cards_api_v1_sources_access_cards_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceAccessCardList"];
+                };
+            };
+        };
+    };
     set_source_alias_api_v1_sources_alias_put: {
         parameters: {
             query?: never;
@@ -26434,6 +34478,192 @@ export interface operations {
             };
         };
     };
+    export_source_bundle_api_v1_sources_bundle_export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BundleExportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BundleDocument"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_source_bundle_api_v1_sources_bundle_import_post: {
+        parameters: {
+            query?: {
+                apply?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BundleImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BundleImportResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cleanup_suggestions_api_v1_sources_cleanup_suggestions_get: {
+        parameters: {
+            query?: {
+                minWeeklyYield?: number;
+                staleDays?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CleanupSuggestionsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_cleanup_suggestions_api_v1_sources_cleanup_suggestions_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CleanupApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CleanupApplyResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    freshness_suggestions_api_v1_sources_freshness_suggestions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FreshnessSuggestionsResponse"];
+                };
+            };
+        };
+    };
+    apply_freshness_advisory_api_v1_sources_freshness_suggestions_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FreshnessAdvisoryApplyBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FreshnessAdvisoryApplyResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_source_overrides_api_v1_sources_overrides_get: {
         parameters: {
             query?: never;
@@ -26520,6 +34750,121 @@ export interface operations {
             };
         };
     };
+    list_staged_sources_api_v1_sources_staging_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StagedSourceListResponse"];
+                };
+            };
+        };
+    };
+    stage_source_api_v1_sources_staging_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StagedSourceCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_staged_source_api_v1_sources_staging__source_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    subscribe_staged_source_api_v1_sources_staging__source_id__subscribe_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StagedSourceSubscribeResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     stale_sources_api_v1_sources_stale_get: {
         parameters: {
             query?: {
@@ -26555,6 +34900,7 @@ export interface operations {
         parameters: {
             query?: {
                 days?: number;
+                daily?: boolean;
             };
             header?: never;
             path?: never;
@@ -26645,6 +34991,77 @@ export interface operations {
                         [key: string]: unknown;
                     };
                 };
+            };
+        };
+    };
+    retention_notice_api_v1_storage_retention_notice_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetentionNotice"];
+                };
+            };
+        };
+    };
+    postpone_retention_api_v1_storage_retention_postpone_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetentionPostponeBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetentionPostponeResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_retention_postpone_api_v1_storage_retention_postpone_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -27249,6 +35666,26 @@ export interface operations {
             };
         };
     };
+    undo_tag_merge_api_v1_tags_merge_undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagMergeUndoResult"];
+                };
+            };
+        };
+    };
     tag_suggestions_api_v1_tags_suggestions__item_ref__get: {
         parameters: {
             query?: never;
@@ -27494,6 +35931,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiVersionInfo"];
+                };
+            };
+        };
+    };
+    whats_new_api_v1_whats_new_get: {
+        parameters: {
+            query?: {
+                sinceVersion?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -27943,6 +36413,208 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["BoardUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workspace_cleanup_apply_api_v1_workspaces__workspace_id__cleanup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceCleanupApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceCleanupApplyResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workspace_cleanup_logs_api_v1_workspaces__workspace_id__cleanup_logs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceCleanupLogList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workspace_cleanup_preview_api_v1_workspaces__workspace_id__cleanup_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceCleanupPreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workspace_cleanup_undo_api_v1_workspaces__workspace_id__cleanup_undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceCleanupUndoRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceCleanupUndoResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compile_workspace_api_v1_workspaces__workspace_id__compile_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompileRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compile_workspace_markdown_api_v1_workspaces__workspace_id__compile_markdown_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompileRequest"];
             };
         };
         responses: {
@@ -28530,6 +37202,276 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["WorkspaceTemplate"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_workspace_sections_api_v1_workspaces__workspace_id__sections_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSectionList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_workspace_section_api_v1_workspaces__workspace_id__sections_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceSectionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSectionView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_workspace_sections_api_v1_workspaces__workspace_id__sections_order_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceSectionOrderPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSectionList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_workspace_section_api_v1_workspaces__workspace_id__sections__section_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                section_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_workspace_section_api_v1_workspaces__workspace_id__sections__section_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                section_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceSectionPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSectionView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_workspace_section_item_api_v1_workspaces__workspace_id__sections__section_id__items_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                section_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceSectionItemAddRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSectionItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_workspace_section_items_api_v1_workspaces__workspace_id__sections__section_id__items_order_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                section_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceSectionItemsOrderPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSectionList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_workspace_section_item_api_v1_workspaces__workspace_id__sections__section_id__items__item_ref__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                section_id: string;
+                item_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

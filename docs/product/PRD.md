@@ -14,7 +14,10 @@ LumiRSS 是一个：
 
 多账户形态：一个运营者（owner）经管理界面发出一次性限时邀请，受邀者
 自设用户名密码激活，获得数据完全独立的账号（订阅 / 阅读状态 / 资料库 /
-AI / 设置 / FreshRSS 绑定全部按账号隔离）。没有公开注册。
+AI / 设置 / FreshRSS 绑定全部按账号隔离）。公开注册是**可选能力、默认
+关闭**：升级与全新安装都保持邀请制，运营者经注册策略管理 API 显式
+开启后才开放自助注册（注册只创建 member，见
+[ADR 0006](../decisions/0006-public-registration.md)）。
 
 当前阶段以 RSS 为核心：
 
@@ -47,7 +50,7 @@ AI / 设置 / FreshRSS 绑定全部按账号隔离）。没有公开注册。
 
 ### 2.2 当前不面向
 
-- 多租户 SaaS 与公开注册；
+- 多租户 SaaS（公开注册为可选开关、默认关闭，且不提供租户隔离保证）；
 - 社交内容平台；
 - 公共推荐社区；
 - 企业协作知识库；
@@ -118,10 +121,12 @@ LumiRSS 的核心价值不是重新发明 RSS 抓取器，而是把成熟后端�
 
 明确未实现：web clipping **浏览器扩展**、Obsidian **写回**（vault 只读
 投影已实现）、MCP surface、PWA Push / 后台同步（app-shell 离线缓存已
-实现）、公开注册 / 多租户——见 §10。Phase 2 域（剪藏/快照、API 来源、
+实现）、多租户形态——见 §10。Phase 2 域（剪藏/快照、API 来源、
 邮件桥、Obsidian 投影、统一搜索、来源注册表、Agent 工作台、RAG）均已
 交付；邀请制多账户（含管理界面与 FreshRSS 账号池）已交付，操作见
-[../how-to/invite-members.md](../how-to/invite-members.md)。
+[../how-to/invite-members.md](../how-to/invite-members.md)；可选公开
+注册（默认关闭，admin 经注册策略 API 显式开启）已交付，见
+[ADR 0006](../decisions/0006-public-registration.md)。
 
 ---
 
@@ -324,7 +329,8 @@ LICENSE），以便合规适配 AGPL 参考代码；来源映射与声明文件�
 ## 10. 当前明确不做（Deferred）
 
 - web clipping 浏览器扩展、Obsidian 写回、MCP surface；
-- 公开注册、OAuth、多租户 / 多租户隔离保证（邀请制小规模多账户已实现）；
+- OAuth、多租户 / 多租户隔离保证（邀请制小规模多账户与可选公开注册
+  ——默认关闭——已实现；开启后的公网暴露面由运营者自行评估）；
 - Folo 社交、推荐、公开 Profile、奖励经济；
 - 原生 iOS / Android；
 - 外部向量数据库服务、多模型自动路由；

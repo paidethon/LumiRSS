@@ -226,9 +226,21 @@ class AccountsStore:
         return user
 
     async def active_user_ids(self) -> list[str]:
-        """All active user ids (background loops iterate these)."""
+        """All active user ids (background loops iterate these).
+
+        N193: members with the admin-set ``background_paused`` flag are
+        excluded here — every ``for_each_active_user`` loop (search sync,
+        digest schedulers, IMAP poll, RAG incremental) skips their heavy
+        work at the source, while login/reading stay unaffected. A member
+        without a user_quotas row counts as not paused (LEFT JOIN +
+        COALESCE)."""
         await self._db.migrate()
-        rows = await self._db.fetch_all("SELECT id FROM users WHERE status = 'active' ORDER BY created_at ASC")
+        rows = await self._db.fetch_all(
+            "SELECT u.id FROM users u"
+            " LEFT JOIN user_quotas q ON q.user_id = u.id"
+            " WHERE u.status = 'active' AND COALESCE(q.background_paused, 0) = 0"
+            " ORDER BY u.created_at ASC"
+        )
         return [str(r["id"]) for r in rows]
 
     async def count_active_admins(self) -> int:
@@ -545,6 +557,46 @@ class AccountsStore:
         rows = await self._db.fetch_all("SELECT state, COUNT(*) AS n FROM freshrss_pool GROUP BY state")
         counts = {str(r["state"]): int(r["n"]) for r in rows}
         return {"ready": counts.get("ready", 0), "held": counts.get("held", 0), "assigned": counts.get("assigned", 0)}
+
+    async def capacity(self) -> dict[str, object]:
+        """N192 邀请容量仪表 — 全部来自真实行聚合（与 pool_status 同一
+        过期预约惰性清扫先行）。invites.held = 仍持有池名额的邀请
+        （used/revoked 的历史 held_pool_account 不算）；invites.pending =
+        未使用、未撤销且未过期。users 按整账户状态计数。lowCapacity 是
+        唯一服务端定义：ready+held < pending（可交付名额追不上待激活
+        邀请）——前端只转述，不再自创口径。"""
+        await self._db.migrate()
+        pool = await self.pool_status()
+        now = _now()
+        invite_row = await self._db.fetch_one(
+            "SELECT"
+            " COALESCE(SUM(CASE WHEN i.used_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > ? THEN 1 ELSE 0 END), 0) AS pending,"
+            " COALESCE(SUM(CASE WHEN i.held_pool_account IS NOT NULL AND i.used_at IS NULL AND i.revoked_at IS NULL THEN 1 ELSE 0 END), 0) AS held"
+            " FROM invites i",
+            (now,),
+        )
+        user_row = await self._db.fetch_one(
+            "SELECT"
+            " COALESCE(SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END), 0) AS active,"
+            " COALESCE(SUM(CASE WHEN status = 'paused' THEN 1 ELSE 0 END), 0) AS paused"
+            " FROM users",
+            (),
+        )
+        invites = {
+            "pending": int(invite_row["pending"]) if invite_row else 0,
+            "held": int(invite_row["held"]) if invite_row else 0,
+        }
+        users = {
+            "active": int(user_row["active"]) if user_row else 0,
+            "paused": int(user_row["paused"]) if user_row else 0,
+        }
+        deliverable = int(pool.get("ready", 0)) + int(pool.get("held", 0))
+        return {
+            "pool": pool,
+            "invites": invites,
+            "users": users,
+            "lowCapacity": deliverable < invites["pending"],
+        }
 
     # ---- audit (O172) -------------------------------------------------------
 

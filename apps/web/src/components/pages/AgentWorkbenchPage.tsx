@@ -19,7 +19,8 @@
  * - 无 assistant-ui 之类的库：全部普通组件 + Lumi primitives。 */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, Bot, Plus, Trash2 } from 'lucide-react'
+import { useMutation } from '@tanstack/react-query'
+import { AlertCircle, Bot, FileText, Plus, Trash2 } from 'lucide-react'
 import {
   useAgentApprovalMutation,
   useAgentMessages,
@@ -30,17 +31,23 @@ import {
   useResolveRefs,
   useSendAgentMessageMutation,
 } from '../../api/queries'
-import type { AgentApprovalContent, AgentMessage } from '../../api/client'
+import { ragAsk, type AgentApprovalContent, type AgentMessage } from '../../api/client'
 import { openResolvedItem } from '../../lib/open-item'
 import {
+  ApprovalEditSection,
   ApprovalPreviewSection,
   BranchBadge,
   BranchButton,
+  PauseResumeControls,
+  RecipePanel,
   ThreadExportButton,
+  ThreadRetryButton,
   ThreadSearchBox,
   ThreadSettingsButton,
+  ToolTimelineRow,
 } from '../AgentW5'
 import { Button } from '../ui/Button'
+import { Dialog } from '../ui/Dialog'
 import { EmptyState } from '../ui/EmptyState'
 import { IconButton } from '../ui/IconButton'
 import { Skeleton } from '../ui/Skeleton'
@@ -158,13 +165,135 @@ function CitationList({ refs }: { refs: string[] }) {
   )
 }
 
+/** N154 证据强弱 chip（引用文本 vs 主张重叠的服务端分级；绝不用
+ * 「置信度」措辞——分级是可核验的重叠事实，不是概率）。 */
+export function EvidenceStrengthChip({ strength }: { strength: string | null | undefined }) {
+  if (strength !== 'direct' && strength !== 'partial' && strength !== 'none') {
+    return null
+  }
+  const label = strength === 'direct' ? '直接支持' : strength === 'partial' ? '部分支持' : '无直接支持'
+  return (
+    <span
+      data-evidence-strength={strength}
+      title="依据回答内容与被引用原文的重叠分级（直接支持/部分支持/无直接支持）"
+      className={cx(
+        'mt-1 inline-flex shrink-0 items-center gap-1 rounded-[var(--lumi-radius-full)] px-2 py-0.5 text-[11px]',
+        strength === 'none'
+          ? 'bg-[var(--lumi-surface-selected)] text-[var(--lumi-danger)]'
+          : 'bg-[var(--lumi-surface-selected)] text-[var(--lumi-text-secondary)]',
+      )}
+    >
+      {label}
+    </span>
+  )
+}
+
+/** N155 摘录模式对话框：原文片段（labeled：摘录 ≠ AI 回答）。 */
+export function ExcerptDialog({
+  threadId,
+  question,
+  onClose,
+}: {
+  threadId: string
+  question: string
+  onClose: () => void
+}) {
+  const load = useMutation({
+    mutationFn: () => ragAsk({ question, threadId, mode: 'excerpt', k: 6 }),
+  })
+  useEffect(() => {
+    load.mutate()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const excerpts = load.data?.excerpts
+
+  return (
+    <Dialog open onClose={onClose} title="摘录模式" panelClassName="max-w-2xl">
+      <div className="flex flex-col gap-2" data-excerpt-dialog="">
+        <p className="rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-selected)] px-2.5 py-1.5 text-xs text-[var(--lumi-text-secondary)]">
+          以下是与问题相关的原文片段（摘录 ≠ AI 回答，未做任何总结或解读）。
+        </p>
+        {load.isPending && <p className="text-xs text-[var(--lumi-text-tertiary)]">取原文中…</p>}
+        {load.isError && (
+          <p role="alert" className="text-xs text-[var(--lumi-danger)]">
+            {load.error instanceof Error ? load.error.message : '摘录获取失败，请稍后重试。'}
+          </p>
+        )}
+        {load.data !== undefined && (excerpts ?? []).length === 0 && (
+          <p className="text-xs text-[var(--lumi-text-tertiary)]">范围内没有找到相关原文。</p>
+        )}
+        <ul className="flex max-h-80 flex-col gap-1.5 overflow-y-auto">
+          {(excerpts ?? []).map((excerpt, i) => (
+            <li
+              key={`${excerpt.ref}:${excerpt.ord}:${i}`}
+              data-excerpt-item={excerpt.ref}
+              className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-2 text-xs"
+            >
+              <p className="text-[10px] text-[var(--lumi-text-tertiary)]">
+                摘录 · {excerpt.title ?? excerpt.ref}
+              </p>
+              <p className="mt-0.5 leading-relaxed text-[var(--lumi-text-secondary)]">{excerpt.text}</p>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </Dialog>
+  )
+}
+
+/** N155 未验证回答的操作区：诚实标注 + 重试 / 摘录模式。 */
+export function UnverifiedAnswerActions({
+  threadId,
+  question,
+  onRetry,
+}: {
+  threadId: string
+  question: string
+  onRetry: (text: string) => void
+}) {
+  const [excerptOpen, setExcerptOpen] = useState(false)
+  return (
+    <div
+      data-unverified-answer=""
+      className="mt-1.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-2 text-xs"
+    >
+      <p className="flex items-start gap-1.5 text-[var(--lumi-text-secondary)]">
+        <AlertCircle aria-hidden className="mt-0.5 size-3.5 shrink-0 text-[var(--lumi-danger)]" />
+        证据不足：该回答包含文档事实主张，但没有可核验的引用。你可以换一种问法重试，
+        或直接查看相关原文摘录。
+      </p>
+      <div className="mt-1.5 flex gap-2">
+        <Button
+          size="sm"
+          variant="secondary"
+          data-action="retry"
+          onClick={() => onRetry(question)}
+        >
+          重试
+        </Button>
+        <Button size="sm" variant="ghost" data-action="excerpt" onClick={() => setExcerptOpen(true)}>
+          <FileText aria-hidden className="size-3.5" />
+          摘录模式
+        </Button>
+      </div>
+      {excerptOpen && (
+        <ExcerptDialog threadId={threadId} question={question} onClose={() => setExcerptOpen(false)} />
+      )}
+    </div>
+  )
+}
+
 /** 单条消息：按 role 分派渲染。 */
 function MessageRow({
   message,
+  lastUserText,
   onBranched,
+  onRetry,
 }: {
   message: AgentMessage
+  lastUserText: string
   onBranched: (newThreadId: string) => void
+  onRetry: (text: string) => void
 }) {
   if (message.role === 'user') {
     return (
@@ -178,18 +307,8 @@ function MessageRow({
   }
 
   if (message.role === 'tool') {
-    const name = typeof message.content['name'] === 'string' ? message.content['name'] : ''
-    const result = 'result' in message.content ? message.content['result'] : message.content
-    return (
-      <div className="max-w-[95%] self-start rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] px-2.5 py-1.5">
-        <p className="text-[11px] font-medium text-[var(--lumi-text-tertiary)]">
-          工具{name !== '' ? ` · ${name}` : ''}
-        </p>
-        <pre className="mt-1 overflow-x-auto font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-[var(--lumi-text-secondary)]">
-          {prettyJson(result)}
-        </pre>
-      </div>
-    )
+    // N166/N169：执行时间线行（含耗时/状态/脱敏摘要）+ 可撤销写步骤入口。
+    return <ToolTimelineRow message={message} />
   }
 
   if (message.role === 'system') {
@@ -205,12 +324,23 @@ function MessageRow({
   }
 
   // assistant：纯文本（含 处理失败 / AI 未配置 的诚实失败消息——原样展示）。
+  // N154/N155：证据强弱 chip + 未验证回答的重试/摘录操作区。
+  const strength = message.content['evidenceStrength']
+  const unverifiable = message.content['unverifiable'] === true
   return (
     <div className="max-w-[95%] self-start">
       <p className="text-sm leading-relaxed whitespace-pre-wrap text-[var(--lumi-text-primary)]">
         {textOf(message.content)}
       </p>
+      <EvidenceStrengthChip strength={typeof strength === 'string' ? strength : null} />
       {message.citations.length > 0 && <CitationList refs={message.citations} />}
+      {unverifiable && lastUserText !== '' && (
+        <UnverifiedAnswerActions
+          threadId={message.threadId}
+          question={lastUserText}
+          onRetry={onRetry}
+        />
+      )}
     </div>
   )
 }
@@ -255,6 +385,11 @@ function ApprovalCard({ message }: { message: AgentMessage }) {
       {pending ? (
         <div className="mt-2 flex flex-col gap-1.5">
           <ApprovalPreviewSection threadId={message.threadId} approvalId={approval.approvalId} />
+          <ApprovalEditSection
+            threadId={message.threadId}
+            approvalId={approval.approvalId}
+            args={approval.args}
+          />
           <div className="flex gap-2">
             <Button
               size="sm"
@@ -348,6 +483,8 @@ function ChatArea({
         <BranchBadge branchOf={branchOf} />
         <RagStatusChip />
         <div className="ml-auto flex shrink-0 items-center gap-1">
+          <PauseResumeControls threadId={threadId} processing={processing} />
+          <ThreadRetryButton threadId={threadId} processing={processing} />
           <ThreadSettingsButton threadId={threadId} />
           <ThreadExportButton threadId={threadId} />
         </div>
@@ -402,11 +539,26 @@ function ChatArea({
           </div>
         )}
 
-        {items.map((message) => (
-          <div key={message.id} data-seq={message.seq}>
-            <MessageRow message={message} onBranched={onBranched} />
-          </div>
-        ))}
+        {items.map((message, index) => {
+          // N155：重试 = 重新发送该回答之前最近的用户消息。
+          let lastUserText = ''
+          for (let i = index - 1; i >= 0; i -= 1) {
+            if (items[i].role === 'user') {
+              lastUserText = textOf(items[i].content)
+              break
+            }
+          }
+          return (
+            <div key={message.id} data-seq={message.seq}>
+              <MessageRow
+                message={message}
+                lastUserText={lastUserText}
+                onBranched={onBranched}
+                onRetry={(text) => send.mutate(text)}
+              />
+            </div>
+          )
+        })}
         <div ref={bottomRef} aria-hidden="true" />
         {processing && (
           <p role="status" className="self-start text-xs text-[var(--lumi-text-tertiary)]">
@@ -473,10 +625,12 @@ function ThreadList({
   activeId,
   onSelect,
   onOpenAt,
+  onRunRecipe,
 }: {
   activeId: string | null
   onSelect: (threadId: string) => void
   onOpenAt: (threadId: string, messageSeq: number) => void
+  onRunRecipe: (threadId: string) => void
 }) {
   const threads = useAgentThreads()
   const create = useCreateAgentThreadMutation()
@@ -508,6 +662,9 @@ function ThreadList({
 
       {/* F095：会话消息搜索（结果下拉 → 打开并滚动到消息）。 */}
       <ThreadSearchBox onOpen={onOpenAt} />
+
+      {/* N170：任务配方（保存 / 列表 / 运行前预览 / 运行 → 打开新会话）。 */}
+      <RecipePanel onRun={onRunRecipe} />
 
       {create.isError && (
         <p role="alert" className="px-2.5 pb-1 text-xs text-[var(--lumi-danger)]">
@@ -603,9 +760,17 @@ export default function AgentWorkbenchPage() {
     void threads.refetch()
   }
 
+  // N170：配方运行 → 打开服务端创建的新会话。
+  const handleRunRecipe = handleBranched
+
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col lg:flex-row">
-      <ThreadList activeId={activeThreadId} onSelect={setActiveThreadId} onOpenAt={handleOpenAt} />
+      <ThreadList
+        activeId={activeThreadId}
+        onSelect={setActiveThreadId}
+        onOpenAt={handleOpenAt}
+        onRunRecipe={handleRunRecipe}
+      />
       {activeThread !== null ? (
         <ChatArea
           threadId={activeThread.id}

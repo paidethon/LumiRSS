@@ -24,6 +24,7 @@ from lumirss.middleware import (
     InternalTokenMiddleware,
     RateLimitMiddleware,
     RequestCorrelationMiddleware,
+    RequestLogMiddleware,
     RequestSizeLimitMiddleware,
     SessionAuthMiddleware,
 )
@@ -62,16 +63,19 @@ from lumirss.routers import (
     operations,
     opml,
     passkeys,
+    privacy,
     qa_templates,
     quiz,
     rag,
     reading_extras,
+    reading_questions,
     reading_queue,
     relations,
     rsshub,
     search,
     settings,
     snapshots,
+    source_lifecycle,
     sources,
     storage,
     subscriptions,
@@ -79,6 +83,7 @@ from lumirss.routers import (
     task_records,
     totp,
     view_feed,
+    whats_new,
     workspace_w5,
     workspaces,
 )
@@ -182,6 +187,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.api_source_store = None
     app.state.mail_bridge_store = None
     app.state.inbox_store = None
+    # N011/N016/N017: source lifecycle tools (staging pool + bundle).
+    app.state.staged_source_store = None
+    app.state.source_bundle_service = None
     app.state.favorites_service = None
     app.state.library_search_writer = None
     app.state.rag_service = None
@@ -189,6 +197,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.agent_loop = None
     app.state.agent_tasks = set()
     app.state.agent_dry_run = None  # F097 写操作预演执行器（惰性构建）。
+    app.state.agent_undo = None  # N169 写工具差异撤销执行器（惰性构建）。
     app.state.tag_store = None
     app.state.saved_search_store = None
     # W2（F021–F040）新增服务槽位：与上方同一惰性构建约定。
@@ -350,6 +359,10 @@ app.add_middleware(RequestSizeLimitMiddleware)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(InternalTokenMiddleware)
 app.add_middleware(SessionAuthMiddleware)
+# E01 structured access log — registered before the correlation layer,
+# so it runs INSIDE it and the request-id contextvar is readable when
+# the record is emitted.
+app.add_middleware(RequestLogMiddleware)
 # pool #47: correlation IDs — outermost of all, so every response
 # (including 401/413 envelopes) carries X-Request-ID.
 app.add_middleware(RequestCorrelationMiddleware)
@@ -366,6 +379,7 @@ app.include_router(entries.router)
 app.include_router(feed_filters.router)
 app.include_router(annotations.router)
 app.include_router(reading_extras.router)
+app.include_router(reading_questions.router)
 app.include_router(reading_queue.router)
 app.include_router(import_batches.router)
 app.include_router(subscriptions.router)
@@ -379,6 +393,7 @@ app.include_router(entry_ai.router)
 app.include_router(settings.router)
 app.include_router(operations.router)
 app.include_router(backup.router)
+app.include_router(privacy.router)
 app.include_router(search.router)
 app.include_router(search_synonyms.router)
 app.include_router(view_feed.router)
@@ -392,6 +407,8 @@ app.include_router(mail.router)
 app.include_router(obsidian.router)
 app.include_router(inbox.router)
 app.include_router(sources.router)
+# N011/N016/N017: bundle / staging pool / cleanup suggestions
+app.include_router(source_lifecycle.router)
 app.include_router(rag.router)
 app.include_router(agent.router)
 app.include_router(tags.router)
@@ -410,5 +427,7 @@ app.include_router(task_records.router)
 # W5 (F081–F100)
 app.include_router(library_w5.router)
 app.include_router(workspace_w5.router)
+# N198 版本功能导览（成员可读；adminOnly 条目服务端角色过滤）
+app.include_router(whats_new.router)
 
 register_error_handlers(app)

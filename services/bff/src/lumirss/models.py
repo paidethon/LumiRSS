@@ -398,6 +398,14 @@ class EncodingInspection(BaseModel):
     bodyBytes: int = 0
 
 
+class RedirectHop(BaseModel):
+    """N035 重定向链的一跳（url 的 query 凭据值已由服务端掩码）。"""
+
+    url: str
+    status: int | None = None
+    final: bool = False
+
+
 class FeedPreviewResult(BaseModel):
     """POST /api/v1/feed-preview and POST /api/v1/rsshub/preview.
 
@@ -412,6 +420,9 @@ class FeedPreviewResult(BaseModel):
     alreadySubscribed: bool
     # N033：编码检查（直连预览路径附带；rsshub/preview 无抓取 → None）。
     encodingInspection: EncodingInspection | None = None
+    # N035：真实重定向链（F044 迁移向导展示「重定向链 + 最终域名」；
+    # rsshub/preview 不经用户 URL 抓取 → None）。
+    redirectChain: list[RedirectHop] | None = None
 
 
 class FeedPreviewReparseRequest(BaseModel):
@@ -470,6 +481,19 @@ class RssHubParameter(BaseModel):
     help: str
 
 
+class RssHubRequires(BaseModel):
+    """N023：路由依赖元数据（curated 静态数据；null = 未知，诚实呈现）。
+
+    ``login`` 需要登录账号 / ``cookies`` 需要 Cookie / ``render`` 需要
+    浏览器渲染（puppeteer）/ ``extraService`` 需要额外服务（如 API key
+    配置）。三态：true（需要）/ false（不需要）/ None（未知）。"""
+
+    login: bool | None = None
+    cookies: bool | None = None
+    render: bool | None = None
+    extraService: bool | None = None
+
+
 class RssHubRoute(BaseModel):
     """One Lumi-owned RSSHub route descriptor (path built server-side)."""
 
@@ -478,6 +502,8 @@ class RssHubRoute(BaseModel):
     description: str
     pathTemplate: str
     parameters: list[RssHubParameter]
+    # N023：依赖元数据（null = 该路由未标注，UI 显示「未知」chips）。
+    requires: RssHubRequires | None = None
 
 
 class RssHubCatalog(BaseModel):
@@ -519,10 +545,15 @@ class RssHubPreviewResult(FeedPreviewResult):
 
     N021/N025: the key (template id + masked params signature) is built
     server-side; clients use it for favorites/recents/history/refresh
-    and never assemble it themselves. N027 adds cache freshness."""
+    and never assemble it themselves. N027 adds cache freshness. N023
+    adds dependency metadata + the zero-entry honest hint."""
 
     routeKey: str
     cache: RssHubCacheInfo
+    # N023：路由依赖 chips（未知路由 / 未标注 → null，UI 显示「未知」）。
+    requires: RssHubRequires | None = None
+    # N023：0 条目结果上的诚实提示（依赖可能未满足；非健康状态）。
+    zeroEntryHint: str | None = None
 
 
 class RssHubRefreshResult(BaseModel):
@@ -534,6 +565,37 @@ class RssHubRefreshResult(BaseModel):
     ranAt: str
     durationMs: int
     cache: RssHubCacheInfo
+
+
+class RssHubParamsDiffRequest(BaseModel):
+    """POST /api/v1/rsshub/params-diff body（N024：变更前对照，只读）。"""
+
+    oldFeedUrl: str = Field(min_length=1, max_length=2048)
+    """现有订阅的 RSSHub feed 地址（路径用于取旧参数与旧 feed 内容）。"""
+    routeId: str = Field(min_length=1)
+    """新参数所属的目录路由 id（必须是 Lumi catalog 已知路由）。"""
+    newParams: dict[str, str] = Field(default_factory=dict)
+
+
+class RssHubParamsDiffSide(BaseModel):
+    """对照的一侧（old/new；抓取失败 → error 如实说明，titles 为 null）。"""
+
+    url: str
+    entryCount: int | None = None
+    titles: list[str] | None = None
+    error: str | None = None
+
+
+class RssHubParamsDiffResult(BaseModel):
+    """N024：新旧参数 feed 的标题级差异（bounded；cancelled 前零写入）。"""
+
+    old: RssHubParamsDiffSide
+    new: RssHubParamsDiffSide
+    added: list[str] = []
+    removed: list[str] = []
+    duplicates: list[str] = []
+    newUrl: str
+    note: str
 
 
 class RssHubRouteRun(BaseModel):
@@ -553,6 +615,119 @@ class RssHubRouteRuns(BaseModel):
     """GET /api/v1/rsshub/routes/history — bounded run list, newest first."""
 
     items: list[RssHubRouteRun]
+
+
+# ---- N029 路由与来源关系图 --------------------------------------------------
+
+
+class RssHubRouteSourceEntry(BaseModel):
+    """该路由下某来源的最近条目（派生投影；≤5 条，只读）。"""
+
+    ref: str
+    title: str
+    published: str
+
+
+class RssHubRouteSourceItem(BaseModel):
+    """N029 我的来源：由该路由模板 + 参数生成的本账户订阅。"""
+
+    feedUrl: str
+    title: str
+    # unreadCount / recentEntries 来自 search_entries 派生投影（可重建）；
+    # 投影为空时 unreadCount=0、recentEntries=[]（诚实口径，不区分「没
+    # 有未读」与「投影未覆盖」——投影落后 ≠ 没有新内容）。
+    unreadCount: int
+    recentEntries: list[RssHubRouteSourceEntry] = []
+
+
+class RssHubRouteMySources(BaseModel):
+    """GET /api/v1/rsshub/routes/{routeKey}/my-sources — 仅本人作用域。"""
+
+    routeKey: str
+    templateId: str
+    items: list[RssHubRouteSourceItem] = []
+
+
+class RssHubRouteUsage(BaseModel):
+    """GET /api/v1/admin/rsshub/routes/{routeKey}/usage — 跨用户聚合，
+    只有计数：绝不返回其他用户的标题 / 名称 / URL。"""
+
+    routeKey: str
+    templateId: str
+    userCount: int
+    sourceCount: int
+    totalEntries: int
+    basis: str
+
+
+# ---- N030 路由可复用参数方案 -------------------------------------------------
+
+
+class RssHubParamPresetItem(BaseModel):
+    """一个参数方案（params 里的敏感值在服务端已替换为 '***' 哨兵）。"""
+
+    id: str
+    routeKey: str
+    templateId: str
+    name: str
+    params: dict[str, str]
+    hasSensitive: bool
+    createdAt: str
+
+
+class RssHubParamPresetApply(BaseModel):
+    """POST .../param-presets/{id}/apply — 回填数据（不抓取、不订阅）。
+
+    requiresRebind=True 时 sensitiveKeys 里的参数必须重新输入后才能
+    预览（服务端从不存储敏感值，哨兵回填会被 pattern 校验拒绝）。"""
+
+    id: str
+    routeKey: str
+    templateId: str
+    params: dict[str, str]
+    hasSensitive: bool
+    requiresRebind: bool
+    sensitiveKeys: list[str] = []
+
+
+# ---- N028 路由升级兼容检查 ---------------------------------------------------
+
+
+class RssHubUpgradeCheckRoute(BaseModel):
+    """单路由探测结果（params 已脱敏；routeKey 即存储键）。"""
+
+    routeKey: str
+    status: Literal["ok", "failed", "skipped"]
+    entryCount: int | None = None
+    failureClass: str | None = None
+    origin: str
+
+
+class RssHubUpgradeCheckReport(BaseModel):
+    """一次升级兼容检查报告（keep-last-3）。
+
+    checkedImage = 目录快照（rsshub_routes.generated.json）生成时所在
+    的固定镜像——逐路由状态锚定到这个已知的镜像证据；targetImage 是
+    运营者声明的目标镜像，targetStatus 恒为 'pending'：检查只对当前
+    运行实例探测，新镜像生效与否由运维侧确认（Lumi 无 Docker 视角，
+    绝不臆造「已生效」）。"""
+
+    id: int
+    ranAt: str
+    targetImage: str | None = None
+    targetStatus: str | None = None
+    checkedImage: str | None = None
+    routeCount: int
+    okCount: int
+    failedCount: int
+    skippedCount: int
+    routes: list[RssHubUpgradeCheckRoute] = []
+
+
+class RssHubUpgradeChecks(BaseModel):
+    """GET /api/v1/admin/rsshub/upgrade-check — 最近报告（新→旧，≤3）。"""
+
+    items: list[RssHubUpgradeCheckReport] = []
 
 
 # ---------------------------------------------------------------------------
@@ -629,6 +804,106 @@ class OpmlImportResult(BaseModel):
     failed: list[OpmlImportFailed]
     skipped: list[OpmlImportSkipped] = []
     categoriesCreated: list[str]
+
+
+# ---------------------------------------------------------------------------
+# N018 OPML 树对照导入（plan → apply → undo）
+# ---------------------------------------------------------------------------
+
+
+class OpmlTreeNewFeed(BaseModel):
+    """树对照计划中「将新订阅」的 feed（分类为有效 label 或 null）。"""
+
+    feedUrl: str
+    title: str
+    categoryLabel: str | None = None
+
+
+class OpmlTreeMoveFeed(BaseModel):
+    """树对照计划中「将移动分类」的已订阅 feed（from 为 null = 当前未分组）。"""
+
+    feed: str
+    from_: str | None = Field(default=None, alias="from")
+    to: str
+    toCategoryId: str
+    subscriptionRef: str
+
+    model_config = {"populate_by_name": True}
+
+
+class OpmlTreeDuplicateFeed(BaseModel):
+    """树对照计划中的已订阅 feed（action: skip = 不动 | update = 随分类移动）。"""
+
+    feed: str
+    title: str
+    action: Literal["skip", "update"]
+
+
+class OpmlTreePlan(BaseModel):
+    """POST /api/v1/opml/import/tree-preview（严格只读的对照计划）。"""
+
+    totalFeeds: int
+    newFeeds: list[OpmlTreeNewFeed] = []
+    invalidEntries: int = 0
+    createCategories: list[str] = []
+    reuseCategories: list[str] = []
+    moveFeeds: list[OpmlTreeMoveFeed] = []
+    duplicateFeeds: list[OpmlTreeDuplicateFeed] = []
+    notes: list[str] = []
+
+
+class OpmlTreeApplyAdded(BaseModel):
+    """树对照 apply 中新订阅的 feed。"""
+
+    feedUrl: str
+    title: str
+    categoryLabel: str | None = None
+    categoryApplied: bool
+
+
+class OpmlTreeApplyFailed(BaseModel):
+    """树对照 apply 中失败的一步（kind: subscribe | category）。"""
+
+    feedUrl: str
+    kind: str
+    error: str
+
+
+class OpmlTreeApplyResult(BaseModel):
+    """POST /api/v1/opml/import/tree-apply（logId 供 undo）。"""
+
+    logId: int
+    added: list[OpmlTreeApplyAdded] = []
+    moved: list[dict[str, object]] = []
+    skipped: list[dict[str, object]] = []
+    failed: list[OpmlTreeApplyFailed] = []
+    categoriesCreated: list[str] = []
+
+
+class OpmlImportLogEntry(BaseModel):
+    """一条 N018 撤销台账（cap 5；undoneAt 非 null = 已撤销过）。"""
+
+    id: int
+    importedAt: str
+    createdCategoryLabels: list[str] = []
+    movedFeeds: list[dict[str, object]] = []
+    undoneAt: str | None = None
+
+
+class OpmlImportLogList(BaseModel):
+    items: list[OpmlImportLogEntry] = []
+
+
+class OpmlUndoResult(BaseModel):
+    """POST /api/v1/opml/import/{id}/undo（逐项如实汇报；建类不删——
+    greader API 无分类删除端点，诚实边界）。"""
+
+    logId: int
+    movedBack: list[dict[str, object]] = []
+    notRestored: list[dict[str, object]] = []
+    categoriesDeleted: list[str] = []
+    categoriesNotDeleted: list[dict[str, object]] = []
+    note: str
 
 
 # ---------------------------------------------------------------------------
@@ -1097,6 +1372,108 @@ class RestoreResult(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# N181 逐来源数据外发清单 / N185 备份范围 / N186 独立自检 / N188 到期提醒
+# ---------------------------------------------------------------------------
+
+
+class DataFlowItem(BaseModel):
+    """一个能力的数据外发实况（N181，来自当前真实配置）。
+
+    configured=true 时给出 providerHost（仅主机名，绝不含路径/密钥/
+    用户名）与数据类别；configured=false 时其余字段缺省——UI 显示
+    「不发送」。local=true 表示数据不离开本机（如浏览器 TTS）。"""
+
+    capability: str
+    configured: bool = False
+    providerHost: str | None = None
+    dataCategories: list[str] = []
+    local: bool = False
+
+
+class DataFlowsResponse(BaseModel):
+    flows: list[DataFlowItem] = []
+
+
+class BackupScopeInclude(BaseModel):
+    """N185：备份用户数据范围（缺省全 True = 与历史默认一致）。"""
+
+    workspaces: bool = True
+    notes: bool = True
+    annotations: bool = True
+    sourceConfig: bool = True
+
+
+class BackupScopeComponent(BaseModel):
+    component: str
+    included: bool
+    count: int
+
+
+class BackupScopePreview(BaseModel):
+    """POST /api/v1/backups/preview-scope — 范围选择预览（只读）。
+
+    per-component 计数 + always-excluded 清单（凭据 / FreshRSS 内容）。"""
+
+    scope: BackupScopeInclude
+    components: list[BackupScopeComponent] = []
+    alwaysExcluded: list[str] = []
+
+
+class BackupVerifyFindings(BaseModel):
+    """N186：独立完整性自检四项发现（全部为真才算健康）。"""
+
+    checksumOk: bool
+    manifestCountsMatch: bool
+    readable: bool
+    versionCompatible: bool
+
+
+class BackupVerifyIssues(BaseModel):
+    """具体问题：损坏成员 / 缺失附件 / 版本不兼容（健康时全空/None）。"""
+
+    corruptFile: list[str] = []
+    missingAttachment: list[str] = []
+    versionIncompatible: dict[str, object] | None = None
+
+
+class BackupVerifyManifest(BaseModel):
+    createdAt: str | None = None
+    lumiVersion: str | None = None
+    lumiDbSchemaVersion: int | None = None
+    currentDbSchemaVersion: int | None = None
+    components: list[str] = []
+
+
+class BackupVerifyReport(BaseModel):
+    """GET/POST /api/v1/backups/verify — 独立自检报告（不建恢复会话）。"""
+
+    ok: bool
+    findings: BackupVerifyFindings
+    issues: BackupVerifyIssues
+    manifest: BackupVerifyManifest | None = None
+
+
+class RetentionNotice(BaseModel):
+    """N188：数据保留到期提醒（只读；推迟生效期内 dueSoon=false）。"""
+
+    enabled: bool
+    dueSoon: bool
+    dueAt: str | None = None
+    noticeWindowDays: int
+    postponedUntil: str | None = None
+    affectedCounts: dict[str, object] = {}
+    protected: list[str] = []
+    quizNote: str = ""
+
+
+class RetentionPostponeResult(BaseModel):
+    """N188：POST /storage/retention/postpone 的返回（实际生效的推迟）。"""
+
+    postponedUntil: str | None = None
+    days: int
+
+
+# ---------------------------------------------------------------------------
 # Operations status (0018)
 # ---------------------------------------------------------------------------
 
@@ -1307,6 +1684,12 @@ class SavedSearchView(BaseModel):
     filters: dict[str, str | bool | None] | None = None
     # F061：私有 Atom 订阅是否已启用（布尔；token 本身绝不返回）。
     hasFeedToken: bool = False
+    # N144：按检索范围收藏（工作区 + 内容类型；可选）。
+    # scopeBroken：workspaceId 指向的工作区已被删除 —— 诚实标注，
+    # 绝不静默失联；前端给出「已失效」横幅 + 解除关联动作。
+    workspaceId: str | None = None
+    contentTypes: list[str] | None = None
+    scopeBroken: bool = False
 
 
 class SavedSearchList(BaseModel):
@@ -1336,6 +1719,16 @@ class SavedSearchCreate(BaseModel):
     categoryKey: str = ""
     # F035：构建器完整意图（可选；None = 只存 q 解析路径）。
     filters: dict[str, str | bool | None] | None = None
+    # N144：检索范围（可选；工作区必须真实存在，否则 400）。
+    workspaceId: str | None = None
+    contentTypes: list[str] | None = None
+
+
+class SavedSearchScopeUnlinkResult(BaseModel):
+    """POST …/views/{id}/scope/unlink（N144）——解除已失效的工作区关联
+    （内容类型范围保留）；返回更新后的视图。"""
+
+    view: SavedSearchView
 
 
 class SavedSearchRename(BaseModel):
@@ -1706,6 +2099,45 @@ class ClipListResponse(BaseModel):
     nextCursor: str | None
 
 
+class ClipLockRequest(BaseModel):
+    """PUT /api/v1/library/clips/{uuid}/lock — N122 显式锁定/解锁。"""
+
+    model_config = {"extra": "forbid"}
+
+    locked: bool
+
+
+# -- N121 粘贴多链接收件箱 ----------------------------------------------------
+
+
+class BulkLinksRequest(BaseModel):
+    """POST /api/v1/library/bulk-links — 批量粘贴（≤50 条，一条失败不回滚）。"""
+
+    model_config = {"extra": "forbid"}
+
+    urls: list[str] = Field(min_length=1, max_length=50)
+    target: Literal["bookmark", "clip"]
+
+
+class BulkLinkResultItem(BaseModel):
+    """逐条结果：created | duplicate | failed（failed 必带 reason）。"""
+
+    url: str
+    status: Literal["created", "duplicate", "failed"]
+    ref: str | None = None
+    reason: str | None = None
+
+
+class BulkLinksResponse(BaseModel):
+    """Envelope for POST /api/v1/library/bulk-links。"""
+
+    target: Literal["bookmark", "clip"]
+    created: int
+    duplicate: int
+    failed: int
+    items: list[BulkLinkResultItem]
+
+
 class SnapshotCreate(BaseModel):
     """POST /api/v1/library/snapshots."""
 
@@ -1750,6 +2182,7 @@ class ApiSourceCreate(BaseModel):
     fieldMap: dict[str, str]
     pagination: dict[str, object] | None = None
     subscribe: bool = True
+    maxRunsPerHour: int = 4
 
 
 class ApiSourceUpdate(BaseModel):
@@ -1763,6 +2196,7 @@ class ApiSourceUpdate(BaseModel):
     fieldMap: dict[str, str] | None = None
     pagination: dict[str, object] | None = None
     enabled: bool | None = None
+    maxRunsPerHour: int | None = None
 
 
 class ApiSource(BaseModel):
@@ -1785,6 +2219,10 @@ class ApiSource(BaseModel):
     pagination: dict[str, object] | None = None
     confirmedSchema: bool = False
     schemaDrift: dict[str, list[str]] | None = None
+    # N129: per-source fetch budget. respectRetryAfter is FIXED true.
+    maxRunsPerHour: int = 4
+    respectRetryAfter: bool = True
+    nextAllowedRun: str | None = None
 
 
 class ApiSourceListResponse(BaseModel):
@@ -1819,6 +2257,44 @@ class ApiSourcePreviewResult(BaseModel):
     totalAvailable: int
     atomPreview: list[dict[str, object]] = []
     paginationDryRun: ApiSourcePaginationDryRun | None = None
+    # N128: honest marker — true only for the offline pasted-sample path.
+    sampleMode: bool = False
+
+
+class ApiSourceSamplePreviewRequest(BaseModel):
+    """POST /api/v1/api-sources/preview-sample (N128).
+
+    Runs the EXACT same mapping + Atom-preview pipeline on a PASTED
+    sample payload: no network, no fetch, no headers — nothing about the
+    request is stored. ``samplePayload`` is the raw JSON document the
+    upstream would return (object or array of objects)."""
+
+    model_config = {"extra": "forbid"}
+
+    samplePayload: object
+    itemsExpr: str
+    fieldMap: dict[str, str]
+
+
+class ApiSourceCredentialResult(BaseModel):
+    """N130 masked credential probe / rotation result.
+
+    Deliberately minimal: no credential material, no request or response
+    header echo — only the honest verdict, a coarse status class and the
+    probe latency."""
+
+    ok: bool
+    statusClass: str
+    latencyMs: int
+    note: str | None = None
+
+
+class ApiSourceCredentialTestRequest(BaseModel):
+    """Body for .../credentials/test and .../credentials/rotate (N130)."""
+
+    model_config = {"extra": "forbid"}
+
+    newCredential: str
 
 
 class ApiSourceConfirmSchemaResult(BaseModel):
@@ -1826,6 +2302,155 @@ class ApiSourceConfirmSchemaResult(BaseModel):
 
     confirmed: bool
     sampledItems: int
+
+
+# ---------------------------------------------------------------------------
+# N011 来源组合包 / N016 暂存待评估 / N017 来源清理建议
+# ---------------------------------------------------------------------------
+
+_BUNDLE_TYPES = ("rss", "api", "mail", "inbox")
+
+
+class BundleExportRequest(BaseModel):
+    """POST /api/v1/sources/bundle/export."""
+
+    model_config = {"extra": "forbid"}
+
+    feedUrls: list[str]
+
+
+class BundleSourceEntry(BaseModel):
+    """One credential-free bundle row AS WRITTEN IN THE PORTABLE FILE
+    (snake_case per the bundle format: {feed_url, title, category, type,
+    notes?}). Deliberately NOT the camelCase API DTO style — this model
+    describes the on-disk document."""
+
+    feed_url: str
+    title: str = ""
+    category: str | None = None
+    type: str = "rss"
+    notes: str | None = None
+
+
+class BundleDocument(BaseModel):
+    """The portable bundle document itself."""
+
+    version: int = 1
+    generatedAt: str | None = None
+    sources: list[BundleSourceEntry] = []
+    missing: list[str] = []
+
+
+class BundleImportItem(BaseModel):
+    """Per-item import/preview verdict."""
+
+    feedUrl: str
+    title: str = ""
+    status: str  # new | exists | needs_credentials | invalid
+    type: str = "rss"
+    categoryAction: str = "none"  # none | reuse | create
+    note: str | None = None
+
+
+class BundleImportResult(BaseModel):
+    """Preview (apply=false) and committed import (apply=true) share it."""
+
+    items: list[BundleImportItem] = []
+    counts: dict[str, int] = {}
+    applied: bool = False
+    imported: BundleDocument | None = None
+
+
+class BundleImportRequest(BaseModel):
+    """POST /api/v1/sources/bundle/import body (the bundle document)."""
+
+    model_config = {"extra": "forbid"}
+
+    version: int = 1
+    sources: list[BundleSourceEntry]
+
+
+class StagedSourceSampleEntry(BaseModel):
+    """One bounded preview snapshot entry (N016; metadata only)."""
+
+    title: str
+    link: str | None = None
+    published: str | None = None
+    summary: str | None = None
+
+
+class StagedSource(BaseModel):
+    """One staging-pool row (never a subscription, never counts unread)."""
+
+    id: str
+    url: str
+    title: str
+    addedAt: str
+    note: str | None = None
+    sourceType: str = "rss"
+    origin: str = "staging"
+    enabled: bool = True
+    subscribed: bool = False
+    sample: list[StagedSourceSampleEntry] = []
+
+
+class StagedSourceListResponse(BaseModel):
+    items: list[StagedSource] = []
+
+
+class StagedSourceCreateRequest(BaseModel):
+    """POST /api/v1/sources/staging."""
+
+    model_config = {"extra": "forbid"}
+
+    url: str
+    note: str | None = None
+
+
+class StagedSourceSubscribeResult(BaseModel):
+    """Idempotent subscribe outcome (existing sub → status=exists)."""
+
+    status: str  # subscribed | exists
+    feedUrl: str
+
+
+class CleanupSuggestion(BaseModel):
+    """N017: one long-unopened, still-yielding source."""
+
+    feedUrl: str
+    title: str
+    lastReadAt: str | None = None
+    weeklyYield: float
+    suggestion: str  # demote | mute
+    basis: str | None = None
+
+
+class CleanupSuggestionsResponse(BaseModel):
+    items: list[CleanupSuggestion] = []
+    generatedAt: str
+    basis: str
+
+
+class CleanupApplyRequest(BaseModel):
+    """POST /api/v1/sources/cleanup-suggestions/apply — ONLY the
+    explicitly selected feeds are touched; nothing auto-runs."""
+
+    model_config = {"extra": "forbid"}
+
+    feedUrls: list[str]
+    action: str  # mute | demote_category
+    targetCategoryLabel: str | None = None
+
+
+class CleanupApplyItem(BaseModel):
+    feedUrl: str
+    ok: bool
+    error: str | None = None
+
+
+class CleanupApplyResult(BaseModel):
+    items: list[CleanupApplyItem] = []
+    applied: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -1965,8 +2590,48 @@ class GptDigestRef(BaseModel):
     publishedAt: str = ""
 
 
+class GptDigestColumn(BaseModel):
+    """N174：一个固定栏目（名称精确参与校验；count=条目上限）。"""
+
+    name: str
+    count: int = Field(default=5, ge=1, le=20)
+    emptyPolicy: Literal["hide", "placeholder"] = "hide"
+
+
+class GptDigestLeftoverItem(BaseModel):
+    """N175：素材篮条目——被裁剪的完整条目（绝不静默删除）。"""
+
+    sectionHeading: str = ""
+    summary: str
+    sourceIds: list[str] = []
+    refs: list[GptDigestRef] = []
+
+
+class GptDigestTrimPreview(BaseModel):
+    """GET …/trim-preview — N175 裁剪预览（零写入、零模型调用）。"""
+
+    targetReadingMinutes: int
+    beforeMinutes: float
+    afterMinutes: float
+    moved: list[GptDigestLeftoverItem] = []
+    note: str | None = None
+
+
+class GptDigestSentence(BaseModel):
+    """N173：事实检查视图里的一句总结 + 其来源引用。"""
+
+    sentence: str
+    refs: list[str] = []
+    verified: bool = True
+
+
 class GptDigestIssue(BaseModel):
-    """一期日报；列表与详情共用（列表 limit 小、正文不重）。"""
+    """一期日报；列表与详情共用（列表 limit 小、正文不重）。
+
+    N172：``meta`` 携带运行元数据（分阶段模型标签 / polishFailed /
+    N174 栏目注释 / N175 素材篮与时长 / N176 聚合信息）。
+    N173：``sentenceMap`` 为逐句事实检查映射（人工改写未匹配到的句子
+    verified=False → UI 标注「待核实」）。"""
 
     issueKey: str
     status: str
@@ -1974,6 +2639,8 @@ class GptDigestIssue(BaseModel):
     sections: list[GptDigestSection] = []
     refs: dict[str, GptDigestRef] = {}
     model: str = ""
+    meta: dict[str, object] = {}
+    sentenceMap: list[GptDigestSentence] = []
     createdAt: str = ""
     publishedAt: str = ""
     updatedAt: str = ""
@@ -1983,13 +2650,30 @@ class GptDigestIssueList(BaseModel):
     items: list[GptDigestIssue] = []
 
 
+class GptDigestSentenceOp(BaseModel):
+    """N173：逐句修订操作（revise 改写文本 / delete 删除整句）。
+
+    索引为 (sectionIndex, itemIndex, sentenceIndex)；revise 必须给出
+    非空 text。改写/新增的句子匹配不到生成时引用 → 待核实（服务端
+    重算映射，不凭空延续引用）。"""
+
+    op: Literal["revise", "delete"]
+    sectionIndex: int = Field(ge=0)
+    itemIndex: int = Field(ge=0)
+    sentenceIndex: int = Field(ge=0)
+    text: str | None = Field(default=None, max_length=4000)
+
+
 class GptDigestIssueRevise(BaseModel):
-    """PUT /api/v1/gpt-digest/configs/{id}/issues/{key} — F08 人工修订。
+    """PUT /api/v1/gpt-digest/configs/{id}/issues/{key} — 人工修订。
 
-    sections 结构沿用生成时 schema；sourceIds 只能引用既有引用集。"""
+    两种用法（可并用）：F08 全量提交（title+sections）；N173 逐句操作
+    （sentenceOps——省略 title/sections 时在当前内容上应用）。sections
+    结构沿用生成时 schema；sourceIds 只能引用既有引用集。"""
 
-    title: str
-    sections: list[dict[str, object]]
+    title: str | None = None
+    sections: list[dict[str, object]] | None = None
+    sentenceOps: list[GptDigestSentenceOp] = []
 
 
 class GptDigestFeedInfo(BaseModel):
@@ -2101,7 +2785,9 @@ class GptDigestConfig(BaseModel):
     """F01/F02：一份主题日报配置（token 不在此响应中）。
 
     ``slots`` 为发布小时列表（升序、最多 4 个）；空列表 = 单时点
-    （用 hour），期号退化为日期。"""
+    （用 hour），期号退化为日期。
+    N171：``days`` 为发布日集合（0=周一…6=周日；空 = 每天）；
+    ``weekendHours`` 为周六/周日的独立时点（空 = 沿用平日计划）。"""
 
     id: int
     name: str
@@ -2117,6 +2803,16 @@ class GptDigestConfig(BaseModel):
     # F04：材料源（window=订阅窗口 / read_later=稍后读 / starred=收藏）
     sourceKind: str = "window"
     slots: list[int] = []
+    days: list[int] = []
+    weekendHours: list[int] = []
+    # N172：分阶段模型（键 select/summarize/polish；空 = 基础模型）。
+    stageModels: dict[str, str] = {}
+    # N174：固定栏目结构（空 = 不启用；≤8 栏）。
+    columns: list[GptDigestColumn] = []
+    # N175：目标阅读时长（分钟；0 = 不启用）。
+    targetReadingMinutes: int = 0
+    # N176：同事件聚合（默认关）。
+    clusterEnabled: bool = False
     lastIssueKey: str | None = None
     lastError: str | None = None
     createdAt: str = ""
@@ -2139,6 +2835,12 @@ class GptDigestCreate(BaseModel):
     feedUrlAllow: str | None = None
     sourceKind: str | None = None
     slots: list[int] | None = None
+    days: list[int] | None = None
+    weekendHours: list[int] | None = None
+    stageModels: dict[str, str] | None = None
+    columns: list[GptDigestColumn] | None = None
+    targetReadingMinutes: int | None = None
+    clusterEnabled: bool | None = None
 
 
 class GptDigestConfigUpdate(BaseModel):
@@ -2155,6 +2857,12 @@ class GptDigestConfigUpdate(BaseModel):
     feedUrlAllow: str | None = None
     sourceKind: str | None = None
     slots: list[int] | None = None
+    days: list[int] | None = None
+    weekendHours: list[int] | None = None
+    stageModels: dict[str, str] | None = None
+    columns: list[GptDigestColumn] | None = None
+    targetReadingMinutes: int | None = None
+    clusterEnabled: bool | None = None
 
 
 class StorageUsage(BaseModel):
@@ -2198,6 +2906,15 @@ class SourceOverrideResult(BaseModel):
     aiDisabled: bool = False
     # N015：分时静音窗口（每周循环；[]/None = 未启用）。
     muteWindows: list[dict[str, object]] | None = None
+    # N020：关注级别（must_read | normal | low；normal = 默认）。
+    attentionLevel: str = "normal"
+    # N014：已接受的低频建议（'accepted' 或 None）。纯记录——不改变
+    # 抓取行为（FreshRSS 调度粒度由实例 CRON_MIN 决定）。
+    refreshAdvisory: str | None = None
+    # F032/F034/F031：语言标注 / 未读警戒阈值 / 同步优先级（NULL=未设置）。
+    language: str | None = None
+    unreadAlertThreshold: int | None = None
+    syncPriority: int | None = None
     updatedAt: str = ""
 
 
@@ -2217,6 +2934,87 @@ class SourceOverrideUpdate(BaseModel):
     aiDisabled: bool | None = None  # F066：per-source AI 禁用
     # N015：分时静音（每周循环窗口；None=清除，缺席=不改）。
     muteWindows: list[dict[str, object]] | None = None
+    # N020：关注级别（None=恢复 normal，缺席=不改）。
+    attentionLevel: str | None = None
+    # F032/F034/F031：来源元数据（None=清除，缺席=不改）。
+    language: str | None = Field(default=None, pattern=r"^[a-z]{2}(-[A-Za-z]{2,4})?$")
+    unreadAlertThreshold: int | None = Field(default=None, ge=1, le=100_000)
+    syncPriority: int | None = Field(default=None, ge=0, le=2)
+
+
+# ---------------------------------------------------------------------------
+# N014 自适应低活跃建议 / N019 来源接入说明卡
+# ---------------------------------------------------------------------------
+
+
+class FreshnessSuggestionBasis(BaseModel):
+    """N014 建议依据（全部来自派生投影，可重建）。"""
+
+    weeks: int
+    yield_: float = Field(alias="yield")
+    medianGapDays: float
+
+    model_config = {"populate_by_name": True}
+
+
+class FreshnessSuggestionItem(BaseModel):
+    """N014：一条低活跃建议（含已记录决定状态 + 诚实调度说明）。"""
+
+    feedUrl: str
+    subscriptionRef: str
+    title: str
+    currentPattern: str
+    suggested: str
+    basis: FreshnessSuggestionBasis
+    refreshAdvisory: str | None = None
+
+
+class FreshnessSuggestionsResponse(BaseModel):
+    """GET /api/v1/sources/freshness-suggestions（只读）。"""
+
+    items: list[FreshnessSuggestionItem] = []
+    schedulingNote: str
+    basis: str
+    generatedAt: str
+
+
+class FreshnessAdvisoryApplyResult(BaseModel):
+    """POST /api/v1/sources/freshness-suggestions/apply（记录决定）。"""
+
+    feedUrl: str
+    refreshAdvisory: str | None
+    schedulingNote: str
+
+
+class SourceAccessCardView(BaseModel):
+    """N019：一个来源的接入说明卡（凭据只存归属标签，绝无凭据值）。"""
+
+    feedUrl: str
+    acquisition: str | None = None
+    limits: str | None = None
+    credentialOwnership: str | None = None
+    maintenance: str | None = None
+    updatedAt: str | None = None
+
+
+class SourceAccessCardList(BaseModel):
+    items: list[SourceAccessCardView] = []
+
+
+class SourceAccessCardUpdate(BaseModel):
+    """PUT /api/v1/sources/access-card — 整卡 upsert（缺席字段=清空）。
+
+    credentialOwnership 只接受 'self' | 'shared' | 'none'（归属标签，
+    不是凭据值）；未知字段键 → 422（extra=forbid：契约上不存在凭据值
+    字段，超集直接拒绝）。"""
+
+    model_config = {"extra": "forbid"}
+
+    feedUrl: str
+    acquisition: str | None = None
+    limits: str | None = None
+    credentialOwnership: str | None = None
+    maintenance: str | None = None
 
 
 class SourceAliasView(BaseModel):
@@ -2284,11 +3082,24 @@ class SettingsHistoryList(BaseModel):
     items: list[SettingsHistoryEntry] = []
 
 
+class SettingsRevertConflict(BaseModel):
+    """N184：一个未能回退的键与原因（显式清单，不再静默）。"""
+
+    key: str
+    reason: str
+
+
 class SettingsRevertResult(BaseModel):
-    """回退结果：applied=已应用的键值；skipped=因新修改被跳过的键。"""
+    """回退结果。
+
+    - applied / skipped：历史线格式（键值映射），保持兼容；
+    - N184 显式化：restored=已回退的键列表；conflicts=未能回退的键与
+      原因（键在记录之后又被改过 → 回退不覆盖新修改）。"""
 
     applied: dict[str, object] = {}
     skipped: dict[str, object] = {}
+    restored: list[str] = []
+    conflicts: list[SettingsRevertConflict] = []
 
 
 class CollectionTiming(BaseModel):
@@ -2309,6 +3120,13 @@ class CollectionTiming(BaseModel):
     latencyHint: str | None = None
 
 
+class VolumeDailyBucket(BaseModel):
+    """F024：单日发布量（UTC 日，窗口内无条目的日期不出现——稀疏）。"""
+
+    date: str
+    count: int
+
+
 class SubscriptionVolumeItem(BaseModel):
     """F12：单个订阅的收件量（投影未覆盖 → publishedCount=null）。"""
 
@@ -2319,6 +3137,10 @@ class SubscriptionVolumeItem(BaseModel):
     lastSyncedAt: str | None = None
     # N040：三时点采集延迟块（投影未覆盖 → None）。
     collectionTiming: CollectionTiming | None = None
+    # F024：daily=true 时的按天分桶（投影未覆盖 → None）。
+    daily: list[VolumeDailyBucket] | None = None
+    # F034：投影口径未读数（未覆盖 → None，不冒充零）。
+    unreadProjected: int | None = None
 
 
 class SubscriptionVolumeResponse(BaseModel):
@@ -2359,6 +3181,22 @@ class ObsidianSettings(BaseModel):
     noteCount: int
 
 
+class ObsidianScanFileList(BaseModel):
+    """N138：一类文件级诊断列表（≤50 条 + 诚实截断标志）。"""
+
+    items: list[str] = []
+    truncated: bool = False
+
+
+class ObsidianScanFiles(BaseModel):
+    """N138：最近一次扫描的文件级诊断（新增/更改/删除/跳过）。"""
+
+    added: ObsidianScanFileList = ObsidianScanFileList()
+    changed: ObsidianScanFileList = ObsidianScanFileList()
+    removed: ObsidianScanFileList = ObsidianScanFileList()
+    skipped: ObsidianScanFileList = ObsidianScanFileList()
+
+
 class ObsidianStatus(BaseModel):
     """Honest scanner status (error keeps the old index visible)."""
 
@@ -2367,6 +3205,8 @@ class ObsidianStatus(BaseModel):
     lastError: str | None = None
     noteCount: int = 0
     envRootConfigured: bool = False
+    # N138：最近一次扫描的文件级诊断；从未扫描 → None（诚实空态）。
+    lastScanFiles: ObsidianScanFiles | None = None
 
 
 class ObsidianRescanResult(BaseModel):
@@ -2381,6 +3221,8 @@ class ObsidianRescanResult(BaseModel):
     truncatedNotes: int = 0
     elapsedMs: int
     vaultPath: str = ""
+    # N138：本次扫描的文件级明细（与持久化的「最近一次」一致）。
+    files: ObsidianScanFiles | None = None
 
 
 class NoteView(BaseModel):
@@ -2448,14 +3290,18 @@ class ObsidianExportTemplateView(BaseModel):
     template: str
     defaultTemplate: str
     allowedVars: list[str]
+    # N135：导出重名策略（timestamp_suffix 默认 / exact）。
+    exportNamePolicy: Literal["timestamp_suffix", "exact"] = "timestamp_suffix"
 
 
 class ObsidianExportTemplateUpdate(BaseModel):
-    """PUT /api/v1/obsidian/export-template body."""
+    """PUT /api/v1/obsidian/export-template body — template 与命名策略
+    均可单独更新（None = 保持现状；二者皆缺是无操作，返回现状）。"""
 
     model_config = {"extra": "forbid"}
 
-    template: str = Field(max_length=20000)
+    template: str | None = Field(default=None, max_length=20000)
+    exportNamePolicy: Literal["timestamp_suffix", "exact"] | None = None
 
 
 class ObsidianTemplatePreviewRequest(BaseModel):
@@ -2479,12 +3325,16 @@ class ObsidianTemplatePreviewResult(BaseModel):
 
 
 class ObsidianExportHandoffRequest(BaseModel):
-    """POST /api/v1/obsidian/export-handoff body."""
+    """POST /api/v1/obsidian/export-handoff body.
+
+    ``onlySinceLastExport``（N137 增量导出）：只携带上次导出水位之后
+    有新增/修改的批注（水位来自 annotation_export_log）。"""
 
     model_config = {"extra": "forbid"}
 
     entryRef: str
     deviceId: str
+    onlySinceLastExport: bool = False
 
 
 class ObsidianExportHandoffResult(BaseModel):
@@ -2501,6 +3351,233 @@ class ObsidianExportHandoffResult(BaseModel):
     content: str
     unknownVars: list[str] = []
     deviceLabel: str = ""
+    # N137：本次交接包含的批注数（增量模式=水位之后的条数，如实展示）。
+    annotationCount: int = 0
+
+
+class ObsidianExportValidateRequest(BaseModel):
+    """POST /api/v1/obsidian/export-handoff/validate body（N139 只读校验，
+    与 export-handoff 相同的组装路径，但不交接、不落日志、不 mark）。"""
+
+    model_config = {"extra": "forbid"}
+
+    entryRef: str
+    deviceId: str
+    onlySinceLastExport: bool = False
+
+
+class ObsidianExportIssue(BaseModel):
+    """N139：一条校验问题（只读报告；绝不改写用户 Vault 文件）。"""
+
+    kind: Literal["broken_wikilink", "missing_attachment", "duplicate_block_id"]
+    detail: str
+    suggestion: str
+
+
+class ObsidianExportValidateResult(BaseModel):
+    """N139：校验结果（issues 为空 = 通过；vaultChecked=false 表示 Vault
+    不可达、附件存在性未核对——诚实局限，不冒充查过）。"""
+
+    issues: list[ObsidianExportIssue] = []
+    vaultChecked: bool = False
+
+
+class ObsidianBlockRef(BaseModel):
+    """N134：一条块引用（哪篇投影笔记内嵌了 ^lumi-<paraId>）。"""
+
+    paraId: str
+    noteUuid: str
+    title: str = ""
+    relPath: str = ""
+    indexedAt: str = ""
+
+
+class ObsidianBlockRefsResponse(BaseModel):
+    """GET /api/v1/obsidian/block-refs?paraId= 响应。"""
+
+    items: list[ObsidianBlockRef] = []
+
+
+class ObsidianHandoffLogEntry(BaseModel):
+    """N140：一条双向交接记录（pending → confirmed 仅靠显式确认）。"""
+
+    id: str
+    direction: Literal["export", "open", "import_confirm"]
+    entryRef: str = ""
+    noteName: str = ""
+    policy: str = ""
+    status: Literal["pending", "confirmed"] = "pending"
+    createdAt: str
+    confirmedAt: str | None = None
+
+
+class ObsidianHandoffLogList(BaseModel):
+    """GET /api/v1/obsidian/handoff-log 响应（新→旧）。"""
+
+    items: list[ObsidianHandoffLogEntry] = []
+
+
+class ObsidianHandoffLogCreate(BaseModel):
+    """POST /api/v1/obsidian/handoff-log body — 显式记录 open /
+    import_confirm 交接（export 由 export-handoff 路由自动落库）。"""
+
+    model_config = {"extra": "forbid"}
+
+    direction: Literal["open", "import_confirm"]
+    entryRef: str = Field(default="", max_length=300)
+    noteName: str = Field(default="", max_length=300)
+    policy: str = Field(default="", max_length=50)
+
+
+class ObsidianHandoffLogClearResult(BaseModel):
+    """DELETE /api/v1/obsidian/handoff-log 响应（如实报告删除条数）。"""
+
+    cleared: int
+
+
+class AnnotationExportMarkRequest(BaseModel):
+    """POST /api/v1/annotations/export-mark body（N137：成功导出后回标
+    水位；重复调用幂等无害）。"""
+
+    model_config = {"extra": "forbid"}
+
+    ids: list[str] = Field(min_length=1)
+
+
+class AnnotationExportMarkResult(BaseModel):
+    """N137：mark 结果（诚实计数：只含实际存在的批注）。"""
+
+    exportedAt: str
+    count: int
+    entryRefs: list[str] = []
+    ids: list[str] = []
+
+
+class AnnotationExportDelta(BaseModel):
+    """GET /api/v1/annotations/export-delta 响应（增量预览：新增/修改）。"""
+
+    lastExportedAt: str | None = None
+    addedCount: int = 0
+    modifiedCount: int = 0
+    total: int = 0
+
+
+# ---- N071 批注原文漂移修复 ---------------------------------------------------
+
+
+class AnnotationRepairCandidate(BaseModel):
+    """一个候选正文块（score = exact/前缀包含 1.0，difflib 模糊比）。"""
+
+    blockIndex: int = Field(ge=0)
+    score: float = Field(ge=0.0, le=1.0)
+    excerpt: str = Field(max_length=300)
+
+
+class AnnotationRepairCandidatesResult(BaseModel):
+    """GET /api/v1/annotations/{id}/repair-candidates 响应。"""
+
+    annotationId: str
+    entryRef: str
+    quote: str
+    candidates: list[AnnotationRepairCandidate] = []
+
+
+class AnnotationRepairRequest(BaseModel):
+    """POST /api/v1/annotations/{id}/repair body（用户从候选中选定）。"""
+
+    model_config = {"extra": "forbid"}
+
+    blockIndex: int = Field(ge=0)
+    quoteText: str = Field(min_length=1, max_length=500)
+
+
+class AnnotationView(BaseModel):
+    """批注行的稳定投影（annotations CRUD 现行响应形状）。"""
+
+    id: str
+    entryRef: str
+    anchor: dict[str, object]
+    anchorHash: str
+    excerpt: str
+    note: str
+    color: str
+    createdAt: str
+    updatedAt: str
+
+
+class AnnotationRepairResult(BaseModel):
+    """POST /api/v1/annotations/{id}/repair 响应（更新后的批注 + 本次绑定）。"""
+
+    annotation: AnnotationView
+    blockIndex: int
+    score: float
+
+
+# ---- N073 批注颜色语义 -------------------------------------------------------
+
+
+class AnnotationColorLabelPut(BaseModel):
+    """PUT /api/v1/annotations/color-labels body（单色 upsert）。"""
+
+    model_config = {"extra": "forbid"}
+
+    color: str = Field(min_length=1, max_length=20)
+    label: str = Field(default="", max_length=50)
+
+
+class AnnotationColorLabelItem(BaseModel):
+    """一个颜色的语义标签（label 空 = 未命名，Web 诚实显示原始色名）。"""
+
+    color: str
+    label: str
+
+
+class AnnotationColorLabelList(BaseModel):
+    """GET /api/v1/annotations/color-labels 响应（全调色板稳定顺序）。"""
+
+    items: list[AnnotationColorLabelItem] = []
+
+
+# ---- N074 阅读问题清单 -------------------------------------------------------
+
+
+class ReadingQuestionCreate(BaseModel):
+    """POST /api/v1/reading-questions body（链接字段全部可选）。"""
+
+    model_config = {"extra": "forbid"}
+
+    question: str = Field(min_length=1, max_length=500)
+    entryRef: str | None = None
+    annotationId: str | None = None
+    workspaceId: str | None = None
+
+
+class ReadingQuestionPatch(BaseModel):
+    """PATCH /api/v1/reading-questions/{id} body（改文本或 open/done）。"""
+
+    model_config = {"extra": "forbid"}
+
+    question: str | None = Field(default=None, min_length=1, max_length=500)
+    status: str | None = None
+
+
+class ReadingQuestionView(BaseModel):
+    """一个问题行。"""
+
+    id: str
+    question: str
+    status: str
+    entryRef: str | None = None
+    annotationId: str | None = None
+    workspaceId: str | None = None
+    createdAt: str
+    updatedAt: str
+
+
+class ReadingQuestionList(BaseModel):
+    """GET /api/v1/reading-questions 响应。"""
+
+    items: list[ReadingQuestionView] = []
 
 
 class TagItemsResponse(BaseModel):
@@ -2632,6 +3709,193 @@ class AgentApprovalDecision(BaseModel):
     decision: str
 
 
+# E04 contract repair: the agent message / turn endpoints previously
+# returned bare dicts, so the OpenAPI schema (and the generated web
+# types) degraded to `{}`. The models below pin the wire format; the
+# message content union covers every variant the loop actually writes
+# (assistant text/tool calls/streaming, tool results wrapped untrusted,
+# server-minted approval rows, branched transcripts).
+
+
+class AgentToolCall(BaseModel):
+    """One assistant tool invocation; arguments stay raw protocol text."""
+
+    model_config = {"extra": "forbid"}
+
+    callId: str
+    name: str
+    argumentsText: str
+
+
+class AgentToolResult(BaseModel):
+    """Tool output wrapped as untrusted data (injection boundary)."""
+
+    model_config = {"extra": "forbid"}
+
+    untrusted: bool
+    payload: dict[str, object]
+
+
+class AgentUserContent(BaseModel):
+    """role=user message body."""
+
+    model_config = {"extra": "forbid"}
+
+    text: str
+
+
+class AgentAssistantContent(BaseModel):
+    """role=assistant message body (streaming marker / cancel note /
+    branch-truncation notice / toolCalls while the loop is mid-turn).
+
+    N154/N155：evidenceStrength（direct|partial|none，引用文本 vs 主张
+    重叠分级——绝不用「置信度」措辞）；unverifiable/unverifiableReason
+    标记「有文档事实主张但零有效引用」的回答（no_valid_citations）。
+    N165：budgetExhausted = 预算耗尽的消耗摘要（tokens unknown 时为
+    null + tokensKnown=false，绝不谎报 0）。"""
+
+    model_config = {"extra": "forbid"}
+
+    text: str
+    toolCalls: list[AgentToolCall] = []
+    streaming: bool | None = None
+    cancelled: bool | None = None
+    branchTruncated: bool | None = None
+    evidenceStrength: Literal["direct", "partial", "none"] | None = None
+    unverifiable: bool | None = None
+    unverifiableReason: str | None = None
+    budgetExhausted: dict[str, object] | None = None
+
+
+class AgentToolContent(BaseModel):
+    """role=tool message body.
+
+    ``result`` is the untrusted envelope (or a bare string in branched
+    transcripts); ``callId`` is dropped when a branch copies the row as
+    a non-executable transcript record.
+
+    N166 执行时间线：durationMs（真实执行耗时）、maskedArgsSummary
+    （≤80 字符、F097 _redact 脱敏——密钥形态值绝不出现）、resultType
+    （result|error）。N168：retried（重试步骤）/replayed（幂等缓存命
+    中）。N169：stepId（写台账行 id）+ undoable（可撤销）。"""
+
+    model_config = {"extra": "forbid"}
+
+    callId: str | None = None
+    name: str
+    result: AgentToolResult | str | None = None
+    error: str | None = None
+    approved: bool | None = None
+    branchTranscript: bool | None = None
+    durationMs: int | None = None
+    maskedArgsSummary: str | None = None
+    resultType: str | None = None
+    retried: bool | None = None
+    replayed: bool | None = None
+    stepId: str | None = None
+    undoable: bool | None = None
+
+
+class AgentApprovalContent(BaseModel):
+    """role=approval message body (server-minted by create_approval)."""
+
+    model_config = {"extra": "forbid"}
+
+    approvalId: str
+    threadId: str
+    callId: str
+    tool: str
+    args: dict[str, object]
+    status: str
+    expiresInMinutes: int | None = None
+    reconfirmOf: str | None = None
+
+
+AgentMessageRole = Literal["user", "assistant", "tool", "approval"]
+
+AgentMessageContent = (
+    AgentUserContent
+    | AgentAssistantContent
+    | AgentToolContent
+    | AgentApprovalContent
+)
+
+
+class AgentMessage(BaseModel):
+    """One persisted conversation message (storage row, wire format)."""
+
+    id: str
+    threadId: str
+    seq: int
+    role: AgentMessageRole
+    content: AgentMessageContent
+    citations: list[str] = []
+    createdAt: str
+
+
+class AgentCitationDetail(BaseModel):
+    """One citation ref resolved through the shared Source Registry."""
+
+    ref: str
+    domain: str
+    kind: str
+    title: str
+    source: str
+    datetime: str | None = None
+    excerpt: str | None = None
+    url: str | None = None
+    stale: bool = False
+    staleReason: str | None = None
+    payload: dict[str, object] = {}
+
+
+class AgentMessageListResponse(BaseModel):
+    """Envelope for GET /api/v1/agent/threads/{id}/messages."""
+
+    items: list[AgentMessage]
+    citationDetails: list[AgentCitationDetail] = []
+
+
+class AgentTurnAccepted(BaseModel):
+    """202 body for POST /api/v1/agent/threads/{id}/messages."""
+
+    status: Literal["processing"]
+
+
+class AgentApprovalResult(BaseModel):
+    """POST /api/v1/agent/threads/{id}/approvals — honest terminal
+    variants: rejected / tool_denied / completed."""
+
+    status: Literal["rejected", "tool_denied", "completed"]
+    message: AgentMessage | None = None
+    reason: str | None = None
+
+
+class AgentCancelResult(BaseModel):
+    """POST /api/v1/agent/threads/{id}/cancel."""
+
+    cancelled: bool
+    status: Literal["cancelling", "cancelled"]
+
+
+class AgentPauseResult(BaseModel):
+    """N164 POST /api/v1/agent/threads/{id}/pause."""
+
+    paused: bool
+    status: Literal["pausing", "paused"]
+
+
+class AgentResumeResult(BaseModel):
+    """N164 POST /api/v1/agent/threads/{id}/resume — honest variants:
+    resumed (loop continues), awaiting_approval (user decision needed,
+    possibly a RE-CONFIRM minted for an approval expired mid-pause)."""
+
+    status: Literal["processing", "awaiting_approval"]
+    approval: AgentApprovalContent | None = None
+    reconfirmRequired: bool = False
+    message: AgentMessage | None = None
+
+
 class RagSearchItem(BaseModel):
     """One fused retrieval hit (ref resolves to real content).
 
@@ -2646,12 +3910,25 @@ class RagSearchItem(BaseModel):
     modelId: str | None = None
 
 
+class RagEffectiveScope(BaseModel):
+    """N151 查询时服务端解析的授权范围回显。
+
+    kind: all（未锁定，refCount=None）| workspace | entryRefs；
+    refCount = scope 实际解析到的 ref 数（有界）。"""
+
+    kind: Literal["all", "workspace", "entryRefs"]
+    refCount: int | None = None
+
+
 class RagSearchResponse(BaseModel):
     """Envelope for GET /api/v1/rag/search (honest degradation flags)."""
 
     items: list[RagSearchItem]
     semanticUsed: bool
     semanticError: str | None = None
+    effectiveScope: RagEffectiveScope = Field(
+        default_factory=lambda: RagEffectiveScope(kind="all", refCount=None)
+    )
 
 
 class RagRebuildResult(BaseModel):
@@ -2667,6 +3944,34 @@ class RagEnableResult(BaseModel):
     """Explicit model-enable acknowledgement."""
 
     enabled: bool
+
+
+class RagJobSummary(BaseModel):
+    """F093 最近一次重建作业的进度段（stage/done/remaining）。"""
+
+    jobId: str
+    kind: str
+    status: str
+    stage: str | None = None
+    done: int = 0
+    remaining: int | None = None
+    updatedAt: str
+
+
+class RagStatus(BaseModel):
+    """GET /api/v1/rag/status — everything the enable/rebuild UI needs."""
+
+    enabled: bool
+    chunks: int
+    model: str
+    dim: int
+    vecTable: bool
+    vecRows: int
+    modelLoaded: bool
+    lastRebuildAt: str | None = None
+    lastError: str | None = None
+    fastembedAvailable: bool
+    job: RagJobSummary | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -2734,6 +4039,18 @@ class TagMergeResult(BaseModel):
     targetId: int
     movedBindings: int
     dedupedBindings: int
+
+
+class TagMergeUndoResult(BaseModel):
+    """POST /api/v1/tags/merge/undo（N150）——撤销最近一次合并：
+    重建源标签（新 id）并恢复其绑定；目标保留合并来的绑定。
+    无快照/超 24h 窗口 → 404；源标签名已被占用（含上一次 undo 自身
+    的重建）→ 409。"""
+
+    sourceTagId: int
+    name: str
+    targetTagId: int
+    restoredBindings: int
 
 
 class TagSuggestionsResponse(BaseModel):
@@ -3173,6 +4490,102 @@ class SearchDistributionResult(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# N141 / N149 — 搜索快照比较 + 主题演变时间线
+# ---------------------------------------------------------------------------
+
+
+class SearchSnapshotCreate(BaseModel):
+    """POST /api/v1/search/snapshots body（N141）——与 GET /search 同参
+    （除分页/同义词扩展；快照口径 = 基础词条过滤链，与 N143/N145 一致）。"""
+
+    model_config = {"extra": "forbid"}
+
+    q: str = Field(min_length=1, max_length=200)
+    feedUrl: str | None = None
+    categoryId: str | None = None
+    state: str | None = None
+    favorite: bool = False
+    from_: str | None = Field(default=None, alias="from")
+    to: str | None = None
+    intitle: str | None = None
+    phrase: str | None = None
+    exclude: str | None = None
+    hasSummary: bool | None = None
+
+
+class SearchSnapshotView(BaseModel):
+    """一个已冻结的搜索快照（N141）：查询 + 过滤作用域 + 结果引用计数
+    （引用清单本身绝不在列表中出站，仅 compare 内部使用）。"""
+
+    id: str
+    query: str
+    filters: dict[str, str | bool] = {}
+    refCount: int
+    truncated: bool = False
+    createdAt: str
+
+
+class SearchSnapshotList(BaseModel):
+    """GET /api/v1/search/snapshots。"""
+
+    items: list[SearchSnapshotView]
+
+
+class SearchSnapshotRankChange(BaseModel):
+    """一个共同引用的排名变化（绝对位移 > 5 才列入）。"""
+
+    entryRef: str
+    oldRank: int
+    newRank: int
+
+
+class SearchSnapshotCompareResult(BaseModel):
+    """N141 差分：added/removed（引用清单，≤200 条 + 全量 counts）、
+    rankChanges（|位移| > 5）、permissionLost（快照引用在本账户投影中
+    已不再解析——与 404 同语义，绝不泄露他人条目存在性）。
+    任一侧冻结/复跑触界截断 → complete=false 诚实标注。"""
+
+    added: list[str] = []
+    removed: list[str] = []
+    rankChanges: list[SearchSnapshotRankChange] = []
+    permissionLost: list[str] = []
+    counts: dict[str, int] = {}
+    complete: bool = True
+
+
+class SearchTimelineMonth(BaseModel):
+    """N149：单月命中计数（YYYY-MM；窗口内补零后逐月出）。"""
+
+    month: str
+    count: int
+
+
+class SearchTimelineAnnotation(BaseModel):
+    """N149：与查询匹配的一条本人批注（excerpt/note LIKE 命中）。"""
+
+    id: str
+    entryRef: str
+    excerpt: str
+    note: str
+    color: str
+    createdAt: str
+    updatedAt: str
+
+
+class SearchTimelineResult(BaseModel):
+    """N149 主题演变时间线：24 个月逐月计数（SQL 聚合，无正文出站）+
+    匹配查询的本人批注（LIKE，≤10 条；超界 annotationsComplete=false
+    诚实标注——仅本人批注，per-user DB 天然隔离他人）。"""
+
+    months: list[SearchTimelineMonth] = []
+    monthFrom: str
+    monthTo: str
+    total: int
+    annotations: list[SearchTimelineAnnotation] = []
+    annotationsComplete: bool = True
+
+
+# ---------------------------------------------------------------------------
 # F022 收件箱归类规则
 # ---------------------------------------------------------------------------
 
@@ -3563,13 +4976,25 @@ class WorkspaceGoalView(BaseModel):
     deadline: str | None = None
     doneCount: int = 0
     createdAt: str
+    # N111：自由文本目标陈述 + 完成条件清单（勾选状态设备本机，服务端
+    # 只存文本本身，绝不存勾选状态）。
+    goalText: str | None = None
+    conditions: list[str] = []
 
 
 class WorkspaceGoalPut(BaseModel):
+    """F086 目标写入 + N111 扩展。
+
+    goalText / conditions 缺省（键未出现）= 保留既有值（旧调用方绝不
+    无意清空 N111 数据）；显式 null / 空串 / 空数组 = 清除。路由用
+    ``model_fields_set`` 区分「未携带」与「显式 null」。"""
+
     model_config = {"extra": "forbid"}
 
     targetCount: int = Field(ge=1)
     deadline: str | None = None
+    goalText: str | None = None
+    conditions: list[str] | None = Field(default=None, max_length=20)
 
 
 class BookmarkCheckRequest(BaseModel):
@@ -3612,6 +5037,140 @@ class ResearchPackPreviewResponse(BaseModel):
     missingCount: int
     estBytes: int
     snapshots: list[SnapshotBrief] = []
+
+
+# ===== N113 分节大纲 ==========================================================
+
+class WorkspaceSectionItem(BaseModel):
+    """分节成员（引用而非复制；unresolved = 已不是工作区成员，诚实标记）。"""
+
+    itemRef: str
+    position: int
+    addedAt: str
+    unresolved: bool = False
+
+
+class WorkspaceSectionView(BaseModel):
+    id: str
+    workspaceId: str
+    title: str
+    sortIndex: int
+    createdAt: str
+    items: list[WorkspaceSectionItem] = []
+
+
+class WorkspaceSectionList(BaseModel):
+    items: list[WorkspaceSectionView] = []
+
+
+class WorkspaceSectionCreate(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    title: str = Field(min_length=1, max_length=100)
+
+
+class WorkspaceSectionPatch(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    title: str = Field(min_length=1, max_length=100)
+
+
+class WorkspaceSectionOrderPut(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    sectionIds: list[str] = Field(min_length=1, max_length=500)
+
+
+class WorkspaceSectionItemAddRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    itemRef: str
+
+
+class WorkspaceSectionItemsOrderPut(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    itemRefs: list[str] = Field(min_length=1, max_length=500)
+
+
+# ===== N114 汇编预览 ==========================================================
+
+class CompileRequest(BaseModel):
+    """N114 汇编预览（纯预览不落库；sectionIds 缺省 = 全部大纲分节）。"""
+
+    model_config = {"extra": "forbid"}
+
+    sectionIds: list[str] | None = Field(default=None, max_length=100)
+
+
+class CompileItem(BaseModel):
+    itemRef: str
+    title: str
+    excerpt: str = ""
+    citation: str
+    note: str | None = None
+
+
+class CompileSection(BaseModel):
+    sectionId: str | None = None
+    title: str
+    items: list[CompileItem] = []
+
+
+class CompileExcluded(BaseModel):
+    itemRef: str
+    reason: str
+
+
+class CompileResponse(BaseModel):
+    workspaceId: str
+    workspaceName: str
+    generatedAt: str
+    sections: list[CompileSection] = []
+    includedCount: int = 0
+    excludedMissing: int = 0
+    excluded: list[CompileExcluded] = []
+
+
+# ===== N120 清理预演 ==========================================================
+
+class WorkspaceCleanupCategory(BaseModel):
+    category: str
+    items: list[dict] = []
+
+
+class WorkspaceCleanupPreviewResponse(BaseModel):
+    workspaceId: str
+    categories: list[WorkspaceCleanupCategory] = []
+    actionable: list[str] = []
+    reportOnly: list[str] = []
+
+
+class WorkspaceCleanupApplyRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    categories: list[str] = Field(min_length=1, max_length=10)
+
+
+class WorkspaceCleanupApplyResult(BaseModel):
+    logId: str
+    removed: dict = {}
+
+
+class WorkspaceCleanupUndoRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    logId: str | None = None
+
+
+class WorkspaceCleanupUndoResult(BaseModel):
+    logId: str
+    restoredRefs: int = 0
+    restoredSectionRefs: int = 0
+
+
+class WorkspaceCleanupLogList(BaseModel):
+    items: list[dict] = []
 
 
 class ClipRevisionRequest(BaseModel):
@@ -3717,10 +5276,135 @@ class RagRepairResult(BaseModel):
     failed: list[dict] = []
 
 
-class AgentThreadUpdate(BaseModel):
-    """F094/F098 会话设置（scope / toolPolicy；None = 清除/不修改按键）。
+# ---------------------------------------------------------------------------
+# N152 覆盖率 / N153 分块预览 / N155 RAG 问答（引用缺失拦截）
+# ---------------------------------------------------------------------------
 
-    scope=None 显式清除范围锁定；键缺省 = 不修改。"""
+
+class RagCoverageUnsupportedKind(BaseModel):
+    """N152 一种不可索引 kind 及原因（empty_text = 正文为空）。"""
+
+    kind: str
+    reason: str
+
+
+class RagCoverageUnsupported(BaseModel):
+    """N152 不可索引语料分组计数。"""
+
+    count: int = 0
+    kinds: list[RagCoverageUnsupportedKind] = []
+
+
+class RagCoverage(BaseModel):
+    """GET /api/v1/rag/coverage —— 语料 ↔ 索引的真实分桶（N152）。
+
+    indexable/indexed/stale 来自行与 content_hash，failed 来自最近
+    rag_jobs 作业的 skipped 记录。"""
+
+    modelId: str
+    indexable: int = 0
+    indexed: int = 0
+    stale: int = 0
+    failed: int = 0
+    unsupported: RagCoverageUnsupported = Field(
+        default_factory=RagCoverageUnsupported
+    )
+
+
+class RagChunkPreviewRequest(BaseModel):
+    """POST /api/v1/rag/chunk-preview body（N153）。"""
+
+    model_config = {"extra": "forbid"}
+
+    ref: str = Field(min_length=1, max_length=500)
+
+
+class RagChunkScheme(BaseModel):
+    """N153 只读分块方案元数据（当前 chunker 无重叠，诚实为 0）。"""
+
+    maxLen: int
+    overlap: int
+
+
+class RagChunkPreviewChunk(BaseModel):
+    """N153 一条预览分块：text 截断到预览上限（≤400 字符）。"""
+
+    ord: int
+    text: str
+    charStart: int
+    charEnd: int
+
+
+class RagChunkPreview(BaseModel):
+    """POST /api/v1/rag/chunk-preview —— 索引「将会」产生的分块。"""
+
+    ref: str
+    kind: str
+    title: str | None = None
+    chunks: list[RagChunkPreviewChunk] = []
+    scheme: RagChunkScheme
+
+
+class RagAskCitation(BaseModel):
+    """N155 一条有效引用：编号（1 起）+ ref。"""
+
+    index: int
+    ref: str
+
+
+class RagAskExcerpt(BaseModel):
+    """N155 摘录模式的一条原文片段（labeled：摘录 ≠ 回答）。"""
+
+    ref: str
+    title: str | None = None
+    ord: int = 0
+    text: str
+
+
+class RagAskRequest(BaseModel):
+    """POST /api/v1/rag/ask body（N151/N154/N155）。
+
+    - threadId：提供则继承该会话的 F094 范围（服务端解析、越界 403）；
+    - refs：显式指定依据条目（≤8）；不提供则走检索；
+    - mode=excerpt：只取原文片段（零 provider 调用）。"""
+
+    model_config = {"extra": "forbid"}
+
+    question: str = Field(min_length=1, max_length=2000)
+    threadId: str | None = None
+    refs: list[str] = Field(default=[], max_length=8)
+    k: int = Field(default=6, ge=1, le=12)
+    mode: Literal["answer", "excerpt"] = "answer"
+
+    @field_validator("question")
+    @classmethod
+    def _question_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("question must not be blank")
+        return value
+
+
+class RagAskResponse(BaseModel):
+    """POST /api/v1/rag/ask 响应（N151 effectiveScope / N154 强弱 /
+    N155 unverifiable + 摘录）。"""
+
+    question: str
+    mode: Literal["answer", "excerpt"]
+    answer: str | None = None
+    citations: list[RagAskCitation] = []
+    evidenceStrength: Literal["direct", "partial", "none"] | None = None
+    unverifiable: bool = False
+    reason: str | None = None
+    effectiveScope: RagEffectiveScope = Field(
+        default_factory=lambda: RagEffectiveScope(kind="all", refCount=None)
+    )
+    excerpts: list[RagAskExcerpt] = []
+    semanticUsed: bool = False
+
+
+class AgentThreadUpdate(BaseModel):
+    """F094/F098 会话设置（scope / toolPolicy / N165 budget；None =
+    清除/不修改按键）。scope=None 显式清除范围锁定；键缺省 = 不修改。"""
 
     model_config = {"extra": "forbid"}
 
@@ -3729,6 +5413,8 @@ class AgentThreadUpdate(BaseModel):
     clearScope: bool = False
     toolPolicy: dict | None = None
     clearToolPolicy: bool = False
+    budget: dict | None = None
+    clearBudget: bool = False
 
 
 class AgentBranchRequest(BaseModel):
@@ -3737,3 +5423,232 @@ class AgentBranchRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
     messageIndex: int = Field(ge=0)
+
+
+# ---------------------------------------------------------------------------
+# Agent W5 contract repair (E04) — F094 settings / F095 search / F099
+# branch / F097 preview responses previously returned bare dicts.
+# ---------------------------------------------------------------------------
+
+
+class AgentWorkspaceScope(BaseModel):
+    """F094 范围锁定：锁定到单个工作区。"""
+
+    model_config = {"extra": "forbid"}
+
+    workspaceId: str
+
+
+class AgentEntryRefsScope(BaseModel):
+    """F094 范围锁定：锁定到显式条目列表。"""
+
+    model_config = {"extra": "forbid"}
+
+    entryRefs: list[str]
+
+
+AgentThreadScope = AgentWorkspaceScope | AgentEntryRefsScope
+
+
+class AgentToolPolicy(BaseModel):
+    """F098 会话工具权限（键皆可缺省；validate_tool_policy 只落提供的键）。"""
+
+    model_config = {"extra": "forbid"}
+
+    mode: Literal["all", "readonly"] | None = None
+    allowedTools: list[str] | None = None
+    maxOpsPerTurn: int | None = None
+
+
+class AgentThreadBudget(BaseModel):
+    """N165 线程级预算 {maxToolCalls, maxTurns}（键皆可缺省）。"""
+
+    model_config = {"extra": "forbid"}
+
+    maxToolCalls: int | None = None
+    maxTurns: int | None = None
+
+
+class AgentThreadSettings(BaseModel):
+    """PATCH /api/v1/agent/threads/{id} response（下轮生效）。"""
+
+    id: str
+    title: str
+    scope: AgentThreadScope | None = None
+    toolPolicy: AgentToolPolicy | None = None
+    budget: AgentThreadBudget | None = None
+    branchOf: str | None = None
+
+
+class AgentScopePreviewRequest(BaseModel):
+    """N151 POST /api/v1/agent/scope-preview body（工作台范围选择器的
+    授权范围摘要卡：kind × refCount × toolCount）。"""
+
+    model_config = {"extra": "forbid"}
+
+    scope: AgentThreadScope | None = None
+    toolPolicy: AgentToolPolicy | None = None
+
+
+class AgentScopeSummary(BaseModel):
+    """N151 授权范围摘要（服务端解析，绝不在前端伪造计数）。"""
+
+    kind: Literal["all", "workspace", "entryRefs"]
+    refCount: int | None = None
+    toolCount: int = 0
+
+
+class AgentThreadSearchHit(BaseModel):
+    """F095 一条会话消息搜索命中（snippet 含前后文）。"""
+
+    threadId: str
+    threadTitle: str
+    messageIndex: int
+    role: str
+    snippet: str
+
+
+class AgentThreadSearchResponse(BaseModel):
+    """Envelope for GET /api/v1/agent/threads/search."""
+
+    items: list[AgentThreadSearchHit]
+    truncated: bool
+
+
+class AgentBranchResult(BaseModel):
+    """F099 POST /api/v1/agent/threads/{id}/branch 响应。"""
+
+    thread: AgentThread
+    branchOf: str
+    copiedMessages: int
+    truncated: bool
+
+
+class RagRebuildPauseResult(BaseModel):
+    """F093 POST /api/v1/rag/rebuild/pause — paused=false 表示没有
+    可暂停的作业（jobId/status 同时缺省）。"""
+
+    paused: bool
+    jobId: str | None = None
+    status: str | None = None
+
+
+class AgentApprovalPreviewChange(BaseModel):
+    """F097 预演逐字段变化（from → to；敏感值已打码为 ***）。"""
+
+    model_config = {"populate_by_name": True}
+
+    field: str
+    from_: str | None = Field(default=None, alias="from")
+    to: str | None = None
+
+
+class AgentApprovalPreview(BaseModel):
+    """F097 POST .../approvals/{id}/preview — 预演不执行业务写入。"""
+
+    approvalId: str
+    tool: str
+    target: str
+    changes: list[AgentApprovalPreviewChange] = []
+    uncertain: list[str] = []
+    note: str
+
+
+# ---------------------------------------------------------------------------
+# Agent ops wave (N164–N170): pause/resume / budget / timeline / approval
+# revise / step retry / diff undo / recipes.
+# ---------------------------------------------------------------------------
+
+
+class AgentApprovalReviseRequest(BaseModel):
+    """N167 POST .../approvals/{id}/revise — 批准前的参数修订。"""
+
+    model_config = {"extra": "forbid"}
+
+    newArgs: dict[str, object]
+
+
+class AgentApprovalReviseResult(BaseModel):
+    """N167 修订产生 NEW 审批行（绑定新 args_hash）；旧行 superseded。"""
+
+    approval: AgentApprovalContent
+    supersededApprovalId: str
+
+
+class AgentRetryResult(BaseModel):
+    """N168 POST .../retry — 只重跑失败/未完成的步骤。"""
+
+    status: Literal["completed", "awaiting_approval"]
+    retried: list[dict[str, object]] = []
+    skipped: list[dict[str, object]] = []
+    approval: AgentApprovalContent | None = None
+
+
+class AgentUndoRequest(BaseModel):
+    """N169 POST .../undo — 按写台账 stepId 差异撤销。"""
+
+    model_config = {"extra": "forbid"}
+
+    stepId: str
+
+
+class AgentUndoResult(BaseModel):
+    """N169 撤销结果：undone=false 时 conflictReason 说明跳过原因。"""
+
+    undone: bool
+    stepId: str
+    tool: str
+    result: dict[str, object] | None = None
+    conflictReason: str | None = None
+
+
+class AgentRecipe(BaseModel):
+    """N170 一条任务配方（whitelist ⊆ 注册表白名单）。"""
+
+    id: str
+    name: str
+    input: str
+    toolWhitelist: list[str]
+    scope: dict[str, object] | None = None
+    createdAt: str
+    updatedAt: str
+
+
+class AgentRecipeCreate(BaseModel):
+    """N170 POST /api/v1/agent/recipes。"""
+
+    model_config = {"extra": "forbid"}
+
+    name: str
+    input: str
+    toolWhitelist: list[str]
+    scope: dict[str, object] | None = None
+
+
+class AgentRecipeListResponse(BaseModel):
+    """Envelope for GET /api/v1/agent/recipes."""
+
+    items: list[AgentRecipe]
+
+
+class AgentRecipePreview(BaseModel):
+    """N170 运行前预览：将创建的会话设置（白名单 → toolPolicy +
+    scope）与首条消息概要；unknownTools 非空 = 白名单越界（运行被拒）。"""
+
+    recipeId: str
+    name: str
+    input: str
+    toolWhitelist: list[str]
+    unknownTools: list[str] = []
+    scope: dict[str, object] | None = None
+    toolPolicy: AgentToolPolicy | None = None
+    threadTitle: str
+    note: str
+
+
+class AgentRecipeRunResult(BaseModel):
+    """N170 POST .../run — 创建新会话并以配方 input 开启第一回合。"""
+
+    recipeId: str
+    thread: AgentThread
+    status: Literal["processing"]

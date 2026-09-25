@@ -1053,16 +1053,10 @@ def _parse_model_json(raw: str):
 
 
 def _quote_verified(quote: str, content: str) -> bool:
-    """locateSentence 式核验：规范化空白后子串匹配（≥8 字才核验）。"""
-    import re as _re
+    """locateSentence 式核验（N154 起共享实现：lumirss.quote_verify）。"""
+    from lumirss.quote_verify import quote_verified
 
-    def norm(value: str) -> str:
-        return _re.sub(r"\s+", "", value or "").lower()
-
-    q = norm(quote)
-    if len(q) < 8:
-        return False
-    return q in norm(content)
+    return quote_verified(quote, content)
 
 
 @router.post(

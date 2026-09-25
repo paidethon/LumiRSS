@@ -48,8 +48,12 @@ import type {
   RssHubPreviewMetadata,
   RssHubRecentItem,
   RssHubRefreshResult,
+  RssHubParamPresetApply,
+  RssHubParamPresetItem,
+  RssHubRouteMySources,
   RssHubRouteRuns,
   RssHubRoutesResponse,
+  RedirectHop,
   SearchResponse,
   ServerSettings,
   SnapshotListResponse,
@@ -61,6 +65,7 @@ import type {
   SavedSearchViewList,
   TagMergePreview,
   TagMergeResult,
+  TagMergeUndoResult,
   WebDavSettings,
   WebDavTestResult,
   Workspace,
@@ -79,6 +84,12 @@ import type {
   QueueSnapshotList,
   QueueSnapshotView,
   QueueTodayResponse,
+  BackupScopeInclude,
+  BackupScopePreview,
+  BackupVerifyReport,
+  DataFlowsResponse,
+  RetentionNoticeData,
+  RetentionPostponeData,
 } from './types'
 
 const API_BASE = '/api/v1'
@@ -92,6 +103,10 @@ export class ApiError extends Error {
   /** 稳定错误族附带的额外标量（如 invite_not_active 的 serverTime /
    * notBefore）；服务端没给就是 null。UI 绝不从这里读秘密材料。 */
   readonly extra: Record<string, string> | null
+  /** N035：feed 抓取边界拒绝时随错误体透出的重定向链（每跳 url 的
+   * query 凭据值服务端已掩码；末跳 status=null 表示请求未发出）。
+   * 单跳普通失败服务端不附链 → null。 */
+  readonly redirectChain: RedirectHop[] | null
 
   constructor(
     status: number,
@@ -99,6 +114,7 @@ export class ApiError extends Error {
     message: string,
     retryAfterSeconds: number | null = null,
     extra: Record<string, string> | null = null,
+    redirectChain: RedirectHop[] | null = null,
   ) {
     super(message)
     this.name = 'ApiError'
@@ -106,6 +122,7 @@ export class ApiError extends Error {
     this.type = type
     this.retryAfterSeconds = retryAfterSeconds
     this.extra = extra
+    this.redirectChain = redirectChain
   }
 }
 
@@ -123,6 +140,7 @@ async function toApiError(response: Response): Promise<ApiError> {
   let type = 'http_error'
   let message = `请求失败（HTTP ${response.status}），请稍后重试。`
   let extra: Record<string, string> | null = null
+  let redirectChain: RedirectHop[] | null = null
   try {
     const body: unknown = await response.json()
     if (
@@ -148,6 +166,23 @@ async function toApiError(response: Response): Promise<ApiError> {
       if (Object.keys(extras).length > 0) {
         extra = extras
       }
+      // N035：重定向链（形状由服务端 RedirectHop 固定；逐跳校验后再
+      // 采用，畸形载荷静默丢弃——诊断数据绝不引入新错误路径）。
+      const rawChain = (err as Record<string, unknown>).redirectChain
+      if (Array.isArray(rawChain)) {
+        const hops: RedirectHop[] = []
+        for (const hop of rawChain) {
+          if (typeof hop !== 'object' || hop === null) continue
+          const row = hop as Record<string, unknown>
+          if (typeof row.url !== 'string') continue
+          hops.push({
+            url: row.url,
+            status: typeof row.status === 'number' ? row.status : null,
+            final: row.final === true,
+          })
+        }
+        if (hops.length > 0) redirectChain = hops
+      }
     }
   } catch {
     // 非 JSON（如 HTML 错误页 / 422 detail 数组）→ 使用安全 fallback。
@@ -158,7 +193,7 @@ async function toApiError(response: Response): Promise<ApiError> {
   if (retryAfterRaw !== null && /^\d+$/.test(retryAfterRaw.trim())) {
     retryAfterSeconds = Number.parseInt(retryAfterRaw.trim(), 10)
   }
-  return new ApiError(response.status, type, message, retryAfterSeconds, extra)
+  return new ApiError(response.status, type, message, retryAfterSeconds, extra, redirectChain)
 }
 
 /** 发起请求并把非 2xx / 网络失败转成 ApiError；返回原始 Response，
@@ -607,6 +642,73 @@ export async function activateWithInvite(body: {
   return (await response.json()) as AuthStatusView
 }
 
+// ---- P0 公开注册（/auth/register + /admin/registration-policy） ----------
+// 契约类型在本模块补齐（additive，与 0067 端点同一策略；generated/schema
+// 已由 pnpm api:generate 收录该批端点，此处保持稳定的具名 DTO）。BFF 是
+// 唯一真源。
+
+/** 公开注册并自动登录（P0-02/F020）：成功 = 会话 Cookie 由响应设置，
+ * 响应体只含 authenticated/expiresAt，身份仍由随后的 GET /auth/session
+ * 服务端核实（与 /auth/activate 同契约）。
+ * 错误族：403 registration_disabled / 409 username_taken /
+ * 400 weak_password / 400 invalid_username。 */
+export async function registerAccount(body: {
+  username: string
+  password: string
+  displayName?: string | null
+}): Promise<AuthStatusView> {
+  const response = await rawRequest(`${API_BASE}/auth/register`, {
+    method: 'POST',
+    body: JSON.stringify({
+      username: body.username,
+      password: body.password,
+      ...(body.displayName ? { displayName: body.displayName } : {}),
+    }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as AuthStatusView
+}
+
+/** 实例注册策略（P0-05，admin-only）。updatedAt/updatedBy 首次设置前
+ * 为 null（服务端没给就不显示，不编造）。 */
+export interface RegistrationPolicy {
+  allowPublicRegistration: boolean
+  updatedAt: string | null
+  updatedBy: string | null
+}
+
+/** 容错归一：{allowPublicRegistration, updatedAt?, updatedBy?} → DTO。 */
+function normalizeRegistrationPolicy(body: Record<string, unknown>): RegistrationPolicy {
+  return {
+    allowPublicRegistration: body.allowPublicRegistration === true,
+    updatedAt: toIso(body.updatedAt),
+    updatedBy: pickString(body.updatedBy),
+  }
+}
+
+/** 读实例注册策略（GET /admin/registration-policy）。 */
+export async function getRegistrationPolicy(signal?: AbortSignal): Promise<RegistrationPolicy> {
+  const body = await request<Record<string, unknown>>(
+    `${API_BASE}/admin/registration-policy`,
+    signal,
+  )
+  return normalizeRegistrationPolicy(body)
+}
+
+/** 改实例注册策略（PUT /admin/registration-policy）。返回服务端权威
+ * 状态（含 updatedAt/updatedBy）；403 = 非管理员，UI 不自行放行。 */
+export async function updateRegistrationPolicy(
+  allowPublicRegistration: boolean,
+): Promise<RegistrationPolicy> {
+  const response = await rawRequest(`${API_BASE}/admin/registration-policy`, {
+    method: 'PUT',
+    body: JSON.stringify({ allowPublicRegistration }),
+    contentType: 'application/json',
+  })
+  const body = (await response.json()) as Record<string, unknown>
+  return normalizeRegistrationPolicy(body)
+}
+
 // ---- 管理台（role=owner|admin；403 = 后端判定的越界，UI 不自行放行） ----
 
 /** 成员目录（不含密码哈希；owner→member 全量）。 */
@@ -1028,6 +1130,241 @@ export async function listAdminAudit(signal?: AbortSignal, limit = 20): Promise<
   })
 }
 
+// ---- N191 成员额度策略包 + N193 后台任务暂停（admin-only，同一策略行） ----
+
+/** 成员策略行（user_quotas）：caps 里没有的键 = 管理员未设限；
+ * backgroundPaused 只停重型后台任务，登录/阅读不受影响。 */
+export interface AdminUserQuota {
+  userId: string
+  caps: { maxSources: number | null; aiQuotaPerDay: number | null }
+  backgroundPaused: boolean
+  backgroundPauseReason: string | null
+  updatedAt: string | null
+  updatedBy: string | null
+}
+
+function normalizeUserQuota(body: Record<string, unknown>, userId: string): AdminUserQuota {
+  const caps = (body.caps ?? {}) as Record<string, unknown>
+  const num = (value: unknown): number | null =>
+    typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null
+  return {
+    userId: String(body.userId ?? userId),
+    caps: { maxSources: num(caps.maxSources), aiQuotaPerDay: num(caps.aiQuotaPerDay) },
+    backgroundPaused: body.backgroundPaused === true,
+    backgroundPauseReason: pickString(body.backgroundPauseReason),
+    updatedAt: toIso(body.updatedAt),
+    updatedBy: pickString(body.updatedBy),
+  }
+}
+
+/** 读成员策略行（额度 + 后台暂停标志）。 */
+export async function getAdminUserQuota(userId: string, signal?: AbortSignal): Promise<AdminUserQuota> {
+  const body = await request<Record<string, unknown>>(
+    `${API_BASE}/admin/users/${encodeURIComponent(userId)}/quota`,
+    signal,
+  )
+  return normalizeUserQuota(body, userId)
+}
+
+/** 设置成员额度（传 null 的键 = 清除该上限；服务端是唯一真源）。 */
+export async function setAdminUserQuota(
+  userId: string,
+  caps: { maxSources: number | null; aiQuotaPerDay: number | null },
+): Promise<AdminUserQuota> {
+  const response = await rawRequest(`${API_BASE}/admin/users/${encodeURIComponent(userId)}/quota`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      ...(caps.maxSources !== null ? { maxSources: caps.maxSources } : {}),
+      ...(caps.aiQuotaPerDay !== null ? { aiQuotaPerDay: caps.aiQuotaPerDay } : {}),
+    }),
+    contentType: 'application/json',
+  })
+  const body = (await response.json()) as Record<string, unknown>
+  return normalizeUserQuota(body, userId)
+}
+
+/** 清除成员额度策略（N193 后台暂停标志保留——两者生命周期独立）。 */
+export async function clearAdminUserQuota(userId: string): Promise<AdminUserQuota> {
+  const response = await rawRequest(
+    `${API_BASE}/admin/users/${encodeURIComponent(userId)}/quota`,
+    { method: 'DELETE' },
+  )
+  const body = (await response.json()) as Record<string, unknown>
+  return normalizeUserQuota(body, userId)
+}
+
+/** 暂停单个成员的重型后台任务（必须给原因；登录/阅读不受影响）。 */
+export async function pauseAdminUserBackground(userId: string, reason: string): Promise<void> {
+  await rawRequest(`${API_BASE}/admin/users/${encodeURIComponent(userId)}/background-pause`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+    contentType: 'application/json',
+  })
+}
+
+/** 恢复成员的后台任务（原因随之清空）。 */
+export async function resumeAdminUserBackground(userId: string): Promise<void> {
+  await rawRequest(`${API_BASE}/admin/users/${encodeURIComponent(userId)}/background-resume`, {
+    method: 'POST',
+  })
+}
+
+// ---- N192 邀请容量仪表（真实行聚合；lowCapacity 服务端定义） ----
+
+export interface AdminCapacity {
+  pool: { ready: number; held: number; assigned: number }
+  invites: { pending: number; held: number }
+  users: { active: number; paused: number }
+  /** ready+held < pending：可交付名额追不上待激活邀请。 */
+  lowCapacity: boolean
+}
+
+export async function getAdminCapacity(signal?: AbortSignal): Promise<AdminCapacity> {
+  const body = await request<Record<string, unknown>>(`${API_BASE}/admin/capacity`, signal)
+  const pool = (body.pool ?? {}) as Record<string, unknown>
+  const invites = (body.invites ?? {}) as Record<string, unknown>
+  const users = (body.users ?? {}) as Record<string, unknown>
+  const num = (value: unknown): number =>
+    typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0
+  return {
+    pool: { ready: num(pool.ready), held: num(pool.held), assigned: num(pool.assigned) },
+    invites: { pending: num(invites.pending), held: num(invites.held) },
+    users: { active: num(users.active), paused: num(users.paused) },
+    lowCapacity: body.lowCapacity === true,
+  }
+}
+
+// ---- N195 升级影响预览（只读推演；绝不触发任何升级） ----
+
+export interface AdminUpgradePreview {
+  /** false = 未配置清单/文件不可读/解析失败（reason 说明）。 */
+  available: boolean
+  reason: string | null
+  currentVersion: string | null
+  targetVersion: string | null
+  /** 目标有而本地未应用的迁移文件名（升序）。 */
+  newMigrations: string[]
+  /** manifest 声明的最低可升级版本；未声明为 null。 */
+  minCompat: string | null
+  /** true = 不兼容（同版本/降级/库超前于目标），blockedReason 说明。 */
+  blocked: boolean
+  blockedReason: string | null
+}
+
+export async function getAdminUpgradePreview(signal?: AbortSignal): Promise<AdminUpgradePreview> {
+  const body = await request<Record<string, unknown>>(`${API_BASE}/admin/upgrade-preview`, signal)
+  const migrations = Array.isArray(body.newMigrations) ? body.newMigrations : []
+  return {
+    available: body.available === true,
+    reason: pickString(body.reason),
+    currentVersion: pickString(body.currentVersion),
+    targetVersion: pickString(body.targetVersion),
+    newMigrations: migrations.map((name) => String(name)),
+    minCompat: pickString(body.minCompat),
+    blocked: body.blocked === true,
+    blockedReason: pickString(body.blockedReason),
+  }
+}
+
+// ---- N196 升级任务进度（./lumirss update 写入；本页只读、无执行控件） ----
+
+export interface AdminDeployStage {
+  /** running/ok/failed/interrupted。 */
+  status: string
+  startedAt: string | null
+  finishedAt: string | null
+  note: string | null
+}
+
+export interface AdminDeployStatus {
+  available: boolean
+  reason: string | null
+  deploy: {
+    imageTag: string | null
+    startedAt: string | null
+    updatedAt: string | null
+    stages: Record<string, AdminDeployStage>
+    result: { status: string; finishedAt: string | null } | null
+  } | null
+}
+
+export async function getAdminDeployStatus(signal?: AbortSignal): Promise<AdminDeployStatus> {
+  const body = await request<Record<string, unknown>>(`${API_BASE}/admin/deploy-status`, signal)
+  if (body.available !== true) {
+    return { available: false, reason: pickString(body.reason) ?? null, deploy: null }
+  }
+  const deploy = (body.deploy ?? {}) as Record<string, unknown>
+  const stagesRaw = (deploy.stages ?? {}) as Record<string, unknown>
+  const stages: Record<string, AdminDeployStage> = {}
+  for (const [name, raw] of Object.entries(stagesRaw)) {
+    const row = (raw ?? {}) as Record<string, unknown>
+    stages[name] = {
+      status: String(row.status ?? 'unknown'),
+      startedAt: toIso(row.startedAt),
+      finishedAt: toIso(row.finishedAt),
+      note: pickString(row.note),
+    }
+  }
+  const resultRaw = (deploy.result ?? null) as Record<string, unknown> | null
+  return {
+    available: true,
+    reason: null,
+    deploy: {
+      imageTag: pickString(deploy.imageTag),
+      startedAt: toIso(deploy.startedAt),
+      updatedAt: toIso(deploy.updatedAt),
+      stages,
+      result:
+        resultRaw !== null
+          ? { status: String(resultRaw.status ?? 'unknown'), finishedAt: toIso(resultRaw.finishedAt) }
+          : null,
+    },
+  }
+}
+
+// ---- N198 版本差异功能导览（成员可读；adminOnly 条目服务端已过滤） ----
+
+export interface WhatsNewFeature {
+  id: string
+  title: string
+  /** 功能入口提示（应用内路径或说明；展示用）。 */
+  entry: string
+  adminOnly?: boolean
+}
+
+export interface WhatsNewResponse {
+  /** 清单版本；文件缺失/损坏为 null（前端隐藏导览）。 */
+  version: string | null
+  sinceVersion: string | null
+  features: WhatsNewFeature[]
+}
+
+export async function getWhatsNew(
+  sinceVersion: string | null,
+  signal?: AbortSignal,
+): Promise<WhatsNewResponse> {
+  const path =
+    sinceVersion !== null
+      ? `${API_BASE}/whats-new?sinceVersion=${encodeURIComponent(sinceVersion)}`
+      : `${API_BASE}/whats-new`
+  const body = await request<Record<string, unknown>>(path, signal)
+  const features = Array.isArray(body.features) ? body.features : []
+  return {
+    version: pickString(body.version),
+    sinceVersion: sinceVersion,
+    features: features.map((raw) => {
+      const row = (raw ?? {}) as Record<string, unknown>
+      const feature: WhatsNewFeature = {
+        id: String(row.id ?? ''),
+        title: String(row.title ?? ''),
+        entry: pickString(row.entry) ?? '',
+      }
+      if (row.adminOnly === true) feature.adminOnly = true
+      return feature
+    }),
+  }
+}
+
 /** 0013 Gate 2：直接 RSS/Atom 预览（无副作用；不接 AbortSignal ——
  * POST 语义与 Mutation 一致，避免预览中途被取消造成状态不一致）。 */
 export async function previewFeed(feedUrl: string): Promise<FeedPreviewMetadata> {
@@ -1281,6 +1618,48 @@ export async function importOpml(
   return (await response.json()) as OpmlImportResult
 }
 
+// ---- N018 OPML 树对照导入（plan → apply → undo） ---------------------------
+
+export type OpmlTreePlan = G6Schemas['OpmlTreePlan']
+export type OpmlTreeApplyResult = G6Schemas['OpmlTreeApplyResult']
+export type OpmlUndoResult = G6Schemas['OpmlUndoResult']
+export type OpmlImportLogEntry = G6Schemas['OpmlImportLogEntry']
+
+/** N018：OPML 分类树对照预览（严格只读；文件重新上传由服务端解析）。 */
+export async function previewOpmlTreeImport(file: File): Promise<OpmlTreePlan> {
+  const response = await rawRequest(`${API_BASE}/opml/import/tree-preview`, {
+    method: 'POST',
+    body: file,
+    contentType: file.type || 'application/xml',
+  })
+  return (await response.json()) as OpmlTreePlan
+}
+
+/** N018：应用树对照计划（订阅新 feed → 建类/移动随行；写撤销台账）。 */
+export async function applyOpmlTreeImport(file: File): Promise<OpmlTreeApplyResult> {
+  const response = await rawRequest(`${API_BASE}/opml/import/tree-apply`, {
+    method: 'POST',
+    body: file,
+    contentType: file.type || 'application/xml',
+  })
+  return (await response.json()) as OpmlTreeApplyResult
+}
+
+/** N018：撤销一次树对照导入（feed 移回原分类；空分类无法经 greader
+ * API 删除——响应 categoriesNotDeleted 如实说明）。 */
+export async function undoOpmlImport(logId: number): Promise<OpmlUndoResult> {
+  const response = await rawRequest(
+    `${API_BASE}/opml/import/${encodeURIComponent(String(logId))}/undo`,
+    { method: 'POST' },
+  )
+  return (await response.json()) as OpmlUndoResult
+}
+
+/** N018：最近撤销台账（≤5 行）。 */
+export async function listOpmlImportLog(): Promise<{ items: OpmlImportLogEntry[] }> {
+  return request<{ items: OpmlImportLogEntry[] }>(`${API_BASE}/opml/import/log`)
+}
+
 /** 0013 Gate 4：FreshRSS 高级逃生入口（未配置 → null；BFF 永不暴露
  * 内部 base URL）。 */
 export async function getFreshRssUiUrl(signal?: AbortSignal): Promise<FreshRssUiInfo> {
@@ -1323,6 +1702,25 @@ export async function previewRssHub(
     contentType: 'application/json',
   })
   return (await response.json()) as RssHubPreviewMetadata
+}
+
+// ---- N024：路由变更差异预览（旧/新参数两侧有界抓取，严格只读） --------------
+
+export type RssHubParamsDiffResult = G6Schemas['RssHubParamsDiffResult']
+
+/** N024：编辑既有 RSSHub 来源参数前的差异对照（零写入；确认应用走
+ * migrateSubscription——取消则什么都没发生）。 */
+export async function diffRssHubParams(input: {
+  oldFeedUrl: string
+  routeId: string
+  newParams: Record<string, string>
+}): Promise<RssHubParamsDiffResult> {
+  const response = await rawRequest(`${API_BASE}/rsshub/params-diff`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as RssHubParamsDiffResult
 }
 
 // ---- N021 路由收藏与最近使用（服务端持久化，跨设备） ----
@@ -1376,6 +1774,58 @@ export async function refreshRssHubRoute(routeKey: string): Promise<RssHubRefres
     contentType: 'application/json',
   })
   return (await response.json()) as RssHubRefreshResult
+}
+
+// ---- N029 路由与来源关系图（我的来源；仅本人作用域） ----
+
+/** N029：由该 routeKey（模板 + 脱敏参数签名）生成的**本人**订阅，
+ * 附每来源未读数与最近条目 ≤5（search_entries 派生投影）。 */
+export async function getRssHubRouteMySources(
+  routeKey: string,
+  signal?: AbortSignal,
+): Promise<RssHubRouteMySources> {
+  return request<RssHubRouteMySources>(
+    `${API_BASE}/rsshub/routes/${encodeURIComponent(routeKey)}/my-sources`,
+    signal,
+  )
+}
+
+// ---- N030 路由可复用参数方案（每用户私有；敏感值只存 '***' 哨兵） ----
+
+/** N030：我的方案列表（cap 20/用户；created_at 新→旧）。 */
+export async function getRssHubParamPresets(signal?: AbortSignal): Promise<RssHubParamPresetItem[]> {
+  return request<RssHubParamPresetItem[]>(`${API_BASE}/rsshub/param-presets`, signal)
+}
+
+/** N030：把当前参数组合保存为方案（服务端 pattern 校验后哨兵化存储）。 */
+export async function createRssHubParamPreset(input: {
+  routeId: string
+  params: Record<string, string>
+  name: string
+}): Promise<RssHubParamPresetItem> {
+  const response = await rawRequest(`${API_BASE}/rsshub/param-presets`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as RssHubParamPresetItem
+}
+
+/** N030：删除方案（该用户没有此方案 → 404）。 */
+export async function deleteRssHubParamPreset(presetId: string): Promise<void> {
+  await rawRequest(`${API_BASE}/rsshub/param-presets/${encodeURIComponent(presetId)}`, {
+    method: 'DELETE',
+  })
+}
+
+/** N030：应用方案 → 回填数据（纯只读；requiresRebind=true 时
+ * sensitiveKeys 必须重新输入后才能预览——服务端从不存真实值）。 */
+export async function applyRssHubParamPreset(presetId: string): Promise<RssHubParamPresetApply> {
+  const response = await rawRequest(
+    `${API_BASE}/rsshub/param-presets/${encodeURIComponent(presetId)}/apply`,
+    { method: 'POST' },
+  )
+  return (await response.json()) as RssHubParamPresetApply
 }
 
 /** 0015：AI 设置（浏览器安全视图；configured 只报告 key 存在与否）。 */
@@ -1859,13 +2309,47 @@ export async function materializeRssHubEnvFile(): Promise<{
   }
 }
 
-export async function createBackup(target: 'local' | 'webdav'): Promise<BackupJob> {
+export async function createBackup(
+  target: 'local' | 'webdav',
+  include?: BackupScopeInclude,
+): Promise<BackupJob> {
   const response = await rawRequest(`${API_BASE}/backups`, {
     method: 'POST',
-    body: JSON.stringify({ target }),
+    body: JSON.stringify(include ? { target, include } : { target }),
     contentType: 'application/json',
   })
   return (await response.json()) as BackupJob
+}
+
+/** N185：备份内容选择预览（只读；不创建任务）。 */
+export async function previewBackupScope(
+  include?: Partial<BackupScopeInclude>,
+): Promise<BackupScopePreview> {
+  const response = await rawRequest(`${API_BASE}/backups/preview-scope`, {
+    method: 'POST',
+    body: JSON.stringify({ include: include ?? {} }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as BackupScopePreview
+}
+
+/** N186：独立完整性自检（只出报告，不建恢复会话）。 */
+export async function verifyBackup(body: {
+  source: 'local' | 'remote'
+  jobId?: string
+  fileName?: string
+}): Promise<BackupVerifyReport> {
+  const response = await rawRequest(`${API_BASE}/backups/verify`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as BackupVerifyReport
+}
+
+/** N181：逐来源数据外发清单（来自服务端真实配置；只读）。 */
+export async function getDataFlows(signal?: AbortSignal): Promise<DataFlowsResponse> {
+  return request<DataFlowsResponse>(`${API_BASE}/privacy/data-flows`, signal)
 }
 
 export async function listRemoteBackups(signal?: AbortSignal): Promise<RemoteBackupsResponse> {
@@ -2383,6 +2867,11 @@ export type GptDigestConfigList = G6Schemas['GptDigestConfigList']
 export type GptDigestConfigUpdate = G6Schemas['GptDigestConfigUpdate']
 export type GptDigestCreate = G6Schemas['GptDigestCreate']
 export type GptDigestIssueRevise = G6Schemas['GptDigestIssueRevise']
+export type GptDigestSentence = G6Schemas['GptDigestSentence']
+export type GptDigestSentenceOp = G6Schemas['GptDigestSentenceOp']
+export type GptDigestColumn = G6Schemas['GptDigestColumn']
+export type GptDigestLeftoverItem = G6Schemas['GptDigestLeftoverItem']
+export type GptDigestTrimPreview = G6Schemas['GptDigestTrimPreview']
 export type StorageUsage = G6Schemas['StorageUsage']
 export type SubscriptionVolumeResponse = G6Schemas['SubscriptionVolumeResponse']
 export type SubscriptionVolumeItem = G6Schemas['SubscriptionVolumeItem']
@@ -2404,6 +2893,17 @@ export type ObsidianDeviceProfilePayload = G6Schemas['ObsidianDeviceProfilePaylo
 export type ObsidianExportTemplateView = G6Schemas['ObsidianExportTemplateView']
 export type ObsidianTemplatePreviewResult = G6Schemas['ObsidianTemplatePreviewResult']
 export type ObsidianExportHandoffResult = G6Schemas['ObsidianExportHandoffResult']
+export type ObsidianScanFileList = G6Schemas['ObsidianScanFileList']
+export type ObsidianScanFiles = G6Schemas['ObsidianScanFiles']
+export type ObsidianBlockRef = G6Schemas['ObsidianBlockRef']
+export type ObsidianBlockRefsResponse = G6Schemas['ObsidianBlockRefsResponse']
+export type ObsidianExportIssue = G6Schemas['ObsidianExportIssue']
+export type ObsidianExportValidateResult = G6Schemas['ObsidianExportValidateResult']
+export type ObsidianHandoffLogEntry = G6Schemas['ObsidianHandoffLogEntry']
+export type ObsidianHandoffLogList = G6Schemas['ObsidianHandoffLogList']
+export type ObsidianHandoffLogClearResult = G6Schemas['ObsidianHandoffLogClearResult']
+export type AnnotationExportMarkResult = G6Schemas['AnnotationExportMarkResult']
+export type AnnotationExportDelta = G6Schemas['AnnotationExportDelta']
 export type FavoritesResponse = G6Schemas['FavoritesResponse']
 export type LibrarySearchItem = G6Schemas['LibrarySearchItem']
 
@@ -2441,6 +2941,7 @@ export interface ApiSourceCreateInput {
   fieldMap: ApiSourceFieldMapInput
   pagination?: ApiSourcePaginationInput
   subscribe?: boolean
+  maxRunsPerHour?: number
 }
 
 export interface ApiSourcePreviewInput {
@@ -2458,6 +2959,7 @@ export interface ApiSourceUpdateInput {
   fieldMap?: ApiSourceFieldMapInput | null
   pagination?: ApiSourcePaginationInput | null
   enabled?: boolean | null
+  maxRunsPerHour?: number | null
 }
 
 /** F043：重新确认结构基线（重新快照并解除漂移告警）。 */
@@ -2520,6 +3022,222 @@ export async function previewApiSource(
     contentType: 'application/json',
   })
   return (await response.json()) as ApiSourcePreviewResult
+}
+
+// ---- N128 用样例预览 / N129 预算 / N130 轮换；N011/N016/N017 来源生命周期 ----
+
+export interface ApiSourceSamplePreviewInput {
+  samplePayload: unknown
+  itemsExpr: string
+  fieldMap: ApiSourceFieldMapInput
+}
+
+/** N128 离线样例预览：对粘贴样例跑同一条映射 + Atom 预览管线。
+ * 零网络、零存储、无任何请求头；sampleMode=true 诚实标注。 */
+export async function previewApiSourceSample(
+  input: ApiSourceSamplePreviewInput,
+): Promise<ApiSourcePreviewResult> {
+  const response = await rawRequest(`${API_BASE}/api-sources/preview-sample`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as ApiSourcePreviewResult
+}
+
+export interface ApiSourceCredentialResult {
+  ok: boolean
+  statusClass: string
+  latencyMs: number
+  note?: string | null
+}
+
+/** N130 轮换预演（API 来源）：结构校验 + 只读端点探测（5s 上限）。
+ * 响应脱敏：只有 {ok, statusClass, latencyMs}，凭据与请求头绝不回显。 */
+export async function testApiSourceCredential(
+  uuid: string,
+  newCredential: string,
+): Promise<ApiSourceCredentialResult> {
+  const response = await rawRequest(
+    `${API_BASE}/api-sources/${encodeURIComponent(uuid)}/credentials/test`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ newCredential }),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as ApiSourceCredentialResult
+}
+
+/** N130 测试并轮换（API 来源）：预演失败 → 422 credential_test_failed
+ * 且当前凭据原样；成功 → 原子换哈希 + 旧凭据进入 10 分钟宽限窗。 */
+export async function rotateApiSourceCredential(
+  uuid: string,
+  newCredential: string,
+): Promise<ApiSourceCredentialResult> {
+  const response = await rawRequest(
+    `${API_BASE}/api-sources/${encodeURIComponent(uuid)}/credentials/rotate`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ newCredential }),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as ApiSourceCredentialResult
+}
+
+export interface BundleSourceEntry {
+  feed_url: string
+  title?: string
+  category?: string | null
+  type?: string
+  notes?: string | null
+}
+
+export interface BundleDocument {
+  version: number
+  generatedAt?: string | null
+  sources: BundleSourceEntry[]
+  missing?: string[]
+}
+
+export interface BundleImportItem {
+  feedUrl: string
+  title: string
+  status: 'new' | 'exists' | 'needs_credentials' | 'invalid' | 'failed'
+  type: string
+  categoryAction: 'none' | 'reuse' | 'create'
+  note?: string | null
+}
+
+export interface BundleImportResult {
+  items: BundleImportItem[]
+  counts: Record<string, number>
+  applied: boolean
+}
+
+/** N011 组合包导出：凭据无关的 JSON（Lumi 生成源脱敏为 urn）。 */
+export async function exportSourceBundle(feedUrls: string[]): Promise<BundleDocument> {
+  const response = await rawRequest(`${API_BASE}/sources/bundle/export`, {
+    method: 'POST',
+    body: JSON.stringify({ feedUrls }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as BundleDocument
+}
+
+/** N011 组合包导入：默认试运行预览；apply=true 才提交。 */
+export async function importSourceBundle(
+  bundle: BundleDocument,
+  apply: boolean,
+): Promise<BundleImportResult> {
+  const response = await rawRequest(
+    `${API_BASE}/sources/bundle/import?apply=${apply ? 'true' : 'false'}`,
+    {
+      method: 'POST',
+      body: JSON.stringify(bundle),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as BundleImportResult
+}
+
+export interface StagedSourceSampleEntry {
+  title: string
+  link?: string | null
+  published?: string | null
+  summary?: string | null
+}
+
+export interface StagedSource {
+  id: string
+  url: string
+  title: string
+  addedAt: string
+  note?: string | null
+  sourceType: string
+  origin: 'staging' | 'bundle_draft'
+  enabled: boolean
+  subscribed: boolean
+  sample: StagedSourceSampleEntry[]
+}
+
+/** N016 暂存一个待评估来源（有界预览抓取 + 快照；不订阅、不计未读）。 */
+export async function stageSource(url: string, note?: string): Promise<StagedSource> {
+  const response = await rawRequest(`${API_BASE}/sources/staging`, {
+    method: 'POST',
+    body: JSON.stringify({ url, note: note || null }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as StagedSource
+}
+
+export async function listStagedSources(signal?: AbortSignal): Promise<{ items: StagedSource[] }> {
+  return request<{ items: StagedSource[] }>(`${API_BASE}/sources/staging`, signal)
+}
+
+/** N016 幂等订阅：已存在订阅 → exists；无论结果暂存行都会移除。 */
+export async function subscribeStagedSource(
+  id: string,
+): Promise<{ status: 'subscribed' | 'exists'; feedUrl: string }> {
+  const response = await rawRequest(
+    `${API_BASE}/sources/staging/${encodeURIComponent(id)}/subscribe`,
+    { method: 'POST' },
+  )
+  return (await response.json()) as { status: 'subscribed' | 'exists'; feedUrl: string }
+}
+
+export async function discardStagedSource(id: string): Promise<void> {
+  await rawRequest(`${API_BASE}/sources/staging/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+}
+
+export interface CleanupSuggestion {
+  feedUrl: string
+  title: string
+  lastReadAt: string | null
+  weeklyYield: number
+  suggestion: 'demote' | 'mute'
+  basis?: string | null
+}
+
+export interface CleanupSuggestionsResponse {
+  items: CleanupSuggestion[]
+  generatedAt: string
+  basis: string
+}
+
+/** N017 清理建议（只读）：长期未读 × 仍高产的自有数据投影。 */
+export async function getCleanupSuggestions(
+  signal?: AbortSignal,
+): Promise<CleanupSuggestionsResponse> {
+  return request<CleanupSuggestionsResponse>(`${API_BASE}/sources/cleanup-suggestions`, signal)
+}
+
+export interface CleanupApplyItem {
+  feedUrl: string
+  ok: boolean
+  error?: string | null
+}
+
+export interface CleanupApplyResult {
+  items: CleanupApplyItem[]
+  applied: number
+}
+
+/** N017 仅应用用户显式勾选的动作（mute / demote_category）；绝不自动退订。 */
+export async function applyCleanupSuggestions(input: {
+  feedUrls: string[]
+  action: 'mute' | 'demote_category'
+  targetCategoryLabel?: string
+}): Promise<CleanupApplyResult> {
+  const response = await rawRequest(`${API_BASE}/sources/cleanup-suggestions/apply`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as CleanupApplyResult
 }
 
 // ---- phase2 G6：邮件（收信地址 + 每日摘要） ----
@@ -2690,6 +3408,30 @@ export async function reviseGptDigestIssue(
   return (await response.json()) as { issue: GptDigestIssue }
 }
 
+/** N172：仅重跑润色阶段（选材/总结成果保留）。 */
+export async function retryPolishGptDigestIssue(
+  configId: number,
+  issueKey: string,
+): Promise<{ issue: GptDigestIssue }> {
+  const response = await rawRequest(
+    `${API_BASE}/gpt-digest/configs/${configId}/issues/${encodeURIComponent(issueKey)}/retry-polish`,
+    { method: 'POST' },
+  )
+  return (await response.json()) as { issue: GptDigestIssue }
+}
+
+/** N175：阅读时长裁剪预览（before/after + 将移入素材篮的条目；零写入）。 */
+export async function getDigestTrimPreview(
+  configId: number,
+  issueKey: string,
+  signal?: AbortSignal,
+): Promise<GptDigestTrimPreview> {
+  return request<GptDigestTrimPreview>(
+    `${API_BASE}/gpt-digest/configs/${configId}/issues/${encodeURIComponent(issueKey)}/trim-preview`,
+    signal,
+  )
+}
+
 /** F29 反向入口：引用某一 RSS 条目的书签/笔记（新→旧；无效引用为空列表）。 */
 export async function listNotesByEntry(
   entryRef: string,
@@ -2782,7 +3524,7 @@ export async function listSourceOverrides(): Promise<{ items: SourceOverrideResu
   return request<{ items: SourceOverrideResult[] }>(`${API_BASE}/sources/overrides`)
 }
 
-/** F11/F13/F001/N015：来源显示覆盖（sentinel：null=清除该维度，缺席=不改）。 */
+/** F11/F13/F001/N015/N020：来源显示覆盖（sentinel：null=清除该维度，缺席=不改）。 */
 export async function setSourceOverride(patch: {
   feedUrl: string
   hiddenUntil?: string | null
@@ -2794,6 +3536,12 @@ export async function setSourceOverride(patch: {
   aiDisabled?: boolean
   /** N015：分时静音窗口（每周循环；null=清除，缺席=不改）。 */
   muteWindows?: { days: number[]; start: string; end: string }[] | null
+  /** N020：关注级别（null=恢复 normal，缺席=不改）。 */
+  attentionLevel?: 'must_read' | 'normal' | 'low' | null
+  /** F032/F034/F031：语言标注 / 未读警戒阈值 / 同步优先级。 */
+  language?: string | null
+  unreadAlertThreshold?: number | null
+  syncPriority?: number | null
 }): Promise<SourceOverrideResult> {
   const response = await rawRequest(`${API_BASE}/sources/overrides`, {
     method: 'PUT',
@@ -2801,6 +3549,64 @@ export async function setSourceOverride(patch: {
     contentType: 'application/json',
   })
   return (await response.json()) as SourceOverrideResult
+}
+
+// ---- N014 自适应低活跃建议 / N019 来源接入说明卡 ----------------------------
+
+/** N014：低活跃来源建议（依据 = 派生投影 trailing 8 周画像）。 */
+export type FreshnessSuggestionsResponse = G6Schemas['FreshnessSuggestionsResponse']
+export type FreshnessSuggestionItem = G6Schemas['FreshnessSuggestionItem']
+
+export async function getFreshnessSuggestions(): Promise<FreshnessSuggestionsResponse> {
+  return request<FreshnessSuggestionsResponse>(`${API_BASE}/sources/freshness-suggestions`)
+}
+
+/** N014：接受建议 = 记录 refreshAdvisory=accepted（纯记录——不改变
+ * FreshRSS 抓取行为，逐源频率需在 FreshRSS 原生界面调整）。 */
+export async function applyFreshnessAdvisory(feedUrl: string): Promise<{
+  feedUrl: string
+  refreshAdvisory: string | null
+  schedulingNote: string
+}> {
+  const response = await rawRequest(`${API_BASE}/sources/freshness-suggestions/apply`, {
+    method: 'POST',
+    body: JSON.stringify({ feedUrl }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as {
+    feedUrl: string
+    refreshAdvisory: string | null
+    schedulingNote: string
+  }
+}
+
+/** N019：来源接入说明卡（结构化字段；凭据只存归属标签，绝无凭据值）。 */
+export type SourceAccessCardView = G6Schemas['SourceAccessCardView']
+export type SourceAccessCardList = G6Schemas['SourceAccessCardList']
+
+export async function getSourceAccessCard(feedUrl: string): Promise<SourceAccessCardView> {
+  return request<SourceAccessCardView>(
+    `${API_BASE}/sources/access-card?feedUrl=${encodeURIComponent(feedUrl)}`,
+  )
+}
+
+export async function listSourceAccessCards(): Promise<SourceAccessCardList> {
+  return request<SourceAccessCardList>(`${API_BASE}/sources/access-cards`)
+}
+
+export async function putSourceAccessCard(patch: {
+  feedUrl: string
+  acquisition?: string | null
+  limits?: string | null
+  credentialOwnership?: 'self' | 'shared' | 'none' | null
+  maintenance?: string | null
+}): Promise<SourceAccessCardView> {
+  const response = await rawRequest(`${API_BASE}/sources/access-card`, {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as SourceAccessCardView
 }
 
 /** N013：一个来源的显示别名（服务端真源；展示时优先于上游标题）。 */
@@ -3106,13 +3912,15 @@ export async function getStorageUsage(signal?: AbortSignal): Promise<StorageUsag
   return request<StorageUsage>(`${API_BASE}/storage/usage`, signal)
 }
 
-/** F12：订阅收件量概览（口径 = 发布时间窗口；投影未覆盖 → null）。 */
+/** F12：订阅收件量概览（口径 = 发布时间窗口；投影未覆盖 → null）。
+ * F024：daily=true 时附每源按天分桶（稀疏，UTC 日）。 */
 export async function getSubscriptionVolume(
   signal?: AbortSignal,
   days = 7,
+  daily = false,
 ): Promise<SubscriptionVolumeResponse> {
   return request<SubscriptionVolumeResponse>(
-    `${API_BASE}/sources/volume?days=${days}`,
+    `${API_BASE}/sources/volume?days=${days}${daily ? '&daily=true' : ''}`,
     signal,
   )
 }
@@ -3277,13 +4085,19 @@ export async function getObsidianExportTemplate(
   return request<ObsidianExportTemplateView>(`${API_BASE}/obsidian/export-template`, signal)
 }
 
-/** 保存导出模板（template='' = 回到默认模板）。 */
+/** 保存导出模板（template='' = 回到默认模板；exportNamePolicy 为 N135
+ * 命名策略，null = 不改模板只改策略）。 */
 export async function updateObsidianExportTemplate(
-  template: string,
+  template: string | null,
+  exportNamePolicy?: ObsidianExportTemplateView['exportNamePolicy'],
 ): Promise<ObsidianExportTemplateView> {
+  const body: Record<string, unknown> = { template }
+  if (exportNamePolicy !== undefined) {
+    body.exportNamePolicy = exportNamePolicy
+  }
   const response = await rawRequest(`${API_BASE}/obsidian/export-template`, {
     method: 'PUT',
-    body: JSON.stringify({ template }),
+    body: JSON.stringify(body),
     contentType: 'application/json',
   })
   return (await response.json()) as ObsidianExportTemplateView
@@ -3303,17 +4117,100 @@ export async function previewObsidianExportTemplate(
 }
 
 /** 导出到 Obsidian 交接：mode='uri' → 打开 uri（用户在 Obsidian 确认
- * 保存）；mode='file'（tooLong）→ 前端下载 .md + 剪贴板回退。 */
+ * 保存）；mode='file'（tooLong）→ 前端下载 .md + 剪贴板回退。
+ * onlySinceLastExport（N137）：只携带上次导出水位之后的批注。 */
 export async function requestObsidianExportHandoff(
   entryRef: string,
   deviceId: string,
+  options: { onlySinceLastExport?: boolean } = {},
 ): Promise<ObsidianExportHandoffResult> {
   const response = await rawRequest(`${API_BASE}/obsidian/export-handoff`, {
     method: 'POST',
-    body: JSON.stringify({ entryRef, deviceId }),
+    body: JSON.stringify({
+      entryRef,
+      deviceId,
+      onlySinceLastExport: options.onlySinceLastExport === true,
+    }),
     contentType: 'application/json',
   })
   return (await response.json()) as ObsidianExportHandoffResult
+}
+
+// ---- N134/N135/N137/N139/N140：交接闭环扩展 ----
+
+/** N134 块级回跳反查：哪些投影笔记内嵌了 ^lumi-<paraId> 块 id。 */
+export async function listObsidianBlockRefs(
+  paraId: string,
+  signal?: AbortSignal,
+): Promise<ObsidianBlockRefsResponse> {
+  const query = new URLSearchParams({ paraId })
+  return request<ObsidianBlockRefsResponse>(
+    `${API_BASE}/obsidian/block-refs?${query.toString()}`,
+    signal,
+  )
+}
+
+/** N139 导出侧链接校验（只读报告；不交接、不落日志、不推水位）。 */
+export async function validateObsidianExport(
+  entryRef: string,
+  deviceId: string,
+  options: { onlySinceLastExport?: boolean } = {},
+): Promise<ObsidianExportValidateResult> {
+  const response = await rawRequest(`${API_BASE}/obsidian/export-handoff/validate`, {
+    method: 'POST',
+    body: JSON.stringify({
+      entryRef,
+      deviceId,
+      onlySinceLastExport: options.onlySinceLastExport === true,
+    }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as ObsidianExportValidateResult
+}
+
+/** N140 交接记录列表（新→旧）。 */
+export async function listObsidianHandoffLog(
+  signal?: AbortSignal,
+): Promise<ObsidianHandoffLogList> {
+  return request<ObsidianHandoffLogList>(`${API_BASE}/obsidian/handoff-log`, signal)
+}
+
+/** N140 显式确认（唯一 confirmed 路径；页面可见性等被动事件绝不调用）。 */
+export async function confirmObsidianHandoff(
+  handoffId: string,
+): Promise<ObsidianHandoffLogEntry> {
+  const response = await rawRequest(
+    `${API_BASE}/obsidian/handoff/${encodeURIComponent(handoffId)}/confirm`,
+    { method: 'POST' },
+  )
+  return (await response.json()) as ObsidianHandoffLogEntry
+}
+
+/** N140 清空交接历史（返回如实删除条数）。 */
+export async function clearObsidianHandoffLog(): Promise<ObsidianHandoffLogClearResult> {
+  const response = await rawRequest(`${API_BASE}/obsidian/handoff-log`, {
+    method: 'DELETE',
+  })
+  return (await response.json()) as ObsidianHandoffLogClearResult
+}
+
+/** N137 增量预览：上次导出水位之后的新增/修改计数（可按文章收窄）。 */
+export async function getAnnotationsExportDelta(
+  entryRef?: string | null,
+  signal?: AbortSignal,
+): Promise<AnnotationExportDelta> {
+  const query = new URLSearchParams()
+  if (entryRef) {
+    query.set('entryRef', entryRef)
+  }
+  const qs = query.toString()
+  // ? 号内联在字面量里：契约测试按 `?` 截断路径，变量携带的查询串
+  // 会被折叠成形状错误的多余参数段（同 listKnowledgeCards 口径）。
+  const path =
+    qs === ''
+      ? `${API_BASE}/annotations/export-delta`
+      : `${API_BASE}/annotations/export-delta?${qs}`
+  return request<AnnotationExportDelta>(path, signal)
 }
 
 // ---- phase2 G6：联合收藏（RSS star + library favorite，仅展示层合并） ----
@@ -3343,10 +4240,11 @@ export async function removeLibraryFavorite(ref: string): Promise<void> {
 
 // ---- phase2 G7/G8：Agent 工作台 / 标签 / 关系图谱 / RAG ----
 // 契约类型：凡 OpenAPI 已收录的信封一律用 generated 别名（下方
-// `Schemas['…']`），绝不手写复制。AgentMessage / RagStatus / ItemTag
-// 所属端点目前返回无 response_model 的 dict（OpenAPI 抓不到），暂以
-// 本地 interface 对照 BFF routers 维护——补 response_model 后应换成
-// 生成别名（BFF 合同缺口，见 ROADMAP Next）。
+// `Schemas['…']`），绝不手写复制。E04 已给 Agent/RAG 全部端点补上
+// response_model（AgentMessageListResponse / RagStatus 等已入
+// generated schema）；本地 AgentMessage 仍保留 Record 形态的
+// content——消费方按索引防御式读取（AgentWorkbenchPage），换生成
+// 别名需改为窄化访问，属后续重构，非契约缺口。
 
 type Schemas = components['schemas']
 
@@ -3506,6 +4404,16 @@ export async function mergeTags(sourceId: number, targetId: number): Promise<Tag
   return (await response.json()) as TagMergeResult
 }
 
+/** N150：撤销最近一次标签合并（24h 窗口内；窗口外 404、源名已被占用
+ * （含上次 undo 自身重建）→ 409，错误信封原样上抛）。 */
+export async function undoTagMerge(): Promise<TagMergeUndoResult> {
+  const response = await rawRequest(`${API_BASE}/tags/merge/undo`, {
+    method: 'POST',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as TagMergeUndoResult
+}
+
 /** 绑定标签（POST 201 TagBinding）。 */
 export async function assignTag(input: TagAssignInput): Promise<TagSummary> {
   const response = await rawRequest(`${API_BASE}/tags/assign`, {
@@ -3569,7 +4477,8 @@ export interface RagStatus {
   enabled: boolean
   chunks: number
   model: string
-  vecTable: string | boolean
+  // E04 对齐服务端契约（RagStatus.vecTable: boolean；历史上误写宽类型）。
+  vecTable: boolean
   lastRebuildAt: string | null
   lastError: string | null
   fastembedAvailable: boolean
@@ -3632,7 +4541,15 @@ export async function getSavedSearchViews(
 }
 
 export async function createSavedSearchView(
-  body: { name: string; query: string; view: string; categoryKey: string },
+  body: {
+    name: string
+    query: string
+    view: string
+    categoryKey: string
+    /** N144：检索范围（可选）。 */
+    workspaceId?: string | null
+    contentTypes?: string[] | null
+  },
 ): Promise<SavedSearchView> {
   const response = await rawRequest(`${API_BASE}/search/views`, {
     method: 'POST',
@@ -3641,6 +4558,19 @@ export async function createSavedSearchView(
   })
   if (!response.ok) throw await toApiError(response)
   return (await response.json()) as SavedSearchView
+}
+
+/** N144：解除已失效的工作区关联（只清 workspace_id，内容类型保留）。 */
+export async function unlinkSavedSearchScope(
+  id: string,
+): Promise<SavedSearchView> {
+  const response = await rawRequest(
+    `${API_BASE}/search/views/${encodeURIComponent(id)}/scope/unlink`,
+    { method: 'POST' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  const body = (await response.json()) as { view: SavedSearchView }
+  return body.view
 }
 
 export async function renameSavedSearchView(
@@ -4681,11 +5611,13 @@ export interface Annotation {
 export async function listAnnotations(params: {
   entryRef?: string
   q?: string
+  color?: string
   cursor?: string
 }): Promise<{ items: Annotation[]; nextCursor: string | null }> {
   const search = new URLSearchParams()
   if (params.entryRef) search.set('entryRef', params.entryRef)
   if (params.q) search.set('q', params.q)
+  if (params.color) search.set('color', params.color)
   if (params.cursor) search.set('cursor', params.cursor)
   return request<{ items: Annotation[]; nextCursor: string | null }>(
     `${API_BASE}/annotations?${search.toString()}`,
@@ -4733,10 +5665,12 @@ export async function getEntryExtractPreview(entryRef: string): Promise<{
   )
 }
 
-/** F052：批注汇编导出（Markdown 下载）。 */
+/** F052：批注汇编导出（Markdown 下载）。N075：citeBibliography=true
+ *  时每篇文章追加「引用格式」行（缺失项「不详」）。 */
 export async function exportAnnotations(input: {
   entryRefs?: string[]
   q?: string
+  citeBibliography?: boolean
 }): Promise<Blob> {
   const response = await rawRequest(`${API_BASE}/annotations/export`, {
     method: 'POST',
@@ -4773,19 +5707,34 @@ export async function listReadingProgress(limit = 5): Promise<{ items: ReadingPr
 }
 
 /** F058：批注复习队列。 */
+/** F058/N076/N077：复习队列项（泛化：批注 | 知识卡片 + 来源追踪）。 */
 export interface ReviewQueueItem {
   id: string
-  annotationId: string
-  entryRef: string
+  itemKind: 'annotation' | 'knowledge_card'
+  annotationId: string | null
+  knowledgeCardId: string | null
+  entryRef: string | null
+  /** 批注锚点段落（N077 查看原文段落 deep link 用；无 → null）。 */
+  paraId: string | null
   dueAt: string
   completedAt: string | null
   due: boolean | null
-  excerpt: string
-  note: string
+  /** N077：揭示时刻（来源追踪）；从未揭示 → null。 */
+  lastViewedAt: string | null
+  /** N077：来源条目仍可达（投影存在性）；无来源 → null。 */
+  sourceAvailable: boolean | null
+  /** 批注项字段（卡片项 → null）。 */
+  excerpt: string | null
+  note: string | null
+  /** 卡片项字段（批注项 → null）。 */
+  concept: string | null
+  explanation: string | null
 }
 
 export async function addReviewQueueItem(input: {
-  annotationId: string
+  kind?: 'annotation' | 'knowledge_card'
+  annotationId?: string
+  knowledgeCardId?: string
   dueAt: string
 }): Promise<{ id: string; rescheduled: boolean }> {
   const response = await rawRequest(`${API_BASE}/review-queue`, {
@@ -4810,6 +5759,125 @@ export async function postponeReviewQueueItem(id: string, dueAt: string): Promis
     body: JSON.stringify({ dueAt }),
     contentType: 'application/json',
   })
+}
+
+/** N077：揭示答案 → 记录 last_viewed_at（来源追踪）。 */
+export async function viewReviewQueueItem(id: string): Promise<{ id: string; lastViewedAt: string }> {
+  const response = await rawRequest(`${API_BASE}/review-queue/${encodeURIComponent(id)}/view`, {
+    method: 'POST',
+  })
+  return (await response.json()) as { id: string; lastViewedAt: string }
+}
+
+/** N071：批注原文漂移修复。 */
+export interface AnnotationRepairCandidate {
+  blockIndex: number
+  score: number
+  excerpt: string
+}
+
+export async function getAnnotationRepairCandidates(
+  id: string,
+): Promise<{ annotationId: string; entryRef: string; quote: string; candidates: AnnotationRepairCandidate[] }> {
+  return request(
+    `${API_BASE}/annotations/${encodeURIComponent(id)}/repair-candidates`,
+  )
+}
+
+export async function repairAnnotation(
+  id: string,
+  blockIndex: number,
+  quoteText: string,
+): Promise<{ annotation: Annotation; blockIndex: number; score: number }> {
+  const response = await rawRequest(`${API_BASE}/annotations/${encodeURIComponent(id)}/repair`, {
+    method: 'POST',
+    body: JSON.stringify({ blockIndex, quoteText }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { annotation: Annotation; blockIndex: number; score: number }
+}
+
+/** N073：批注颜色语义标签（label 空 = 未命名 → 诚实显示原始色名）。 */
+export interface AnnotationColorLabel {
+  color: string
+  label: string
+}
+
+export async function getColorLabels(): Promise<{ items: AnnotationColorLabel[] }> {
+  return request<{ items: AnnotationColorLabel[] }>(`${API_BASE}/annotations/color-labels`)
+}
+
+export async function putColorLabel(color: string, label: string): Promise<{ items: AnnotationColorLabel[] }> {
+  const response = await rawRequest(`${API_BASE}/annotations/color-labels`, {
+    method: 'PUT',
+    body: JSON.stringify({ color, label }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { items: AnnotationColorLabel[] }
+}
+
+/** N074：阅读问题清单。 */
+export interface ReadingQuestion {
+  id: string
+  question: string
+  status: 'open' | 'done'
+  entryRef: string | null
+  annotationId: string | null
+  workspaceId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export async function createReadingQuestion(input: {
+  question: string
+  entryRef?: string | null
+  annotationId?: string | null
+  workspaceId?: string | null
+}): Promise<ReadingQuestion> {
+  const response = await rawRequest(`${API_BASE}/reading-questions`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as ReadingQuestion
+}
+
+export async function listReadingQuestions(params: {
+  status?: 'open' | 'done'
+  entryRef?: string
+  annotationId?: string
+}): Promise<{ items: ReadingQuestion[] }> {
+  const search = new URLSearchParams()
+  if (params.status) search.set('status', params.status)
+  if (params.entryRef) search.set('entryRef', params.entryRef)
+  if (params.annotationId) search.set('annotationId', params.annotationId)
+  const qs = search.toString()
+  return request<{ items: ReadingQuestion[] }>(
+    qs === '' ? `${API_BASE}/reading-questions` : `${API_BASE}/reading-questions?${qs}`,
+  )
+}
+
+export async function patchReadingQuestion(
+  id: string,
+  patch: { question?: string; status?: 'open' | 'done' },
+): Promise<ReadingQuestion> {
+  const response = await rawRequest(
+    `${API_BASE}/reading-questions/${encodeURIComponent(id)}`,
+    { method: 'PATCH', body: JSON.stringify(patch), contentType: 'application/json' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as ReadingQuestion
+}
+
+export async function deleteReadingQuestion(id: string): Promise<void> {
+  const response = await rawRequest(
+    `${API_BASE}/reading-questions/${encodeURIComponent(id)}`,
+    { method: 'DELETE' },
+  )
+  if (!response.ok) throw await toApiError(response)
 }
 
 /** F063：AI 任务中心 — 最近任务列表（默认/上限 50）。 */
@@ -5191,8 +6259,10 @@ export async function listNoteBrokenLinks(uuid: string): Promise<{ items: { raw:
 // ===========================================================================
 // W5：F081–F100（批量编辑 / 合并 / 模板 / 归档 / 看板 / 目标 / 失效检查 /
 // 资料包 ZIP / 剪藏修订 / 笔记生命周期 / RAG 排除·作业·一致性 /
-// Agent 范围·权限·搜索·导出·预演·分支）。类型为本地 interface 对照 BFF
-// routers 维护（与 AgentMessage 同惯例：补 response_model 后换生成别名）。
+// Agent 范围·权限·搜索·导出·预演·分支）。E04 起 Agent W5 与 RAG 端点
+// 的响应均已入 generated schema（AgentThreadSettings /
+// AgentThreadSearchHit / AgentBranchResult / AgentApprovalPreview /
+// RagRebuildPauseResult 等）；本地 interface 为收窄视图，逐步替换中。
 // ===========================================================================
 
 // ---- F081 批量元数据编辑 ---------------------------------------------------
@@ -5376,7 +6446,8 @@ export async function listArchivedWorkspaces(): Promise<Workspace[]> {
 
 // ---- F085 看板 / F086 目标 --------------------------------------------------
 
-export type BoardStatus = 'todo' | 'reading' | 'done'
+/** N112：三状态扩展为五状态（待处理/阅读中/待摘录/待验证/已完成）。 */
+export type BoardStatus = 'todo' | 'reading' | 'excerpted' | 'needs_verification' | 'done'
 
 export interface BoardCard {
   itemRef: string
@@ -5424,6 +6495,8 @@ export interface WorkspaceGoalView {
   deadline?: string | null
   doneCount?: number
   createdAt?: string
+  goalText?: string | null
+  conditions?: string[]
 }
 
 export async function getWorkspaceGoal(
@@ -5437,12 +6510,18 @@ export async function putWorkspaceGoal(
   workspaceId: string,
   targetCount: number,
   deadline?: string | null,
+  extra?: { goalText?: string | null; conditions?: string[] | null },
 ): Promise<WorkspaceGoalView> {
   const response = await rawRequest(
     `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/goal`,
     {
       method: 'PUT',
-      body: JSON.stringify({ targetCount, deadline: deadline ?? null }),
+      body: JSON.stringify({
+        targetCount,
+        deadline: deadline ?? null,
+        ...(extra?.goalText !== undefined ? { goalText: extra.goalText } : {}),
+        ...(extra?.conditions !== undefined ? { conditions: extra.conditions } : {}),
+      }),
       contentType: 'application/json',
     },
   )
@@ -5456,6 +6535,269 @@ export async function deleteWorkspaceGoal(workspaceId: string): Promise<void> {
     { method: 'DELETE' },
   )
   if (!response.ok) throw await toApiError(response)
+}
+
+// ---- N113 分节大纲 -----------------------------------------------------------
+
+/** 分节成员（unresolved = 引用的条目已不在工作区，诚实标记）。 */
+export interface WorkspaceSectionItem {
+  itemRef: string
+  position: number
+  addedAt: string
+  unresolved: boolean
+}
+
+export interface WorkspaceSectionView {
+  id: string
+  workspaceId: string
+  title: string
+  sortIndex: number
+  createdAt: string
+  items: WorkspaceSectionItem[]
+}
+
+export async function listWorkspaceSections(
+  workspaceId: string,
+  signal?: AbortSignal,
+): Promise<{ items: WorkspaceSectionView[] }> {
+  return request(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/sections`,
+    signal,
+  )
+}
+
+export async function createWorkspaceSection(
+  workspaceId: string,
+  title: string,
+): Promise<WorkspaceSectionView> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/sections`,
+    { method: 'POST', body: JSON.stringify({ title }), contentType: 'application/json' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as WorkspaceSectionView
+}
+
+export async function renameWorkspaceSection(
+  workspaceId: string,
+  sectionId: string,
+  title: string,
+): Promise<WorkspaceSectionView> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/sections/${encodeURIComponent(sectionId)}`,
+    { method: 'PATCH', body: JSON.stringify({ title }), contentType: 'application/json' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as WorkspaceSectionView
+}
+
+export async function deleteWorkspaceSection(
+  workspaceId: string,
+  sectionId: string,
+): Promise<void> {
+  await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/sections/${encodeURIComponent(sectionId)}`,
+    { method: 'DELETE' },
+  )
+}
+
+/** 分节顺序持久化（PUT 全量；真实变化 bump revision）。 */
+export async function reorderWorkspaceSections(
+  workspaceId: string,
+  sectionIds: string[],
+): Promise<{ items: WorkspaceSectionView[] }> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/sections/order`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ sectionIds }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { items: WorkspaceSectionView[] }
+}
+
+/** 条目引用进分节（幂等；同一 ref 可进多节；非成员 404）。 */
+export async function addWorkspaceSectionItem(
+  workspaceId: string,
+  sectionId: string,
+  itemRef: string,
+): Promise<WorkspaceSectionItem> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/sections/${encodeURIComponent(sectionId)}/items`,
+    { method: 'POST', body: JSON.stringify({ itemRef }), contentType: 'application/json' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as WorkspaceSectionItem
+}
+
+/** 从分节移除引用（只拆引用，不动工作区成员本身）。 */
+export async function removeWorkspaceSectionItem(
+  workspaceId: string,
+  sectionId: string,
+  itemRef: string,
+): Promise<void> {
+  await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/sections/${encodeURIComponent(sectionId)}/items/${encodeURIComponent(itemRef)}`,
+    { method: 'DELETE' },
+  )
+}
+
+/** 节内条目顺序持久化（PUT 全量 1..N）。 */
+export async function reorderWorkspaceSectionItems(
+  workspaceId: string,
+  sectionId: string,
+  itemRefs: string[],
+): Promise<{ items: WorkspaceSectionView[] }> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/sections/${encodeURIComponent(sectionId)}/items/order`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ itemRefs }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { items: WorkspaceSectionView[] }
+}
+
+// ---- N114 汇编预览 -----------------------------------------------------------
+
+export interface CompileItem {
+  itemRef: string
+  title: string
+  excerpt: string
+  citation: string
+  note?: string | null
+}
+
+export interface CompileSection {
+  sectionId: string | null
+  title: string
+  items: CompileItem[]
+}
+
+export interface CompileDraft {
+  workspaceId: string
+  workspaceName: string
+  generatedAt: string
+  sections: CompileSection[]
+  includedCount: number
+  excludedMissing: number
+  excluded: { itemRef: string; reason: string }[]
+}
+
+/** 汇编草稿（纯预览不落库；sectionIds 缺省 = 全部大纲分节）。 */
+export async function compileWorkspace(
+  workspaceId: string,
+  sectionIds?: string[],
+): Promise<CompileDraft> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/compile`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ sectionIds: sectionIds ?? null }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as CompileDraft
+}
+
+/** 汇编草稿 Markdown 文本版（同样纯预览；供下载）。 */
+export async function compileWorkspaceMarkdown(
+  workspaceId: string,
+  sectionIds?: string[],
+): Promise<string> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/compile/markdown`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ sectionIds: sectionIds ?? null }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return await response.text()
+}
+
+// ---- N120 清理预演 -----------------------------------------------------------
+
+export interface WorkspaceCleanupCategory {
+  category: string
+  items: Record<string, unknown>[]
+}
+
+export interface WorkspaceCleanupPreview {
+  workspaceId: string
+  categories: WorkspaceCleanupCategory[]
+  actionable: string[]
+  reportOnly: string[]
+}
+
+export const CLEANUP_CATEGORY_LABELS: Record<string, string> = {
+  unresolved_refs: '已消失的来源条目',
+  protected_library_refs: '受保护的库引用（不参与清理）',
+  unverifiable_refs: '无法核实（不参与清理）',
+  empty_groups: '空分组',
+  orphan_section_refs: '悬空的分节引用',
+  pinned_group_conflicts: '固定 + 分组冲突（仅提示）',
+}
+
+export async function getWorkspaceCleanupPreview(
+  workspaceId: string,
+  signal?: AbortSignal,
+): Promise<WorkspaceCleanupPreview> {
+  return request(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/cleanup-preview`,
+    signal,
+  )
+}
+
+export interface CleanupApplyResult {
+  logId: string
+  removed: Record<string, number>
+}
+
+/** 应用选中的可执行类目（快照先行；只删 Lumi 元数据行）。 */
+export async function applyWorkspaceCleanup(
+  workspaceId: string,
+  categories: string[],
+): Promise<CleanupApplyResult> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/cleanup`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ categories }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as CleanupApplyResult
+}
+
+export interface CleanupUndoResult {
+  logId: string
+  restoredRefs: number
+  restoredSectionRefs: number
+}
+
+/** 撤销最近一次（或指定日志的）清理（重复 undo 幂等）。 */
+export async function undoWorkspaceCleanup(
+  workspaceId: string,
+  logId?: string | null,
+): Promise<CleanupUndoResult> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/cleanup/undo`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ logId: logId ?? null }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as CleanupUndoResult
 }
 
 // ---- F087 书签失效检查 -------------------------------------------------------
@@ -5734,6 +7076,97 @@ export async function repairRagRefs(
   return (await response.json()) as { repaired: string[]; failed: { ref: string; error: string }[] }
 }
 
+// ---- N151-N155：RAG 质量（范围回显 / 覆盖率 / 分块预览 / 同步问答） ----
+
+/** N151 授权范围回显（kind × refCount；all 未锁定时 refCount=null）。 */
+export interface RagEffectiveScope {
+  kind: 'all' | 'workspace' | 'entryRefs'
+  refCount: number | null
+}
+
+/** N152 覆盖率分桶（全部来自真实行/作业）。 */
+export interface RagCoverage {
+  modelId: string
+  indexable: number
+  indexed: number
+  stale: number
+  failed: number
+  unsupported: { count: number; kinds: { kind: string; reason: string }[] }
+}
+
+export async function getRagCoverage(signal?: AbortSignal): Promise<RagCoverage> {
+  return request<RagCoverage>(`${API_BASE}/rag/coverage`, signal)
+}
+
+/** N153 分块预览（索引「将会」产生的分块 + 只读方案元数据）。 */
+export interface RagChunkPreview {
+  ref: string
+  kind: string
+  title: string | null
+  chunks: { ord: number; text: string; charStart: number; charEnd: number }[]
+  scheme: { maxLen: number; overlap: number }
+}
+
+export async function ragChunkPreview(ref: string): Promise<RagChunkPreview> {
+  const response = await rawRequest(`${API_BASE}/rag/chunk-preview`, {
+    method: 'POST',
+    body: JSON.stringify({ ref }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as RagChunkPreview
+}
+
+/** N155 同步问答（mode=excerpt 时零 provider 调用，只回原文片段）。 */
+export interface RagAskResponse {
+  question: string
+  mode: 'answer' | 'excerpt'
+  answer: string | null
+  citations: { index: number; ref: string }[]
+  evidenceStrength: 'direct' | 'partial' | 'none' | null
+  unverifiable: boolean
+  reason: string | null
+  effectiveScope: RagEffectiveScope
+  excerpts: { ref: string; title: string | null; ord: number; text: string }[]
+  semanticUsed: boolean
+}
+
+export async function ragAsk(payload: {
+  question: string
+  threadId?: string
+  refs?: string[]
+  k?: number
+  mode?: 'answer' | 'excerpt'
+}): Promise<RagAskResponse> {
+  const response = await rawRequest(`${API_BASE}/rag/ask`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as RagAskResponse
+}
+
+/** N151 授权范围摘要（kind × refCount × toolCount；服务端解析）。 */
+export interface AgentScopeSummary {
+  kind: 'all' | 'workspace' | 'entryRefs'
+  refCount: number | null
+  toolCount: number
+}
+
+export async function previewAgentScope(payload: {
+  scope?: { workspaceId?: string; entryRefs?: string[] } | null
+  toolPolicy?: { mode: 'all' | 'readonly'; allowedTools?: string[]; maxOpsPerTurn?: number } | null
+}): Promise<AgentScopeSummary> {
+  const response = await rawRequest(`${API_BASE}/agent/scope-preview`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as AgentScopeSummary
+}
+
 // ---- F094/F095/F096/F097/F098/F099 Agent 会话 --------------------------------
 
 /** F094/F098 会话设置（下轮生效；scope=null + clearScope 显式清除）。 */
@@ -5747,6 +7180,9 @@ export interface AgentThreadSettingsPatch {
     maxOpsPerTurn?: number
   } | null
   clearToolPolicy?: boolean
+  /** N165：线程级任务预算（键皆可缺省；null + clearBudget = 清除）。 */
+  budget?: { maxToolCalls?: number; maxTurns?: number } | null
+  clearBudget?: boolean
 }
 
 export async function updateAgentThreadSettings(
@@ -6201,6 +7637,21 @@ export async function applyStorageRetention(): Promise<RetentionApplyResult> {
   return (await response.json()) as RetentionApplyResult
 }
 
+/** N188：数据保留到期提醒（只读；推迟生效期内 dueSoon=false）。 */
+export async function getRetentionNotice(signal?: AbortSignal): Promise<RetentionNoticeData> {
+  return request<RetentionNoticeData>(`${API_BASE}/storage/retention/notice`, signal)
+}
+
+/** N188：推迟到期提醒（days 钳制到 1–30 天）。 */
+export async function postponeRetention(days: number): Promise<RetentionPostponeData> {
+  const response = await rawRequest(`${API_BASE}/storage/retention/postpone`, {
+    method: 'POST',
+    body: JSON.stringify({ days }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as RetentionPostponeData
+}
+
 /** F115：两份本地备份 manifest 比较（incomparable 诚实呈现）。 */
 export interface BackupCompareResult {
   identical: boolean
@@ -6361,4 +7812,361 @@ async function rawRequestJson<T>(
 ): Promise<T> {
   const response = await rawRequest(path, init)
   return (await response.json()) as T
+}
+
+// ---- N121 粘贴多链接收件箱 / N122 剪藏锁定与候选 / N123 清理预览 -------------
+// N121：逐条 created | duplicate | failed（单条失败绝不回滚整批）。
+
+export interface BulkLinkResultItem {
+  url: string
+  status: 'created' | 'duplicate' | 'failed'
+  ref?: string | null
+  reason?: string | null
+}
+
+export interface BulkLinksResponse {
+  target: 'bookmark' | 'clip'
+  created: number
+  duplicate: number
+  failed: number
+  items: BulkLinkResultItem[]
+}
+
+export function bulkLinks(urls: string[], target: 'bookmark' | 'clip'): Promise<BulkLinksResponse> {
+  return postJson<BulkLinksResponse>(`${API_BASE}/library/bulk-links`, { urls, target })
+}
+
+/** N122：显式锁定/解锁（覆盖式写入的唯一开关）。 */
+export function setClipLock(uuid: string, locked: boolean): Promise<{ ref: string; locked: boolean }> {
+  return putJson(`${API_BASE}/library/clips/${encodeURIComponent(uuid)}/lock`, { locked })
+}
+
+export interface ClipRefreshResult {
+  ref: string
+  status: 'applied' | 'candidate' | 'unchanged'
+  locked: boolean
+  title?: string
+  fetchedAt?: string
+  revised?: boolean
+  revisedAt?: string
+  note?: string
+}
+
+/** N122：重新抓取（未锁定 → 应用进修订槽；锁定 → 只存候选）。 */
+export function refreshClip(uuid: string): Promise<ClipRefreshResult> {
+  return postJson<ClipRefreshResult>(
+    `${API_BASE}/library/clips/${encodeURIComponent(uuid)}/refresh`,
+    {},
+  )
+}
+
+export interface ClipCandidate {
+  ref: string
+  title: string
+  fetchedAt: string
+  contentHtml: string
+  contentText: string
+}
+
+/** N122：查看候选版本（渲染前仍须过 DOMPurify）。 */
+export function getClipCandidate(uuid: string, signal?: AbortSignal): Promise<ClipCandidate> {
+  return request<ClipCandidate>(
+    `${API_BASE}/library/clips/${encodeURIComponent(uuid)}/candidate`,
+    signal,
+  )
+}
+
+/** N122：应用候选（锁定 → 409 clip_locked；可带 keepIds 走同一净化）。 */
+export function applyClipCandidate(uuid: string, keepIds?: string[]): Promise<ClipRefreshResult> {
+  return postJson<ClipRefreshResult>(
+    `${API_BASE}/library/clips/${encodeURIComponent(uuid)}/candidate/apply`,
+    keepIds ? { keepIds } : {},
+  )
+}
+
+/** N122：丢弃候选版本（204；无候选 → 404）。 */
+export async function discardClipCandidate(uuid: string): Promise<void> {
+  await rawRequest(
+    `${API_BASE}/library/clips/${encodeURIComponent(uuid)}/candidate`,
+    { method: 'DELETE' },
+  )
+}
+
+/** N123：清理预览（零写入）：每块 {keep, reason} 建议供用户逐块改。 */
+export interface ClipCleanupBlock {
+  id: string
+  text: string
+  keep: boolean
+  reason: 'paragraph' | 'heading' | 'image' | 'ad' | 'nav' | 'link_list'
+}
+
+export interface ClipCleanupPreview {
+  blocks: ClipCleanupBlock[]
+  keepCount: number
+  totalCount: number
+}
+
+export function previewClipCleanup(html: string): Promise<ClipCleanupPreview> {
+  return postJson<ClipCleanupPreview>(`${API_BASE}/library/clips/preview-cleanup`, { html })
+}
+
+// ---- N125/N126/N127 邮件详情（附件 / 正文显示模式 / 身份提示） -----------------
+
+export interface MailMessageSummary {
+  messageId: string
+  subject: string
+  sender: string
+  receivedAt: string
+  attachmentCount: number
+  skippedAttachments: number
+  blockedMediaCount: number
+  hasIdentityHints: boolean
+}
+
+export function listMailMessages(listUuid: string, signal?: AbortSignal): Promise<{ items: MailMessageSummary[] }> {
+  return request<{ items: MailMessageSummary[] }>(
+    `${API_BASE}/mail/lists/${encodeURIComponent(listUuid)}/messages`,
+    signal,
+  )
+}
+
+export interface MailMessageDetail {
+  messageId: string
+  listUuid: string
+  subject: string
+  sender: string
+  receivedAt: string
+  text: string
+  html: string
+  blockedMedia: string[]
+  attachments: { id: string; filename: string; mime: string; size: number }[]
+  skippedAttachments: {
+    filename: string
+    bytes: number
+    mime: string
+    status: string
+    reason: string
+  }[]
+  identityHints: {
+    fromAddress?: string
+    fromDisplay?: string
+    replyToMismatch?: boolean
+    replyToAddress?: string
+    displayNameDomainMismatch?: boolean
+    displayNameDomains?: string[]
+  } | null
+}
+
+export function getMailMessageDetail(
+  listUuid: string,
+  messageId: string,
+  signal?: AbortSignal,
+): Promise<MailMessageDetail> {
+  return request<MailMessageDetail>(
+    `${API_BASE}/mail/lists/${encodeURIComponent(listUuid)}/messages/${encodeURIComponent(messageId)}/detail`,
+    signal,
+  )
+}
+
+/** N125：附件下载地址（content-disposition: attachment 由服务端保证；
+ * <a download> 直下，浏览器不渲染内容）。 */
+export function mailAttachmentUrl(attachmentId: string): string {
+  return `${API_BASE}/mail/attachments/${encodeURIComponent(attachmentId)}`
+}
+
+/** 剪藏完整详情（F089/N122）：content + original + revised + locked +
+ * candidate。 */
+export interface ClipFull {
+  ref: string
+  url: string
+  title: string
+  byline: string | null
+  fetchedAt: string
+  createdAt: string
+  locked: boolean
+  content: { html: string; text: string }
+  original: { html: string; text: string }
+  revised: { revisedAt: string; note: string | null; baseContentHash: string | null } | null
+  candidate: { title: string; fetchedAt: string; text: string } | null
+}
+
+export function getClipFull(uuid: string, signal?: AbortSignal): Promise<ClipFull> {
+  return request<ClipFull>(
+    `${API_BASE}/library/clips/${encodeURIComponent(toClipId(uuid))}/full`,
+    signal,
+  )
+}
+
+// ---- N164–N170 Agent ops（暂停续接 / 预算 / 时间线 / 批准修订 / 步骤重试 / 差异撤销 / 配方）----
+
+/** N164：暂停运行中的回合（或停留在批准上的回合）。 */
+export async function pauseAgentThread(threadId: string): Promise<{ paused: boolean; status: string }> {
+  const response = await rawRequest(
+    `${API_BASE}/agent/threads/${encodeURIComponent(threadId)}/pause`,
+    { method: 'POST' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { paused: boolean; status: string }
+}
+
+export interface AgentApprovalPayload {
+  approvalId: string
+  callId: string
+  tool: string
+  args: Record<string, unknown>
+  status: string
+  reconfirmOf?: string | null
+}
+
+/** N164：续接暂停的回合。awaiting_approval = 需先决策（可能为重新确认）。 */
+export async function resumeAgentThread(
+  threadId: string,
+): Promise<{ status: string; approval: AgentApprovalPayload | null; reconfirmRequired: boolean }> {
+  const response = await rawRequest(
+    `${API_BASE}/agent/threads/${encodeURIComponent(threadId)}/resume`,
+    { method: 'POST' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as {
+    status: string
+    approval: AgentApprovalPayload | null
+    reconfirmRequired: boolean
+  }
+}
+
+/** N167：批准前修订参数 → 旧批准作废（superseded），返回新批准。 */
+export async function reviseAgentApproval(
+  threadId: string,
+  approvalId: string,
+  newArgs: Record<string, unknown>,
+): Promise<{ approval: AgentApprovalPayload; supersededApprovalId: string }> {
+  const response = await rawRequest(
+    `${API_BASE}/agent/threads/${encodeURIComponent(threadId)}/approvals/${encodeURIComponent(approvalId)}/revise`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ newArgs }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as {
+    approval: AgentApprovalPayload
+    supersededApprovalId: string
+  }
+}
+
+export interface AgentRetryStep {
+  callId: string
+  name: string
+  resultType?: string
+  reason?: string
+}
+
+/** N168：失败步骤单独重试（已完成步骤复用 transcript 结果）。 */
+export async function retryAgentThread(
+  threadId: string,
+): Promise<{ status: string; retried: AgentRetryStep[]; skipped: AgentRetryStep[]; approval: AgentApprovalPayload | null }> {
+  const response = await rawRequest(
+    `${API_BASE}/agent/threads/${encodeURIComponent(threadId)}/retry`,
+    { method: 'POST' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as {
+    status: string
+    retried: AgentRetryStep[]
+    skipped: AgentRetryStep[]
+    approval: AgentApprovalPayload | null
+  }
+}
+
+/** N169：按写台账 stepId 差异撤销（对象被改动过 → conflictReason 说明并跳过）。 */
+export async function undoAgentStep(
+  threadId: string,
+  stepId: string,
+): Promise<{ undone: boolean; stepId: string; tool: string; result: unknown; conflictReason: string | null }> {
+  const response = await rawRequest(
+    `${API_BASE}/agent/threads/${encodeURIComponent(threadId)}/undo`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ stepId }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as {
+    undone: boolean
+    stepId: string
+    tool: string
+    result: unknown
+    conflictReason: string | null
+  }
+}
+
+// ---- N170 任务配方 ------------------------------------------------------------
+
+export interface AgentRecipe {
+  id: string
+  name: string
+  input: string
+  toolWhitelist: string[]
+  scope: Record<string, unknown> | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AgentRecipePreview {
+  recipeId: string
+  name: string
+  input: string
+  toolWhitelist: string[]
+  unknownTools: string[]
+  scope: Record<string, unknown> | null
+  toolPolicy: { mode?: string | null; allowedTools?: string[] | null; maxOpsPerTurn?: number | null } | null
+  threadTitle: string
+  note: string
+}
+
+export async function listAgentRecipes(signal?: AbortSignal): Promise<{ items: AgentRecipe[] }> {
+  return request<{ items: AgentRecipe[] }>(`${API_BASE}/agent/recipes`, signal)
+}
+
+export async function createAgentRecipe(payload: {
+  name: string
+  input: string
+  toolWhitelist: string[]
+  scope?: Record<string, unknown> | null
+}): Promise<AgentRecipe> {
+  const response = await rawRequest(`${API_BASE}/agent/recipes`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as AgentRecipe
+}
+
+export async function deleteAgentRecipe(recipeId: string): Promise<void> {
+  await rawRequest(`${API_BASE}/agent/recipes/${encodeURIComponent(recipeId)}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function previewAgentRecipe(recipeId: string, signal?: AbortSignal): Promise<AgentRecipePreview> {
+  const response = await rawRequest(
+    `${API_BASE}/agent/recipes/${encodeURIComponent(recipeId)}/preview`,
+    { method: 'POST', signal },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as AgentRecipePreview
+}
+
+export async function runAgentRecipe(
+  recipeId: string,
+): Promise<{ recipeId: string; thread: AgentThread; status: string }> {
+  const response = await rawRequest(
+    `${API_BASE}/agent/recipes/${encodeURIComponent(recipeId)}/run`,
+    { method: 'POST' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { recipeId: string; thread: AgentThread; status: string }
 }

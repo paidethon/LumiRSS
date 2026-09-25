@@ -29,6 +29,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 
+from lumirss.credential_rotation import CredentialTestFailed, match_fallback
 from lumirss.cursor import InvalidCursor
 from lumirss.errors import InvalidInboxPayload
 from lumirss.inbox_rules import (
@@ -42,6 +43,8 @@ from lumirss.inbox_store import (
     InboxStore,
 )
 from lumirss.models import (
+    ApiSourceCredentialResult,
+    ApiSourceCredentialTestRequest,
     InboxIngestItem,
     InboxIngestResult,
     InboxItemList,
@@ -57,7 +60,12 @@ from lumirss.models import (
     InboxSourceCreated,
 )
 
-from ..deps import _get_inbox_store, _get_workspace_store, _rag_mark_stale
+from ..deps import (
+    _get_inbox_store,
+    _get_workspace_store,
+    _rag_mark_stale,
+    _user_secrets,
+)
 
 router = APIRouter()
 
@@ -239,6 +247,87 @@ async def rotate_inbox_source_secret(
     )
 
 
+@router.post("/api/v1/inbox/sources/{source_uuid}/credentials/test", response_model=ApiSourceCredentialResult)
+async def test_inbox_source_credential(
+    request: Request, source_uuid: str, payload: ApiSourceCredentialTestRequest
+) -> ApiSourceCredentialResult:
+    """N130 轮换预演（收件连接器）。
+
+    Push model: there is no upstream to dial — the "real fetch" shape is
+    the ingest POST itself, which a rehearsal must not perform (it would
+    create content). The probe therefore covers everything a rehearsal
+    CAN cover without side effects: the source exists/answers and the
+    proposed credential passes the structural gate. Masked response, no
+    echo; nothing is swapped."""
+    import time
+
+    from lumirss.credential_rotation import validate_credential_shape
+
+    store = _get_inbox_store(request)
+    source = await store.get_source(source_uuid)
+    if source is None:
+        raise InboxSourceNotFound(source_uuid)
+    started = time.monotonic()
+    try:
+        validate_credential_shape(payload.newCredential)
+    except CredentialTestFailed as exc:
+        raise CredentialTestFailed(exc.status_class, str(exc)) from exc
+    enabled = bool(source.get("enabled", True))
+    return ApiSourceCredentialResult(
+        ok=enabled,
+        statusClass="ok" if enabled else "source_disabled",
+        latencyMs=max(0, int((time.monotonic() - started) * 1000)),
+        note="推送式来源无可拨号上游：预演=存在性+结构校验（不投递试运行）。",
+    )
+
+
+@router.post("/api/v1/inbox/sources/{source_uuid}/credentials/rotate", response_model=ApiSourceCredentialResult)
+async def rotate_inbox_source_credential(
+    request: Request, source_uuid: str, payload: ApiSourceCredentialTestRequest
+) -> ApiSourceCredentialResult:
+    """N130 测试并轮换（收件连接器）：test first, then one-statement swap.
+
+    A failed probe raises the stable 422 ``credential_test_failed`` and
+    the current bearer secret is UNTOUCHED. On success the stored hash
+    is swapped atomically, the new token is indexed for the machine
+    channel and the OLD hash is parked in the user's SecretsStore for a
+    10-minute fallback window: ingests verifying against the new secret
+    fail over ONCE to the old one and the source is flagged
+    (fallback_used) so the operator knows a push script lags behind.
+    The response is masked — the new secret is never echoed."""
+    from lumirss.credential_rotation import (
+        INBOX_SOURCE_KIND,
+        store_fallback,
+        validate_credential_shape,
+    )
+
+    store = _get_inbox_store(request)
+    source = await store.get_source(source_uuid)
+    if source is None:
+        raise InboxSourceNotFound(source_uuid)
+    try:
+        validate_credential_shape(payload.newCredential)
+    except CredentialTestFailed as exc:
+        raise CredentialTestFailed(exc.status_class, str(exc)) from exc
+    if not source.get("enabled", True):
+        raise CredentialTestFailed(
+            "source_disabled", "连接器已停用：请先启用再轮换凭据。"
+        )
+    from lumirss.machine_auth import index_machine_token
+
+    old_hash = await store.swap_secret_hash(source_uuid, payload.newCredential)
+    if old_hash is None:
+        raise InboxSourceNotFound(source_uuid)
+    await index_machine_token(request, payload.newCredential, "inbox_ingest")
+    store_fallback(_user_secrets(request), INBOX_SOURCE_KIND, source_uuid, old_hash)
+    return ApiSourceCredentialResult(
+        ok=True,
+        statusClass="ok",
+        latencyMs=0,
+        note="已轮换。请尽快把推送脚本的 Bearer Secret 更新为新值（旧值保留 10 分钟宽限）。",
+    )
+
+
 @router.delete("/api/v1/inbox/sources/{source_uuid}")
 async def delete_inbox_source(request: Request, source_uuid: str) -> dict:
     """Delete a connector and every item it pushed (identity, payload and
@@ -272,8 +361,18 @@ async def ingest_inbox_item(
             raise InboxSourceNotFound(source_uuid)
         store: InboxStore = _get_inbox_store(request)
         source = await store.get_source(source_uuid)
+        used_fallback = False
         if source is None or not store.secrets_match(supplied, source["secret"]):
-            raise InboxSourceNotFound(source_uuid)
+            # N130 fallback window: a just-rotated connector honors the
+            # OLD bearer (flagged AFTER the ingest outcome, so the flag
+            # survives the success refresh) so a lagging push script
+            # keeps working for 10 minutes instead of silently dropping.
+            fallback_ok = source is not None and match_fallback(
+                _user_secrets(request), "inbox_ingest", source_uuid, supplied
+            )
+            if not fallback_ok:
+                raise InboxSourceNotFound(source_uuid)
+            used_fallback = True
 
         events = InboxEventStore(request.app.state.db)
         raw_payload = item.model_dump()
@@ -321,6 +420,14 @@ async def ingest_inbox_item(
                 status="delivered" if status == "created" else "duplicate",
                 payload=raw_payload,
             )
+        if used_fallback:
+            # N130: flag AFTER the ingest (which clears last_error on
+            # success) so the fallback warning stays visible.
+            with contextlib.suppress(Exception):
+                await store.record_error(
+                    source_uuid,
+                    "fallback_used：旧凭据在宽限期内被使用，请尽快更新推送脚本。",
+                )
         return InboxIngestResult(status=status, ref=ref)
 
 

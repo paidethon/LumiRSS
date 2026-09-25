@@ -1,4 +1,4 @@
-/** ReadingRuler — R05 阅读行辅助线 + N054 增强（自包含组件）。
+/** ReadingRuler — R05 阅读行辅助线 + N054 增强 + F076 遮挡聚焦（自包含组件）。
  *
  * 集成约定：Reader.tsx 归集成方接线，本组件**自包含**——优先
  * containerRef，否则自行 querySelector('.lumi-reader-article')；容器未
@@ -6,15 +6,18 @@
  *
  * 行为：
  * - 开关状态存 localStorage `lumirss-reading-ruler`（'1' = 开），
- *   **默认关**；宽度/深浅同样设备本地持久化（独立键，见下）；
+ *   **默认关**；宽度/深浅/模式同样设备本地持久化（独立键，见下）；
  * - 开启后在正文上渲染一条水平辅助线：2px 半透明 accent 横线 + 上下
  *   8px 渐隐遮罩，跟随鼠标/触摸 Y 移动（pointermove，rAF 节流），
  *   离开正文容器自动隐藏；
  * - N054 宽度三档（窄 60% / 中 80% / 宽 100%）与深浅三档（1–3 级
  *   不透明度）持久化；
- * - N054 键盘操作（仅开启时）：↑/↓ 逐行移动（按正文字号×行距步进，
+ * - F076 遮挡模式：与辅助线并列的第二档——当前行可见，尺外（行上下）
+ *   用近不透明的 Reader 背景色遮罩盖住，逐行阅读不打散注意力；同一
+ *   开关/键盘体系，仅呈现不同；
+ * - 键盘操作（仅开启时）：↑/↓ 逐行移动（按正文字号×行距步进，
  *   未显示时从视口中部出现）、`[`/`]` 调宽度、`-`/`=` 调深浅、
- *   Esc 关闭；指针跟随不受影响；
+ *   `m` 切换辅助线/遮挡、Esc 关闭；指针跟随不受影响；
  * - 纯覆盖层：fixed portal + pointer-events:none，**不改正文 DOM**
  *   （选择/复制内容零影响）；
  * - 开关按钮自带，浮于正文右上角（fixed），44px 触控目标。
@@ -30,9 +33,12 @@ export const READING_RULER_STORAGE_KEY = 'lumirss-reading-ruler'
 export const READING_RULER_WIDTH_KEY = 'lumirss-reading-ruler-width'
 /** N054：深浅三档（1 浅 / 2 中 / 3 深）。 */
 export const READING_RULER_SHADE_KEY = 'lumirss-reading-ruler-shade'
+/** F076：呈现模式（guide 辅助线 / occlusion 遮挡；设备本持久化）。 */
+export const READING_RULER_MODE_KEY = 'lumirss-reading-ruler-mode'
 
 export type RulerWidth = 'narrow' | 'medium' | 'wide'
 export type RulerShade = 1 | 2 | 3
+export type RulerMode = 'guide' | 'occlusion'
 
 const RULER_WIDTH_VALUES: readonly RulerWidth[] = ['narrow', 'medium', 'wide']
 const RULER_WIDTH_RATIO: Record<RulerWidth, number> = { narrow: 0.6, medium: 0.8, wide: 1 }
@@ -44,6 +50,7 @@ const RULER_SHADE_OPACITY: Record<RulerShade, [number, number]> = {
   3: [0.8, 0.45],
 }
 const RULER_SHADE_LABEL: Record<RulerShade, string> = { 1: '浅', 2: '中', 3: '深' }
+const RULER_MODES: readonly RulerMode[] = ['guide', 'occlusion']
 
 function readEnum<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   try {
@@ -90,6 +97,11 @@ export function readRulerShade(): RulerShade {
     /* fallthrough */
   }
   return 2
+}
+
+/** F076：读取呈现模式（缺省/损坏 = 辅助线）。 */
+export function readRulerMode(): RulerMode {
+  return readEnum(READING_RULER_MODE_KEY, RULER_MODES, 'guide')
 }
 
 /** 逐行步进：正文字号 × 行距（容器实测优先，CSS 变量回退，最终 28px）。
@@ -148,6 +160,8 @@ export function ReadingRuler({ containerRef }: ReadingRulerProps) {
   const [y, setY] = useState<number | null>(null)
   const [width, setWidth] = useState<RulerWidth>(readRulerWidth)
   const [shade, setShade] = useState<RulerShade>(readRulerShade)
+  // F076：呈现模式（辅助线 / 遮挡），设备本持久化
+  const [mode, setMode] = useState<RulerMode>(readRulerMode)
   const [container, setContainer] = useState<HTMLElement | null>(null)
 
   const findContainer = useCallback((): HTMLElement | null => {
@@ -195,6 +209,21 @@ export function ReadingRuler({ containerRef }: ReadingRulerProps) {
   const changeShade = useCallback((next: RulerShade) => {
     setShade(next)
     writeValue(READING_RULER_SHADE_KEY, String(next))
+  }, [])
+
+  /** F076：呈现模式（辅助线 / 遮挡），设备本持久化 + 并列切换。 */
+  const changeMode = useCallback((next: RulerMode) => {
+    setMode(next)
+    writeValue(READING_RULER_MODE_KEY, next)
+  }, [])
+
+  /** `m` 键等效的快捷切换（按当前 state 翻转）。 */
+  const toggleMode = useCallback(() => {
+    setMode((current) => {
+      const next: RulerMode = current === 'occlusion' ? 'guide' : 'occlusion'
+      writeValue(READING_RULER_MODE_KEY, next)
+      return next
+    })
   }, [])
 
   // ---- 指针跟随（rAF 节流；离开容器隐藏） ----
@@ -273,6 +302,11 @@ export function ReadingRuler({ containerRef }: ReadingRulerProps) {
         case '=':
           changeShade(Math.min(3, shade + 1) as RulerShade)
           break
+        case 'm':
+          // F076：辅助线 ↔ 遮挡切换
+          event.preventDefault()
+          toggleMode()
+          break
         case 'Escape':
           setEnabled(false)
           writeRulerEnabled(false)
@@ -284,52 +318,87 @@ export function ReadingRuler({ containerRef }: ReadingRulerProps) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [enabled, container, width, shade, changeWidth, changeShade])
+  }, [enabled, container, width, shade, changeWidth, changeShade, toggleMode])
 
   const [lineOpacity, fadeOpacity] = RULER_SHADE_OPACITY[shade]
   const widthRatio = RULER_WIDTH_RATIO[width]
+  const occluding = mode === 'occlusion'
 
   return (
     <>
-      {/* 辅助线覆盖层：fixed 随 viewport，pointer-events none 不挡选择。
-          N054：宽度三档居中显示；深浅三档控制线与渐隐不透明度。 */}
+      {/* 覆盖层：fixed 随 viewport，pointer-events none 不挡选择。
+          N054：宽度三档居中显示；深浅三档控制线与渐隐不透明度。
+          F076 遮挡模式：当前行窗口（上下各 9px）可见，尺外用近不透明
+          Reader 背景遮罩盖住——同一跟随逻辑，仅呈现不同。 */}
       {enabled && y !== null && createPortal(
-        <div
-          aria-hidden="true"
-          data-lumi-reading-ruler="true"
-          data-lumi-reading-ruler-width={width}
-          data-lumi-reading-ruler-shade={shade}
-          className="pointer-events-none fixed z-40"
-          style={{
-            top: `${y - 9}px`,
-            height: '18px',
-            width: `${widthRatio * 100}%`,
-            left: '50%',
-            transform: 'translateX(-50%)',
-          }}
-        >
-          {/* 上 8px 渐隐（透明 → accent） */}
+        occluding ? (
           <div
-            className="h-2 w-full"
+            aria-hidden="true"
+            data-lumi-reading-ruler="true"
+            data-lumi-reading-ruler-mode="occlusion"
+            className="pointer-events-none fixed inset-x-0 top-0 z-40 h-full"
+          >
+            {/* 上遮罩：视口顶 → 当前行上缘 */}
+            <div
+              data-lumi-reading-ruler-mask="top"
+              className="absolute inset-x-0 top-0"
+              style={{
+                height: `${Math.max(0, y - 9)}px`,
+                backgroundColor: 'var(--lumi-reader-bg, var(--lumi-canvas))',
+                opacity: 0.94,
+              }}
+            />
+            {/* 下遮罩：当前行下缘 → 视口底 */}
+            <div
+              data-lumi-reading-ruler-mask="bottom"
+              className="absolute inset-x-0"
+              style={{
+                top: `${y + 9}px`,
+                bottom: 0,
+                backgroundColor: 'var(--lumi-reader-bg, var(--lumi-canvas))',
+                opacity: 0.94,
+              }}
+            />
+          </div>
+        ) : (
+          <div
+            aria-hidden="true"
+            data-lumi-reading-ruler="true"
+            data-lumi-reading-ruler-mode="guide"
+            data-lumi-reading-ruler-width={width}
+            data-lumi-reading-ruler-shade={shade}
+            className="pointer-events-none fixed z-40"
             style={{
-              background: 'linear-gradient(to bottom, transparent, var(--lumi-accent))',
-              opacity: fadeOpacity,
+              top: `${y - 9}px`,
+              height: '18px',
+              width: `${widthRatio * 100}%`,
+              left: '50%',
+              transform: 'translateX(-50%)',
             }}
-          />
-          {/* 2px 主线（半透明 accent） */}
-          <div
-            className="h-0.5 w-full"
-            style={{ backgroundColor: 'var(--lumi-accent)', opacity: lineOpacity }}
-          />
-          {/* 下 8px 渐隐（accent → 透明） */}
-          <div
-            className="h-2 w-full"
-            style={{
-              background: 'linear-gradient(to top, transparent, var(--lumi-accent))',
-              opacity: fadeOpacity,
-            }}
-          />
-        </div>,
+          >
+            {/* 上 8px 渐隐（透明 → accent） */}
+            <div
+              className="h-2 w-full"
+              style={{
+                background: 'linear-gradient(to bottom, transparent, var(--lumi-accent))',
+                opacity: fadeOpacity,
+              }}
+            />
+            {/* 2px 主线（半透明 accent） */}
+            <div
+              className="h-0.5 w-full"
+              style={{ backgroundColor: 'var(--lumi-accent)', opacity: lineOpacity }}
+            />
+            {/* 下 8px 渐隐（accent → 透明） */}
+            <div
+              className="h-2 w-full"
+              style={{
+                background: 'linear-gradient(to top, transparent, var(--lumi-accent))',
+                opacity: fadeOpacity,
+              }}
+            />
+          </div>
+        ),
         document.body,
       )}
 
@@ -344,15 +413,41 @@ export function ReadingRuler({ containerRef }: ReadingRulerProps) {
         >
           {enabled ? '关闭行辅助线' : '行辅助线'}
         </Button>
+        {/* F076：模式并列切换（辅助线 / 遮挡；开启时可见，`m` 键等效） */}
+        {enabled && (
+          <div
+            role="group"
+            aria-label="行辅助线模式"
+            className="flex overflow-hidden rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] shadow-md"
+          >
+            {(['guide', 'occlusion'] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={mode === value}
+                data-lumi-reading-ruler-mode-option={value}
+                onClick={() => changeMode(value)}
+                className={cx(
+                  'min-h-11 px-3 text-xs transition-colors duration-[var(--lumi-motion-fast)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+                  mode === value
+                    ? 'bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
+                    : 'bg-[var(--lumi-surface-elevated)] text-[var(--lumi-text-secondary)] hover:text-[var(--lumi-text-primary)]',
+                )}
+              >
+                {value === 'guide' ? '辅助线' : '遮挡'}
+              </button>
+            ))}
+          </div>
+        )}
         {enabled && (
           <p
             role="note"
             aria-label="行辅助线说明"
             className="max-w-48 rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface)] px-2 py-1 text-right text-[11px] leading-relaxed text-[var(--lumi-text-secondary)] shadow-md"
           >
-            跟随指针辅助逐行阅读（{RULER_WIDTH_LABEL[width]} · 深
-            {RULER_SHADE_LABEL[shade]}）；↑↓ 逐行移动，[ ] 调宽度，- =
-            调深浅，Esc 关闭。仅本设备生效（默认关）。
+            {mode === 'guide'
+              ? `跟随指针辅助逐行阅读（${RULER_WIDTH_LABEL[width]} · 深${RULER_SHADE_LABEL[shade]}）；↑↓ 逐行移动，[ ] 调宽度，- = 调深浅，m 切遮挡，Esc 关闭。仅本设备生效（默认关）。`
+              : '遮挡尺外内容，逐行聚焦阅读；↑↓ 逐行移动，m 切回辅助线，Esc 关闭。仅本设备生效（默认关）。'}
           </p>
         )}
       </div>

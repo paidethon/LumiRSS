@@ -89,6 +89,8 @@ import {
   enableRag,
   getTagMergePreview,
   mergeTags,
+  unlinkSavedSearchScope,
+  undoTagMerge,
   executeRestore,
   fetchClipArticle,
   fetchDuplicateSuspects,
@@ -121,9 +123,13 @@ import {
   getRssHubConfig,
   getRssHubFavorites,
   getRssHubRecent,
+  getRssHubParamPresets,
+  getRssHubRouteMySources,
   getRssHubRouteHistory,
   getRssHubRoutes,
   refreshRssHubRoute,
+  createRssHubParamPreset,
+  deleteRssHubParamPreset,
   getSubscriptions,
   getWebDavSettings,
   getWorkspaceContents,
@@ -201,6 +207,11 @@ import {
   addDigestPoolEntry,
   applyStorageRetention,
   backfillMailImap,
+  getDataFlows,
+  getRetentionNotice,
+  postponeRetention,
+  previewBackupScope,
+  verifyBackup,
   createMailRule,
   deleteMailRule,
   dryRunInboxIngest,
@@ -238,7 +249,7 @@ import type {
   RssHubCredentialInput,
   TranslationSegmentBlockInput,
 } from './client'
-import type { AiPurposeKey } from './types'
+import type { AiPurposeKey, BackupScopeInclude } from './types'
 import type { BacklogCondition } from './client'
 import type { MailImapSettingsUpdate } from './client'
 import type { UiView } from '../lib/read-later'
@@ -440,8 +451,25 @@ export function useSavedSearchViews() {
 export function useCreateSavedSearchViewMutation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (body: { name: string; query: string; view: string; categoryKey: string }) =>
-      createSavedSearchView(body),
+    mutationFn: (body: {
+      name: string
+      query: string
+      view: string
+      categoryKey: string
+      workspaceId?: string | null
+      contentTypes?: string[] | null
+    }) => createSavedSearchView(body),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: SAVED_VIEWS_KEY })
+    },
+  })
+}
+
+/** N144：解除已失效的工作区关联（保存视图列表即时刷新）。 */
+export function useUnlinkSavedSearchScopeMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => unlinkSavedSearchScope(id),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: SAVED_VIEWS_KEY })
     },
@@ -871,6 +899,48 @@ export function useRssHubRefreshMutation() {
   })
 }
 
+/** N029：我的来源（该 routeKey 生成的本人订阅；routeKey 为 null 不发
+ * 请求——预览前无 key；服务端只回本人数据 + 派生投影计数）。 */
+export function useRssHubRouteMySources(routeKey: string | null, enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['rsshub-route-my-sources', routeKey],
+    queryFn: ({ signal }) => getRssHubRouteMySources(routeKey as string, signal),
+    enabled: routeKey !== null && enabled,
+  })
+}
+
+/** N030：我的参数方案（每用户私有；enabled=false 不发请求）。 */
+export function useRssHubParamPresets(enabled: boolean) {
+  return useQuery({
+    queryKey: ['rsshub-param-presets'],
+    queryFn: ({ signal }) => getRssHubParamPresets(signal),
+    enabled,
+  })
+}
+
+/** N030：保存方案（成功后失效方案列表缓存；cap 20 拒绝是稳定错误）。 */
+export function useCreateRssHubParamPresetMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { routeId: string; params: Record<string, string>; name: string }) =>
+      createRssHubParamPreset(vars),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['rsshub-param-presets'] })
+    },
+  })
+}
+
+/** N030：删除方案（成功后失效方案列表缓存）。 */
+export function useDeleteRssHubParamPresetMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (presetId: string) => deleteRssHubParamPreset(presetId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['rsshub-param-presets'] })
+    },
+  })
+}
+
 /** 0015：AI 设置（服务端持久化；enabled=false 时不发请求）。 */
 export function useAiSettings(enabled: boolean = true) {
   return useQuery({
@@ -1194,7 +1264,8 @@ export function useBackupJob(id: string | null, enabled: boolean) {
 export function useCreateBackupMutation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (target: 'local' | 'webdav') => createBackup(target),
+    mutationFn: (vars: { target: 'local' | 'webdav'; include?: BackupScopeInclude }) =>
+      createBackup(vars.target, vars.include),
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['backups'] }),
@@ -1387,6 +1458,32 @@ export function useRestoreExecuteMutation() {
       // 重拉恢复后的数据。（客户端设置在 RestoreWizard 中经 reload 重置。）
       await queryClient.invalidateQueries()
     },
+  })
+}
+
+// ---- N181 数据外发 / N185 备份范围 / N186 独立自检 ----
+
+/** N181：逐来源数据外发清单（服务端真实配置；只读）。 */
+export function useDataFlows() {
+  return useQuery({
+    queryKey: ['privacy', 'data-flows'],
+    queryFn: ({ signal }) => getDataFlows(signal),
+    staleTime: 30_000,
+  })
+}
+
+/** N185：备份内容选择预览（只读；不创建任务）。 */
+export function usePreviewBackupScopeMutation() {
+  return useMutation({
+    mutationFn: (include?: Partial<BackupScopeInclude>) => previewBackupScope(include),
+  })
+}
+
+/** N186：独立完整性自检（只出报告，不建恢复会话）。 */
+export function useBackupVerifyMutation() {
+  return useMutation({
+    mutationFn: (body: { source: 'local' | 'remote'; jobId?: string; fileName?: string }) =>
+      verifyBackup(body),
   })
 }
 
@@ -1855,8 +1952,10 @@ import {
   listGptDigestConfigs,
   listGptDigestIssues,
   listNotesByEntry,
+  getDigestTrimPreview,
   previewConfigDigest,
   previewGptDigest,
+  retryPolishGptDigestIssue,
   reviseGptDigestIssue,
   rotateGptDigestFeed,
   setSourceOverride,
@@ -1868,30 +1967,46 @@ import {
   getObsidianNote,
   getObsidianStatus,
   getObsidianExportTemplate,
+  clearObsidianHandoffLog,
+  confirmObsidianHandoff,
   createObsidianDevice,
   updateObsidianDevice,
   deleteObsidianDevice,
+  getAnnotationsExportDelta,
   listApiSources,
+  getCleanupSuggestions,
   listMailBridgeLists,
   listObsidianDevices,
+  listObsidianHandoffLog,
   listObsidianNotes,
+  listStagedSources,
   previewApiSource,
+  previewApiSourceSample,
   previewObsidianExportTemplate,
   requestObsidianExportHandoff,
   rescanObsidian,
+  rotateApiSourceCredential,
   sendDigestNow,
+  stageSource,
+  subscribeStagedSource,
+  discardStagedSource,
+  testApiSourceCredential,
   updateApiSource,
   updateDigestSettings,
   updateObsidianExportTemplate,
   updateObsidianSettings,
+  applyCleanupSuggestions,
+  validateObsidianExport,
 } from './client'
 import type {
   ApiSourceCreateInput,
   ApiSourcePreviewInput,
+  ApiSourceSamplePreviewInput,
   ApiSourceUpdateInput,
   DigestEntryRefInput,
   DigestSettingsUpdate,
   ObsidianDeviceProfilePayload,
+  ObsidianExportTemplateView,
 } from './client'
 
 // ---- API 来源 ----
@@ -1938,6 +2053,92 @@ export function useDeleteApiSourceMutation() {
 export function useApiSourcePreviewMutation() {
   return useMutation({
     mutationFn: (input: ApiSourcePreviewInput) => previewApiSource(input),
+  })
+}
+
+// ---- N128 用样例预览 / N130 轮换；N011 组合包 / N016 暂存 / N017 清理建议 ----
+
+export function useApiSourceSamplePreviewMutation() {
+  return useMutation({
+    mutationFn: (input: ApiSourceSamplePreviewInput) => previewApiSourceSample(input),
+  })
+}
+
+export function useTestApiSourceCredentialMutation() {
+  return useMutation({
+    mutationFn: (vars: { uuid: string; newCredential: string }) =>
+      testApiSourceCredential(vars.uuid, vars.newCredential),
+  })
+}
+
+export function useRotateApiSourceCredentialMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { uuid: string; newCredential: string }) =>
+      rotateApiSourceCredential(vars.uuid, vars.newCredential),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['api-sources'] })
+    },
+  })
+}
+
+export function useStagedSources() {
+  return useQuery({
+    queryKey: ['sources', 'staging'],
+    queryFn: ({ signal }) => listStagedSources(signal),
+  })
+}
+
+export function useStageSourceMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { url: string; note?: string }) => stageSource(vars.url, vars.note),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['sources', 'staging'] })
+    },
+  })
+}
+
+export function useSubscribeStagedSourceMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => subscribeStagedSource(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['sources', 'staging'] })
+      await queryClient.invalidateQueries({ queryKey: ['subscriptions'] })
+    },
+  })
+}
+
+export function useDiscardStagedSourceMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => discardStagedSource(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['sources', 'staging'] })
+    },
+  })
+}
+
+export function useCleanupSuggestions() {
+  return useQuery({
+    queryKey: ['sources', 'cleanup-suggestions'],
+    queryFn: ({ signal }) => getCleanupSuggestions(signal),
+  })
+}
+
+export function useApplyCleanupSuggestionsMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: {
+      feedUrls: string[]
+      action: 'mute' | 'demote_category'
+      targetCategoryLabel?: string
+    }) => applyCleanupSuggestions(input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['sources', 'cleanup-suggestions'] })
+      await queryClient.invalidateQueries({ queryKey: ['subscriptions'] })
+    },
   })
 }
 
@@ -2173,10 +2374,14 @@ export function useSetSourceOverrideMutation() {
       hiddenUntil?: string | null
       showFrom?: string | null
       staleAlertHours?: number | null
+      language?: string | null
+      unreadAlertThreshold?: number | null
+      syncPriority?: number | null
     }) => setSourceOverride(patch),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['entries'] })
       await queryClient.invalidateQueries({ queryKey: ['stale-sources'] })
+      await queryClient.invalidateQueries({ queryKey: ['sources-volume'] })
     },
   })
 }
@@ -2285,6 +2490,27 @@ export function useReviseGptDigestIssueMutation() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['gpt-digest'] })
     },
+  })
+}
+
+/** N172：仅重跑润色阶段（选材/总结成果保留；meta.polishFailed 清除）。 */
+export function useRetryPolishGptDigestIssueMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { configId: number; issueKey: string }) =>
+      retryPolishGptDigestIssue(vars.configId, vars.issueKey),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['gpt-digest'] })
+    },
+  })
+}
+
+/** N175：裁剪预览（issue 面板按需开启；零写入、零模型调用）。 */
+export function useDigestTrimPreviewQuery(configId: number, issueKey: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['gpt-digest', 'trim-preview', configId, issueKey],
+    queryFn: ({ signal }) => getDigestTrimPreview(configId, issueKey, signal),
+    enabled,
   })
 }
 
@@ -2402,7 +2628,14 @@ export function useObsidianExportTemplate() {
 export function useUpdateObsidianExportTemplateMutation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (template: string) => updateObsidianExportTemplate(template),
+    mutationFn: (vars: {
+      template: string | null
+      exportNamePolicy?: ObsidianExportTemplateView['exportNamePolicy']
+    }) =>
+      // 位置参数契约保持：未带策略时不传第二参（既有调用方断言兼容）。
+      vars.exportNamePolicy !== undefined
+        ? updateObsidianExportTemplate(vars.template, vars.exportNamePolicy)
+        : updateObsidianExportTemplate(vars.template),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['obsidian', 'export-template'] })
     },
@@ -2419,9 +2652,65 @@ export function useObsidianTemplatePreviewMutation() {
 
 /** 导出到 Obsidian 交接（uri / file 裁决在服务端）。 */
 export function useObsidianExportHandoffMutation() {
+  const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (vars: { entryRef: string; deviceId: string }) =>
-      requestObsidianExportHandoff(vars.entryRef, vars.deviceId),
+    mutationFn: (vars: { entryRef: string; deviceId: string; onlySinceLastExport?: boolean }) =>
+      requestObsidianExportHandoff(vars.entryRef, vars.deviceId, {
+        onlySinceLastExport: vars.onlySinceLastExport,
+      }),
+    onSuccess: async () => {
+      // N137：交接成功即回标导出水位 → 失效增量预览。
+      await queryClient.invalidateQueries({ queryKey: ['annotations', 'export-delta'] })
+    },
+  })
+}
+
+/** N139 导出侧链接校验（只读；交接前由导出对话框调用）。 */
+export function useObsidianExportValidateMutation() {
+  return useMutation({
+    mutationFn: (vars: { entryRef: string; deviceId: string; onlySinceLastExport?: boolean }) =>
+      validateObsidianExport(vars.entryRef, vars.deviceId, {
+        onlySinceLastExport: vars.onlySinceLastExport,
+      }),
+  })
+}
+
+/** N140 交接记录列表（新→旧；confirmed 只能由显式确认产生）。 */
+export function useObsidianHandoffLog() {
+  return useQuery({
+    queryKey: ['obsidian', 'handoff-log'],
+    queryFn: ({ signal }) => listObsidianHandoffLog(signal),
+  })
+}
+
+/** N140 显式确认（幂等；不存在 → 错误由 UI 透出）。 */
+export function useConfirmObsidianHandoffMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (handoffId: string) => confirmObsidianHandoff(handoffId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['obsidian', 'handoff-log'] })
+    },
+  })
+}
+
+/** N140 清空交接历史。 */
+export function useClearObsidianHandoffLogMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => clearObsidianHandoffLog(),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['obsidian', 'handoff-log'] })
+    },
+  })
+}
+
+/** N137 增量预览（可选按文章收窄；供导出对话框展示新增/修改）。 */
+export function useAnnotationsExportDelta(entryRef: string | null) {
+  return useQuery({
+    queryKey: ['annotations', 'export-delta', { entryRef }],
+    queryFn: ({ signal }) => getAnnotationsExportDelta(entryRef, signal),
+    enabled: entryRef !== null,
   })
 }
 
@@ -2494,14 +2783,23 @@ export function useLibraryFavoriteToggle(ref: string) {
 
 import {
   assignTag,
+  createAgentRecipe,
   createAgentThread,
   decideAgentApproval,
+  deleteAgentRecipe,
   deleteAgentThread,
   getGraph,
   listAgentMessages,
+  listAgentRecipes,
   listAgentThreads,
   listTags,
+  pauseAgentThread,
+  resumeAgentThread,
+  retryAgentThread,
+  reviseAgentApproval,
+  runAgentRecipe,
   sendAgentMessage,
+  undoAgentStep,
   unassignTag,
 } from './client'
 
@@ -2679,6 +2977,21 @@ export function useTagMergeMutation() {
   return useMutation({
     mutationFn: (vars: { sourceId: number; targetId: number }) =>
       mergeTags(vars.sourceId, vars.targetId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['tags'] }),
+        queryClient.invalidateQueries({ queryKey: ['graph'] }),
+        queryClient.invalidateQueries({ queryKey: ['item-tags'] }),
+      ])
+    },
+  })
+}
+
+/** N150：撤销最近一次合并（重建源标签并恢复绑定；同样全量失效）。 */
+export function useTagMergeUndoMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => undoTagMerge(),
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['tags'] }),
@@ -3387,6 +3700,24 @@ export function useRetentionApplyMutation() {
   return useMutation({ mutationFn: () => applyStorageRetention() })
 }
 
+/** N188：数据保留到期提醒（只读）。 */
+export function useRetentionNotice() {
+  return useQuery({
+    queryKey: ['storage', 'retention', 'notice'],
+    queryFn: ({ signal }) => getRetentionNotice(signal),
+  })
+}
+
+export function useRetentionPostponeMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (days: number) => postponeRetention(days),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['storage', 'retention', 'notice'] })
+    },
+  })
+}
+
 // ---- N041/N042/N043/N044 今日必读队列 ----
 
 const QUEUE_TODAY_KEY = ['queue', 'today']
@@ -3522,6 +3853,221 @@ export function useDeleteQueueSnapshotMutation() {
     mutationFn: (snapshotId: string) => deleteQueueSnapshot(snapshotId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: QUEUE_SNAPSHOTS_KEY })
+    },
+  })
+}
+
+// ---- intake 批次：N121 批量粘贴 / N122 剪藏锁定候选 / N123 清理预览 / 邮件详情 ----
+// 本节 client 函数按段引入（本文件约定 APPEND-ONLY，新增 import 只能
+// 随新节追加在尾部；ESM 顶层 import 提升，行为等价）。
+
+import {
+  applyClipCandidate,
+  bulkLinks,
+  discardClipCandidate,
+  getClipCandidate,
+  getMailMessageDetail,
+  listMailMessages,
+  previewClipCleanup,
+  refreshClip,
+  setClipLock,
+} from './client'
+import type { ClipCandidate, MailMessageDetail } from './client'
+
+/** N121：批量粘贴（逐条 created/duplicate/failed；成功后失效书签与剪藏）。 */
+export function useBulkLinksMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { urls: string[]; target: 'bookmark' | 'clip' }) =>
+      bulkLinks(vars.urls, vars.target),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['library'] })
+    },
+  })
+}
+
+/** N122：锁定/解锁（覆盖式写入的唯一开关；成功后失效剪藏 detail）。 */
+export function useClipLockMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { clipRef: string; locked: boolean }) =>
+      setClipLock(vars.clipRef, vars.locked),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['library', 'clips'] })
+    },
+  })
+}
+
+/** N122：刷新（未锁定 → 应用；锁定 → 候选）。 */
+export function useClipRefreshMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (clipRef: string) => refreshClip(clipRef),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['library', 'clips'] })
+    },
+  })
+}
+
+/** N122：查看候选（Dialog 打开时才发请求）。 */
+export function useClipCandidate(clipRef: string | null) {
+  return useQuery({
+    queryKey: ['library', 'clips', 'candidate', clipRef],
+    queryFn: ({ signal }) => getClipCandidate(clipRef!, signal),
+    enabled: clipRef !== null,
+  })
+}
+
+export type { ClipCandidate }
+
+/** N122：应用候选（可带 keepIds 走同一净化管线）。 */
+export function useApplyClipCandidateMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { clipRef: string; keepIds?: string[] }) =>
+      applyClipCandidate(vars.clipRef, vars.keepIds),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['library', 'clips'] })
+    },
+  })
+}
+
+/** N122：丢弃候选。 */
+export function useDiscardClipCandidateMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (clipRef: string) => discardClipCandidate(clipRef),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['library', 'clips'] })
+    },
+  })
+}
+
+/** N123：清理预览（零写入；逐块建议可改）。 */
+export function useClipCleanupPreviewMutation() {
+  return useMutation({
+    mutationFn: (html: string) => previewClipCleanup(html),
+  })
+}
+
+/** N125/126/127：邮件消息清单（每列表有界 ≤50）。 */
+export function useMailMessages(listUuid: string | null) {
+  return useQuery({
+    queryKey: ['mail', 'messages', listUuid],
+    queryFn: ({ signal }) => listMailMessages(listUuid!, signal),
+    enabled: listUuid !== null,
+  })
+}
+
+export type { MailMessageDetail }
+
+/** N125/126/127：邮件详情（附件 / 双正文形态 / 被阻止媒体 / 身份提示）。 */
+export function useMailMessageDetail(listUuid: string | null, messageId: string | null) {
+  return useQuery({
+    queryKey: ['mail', 'message-detail', listUuid, messageId],
+    queryFn: ({ signal }) => getMailMessageDetail(listUuid!, messageId!, signal),
+    enabled: listUuid !== null && messageId !== null,
+  })
+}
+
+// ---- N164–N170 Agent ops（暂停续接 / 批准修订 / 步骤重试 / 差异撤销 / 配方）----
+
+/** N164：暂停运行中的回合（在工具间检查点冻结）。 */
+export function useAgentPauseMutation(threadId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => pauseAgentThread(threadId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['agent', 'messages', threadId] })
+    },
+  })
+}
+
+/** N164：续接暂停的回合（已执行步骤绝不重复；过期批准 → 重新确认）。 */
+export function useAgentResumeMutation(threadId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => resumeAgentThread(threadId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['agent', 'messages', threadId] })
+    },
+  })
+}
+
+/** N167：批准前修订参数（旧批准作废，产生新批准行）。 */
+export function useAgentReviseApprovalMutation(threadId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { approvalId: string; newArgs: Record<string, unknown> }) =>
+      reviseAgentApproval(threadId, vars.approvalId, vars.newArgs),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['agent', 'messages', threadId] })
+    },
+  })
+}
+
+/** N168：失败步骤单独重试（可能产生新的写批准）。 */
+export function useAgentRetryMutation(threadId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => retryAgentThread(threadId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['agent', 'messages', threadId] })
+    },
+  })
+}
+
+/** N169：按 stepId 差异撤销一次写副作用。 */
+export function useAgentUndoMutation(threadId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (stepId: string) => undoAgentStep(threadId, stepId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['agent', 'messages', threadId] })
+    },
+  })
+}
+
+/** N170：配方列表。 */
+export function useAgentRecipes() {
+  return useQuery({
+    queryKey: ['agent', 'recipes'],
+    queryFn: ({ signal }) => listAgentRecipes(signal),
+  })
+}
+
+export function useCreateAgentRecipeMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: {
+      name: string
+      input: string
+      toolWhitelist: string[]
+      scope?: Record<string, unknown> | null
+    }) => createAgentRecipe(payload),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['agent', 'recipes'] })
+    },
+  })
+}
+
+export function useDeleteAgentRecipeMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (recipeId: string) => deleteAgentRecipe(recipeId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['agent', 'recipes'] })
+    },
+  })
+}
+
+/** N170：运行配方 = 创建新会话并以配方输入开启第一回合。 */
+export function useRunAgentRecipeMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (recipeId: string) => runAgentRecipe(recipeId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['agent', 'threads'] })
     },
   })
 }

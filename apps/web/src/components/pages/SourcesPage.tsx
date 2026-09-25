@@ -28,6 +28,8 @@ import { useReaderUi } from '../../store/reader-ui'
 import type { AppSection } from '../../store/reader-ui'
 import { requestOpenSettings } from '../settings/settings-bridge'
 import { formatTimestamp } from '../../lib/date-format'
+import { StagedSourcesSection } from '../StagedSourcesSection'
+import { FreshnessSuggestionsSection } from '../FreshnessSuggestionsSection'
 import { Button } from '../ui/Button'
 import { EmptyState } from '../ui/EmptyState'
 import { Skeleton } from '../ui/Skeleton'
@@ -280,6 +282,10 @@ export default function SourcesPage() {
                 </section>
               )
             })}
+            {/* N016：待评估（暂存池）——空池不渲染 */}
+            <StagedSourcesSection />
+            {/* N014：自适应低活跃建议（建议面板 + 接受记录 + 原生界面委托） */}
+            <FreshnessSuggestionsSection />
           </div>
         )}
       </div>
