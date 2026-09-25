@@ -5581,6 +5581,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opml/import/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Opml Import Log List
+         * @description N018：最近撤销台账（≤5 行，新→旧；undoneAt 非 null = 已撤销）。
+         */
+        get: operations["opml_import_log_list_api_v1_opml_import_log_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/opml/import/preview": {
         parameters: {
             query?: never;
@@ -5601,6 +5621,80 @@ export interface paths {
          *     POST /api/v1/opml/import.
          */
         post: operations["opml_import_preview_api_v1_opml_import_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opml/import/tree-apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Opml Tree Apply
+         * @description N018：应用树对照计划（订阅新 feed → 建类/移动随行）。
+         *
+         *     以执行时刻的服务器状态为准（预览是建议，不是陈旧契约）。每次
+         *     执行写一行撤销台账（opml_import_log，cap 5），撤销走
+         *     POST /api/v1/opml/import/{id}/undo。
+         */
+        post: operations["opml_tree_apply_api_v1_opml_import_tree_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opml/import/tree-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Opml Tree Preview
+         * @description N018：OPML 分类树对照预览——严格只读。
+         *
+         *     解析上传 OPML 的分类结构，对照当前 FreshRSS 分类，产出计划：
+         *     createCategories / reuseCategories / moveFeeds / duplicateFeeds
+         *     （skip|update 策略见 OpmlService._build_tree_plan 的确定性规则）。
+         *     不订阅、不移动、不建类；应用走 tree-apply。
+         */
+        post: operations["opml_tree_preview_api_v1_opml_import_tree_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opml/import/{log_id}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Opml Import Undo
+         * @description N018：撤销一次树对照导入（feed 移回原分类）。
+         *
+         *     每行至多撤销一次；被移动 feed 的原分类已消失 / feed 已退订时逐项
+         *     如实汇报原因。新建分类无法经 greader API 删除（无该端点，诚实
+         *     边界）——响应 categoriesNotDeleted 如实列出，可在 FreshRSS 原生
+         *     界面清理。
+         */
+        post: operations["opml_import_undo_api_v1_opml_import__log_id__undo_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6608,6 +6702,36 @@ export interface paths {
         get: operations["detect_rsshub_api_v1_rsshub_detect_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/params-diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rsshub Params Diff
+         * @description N024：编辑既有 RSSHub 来源参数前的差异对照（零写入）。
+         *
+         *     同一次请求内有界抓取旧参数 feed 与新参数 feed（都走实例配置 origin
+         *     的 origin-locked 路径），离线解析标题并做集合 diff：
+         *     - added = 仅新 feed 有的标题；removed = 仅旧 feed 有的标题；
+         *       duplicates = 两侧都有（标题为对照键——entry id 不跨参数稳定）；
+         *     - 一侧抓取/解析失败 → 该侧 error 如实说明，titles=null，diff 基于
+         *       可用一侧诚实计算（绝不臆造空 = 全量增删的假差异）；
+         *     - newUrl 是 FreshRSS 面向的订阅地址（与 preview 同一构造）；
+         *     - 应用语义与 F047 相同：确认走迁移端点（新建订阅 + 旧源保留），
+         *       本端点本身绝不改任何状态（取消 = 什么都没发生）。
+         */
+        post: operations["rsshub_params_diff_api_v1_rsshub_params_diff_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7659,6 +7783,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sources/access-card": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Source Access Card
+         * @description N019：单个来源的接入说明卡（无卡 → 全 null）。
+         */
+        get: operations["get_source_access_card_api_v1_sources_access_card_get"];
+        /**
+         * Put Source Access Card
+         * @description N019：整卡 upsert（缺席字段 = 清空该字段）。
+         *
+         *     credentialOwnership 只接受归属标签 self/shared/none——**卡里没有
+         *     凭据值字段**（契约上不存在，schema 亦无 secret 列）；未知字段 → 422
+         *     invalid_access_card。
+         */
+        put: operations["put_source_access_card_api_v1_sources_access_card_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/access-cards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Source Access Cards
+         * @description N019：当前账户全部接入说明卡（per-user 库隔离，只见自己的）。
+         */
+        get: operations["list_source_access_cards_api_v1_sources_access_cards_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sources/alias": {
         parameters: {
             query?: never;
@@ -7822,6 +7994,57 @@ export interface paths {
          *     auto-unsubscribe and no batch-everything mode.
          */
         post: operations["apply_cleanup_suggestions_api_v1_sources_cleanup_suggestions_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/freshness-suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Freshness Suggestions
+         * @description N014：低活跃来源建议（只读；依据 = 派生投影 trailing 8 周画像）。
+         *
+         *     对每个订阅计算条目/周（yield）与相邻发布间隔中位数（medianGapDays），
+         *     yield < 0.5 且 gap > 14 天 → 建议「降低刷新频率」。诚实边界：FreshRSS
+         *     greader API 不暴露 per-feed 刷新频率（调度粒度由实例 CRON_MIN 决定），
+         *     因此本端点只产出建议；「应用」= 记录 refreshAdvisory=accepted 决定，
+         *     逐源频率需在 FreshRSS 原生界面调整（/api/v1/freshrss/native-url）。
+         */
+        get: operations["freshness_suggestions_api_v1_sources_freshness_suggestions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/freshness-suggestions/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Freshness Advisory
+         * @description N014：接受一条低活跃建议 = 在 Lumi 侧记录该决定。
+         *
+         *     诚实语义：**不改变任何抓取行为**——FreshRSS greader API 无 per-feed
+         *     ttl/timing 能力，调度粒度由实例 CRON_MIN 决定。记录结果在来源详情
+         *     呈现为「已接受低频建议」；重复接受是幂等的（同值 no-op）。未订阅的
+         *     feed → 404（不为不存在的来源记决定）。
+         */
+        post: operations["apply_freshness_advisory_api_v1_sources_freshness_suggestions_apply_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -13307,6 +13530,74 @@ export interface components {
             url?: string | null;
         };
         /**
+         * FreshnessAdvisoryApplyBody
+         * @description POST /api/v1/sources/freshness-suggestions/apply body。
+         */
+        FreshnessAdvisoryApplyBody: {
+            /** Feedurl */
+            feedUrl: string;
+        };
+        /**
+         * FreshnessAdvisoryApplyResult
+         * @description POST /api/v1/sources/freshness-suggestions/apply（记录决定）。
+         */
+        FreshnessAdvisoryApplyResult: {
+            /** Feedurl */
+            feedUrl: string;
+            /** Refreshadvisory */
+            refreshAdvisory: string | null;
+            /** Schedulingnote */
+            schedulingNote: string;
+        };
+        /**
+         * FreshnessSuggestionBasis
+         * @description N014 建议依据（全部来自派生投影，可重建）。
+         */
+        FreshnessSuggestionBasis: {
+            /** Mediangapdays */
+            medianGapDays: number;
+            /** Weeks */
+            weeks: number;
+            /** Yield */
+            yield: number;
+        };
+        /**
+         * FreshnessSuggestionItem
+         * @description N014：一条低活跃建议（含已记录决定状态 + 诚实调度说明）。
+         */
+        FreshnessSuggestionItem: {
+            basis: components["schemas"]["FreshnessSuggestionBasis"];
+            /** Currentpattern */
+            currentPattern: string;
+            /** Feedurl */
+            feedUrl: string;
+            /** Refreshadvisory */
+            refreshAdvisory?: string | null;
+            /** Subscriptionref */
+            subscriptionRef: string;
+            /** Suggested */
+            suggested: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * FreshnessSuggestionsResponse
+         * @description GET /api/v1/sources/freshness-suggestions（只读）。
+         */
+        FreshnessSuggestionsResponse: {
+            /** Basis */
+            basis: string;
+            /** Generatedat */
+            generatedAt: string;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["FreshnessSuggestionItem"][];
+            /** Schedulingnote */
+            schedulingNote: string;
+        };
+        /**
          * FreshrssDataBackupCapability
          * @description FreshRSS component preflight — safe diagnostics only (no paths
          *     beyond the configured root, no credentials).
@@ -15516,6 +15807,38 @@ export interface components {
             title: string;
         };
         /**
+         * OpmlImportLogEntry
+         * @description 一条 N018 撤销台账（cap 5；undoneAt 非 null = 已撤销过）。
+         */
+        OpmlImportLogEntry: {
+            /**
+             * Createdcategorylabels
+             * @default []
+             */
+            createdCategoryLabels: string[];
+            /** Id */
+            id: number;
+            /** Importedat */
+            importedAt: string;
+            /**
+             * Movedfeeds
+             * @default []
+             */
+            movedFeeds: {
+                [key: string]: unknown;
+            }[];
+            /** Undoneat */
+            undoneAt?: string | null;
+        };
+        /** OpmlImportLogList */
+        OpmlImportLogList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["OpmlImportLogEntry"][];
+        };
+        /**
          * OpmlImportPreview
          * @description POST /api/v1/opml/import/preview (strictly non-mutating).
          */
@@ -15597,6 +15920,192 @@ export interface components {
             reason: string;
             /** Title */
             title: string;
+        };
+        /**
+         * OpmlTreeApplyAdded
+         * @description 树对照 apply 中新订阅的 feed。
+         */
+        OpmlTreeApplyAdded: {
+            /** Categoryapplied */
+            categoryApplied: boolean;
+            /** Categorylabel */
+            categoryLabel?: string | null;
+            /** Feedurl */
+            feedUrl: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * OpmlTreeApplyFailed
+         * @description 树对照 apply 中失败的一步（kind: subscribe | category）。
+         */
+        OpmlTreeApplyFailed: {
+            /** Error */
+            error: string;
+            /** Feedurl */
+            feedUrl: string;
+            /** Kind */
+            kind: string;
+        };
+        /**
+         * OpmlTreeApplyResult
+         * @description POST /api/v1/opml/import/tree-apply（logId 供 undo）。
+         */
+        OpmlTreeApplyResult: {
+            /**
+             * Added
+             * @default []
+             */
+            added: components["schemas"]["OpmlTreeApplyAdded"][];
+            /**
+             * Categoriescreated
+             * @default []
+             */
+            categoriesCreated: string[];
+            /**
+             * Failed
+             * @default []
+             */
+            failed: components["schemas"]["OpmlTreeApplyFailed"][];
+            /** Logid */
+            logId: number;
+            /**
+             * Moved
+             * @default []
+             */
+            moved: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Skipped
+             * @default []
+             */
+            skipped: {
+                [key: string]: unknown;
+            }[];
+        };
+        /**
+         * OpmlTreeDuplicateFeed
+         * @description 树对照计划中的已订阅 feed（action: skip = 不动 | update = 随分类移动）。
+         */
+        OpmlTreeDuplicateFeed: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "skip" | "update";
+            /** Feed */
+            feed: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * OpmlTreeMoveFeed
+         * @description 树对照计划中「将移动分类」的已订阅 feed（from 为 null = 当前未分组）。
+         */
+        OpmlTreeMoveFeed: {
+            /** Feed */
+            feed: string;
+            /** From */
+            from?: string | null;
+            /** Subscriptionref */
+            subscriptionRef: string;
+            /** To */
+            to: string;
+            /** Tocategoryid */
+            toCategoryId: string;
+        };
+        /**
+         * OpmlTreeNewFeed
+         * @description 树对照计划中「将新订阅」的 feed（分类为有效 label 或 null）。
+         */
+        OpmlTreeNewFeed: {
+            /** Categorylabel */
+            categoryLabel?: string | null;
+            /** Feedurl */
+            feedUrl: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * OpmlTreePlan
+         * @description POST /api/v1/opml/import/tree-preview（严格只读的对照计划）。
+         */
+        OpmlTreePlan: {
+            /**
+             * Createcategories
+             * @default []
+             */
+            createCategories: string[];
+            /**
+             * Duplicatefeeds
+             * @default []
+             */
+            duplicateFeeds: components["schemas"]["OpmlTreeDuplicateFeed"][];
+            /**
+             * Invalidentries
+             * @default 0
+             */
+            invalidEntries: number;
+            /**
+             * Movefeeds
+             * @default []
+             */
+            moveFeeds: components["schemas"]["OpmlTreeMoveFeed"][];
+            /**
+             * Newfeeds
+             * @default []
+             */
+            newFeeds: components["schemas"]["OpmlTreeNewFeed"][];
+            /**
+             * Notes
+             * @default []
+             */
+            notes: string[];
+            /**
+             * Reusecategories
+             * @default []
+             */
+            reuseCategories: string[];
+            /** Totalfeeds */
+            totalFeeds: number;
+        };
+        /**
+         * OpmlUndoResult
+         * @description POST /api/v1/opml/import/{id}/undo（逐项如实汇报；建类不删——
+         *     greader API 无分类删除端点，诚实边界）。
+         */
+        OpmlUndoResult: {
+            /**
+             * Categoriesdeleted
+             * @default []
+             */
+            categoriesDeleted: string[];
+            /**
+             * Categoriesnotdeleted
+             * @default []
+             */
+            categoriesNotDeleted: {
+                [key: string]: unknown;
+            }[];
+            /** Logid */
+            logId: number;
+            /**
+             * Movedback
+             * @default []
+             */
+            movedBack: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Notrestored
+             * @default []
+             */
+            notRestored: {
+                [key: string]: unknown;
+            }[];
+            /** Note */
+            note: string;
         };
         /**
          * PasskeyDeleteRequest
@@ -17211,6 +17720,61 @@ export interface components {
             required: boolean;
         };
         /**
+         * RssHubParamsDiffRequest
+         * @description POST /api/v1/rsshub/params-diff body（N024：变更前对照，只读）。
+         */
+        RssHubParamsDiffRequest: {
+            /** Newparams */
+            newParams?: {
+                [key: string]: string;
+            };
+            /** Oldfeedurl */
+            oldFeedUrl: string;
+            /** Routeid */
+            routeId: string;
+        };
+        /**
+         * RssHubParamsDiffResult
+         * @description N024：新旧参数 feed 的标题级差异（bounded；cancelled 前零写入）。
+         */
+        RssHubParamsDiffResult: {
+            /**
+             * Added
+             * @default []
+             */
+            added: string[];
+            /**
+             * Duplicates
+             * @default []
+             */
+            duplicates: string[];
+            new: components["schemas"]["RssHubParamsDiffSide"];
+            /** Newurl */
+            newUrl: string;
+            /** Note */
+            note: string;
+            old: components["schemas"]["RssHubParamsDiffSide"];
+            /**
+             * Removed
+             * @default []
+             */
+            removed: string[];
+        };
+        /**
+         * RssHubParamsDiffSide
+         * @description 对照的一侧（old/new；抓取失败 → error 如实说明，titles 为 null）。
+         */
+        RssHubParamsDiffSide: {
+            /** Entrycount */
+            entryCount?: number | null;
+            /** Error */
+            error?: string | null;
+            /** Titles */
+            titles?: string[] | null;
+            /** Url */
+            url: string;
+        };
+        /**
          * RssHubPreviewRequest
          * @description POST /api/v1/rsshub/preview body (0014): route + parameter values.
          *
@@ -17234,7 +17798,8 @@ export interface components {
          *
          *     N021/N025: the key (template id + masked params signature) is built
          *     server-side; clients use it for favorites/recents/history/refresh
-         *     and never assemble it themselves. N027 adds cache freshness.
+         *     and never assemble it themselves. N027 adds cache freshness. N023
+         *     adds dependency metadata + the zero-entry honest hint.
          */
         RssHubPreviewResult: {
             /** Alreadysubscribed */
@@ -17250,12 +17815,15 @@ export interface components {
              * @enum {string}
              */
             format: "rss" | "atom";
+            requires?: components["schemas"]["RssHubRequires"] | null;
             /** Routekey */
             routeKey: string;
             /** Siteurl */
             siteUrl?: string | null;
             /** Title */
             title: string;
+            /** Zeroentryhint */
+            zeroEntryHint?: string | null;
         };
         /**
          * RssHubRecentItem
@@ -17301,6 +17869,24 @@ export interface components {
             title: string;
         };
         /**
+         * RssHubRequires
+         * @description N023：路由依赖元数据（curated 静态数据；null = 未知，诚实呈现）。
+         *
+         *     ``login`` 需要登录账号 / ``cookies`` 需要 Cookie / ``render`` 需要
+         *     浏览器渲染（puppeteer）/ ``extraService`` 需要额外服务（如 API key
+         *     配置）。三态：true（需要）/ false（不需要）/ None（未知）。
+         */
+        RssHubRequires: {
+            /** Cookies */
+            cookies?: boolean | null;
+            /** Extraservice */
+            extraService?: boolean | null;
+            /** Login */
+            login?: boolean | null;
+            /** Render */
+            render?: boolean | null;
+        };
+        /**
          * RssHubRoute
          * @description One Lumi-owned RSSHub route descriptor (path built server-side).
          */
@@ -17313,6 +17899,7 @@ export interface components {
             parameters: components["schemas"]["RssHubParameter"][];
             /** Pathtemplate */
             pathTemplate: string;
+            requires?: components["schemas"]["RssHubRequires"] | null;
             /** Title */
             title: string;
         };
@@ -18180,6 +18767,52 @@ export interface components {
             /** Uuid */
             uuid: string;
         };
+        /** SourceAccessCardList */
+        SourceAccessCardList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["SourceAccessCardView"][];
+        };
+        /**
+         * SourceAccessCardUpdate
+         * @description PUT /api/v1/sources/access-card — 整卡 upsert（缺席字段=清空）。
+         *
+         *     credentialOwnership 只接受 'self' | 'shared' | 'none'（归属标签，
+         *     不是凭据值）；未知字段键 → 422（extra=forbid：契约上不存在凭据值
+         *     字段，超集直接拒绝）。
+         */
+        SourceAccessCardUpdate: {
+            /** Acquisition */
+            acquisition?: string | null;
+            /** Credentialownership */
+            credentialOwnership?: string | null;
+            /** Feedurl */
+            feedUrl: string;
+            /** Limits */
+            limits?: string | null;
+            /** Maintenance */
+            maintenance?: string | null;
+        };
+        /**
+         * SourceAccessCardView
+         * @description N019：一个来源的接入说明卡（凭据只存归属标签，绝无凭据值）。
+         */
+        SourceAccessCardView: {
+            /** Acquisition */
+            acquisition?: string | null;
+            /** Credentialownership */
+            credentialOwnership?: string | null;
+            /** Feedurl */
+            feedUrl: string;
+            /** Limits */
+            limits?: string | null;
+            /** Maintenance */
+            maintenance?: string | null;
+            /** Updatedat */
+            updatedAt?: string | null;
+        };
         /**
          * SourceAliasHistoryItem
          * @description N013：一条改名历史（old 为 NULL = 首设别名；恢复 = 用旧名 PUT）。
@@ -18312,6 +18945,11 @@ export interface components {
              */
             aiDisabled: boolean;
             /**
+             * Attentionlevel
+             * @default normal
+             */
+            attentionLevel: string;
+            /**
              * Extractpolicy
              * @default rss
              */
@@ -18328,6 +18966,8 @@ export interface components {
             readerStyle?: {
                 [key: string]: unknown;
             } | null;
+            /** Refreshadvisory */
+            refreshAdvisory?: string | null;
             /** Showfrom */
             showFrom?: string | null;
             /** Stalealerthours */
@@ -18345,6 +18985,8 @@ export interface components {
         SourceOverrideUpdate: {
             /** Aidisabled */
             aiDisabled?: boolean | null;
+            /** Attentionlevel */
+            attentionLevel?: string | null;
             /** Extractpolicy */
             extractPolicy?: string | null;
             /** Feedurl */
@@ -23269,6 +23911,7 @@ export interface operations {
                 cursor?: string | null;
                 includeHidden?: boolean;
                 sort?: "received" | null;
+                attention?: ("must_read" | "excl_low") | null;
             };
             header?: never;
             path?: never;
@@ -29374,6 +30017,26 @@ export interface operations {
             };
         };
     };
+    opml_import_log_list_api_v1_opml_import_log_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpmlImportLogList"];
+                };
+            };
+        };
+    };
     opml_import_preview_api_v1_opml_import_preview_post: {
         parameters: {
             query?: never;
@@ -29390,6 +30053,77 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpmlImportPreview"];
+                };
+            };
+        };
+    };
+    opml_tree_apply_api_v1_opml_import_tree_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpmlTreeApplyResult"];
+                };
+            };
+        };
+    };
+    opml_tree_preview_api_v1_opml_import_tree_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpmlTreePlan"];
+                };
+            };
+        };
+    };
+    opml_import_undo_api_v1_opml_import__log_id__undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                log_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpmlUndoResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -31192,6 +31926,39 @@ export interface operations {
             };
         };
     };
+    rsshub_params_diff_api_v1_rsshub_params_diff_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RssHubParamsDiffRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubParamsDiffResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     rsshub_preview_api_v1_rsshub_preview_post: {
         parameters: {
             query?: never;
@@ -32889,6 +33656,90 @@ export interface operations {
             };
         };
     };
+    get_source_access_card_api_v1_sources_access_card_get: {
+        parameters: {
+            query: {
+                feedUrl: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceAccessCardView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_source_access_card_api_v1_sources_access_card_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourceAccessCardUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceAccessCardView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_source_access_cards_api_v1_sources_access_cards_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceAccessCardList"];
+                };
+            };
+        };
+    };
     set_source_alias_api_v1_sources_alias_put: {
         parameters: {
             query?: never;
@@ -33123,6 +33974,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CleanupApplyResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    freshness_suggestions_api_v1_sources_freshness_suggestions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FreshnessSuggestionsResponse"];
+                };
+            };
+        };
+    };
+    apply_freshness_advisory_api_v1_sources_freshness_suggestions_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FreshnessAdvisoryApplyBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FreshnessAdvisoryApplyResult"];
                 };
             };
             /** @description Validation Error */

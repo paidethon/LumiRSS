@@ -1,21 +1,32 @@
 /** F047 RSSHub 路由参数编辑 —— 行菜单「路由参数」。
  *
  * 从 /api/v1/rsshub/routes 元数据匹配当前路由（pathTemplate 前缀匹配）：
- * - 命中 → 按参数定义（必填/枚举）生成表单，改参生成新地址预览；
- * - 未命中 → 退化为仅允许编辑 query 参数的通用表单。
- * token/key 类 query 值脱敏显示（***）；确认前用 feed-preview 预览新
- * 地址（失败不应用）；确认走 F044 迁移端点（旧源 replaced_by）。
+ * - 命中 → 按参数定义（必填/枚举）生成表单（{key} 模板参数从现有
+ *   feedUrl 反推初值），改参先做 N024 新旧参数对照差异（双侧有界
+ *   预览，严格只读），确认后走 F044 迁移端点（旧源 replaced_by）；
+ * - 未命中 → 退化为仅允许编辑 query 参数的通用表单（预览门 = 既有
+ *   feed-preview 校验）。
+ * token/key 类 query 值脱敏显示（***）；取消（关闭/重置）不产生任何
+ * 变更——对照端点本身零写入，应用由用户显式确认。
+ * N023：命中路由与目录行一样显示依赖 chips（true=需要 / null=未知）。
  */
 
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react'
-import { getRssHubRoutes, migrateSubscription, previewFeed } from '../api/client'
+import {
+  diffRssHubParams,
+  getRssHubRoutes,
+  migrateSubscription,
+  previewFeed,
+} from '../api/client'
+import type { RssHubParamsDiffResult } from '../api/types'
 import type { Subscription } from '../api/types'
 import { Button } from './ui/Button'
 import { Dialog } from './ui/Dialog'
 import { cx } from './ui/cx'
-import { SENSITIVE_QUERY, maskQuery, matchRoute } from '../lib/rsshub-params'
+import { SENSITIVE_QUERY, maskQuery, matchRoute, extractTemplateParams } from '../lib/rsshub-params'
+import { RssHubRequiresChips } from './rsshub-requires-chips'
 
 const inputCls =
   'w-full rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2.5 py-1.5 text-sm text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]'
@@ -28,6 +39,27 @@ interface RouteParamDef {
   type?: string | null
   enum?: string[] | null
   description?: string | null
+}
+
+/** N024：差异列表段（added/removed 共用形状）。 */
+function DiffList({ label, titles }: { label: string; titles: string[] }) {
+  return (
+    <div className="min-w-0 flex-1" data-testid={`params-diff-${label}`}>
+      <p className="text-[11px] font-medium text-[var(--lumi-text-secondary)]">
+        {label}（{titles.length}）
+      </p>
+      <ul className="mt-1 flex max-h-28 flex-col gap-0.5 overflow-y-auto">
+        {titles.length === 0 && (
+          <li className="text-[11px] text-[var(--lumi-text-tertiary)]">无</li>
+        )}
+        {titles.map((title) => (
+          <li key={title} className="truncate text-[11px] text-[var(--lumi-text-primary)]" title={title}>
+            {title}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
 }
 
 export function RsshubRouteParamsDialog({
@@ -48,6 +80,7 @@ export function RsshubRouteParamsDialog({
   const [queryDraft, setQueryDraft] = useState<Record<string, string>>({})
   const [newQueryPairs, setNewQueryPairs] = useState<{ key: string; value: string }[]>([])
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [diff, setDiff] = useState<RssHubParamsDiffResult | null>(null)
 
   // 路由匹配：feedUrl 路径与 pathTemplate 前缀匹配（:param 段通配）
   const matchedRoute = useMemo(
@@ -58,21 +91,44 @@ export function RsshubRouteParamsDialog({
   const paramDefs: RouteParamDef[] = useMemo(() => {
     const raw = (matchedRoute?.parameters ?? []) as {
       name?: string
+      key?: string
       required?: boolean
       type?: string
       enum?: string[]
       description?: string
     }[]
-    return raw
-      .filter((param) => typeof param.name === 'string' && param.name !== '')
-      .map((param) => ({
-        name: param.name as string,
+    const defs: RouteParamDef[] = []
+    for (const param of raw) {
+      const name =
+        typeof param.key === 'string' && param.key !== '' ? param.key : param.name
+      if (typeof name !== 'string' || name === '') continue
+      defs.push({
+        name,
         required: param.required === true,
         type: param.type ?? null,
         enum: param.enum ?? null,
         description: param.description ?? null,
-      }))
+      })
+    }
+    return defs
   }, [matchedRoute])
+
+  // {key} 模板参数初值：从现有 feedUrl 反推（N024 对照需要新旧两侧）。
+  const currentPathParams = useMemo(
+    () =>
+      matchedRoute === null
+        ? null
+        : extractTemplateParams(matchedRoute.pathTemplate, feedUrl),
+    [matchedRoute, feedUrl],
+  )
+
+  useEffect(() => {
+    if (open && currentPathParams !== null) {
+      setQueryDraft((prev) => ({ ...currentPathParams, ...prev }))
+    }
+    // 打开对话框时注入模板参数初值；用户编辑保留（prev 展开在后）。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, matchedRoute?.pathTemplate])
 
   // 新地址：现有 query + 修改后的 query 对 + 新增对（不改路径段——路径
   // 参数场景由 matchedRoute 分支用 pathOverrides 重建路径）。
@@ -104,6 +160,24 @@ export function RsshubRouteParamsDialog({
     mutationFn: () => previewFeed(builtUrl),
     onSuccess: () => setPreviewUrl(builtUrl),
   })
+
+  // N024：命中目录路由 → 新旧参数双侧对照（newParams = 模板参数现值）。
+  const diffMutation = useMutation({
+    mutationFn: () => {
+      const newParams: Record<string, string> = {}
+      for (const def of paramDefs) {
+        const value = queryDraft[def.name]
+        if (value != null && value !== '') newParams[def.name] = value
+      }
+      return diffRssHubParams({
+        oldFeedUrl: feedUrl,
+        routeId: matchedRoute?.id ?? '',
+        newParams,
+      })
+    },
+    onSuccess: (result) => setDiff(result),
+  })
+
   const applyMutation = useMutation({
     mutationFn: () => migrateSubscription(subscription.subscriptionRef, builtUrl),
     onSuccess: async () => {
@@ -116,7 +190,13 @@ export function RsshubRouteParamsDialog({
     setQueryDraft({})
     setNewQueryPairs([])
     setPreviewUrl(null)
+    setDiff(null)
   }
+
+  // 应用门：命中路由 → 已完成对照差异；未命中 → 既有预览通过。
+  const diffReady = matchedRoute !== null && diff !== null
+  const applyEnabled =
+    (matchedRoute !== null ? diffReady : previewUrl !== null) && !applyMutation.isPending
 
   return (
     <Dialog open={open} onClose={onClose} title={`路由参数 — ${subscription.title}`}>
@@ -131,6 +211,8 @@ export function RsshubRouteParamsDialog({
           <div className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-2.5 text-xs">
             <p className="font-medium text-[var(--lumi-text-primary)]">{matchedRoute.title}</p>
             <p className="mt-0.5 text-[var(--lumi-text-tertiary)]">{matchedRoute.pathTemplate}</p>
+            {/* N023：依赖 chips（与目录行同源；null = 未知诚实呈现） */}
+            <RssHubRequiresChips requires={matchedRoute.requires} className="mt-1.5" />
           </div>
         )}
 
@@ -221,13 +303,47 @@ export function RsshubRouteParamsDialog({
           <p className="mt-0.5 break-all font-mono text-[var(--lumi-text-primary)]">{maskQuery(builtUrl)}</p>
         </div>
 
+        {/* N024：命中路由 → 新旧参数双侧对照差异（严格只读；取消零变更）。 */}
+        {matchedRoute !== null && (
+          <div className="flex flex-col gap-2" data-testid="params-diff-section">
+            {diffMutation.isPending && (
+              <p className="text-xs text-[var(--lumi-text-tertiary)]" role="status">
+                正在对照新旧参数的 feed 内容…
+              </p>
+            )}
+            {diffMutation.isError && (
+              <p role="alert" className="text-xs text-[var(--lumi-danger)]">
+                对照失败：{diffMutation.error instanceof Error ? diffMutation.error.message : '请稍后重试'}
+              </p>
+            )}
+            {diff !== null && (
+              <div className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-2.5">
+                <div className="flex gap-3">
+                  <DiffList label="新增条目" titles={diff.added} />
+                  <DiffList label="将消失条目" titles={diff.removed} />
+                  <DiffList label="两侧共有" titles={diff.duplicates} />
+                </div>
+                {(diff.old.error != null || diff.new.error != null) && (
+                  <p className="mt-1.5 text-[11px] text-[var(--lumi-text-tertiary)]">
+                    {diff.old.error != null && `旧地址对照失败：${diff.old.error}`}
+                    {diff.new.error != null && `新地址对照失败：${diff.new.error}`}
+                  </p>
+                )}
+                <p className="mt-1.5 text-[11px] text-[var(--lumi-text-tertiary)]">
+                  {diff.note}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
         {previewMutation.isError && (
           <p role="alert" className="flex items-start gap-1.5 text-xs text-[var(--lumi-danger)]">
             <AlertCircle aria-hidden className="mt-0.5 size-3.5 shrink-0" />
             预览失败（地址不可达或非法）：{previewMutation.error instanceof Error ? previewMutation.error.message : '请检查参数'}
           </p>
         )}
-        {previewUrl !== null && (
+        {previewUrl !== null && matchedRoute === null && (
           <p className="flex items-center gap-1.5 text-xs text-[var(--lumi-text-secondary)]">
             <CheckCircle2 aria-hidden className="size-3.5" /> 预览通过——确认后将新建订阅并保留旧订阅（可自行退订）。
           </p>
@@ -239,14 +355,31 @@ export function RsshubRouteParamsDialog({
         )}
         <div className="flex items-center justify-end gap-2">
           <Button size="sm" variant="ghost" onClick={reset}>重置</Button>
-          <Button size="sm" variant="secondary" disabled={previewMutation.isPending} onClick={() => previewMutation.mutate()}>
-            <RefreshCw aria-hidden className="size-3.5" />
-            {previewMutation.isPending ? '预览中…' : '预览'}
-          </Button>
+          {matchedRoute !== null ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={diffMutation.isPending}
+              onClick={() => diffMutation.mutate()}
+            >
+              <RefreshCw aria-hidden className="size-3.5" />
+              {diffMutation.isPending ? '对照中…' : '对照新旧参数'}
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={previewMutation.isPending}
+              onClick={() => previewMutation.mutate()}
+            >
+              <RefreshCw aria-hidden className="size-3.5" />
+              {previewMutation.isPending ? '预览中…' : '预览'}
+            </Button>
+          )}
           <Button
             size="sm"
             variant="primary"
-            disabled={previewUrl === null || applyMutation.isPending}
+            disabled={!applyEnabled}
             onClick={() => applyMutation.mutate()}
           >
             {applyMutation.isPending ? '应用中…' : '应用'}

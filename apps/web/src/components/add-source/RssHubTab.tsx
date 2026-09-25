@@ -29,6 +29,7 @@ import {
 } from '../../api/queries'
 import type {
   FeedPreviewMetadata,
+  RssHubRequires,
   RssHubRoute,
   RssHubRouteRun,
 } from '../../api/types'
@@ -40,6 +41,7 @@ import { EmptyState } from '../ui/EmptyState'
 import { IconButton } from '../ui/IconButton'
 import { Skeleton } from '../ui/Skeleton'
 import { cx } from '../ui/cx'
+import { RssHubRequiresChips } from '../rsshub-requires-chips'
 import { PreviewStage } from './PreviewStage'
 import type { AddSourceTabProps } from './DirectFeedTab'
 
@@ -57,7 +59,15 @@ export function RssHubTab({ onClose, registerGuard }: AddSourceTabProps) {
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null)
   const [paramValues, setParamValues] = useState<Record<string, string>>({})
   const [localParamError, setLocalParamError] = useState<string | null>(null)
-  const [preview, setPreview] = useState<FeedPreviewMetadata | null>(null)
+  // N023：RSSHub 预览响应附加 requires / zeroEntryHint（结构上是
+  // FeedPreviewMetadata 超集，这里显式放宽以读取依赖元数据）。
+  const [preview, setPreview] = useState<
+    | (FeedPreviewMetadata & {
+        requires?: RssHubRequires | null
+        zeroEntryHint?: string | null
+      })
+    | null
+  >(null)
   const [subscribed, setSubscribed] = useState(false)
   // N025：服务端派生的 route_key（预览成功后可用于时间线/刷新）
   const [routeKey, setRouteKey] = useState<string | null>(null)
@@ -323,6 +333,11 @@ export function RssHubTab({ onClose, registerGuard }: AddSourceTabProps) {
                             <span className="mt-0.5 block truncate font-mono text-[11px] text-[var(--lumi-text-tertiary)]">
                               {route.pathTemplate}
                             </span>
+                            {/* N023：依赖 chips（true=需要 / null=未知 / false 不渲染） */}
+                            <RssHubRequiresChips
+                              requires={route.requires}
+                              className="mt-1"
+                            />
                           </span>
                         </label>
                         <IconButton
@@ -444,6 +459,16 @@ export function RssHubTab({ onClose, registerGuard }: AddSourceTabProps) {
       {/* 预览成功：共享 预览 → 分类 → 订阅 阶段 + N025 最近运行时间线 */}
       {preview !== null && (
         <div className="flex flex-col gap-3">
+          {/* N023：0 条目 → 依赖可能未满足的诚实提示（不是健康状态）。 */}
+          {preview.zeroEntryHint != null && (
+            <p
+              role="status"
+              data-testid="rsshub-zero-entry-hint"
+              className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface-hover)] px-3 py-2 text-xs leading-relaxed text-[var(--lumi-text-secondary)]"
+            >
+              {preview.zeroEntryHint}
+            </p>
+          )}
           <PreviewStage
             preview={preview}
             subscribeMutation={subscribeMutation}

@@ -60,6 +60,10 @@ export type SourceDiscoveryResponse = Schemas['SourceDiscoveryResponse']
 export type RssHubParameter = Schemas['RssHubParameter']
 export type RssHubRoute = Schemas['RssHubRoute']
 export type RssHubRoutesResponse = Schemas['RssHubCatalog']
+// N023 路由依赖元数据（三态：true/false/null，null = 未知，诚实呈现）
+export type RssHubRequires = Schemas['RssHubRequires']
+// N024 路由变更差异预览（只读对照；应用走既有迁移端点）
+export type RssHubParamsDiffResult = Schemas['RssHubParamsDiffResult']
 // N021 路由收藏 / 最近使用（params 内敏感值只以 '***' 哨兵出现）
 export type RssHubFavoriteItem = Schemas['RssHubFavoriteItem']
 export type RssHubRecentItem = Schemas['RssHubRecentItem']

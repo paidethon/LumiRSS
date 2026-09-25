@@ -934,6 +934,10 @@ export default function SubscriptionsPage() {
                                 })
                               else if (key === 'clearStart')
                                 overrideMutation.mutate({ feedUrl: subscription.feedUrl, showFrom: null })
+                              // N020：关注级别在来源设置对话框中设置（行菜单入口）。
+                              else if (key === 'sourcePolicy') setPolicyTarget(subscription)
+                              // N024：F047 路由参数对话框（行菜单入口；差异对照在其内）。
+                              else if (key === 'routeParams') setRouteParamsTarget(subscription)
                             }}
                           />
                         </li>
