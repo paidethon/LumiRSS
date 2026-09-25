@@ -6738,6 +6738,9 @@ export interface AgentThreadSettingsPatch {
     maxOpsPerTurn?: number
   } | null
   clearToolPolicy?: boolean
+  /** N165：线程级任务预算（键皆可缺省；null + clearBudget = 清除）。 */
+  budget?: { maxToolCalls?: number; maxTurns?: number } | null
+  clearBudget?: boolean
 }
 
 export async function updateAgentThreadSettings(
@@ -7550,4 +7553,178 @@ export function getClipFull(uuid: string, signal?: AbortSignal): Promise<ClipFul
     `${API_BASE}/library/clips/${encodeURIComponent(toClipId(uuid))}/full`,
     signal,
   )
+}
+
+// ---- N164–N170 Agent ops（暂停续接 / 预算 / 时间线 / 批准修订 / 步骤重试 / 差异撤销 / 配方）----
+
+/** N164：暂停运行中的回合（或停留在批准上的回合）。 */
+export async function pauseAgentThread(threadId: string): Promise<{ paused: boolean; status: string }> {
+  const response = await rawRequest(
+    `${API_BASE}/agent/threads/${encodeURIComponent(threadId)}/pause`,
+    { method: 'POST' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { paused: boolean; status: string }
+}
+
+export interface AgentApprovalPayload {
+  approvalId: string
+  callId: string
+  tool: string
+  args: Record<string, unknown>
+  status: string
+  reconfirmOf?: string | null
+}
+
+/** N164：续接暂停的回合。awaiting_approval = 需先决策（可能为重新确认）。 */
+export async function resumeAgentThread(
+  threadId: string,
+): Promise<{ status: string; approval: AgentApprovalPayload | null; reconfirmRequired: boolean }> {
+  const response = await rawRequest(
+    `${API_BASE}/agent/threads/${encodeURIComponent(threadId)}/resume`,
+    { method: 'POST' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as {
+    status: string
+    approval: AgentApprovalPayload | null
+    reconfirmRequired: boolean
+  }
+}
+
+/** N167：批准前修订参数 → 旧批准作废（superseded），返回新批准。 */
+export async function reviseAgentApproval(
+  threadId: string,
+  approvalId: string,
+  newArgs: Record<string, unknown>,
+): Promise<{ approval: AgentApprovalPayload; supersededApprovalId: string }> {
+  const response = await rawRequest(
+    `${API_BASE}/agent/threads/${encodeURIComponent(threadId)}/approvals/${encodeURIComponent(approvalId)}/revise`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ newArgs }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as {
+    approval: AgentApprovalPayload
+    supersededApprovalId: string
+  }
+}
+
+export interface AgentRetryStep {
+  callId: string
+  name: string
+  resultType?: string
+  reason?: string
+}
+
+/** N168：失败步骤单独重试（已完成步骤复用 transcript 结果）。 */
+export async function retryAgentThread(
+  threadId: string,
+): Promise<{ status: string; retried: AgentRetryStep[]; skipped: AgentRetryStep[]; approval: AgentApprovalPayload | null }> {
+  const response = await rawRequest(
+    `${API_BASE}/agent/threads/${encodeURIComponent(threadId)}/retry`,
+    { method: 'POST' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as {
+    status: string
+    retried: AgentRetryStep[]
+    skipped: AgentRetryStep[]
+    approval: AgentApprovalPayload | null
+  }
+}
+
+/** N169：按写台账 stepId 差异撤销（对象被改动过 → conflictReason 说明并跳过）。 */
+export async function undoAgentStep(
+  threadId: string,
+  stepId: string,
+): Promise<{ undone: boolean; stepId: string; tool: string; result: unknown; conflictReason: string | null }> {
+  const response = await rawRequest(
+    `${API_BASE}/agent/threads/${encodeURIComponent(threadId)}/undo`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ stepId }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as {
+    undone: boolean
+    stepId: string
+    tool: string
+    result: unknown
+    conflictReason: string | null
+  }
+}
+
+// ---- N170 任务配方 ------------------------------------------------------------
+
+export interface AgentRecipe {
+  id: string
+  name: string
+  input: string
+  toolWhitelist: string[]
+  scope: Record<string, unknown> | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AgentRecipePreview {
+  recipeId: string
+  name: string
+  input: string
+  toolWhitelist: string[]
+  unknownTools: string[]
+  scope: Record<string, unknown> | null
+  toolPolicy: { mode?: string | null; allowedTools?: string[] | null; maxOpsPerTurn?: number | null } | null
+  threadTitle: string
+  note: string
+}
+
+export async function listAgentRecipes(signal?: AbortSignal): Promise<{ items: AgentRecipe[] }> {
+  return request<{ items: AgentRecipe[] }>(`${API_BASE}/agent/recipes`, signal)
+}
+
+export async function createAgentRecipe(payload: {
+  name: string
+  input: string
+  toolWhitelist: string[]
+  scope?: Record<string, unknown> | null
+}): Promise<AgentRecipe> {
+  const response = await rawRequest(`${API_BASE}/agent/recipes`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as AgentRecipe
+}
+
+export async function deleteAgentRecipe(recipeId: string): Promise<void> {
+  await rawRequest(`${API_BASE}/agent/recipes/${encodeURIComponent(recipeId)}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function previewAgentRecipe(recipeId: string, signal?: AbortSignal): Promise<AgentRecipePreview> {
+  const response = await rawRequest(
+    `${API_BASE}/agent/recipes/${encodeURIComponent(recipeId)}/preview`,
+    { method: 'POST', signal },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as AgentRecipePreview
+}
+
+export async function runAgentRecipe(
+  recipeId: string,
+): Promise<{ recipeId: string; thread: AgentThread; status: string }> {
+  const response = await rawRequest(
+    `${API_BASE}/agent/recipes/${encodeURIComponent(recipeId)}/run`,
+    { method: 'POST' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { recipeId: string; thread: AgentThread; status: string }
 }

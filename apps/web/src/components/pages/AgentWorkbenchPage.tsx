@@ -34,12 +34,17 @@ import {
 import { ragAsk, type AgentApprovalContent, type AgentMessage } from '../../api/client'
 import { openResolvedItem } from '../../lib/open-item'
 import {
+  ApprovalEditSection,
   ApprovalPreviewSection,
   BranchBadge,
   BranchButton,
+  PauseResumeControls,
+  RecipePanel,
   ThreadExportButton,
+  ThreadRetryButton,
   ThreadSearchBox,
   ThreadSettingsButton,
+  ToolTimelineRow,
 } from '../AgentW5'
 import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
@@ -302,18 +307,8 @@ function MessageRow({
   }
 
   if (message.role === 'tool') {
-    const name = typeof message.content['name'] === 'string' ? message.content['name'] : ''
-    const result = 'result' in message.content ? message.content['result'] : message.content
-    return (
-      <div className="max-w-[95%] self-start rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] px-2.5 py-1.5">
-        <p className="text-[11px] font-medium text-[var(--lumi-text-tertiary)]">
-          工具{name !== '' ? ` · ${name}` : ''}
-        </p>
-        <pre className="mt-1 overflow-x-auto font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-[var(--lumi-text-secondary)]">
-          {prettyJson(result)}
-        </pre>
-      </div>
-    )
+    // N166/N169：执行时间线行（含耗时/状态/脱敏摘要）+ 可撤销写步骤入口。
+    return <ToolTimelineRow message={message} />
   }
 
   if (message.role === 'system') {
@@ -390,6 +385,11 @@ function ApprovalCard({ message }: { message: AgentMessage }) {
       {pending ? (
         <div className="mt-2 flex flex-col gap-1.5">
           <ApprovalPreviewSection threadId={message.threadId} approvalId={approval.approvalId} />
+          <ApprovalEditSection
+            threadId={message.threadId}
+            approvalId={approval.approvalId}
+            args={approval.args}
+          />
           <div className="flex gap-2">
             <Button
               size="sm"
@@ -483,6 +483,8 @@ function ChatArea({
         <BranchBadge branchOf={branchOf} />
         <RagStatusChip />
         <div className="ml-auto flex shrink-0 items-center gap-1">
+          <PauseResumeControls threadId={threadId} processing={processing} />
+          <ThreadRetryButton threadId={threadId} processing={processing} />
           <ThreadSettingsButton threadId={threadId} />
           <ThreadExportButton threadId={threadId} />
         </div>
@@ -623,10 +625,12 @@ function ThreadList({
   activeId,
   onSelect,
   onOpenAt,
+  onRunRecipe,
 }: {
   activeId: string | null
   onSelect: (threadId: string) => void
   onOpenAt: (threadId: string, messageSeq: number) => void
+  onRunRecipe: (threadId: string) => void
 }) {
   const threads = useAgentThreads()
   const create = useCreateAgentThreadMutation()
@@ -658,6 +662,9 @@ function ThreadList({
 
       {/* F095：会话消息搜索（结果下拉 → 打开并滚动到消息）。 */}
       <ThreadSearchBox onOpen={onOpenAt} />
+
+      {/* N170：任务配方（保存 / 列表 / 运行前预览 / 运行 → 打开新会话）。 */}
+      <RecipePanel onRun={onRunRecipe} />
 
       {create.isError && (
         <p role="alert" className="px-2.5 pb-1 text-xs text-[var(--lumi-danger)]">
@@ -753,9 +760,17 @@ export default function AgentWorkbenchPage() {
     void threads.refetch()
   }
 
+  // N170：配方运行 → 打开服务端创建的新会话。
+  const handleRunRecipe = handleBranched
+
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col lg:flex-row">
-      <ThreadList activeId={activeThreadId} onSelect={setActiveThreadId} onOpenAt={handleOpenAt} />
+      <ThreadList
+        activeId={activeThreadId}
+        onSelect={setActiveThreadId}
+        onOpenAt={handleOpenAt}
+        onRunRecipe={handleRunRecipe}
+      />
       {activeThread !== null ? (
         <ChatArea
           threadId={activeThread.id}

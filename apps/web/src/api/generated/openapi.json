@@ -101,6 +101,17 @@
       ],
       "title": "Expiresinminutes"
      },
+     "reconfirmOf": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reconfirmof"
+     },
      "status": {
       "title": "Status",
       "type": "string"
@@ -266,9 +277,43 @@
     "title": "AgentApprovalResult",
     "type": "object"
    },
+   "AgentApprovalReviseRequest": {
+    "additionalProperties": false,
+    "description": "N167 POST .../approvals/{id}/revise — 批准前的参数修订。",
+    "properties": {
+     "newArgs": {
+      "additionalProperties": true,
+      "title": "Newargs",
+      "type": "object"
+     }
+    },
+    "required": [
+     "newArgs"
+    ],
+    "title": "AgentApprovalReviseRequest",
+    "type": "object"
+   },
+   "AgentApprovalReviseResult": {
+    "description": "N167 修订产生 NEW 审批行（绑定新 args_hash）；旧行 superseded。",
+    "properties": {
+     "approval": {
+      "$ref": "#/components/schemas/AgentApprovalContent"
+     },
+     "supersededApprovalId": {
+      "title": "Supersededapprovalid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "approval",
+     "supersededApprovalId"
+    ],
+    "title": "AgentApprovalReviseResult",
+    "type": "object"
+   },
    "AgentAssistantContent": {
     "additionalProperties": false,
-    "description": "role=assistant message body (streaming marker / cancel note /\nbranch-truncation notice / toolCalls while the loop is mid-turn).\n\nN154/N155：evidenceStrength（direct|partial|none，引用文本 vs 主张\n重叠分级——绝不用「置信度」措辞）；unverifiable/unverifiableReason\n标记「有文档事实主张但零有效引用」的回答（no_valid_citations）。",
+    "description": "role=assistant message body (streaming marker / cancel note /\nbranch-truncation notice / toolCalls while the loop is mid-turn).\n\nN154/N155：evidenceStrength（direct|partial|none，引用文本 vs 主张\n重叠分级——绝不用「置信度」措辞）；unverifiable/unverifiableReason\n标记「有文档事实主张但零有效引用」的回答（no_valid_citations）。\nN165：budgetExhausted = 预算耗尽的消耗摘要（tokens unknown 时为\nnull + tokensKnown=false，绝不谎报 0）。",
     "properties": {
      "branchTruncated": {
       "anyOf": [
@@ -280,6 +325,18 @@
        }
       ],
       "title": "Branchtruncated"
+     },
+     "budgetExhausted": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Budgetexhausted"
      },
      "cancelled": {
       "anyOf": [
@@ -640,6 +697,325 @@
     "title": "AgentMessageListResponse",
     "type": "object"
    },
+   "AgentPauseResult": {
+    "description": "N164 POST /api/v1/agent/threads/{id}/pause.",
+    "properties": {
+     "paused": {
+      "title": "Paused",
+      "type": "boolean"
+     },
+     "status": {
+      "enum": [
+       "pausing",
+       "paused"
+      ],
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "paused",
+     "status"
+    ],
+    "title": "AgentPauseResult",
+    "type": "object"
+   },
+   "AgentRecipe": {
+    "description": "N170 一条任务配方（whitelist ⊆ 注册表白名单）。",
+    "properties": {
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "input": {
+      "title": "Input",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "scope": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Scope"
+     },
+     "toolWhitelist": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Toolwhitelist",
+      "type": "array"
+     },
+     "updatedAt": {
+      "title": "Updatedat",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "input",
+     "toolWhitelist",
+     "createdAt",
+     "updatedAt"
+    ],
+    "title": "AgentRecipe",
+    "type": "object"
+   },
+   "AgentRecipeCreate": {
+    "additionalProperties": false,
+    "description": "N170 POST /api/v1/agent/recipes。",
+    "properties": {
+     "input": {
+      "title": "Input",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "scope": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Scope"
+     },
+     "toolWhitelist": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Toolwhitelist",
+      "type": "array"
+     }
+    },
+    "required": [
+     "name",
+     "input",
+     "toolWhitelist"
+    ],
+    "title": "AgentRecipeCreate",
+    "type": "object"
+   },
+   "AgentRecipeListResponse": {
+    "description": "Envelope for GET /api/v1/agent/recipes.",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/AgentRecipe"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "AgentRecipeListResponse",
+    "type": "object"
+   },
+   "AgentRecipePreview": {
+    "description": "N170 运行前预览：将创建的会话设置（白名单 → toolPolicy +\nscope）与首条消息概要；unknownTools 非空 = 白名单越界（运行被拒）。",
+    "properties": {
+     "input": {
+      "title": "Input",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "note": {
+      "title": "Note",
+      "type": "string"
+     },
+     "recipeId": {
+      "title": "Recipeid",
+      "type": "string"
+     },
+     "scope": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Scope"
+     },
+     "threadTitle": {
+      "title": "Threadtitle",
+      "type": "string"
+     },
+     "toolPolicy": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/AgentToolPolicy"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "toolWhitelist": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Toolwhitelist",
+      "type": "array"
+     },
+     "unknownTools": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Unknowntools",
+      "type": "array"
+     }
+    },
+    "required": [
+     "recipeId",
+     "name",
+     "input",
+     "toolWhitelist",
+     "threadTitle",
+     "note"
+    ],
+    "title": "AgentRecipePreview",
+    "type": "object"
+   },
+   "AgentRecipeRunResult": {
+    "description": "N170 POST .../run — 创建新会话并以配方 input 开启第一回合。",
+    "properties": {
+     "recipeId": {
+      "title": "Recipeid",
+      "type": "string"
+     },
+     "status": {
+      "const": "processing",
+      "title": "Status",
+      "type": "string"
+     },
+     "thread": {
+      "$ref": "#/components/schemas/AgentThread"
+     }
+    },
+    "required": [
+     "recipeId",
+     "thread",
+     "status"
+    ],
+    "title": "AgentRecipeRunResult",
+    "type": "object"
+   },
+   "AgentResumeResult": {
+    "description": "N164 POST /api/v1/agent/threads/{id}/resume — honest variants:\nresumed (loop continues), awaiting_approval (user decision needed,\npossibly a RE-CONFIRM minted for an approval expired mid-pause).",
+    "properties": {
+     "approval": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/AgentApprovalContent"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "message": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/AgentMessage"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "reconfirmRequired": {
+      "default": false,
+      "title": "Reconfirmrequired",
+      "type": "boolean"
+     },
+     "status": {
+      "enum": [
+       "processing",
+       "awaiting_approval"
+      ],
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "status"
+    ],
+    "title": "AgentResumeResult",
+    "type": "object"
+   },
+   "AgentRetryResult": {
+    "description": "N168 POST .../retry — 只重跑失败/未完成的步骤。",
+    "properties": {
+     "approval": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/AgentApprovalContent"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "retried": {
+      "default": [],
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "title": "Retried",
+      "type": "array"
+     },
+     "skipped": {
+      "default": [],
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "title": "Skipped",
+      "type": "array"
+     },
+     "status": {
+      "enum": [
+       "completed",
+       "awaiting_approval"
+      ],
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "status"
+    ],
+    "title": "AgentRetryResult",
+    "type": "object"
+   },
    "AgentScopePreviewRequest": {
     "additionalProperties": false,
     "description": "N151 POST /api/v1/agent/scope-preview body（工作台范围选择器的\n授权范围摘要卡：kind × refCount × toolCount）。",
@@ -731,6 +1107,36 @@
     "title": "AgentThread",
     "type": "object"
    },
+   "AgentThreadBudget": {
+    "additionalProperties": false,
+    "description": "N165 线程级预算 {maxToolCalls, maxTurns}（键皆可缺省）。",
+    "properties": {
+     "maxToolCalls": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Maxtoolcalls"
+     },
+     "maxTurns": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Maxturns"
+     }
+    },
+    "title": "AgentThreadBudget",
+    "type": "object"
+   },
    "AgentThreadListResponse": {
     "description": "Envelope for GET /api/v1/agent/threads.",
     "properties": {
@@ -818,6 +1224,16 @@
       ],
       "title": "Branchof"
      },
+     "budget": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/AgentThreadBudget"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
      "id": {
       "title": "Id",
       "type": "string"
@@ -860,8 +1276,25 @@
    },
    "AgentThreadUpdate": {
     "additionalProperties": false,
-    "description": "F094/F098 会话设置（scope / toolPolicy；None = 清除/不修改按键）。\n\nscope=None 显式清除范围锁定；键缺省 = 不修改。",
+    "description": "F094/F098 会话设置（scope / toolPolicy / N165 budget；None =\n清除/不修改按键）。scope=None 显式清除范围锁定；键缺省 = 不修改。",
     "properties": {
+     "budget": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Budget"
+     },
+     "clearBudget": {
+      "default": false,
+      "title": "Clearbudget",
+      "type": "boolean"
+     },
      "clearScope": {
       "default": false,
       "title": "Clearscope",
@@ -938,7 +1371,7 @@
    },
    "AgentToolContent": {
     "additionalProperties": false,
-    "description": "role=tool message body.\n\n``result`` is the untrusted envelope (or a bare string in branched\ntranscripts); ``callId`` is dropped when a branch copies the row as\na non-executable transcript record.",
+    "description": "role=tool message body.\n\n``result`` is the untrusted envelope (or a bare string in branched\ntranscripts); ``callId`` is dropped when a branch copies the row as\na non-executable transcript record.\n\nN166 执行时间线：durationMs（真实执行耗时）、maskedArgsSummary\n（≤80 字符、F097 _redact 脱敏——密钥形态值绝不出现）、resultType\n（result|error）。N168：retried（重试步骤）/replayed（幂等缓存命\n中）。N169：stepId（写台账行 id）+ undoable（可撤销）。",
     "properties": {
      "approved": {
       "anyOf": [
@@ -973,6 +1406,17 @@
       ],
       "title": "Callid"
      },
+     "durationMs": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Durationms"
+     },
      "error": {
       "anyOf": [
        {
@@ -984,9 +1428,31 @@
       ],
       "title": "Error"
      },
+     "maskedArgsSummary": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Maskedargssummary"
+     },
      "name": {
       "title": "Name",
       "type": "string"
+     },
+     "replayed": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Replayed"
      },
      "result": {
       "anyOf": [
@@ -1001,6 +1467,50 @@
        }
       ],
       "title": "Result"
+     },
+     "resultType": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Resulttype"
+     },
+     "retried": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Retried"
+     },
+     "stepId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Stepid"
+     },
+     "undoable": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Undoable"
      }
     },
     "required": [
@@ -1091,6 +1601,68 @@
      "status"
     ],
     "title": "AgentTurnAccepted",
+    "type": "object"
+   },
+   "AgentUndoRequest": {
+    "additionalProperties": false,
+    "description": "N169 POST .../undo — 按写台账 stepId 差异撤销。",
+    "properties": {
+     "stepId": {
+      "title": "Stepid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "stepId"
+    ],
+    "title": "AgentUndoRequest",
+    "type": "object"
+   },
+   "AgentUndoResult": {
+    "description": "N169 撤销结果：undone=false 时 conflictReason 说明跳过原因。",
+    "properties": {
+     "conflictReason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Conflictreason"
+     },
+     "result": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Result"
+     },
+     "stepId": {
+      "title": "Stepid",
+      "type": "string"
+     },
+     "tool": {
+      "title": "Tool",
+      "type": "string"
+     },
+     "undone": {
+      "title": "Undone",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "undone",
+     "stepId",
+     "tool"
+    ],
+    "title": "AgentUndoResult",
     "type": "object"
    },
    "AgentUserContent": {
@@ -22783,6 +23355,173 @@
     "summary": "Set User Role"
    }
   },
+  "/api/v1/agent/recipes": {
+   "get": {
+    "operationId": "list_recipes_api_v1_agent_recipes_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AgentRecipeListResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Recipes"
+   },
+   "post": {
+    "description": "N170：保存配方（白名单校验：unknown → 422，绝不支持越权）。",
+    "operationId": "create_recipe_api_v1_agent_recipes_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AgentRecipeCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AgentRecipe"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Recipe"
+   }
+  },
+  "/api/v1/agent/recipes/{recipe_id}": {
+   "delete": {
+    "operationId": "delete_recipe_api_v1_agent_recipes__recipe_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "recipe_id",
+      "required": true,
+      "schema": {
+       "title": "Recipe Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Recipe"
+   }
+  },
+  "/api/v1/agent/recipes/{recipe_id}/preview": {
+   "post": {
+    "description": "N170：运行前预览（零写入）：将创建的会话设置 + 首条消息概要。",
+    "operationId": "preview_recipe_api_v1_agent_recipes__recipe_id__preview_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "recipe_id",
+      "required": true,
+      "schema": {
+       "title": "Recipe Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AgentRecipePreview"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Preview Recipe"
+   }
+  },
+  "/api/v1/agent/recipes/{recipe_id}/run": {
+   "post": {
+    "description": "N170：运行配方 = 创建新会话（scope + 白名单 toolPolicy 落库）\n+ 首条消息开启回合。白名单在服务端 evaluate_policy 强制执行。",
+    "operationId": "run_recipe_api_v1_agent_recipes__recipe_id__run_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "recipe_id",
+      "required": true,
+      "schema": {
+       "title": "Recipe Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "202": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AgentRecipeRunResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Run Recipe"
+   }
+  },
   "/api/v1/agent/scope-preview": {
    "post": {
     "description": "N151：授权范围摘要（kind × refCount × toolCount）——工作台范围\n选择器保存前的服务端预览；refCount 查询时解析（有界），toolCount\n与回合执行前的权限评估同口径（白名单 ∩ policy，readonly 剔除写）。",
@@ -22928,7 +23667,7 @@
     "summary": "Delete Thread"
    },
    "patch": {
-    "description": "F094/F098：会话设置（scope / toolPolicy / 标题）。下轮生效。",
+    "description": "F094/F098/N165：会话设置（scope / toolPolicy / budget / 标题）。下轮生效。",
     "operationId": "update_thread_settings_api_v1_agent_threads__thread_id__patch",
     "parameters": [
      {
@@ -23072,6 +23811,65 @@
      }
     },
     "summary": "Preview Approval"
+   }
+  },
+  "/api/v1/agent/threads/{thread_id}/approvals/{approval_id}/revise": {
+   "post": {
+    "description": "N167：批准内容修改——修订产生 NEW 审批行（绑定新 args_hash），\n旧行标记 superseded（take → 410）。",
+    "operationId": "revise_approval_api_v1_agent_threads__thread_id__approvals__approval_id__revise_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "thread_id",
+      "required": true,
+      "schema": {
+       "title": "Thread Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "approval_id",
+      "required": true,
+      "schema": {
+       "title": "Approval Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AgentApprovalReviseRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AgentApprovalReviseResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Revise Approval"
    }
   },
   "/api/v1/agent/threads/{thread_id}/branch": {
@@ -23370,6 +24168,176 @@
      }
     },
     "summary": "Post Message"
+   }
+  },
+  "/api/v1/agent/threads/{thread_id}/pause": {
+   "post": {
+    "description": "N164：任务暂停。运行中的回合在下一个工具间检查点冻结为快照\n（{completedSteps, pendingPlan}）；仅停留在批准上的回合同样可暂停\n（批准 id 进入快照）。二者皆无 → 409 no_active_run。",
+    "operationId": "pause_turn_api_v1_agent_threads__thread_id__pause_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "thread_id",
+      "required": true,
+      "schema": {
+       "title": "Thread Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AgentPauseResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Pause Turn"
+   }
+  },
+  "/api/v1/agent/threads/{thread_id}/resume": {
+   "post": {
+    "description": "N164：任务续接。已执行的步骤绝不重复执行（transcript 结果复用）；\n暂停期间过期的批准 → 重新确认（铸造新批准行，旧批准作废）。",
+    "operationId": "resume_turn_api_v1_agent_threads__thread_id__resume_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "thread_id",
+      "required": true,
+      "schema": {
+       "title": "Thread Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AgentResumeResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Resume Turn"
+   }
+  },
+  "/api/v1/agent/threads/{thread_id}/retry": {
+   "post": {
+    "description": "N168：失败步骤单独重试——只重跑失败/未完成的步骤；已完成步骤\n的结果从 transcript 复用；写工具经幂等台账（args_hash+turn）防止\n重复副作用（需重新批准）。",
+    "operationId": "retry_failed_steps_api_v1_agent_threads__thread_id__retry_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "thread_id",
+      "required": true,
+      "schema": {
+       "title": "Thread Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AgentRetryResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Retry Failed Steps"
+   }
+  },
+  "/api/v1/agent/threads/{thread_id}/undo": {
+   "post": {
+    "description": "N169：任务结果差异撤销——按写台账前后快照回滚；对象在写入后\n又被修改过 → 冲突报告并跳过；不支持撤销的工具 → 422。",
+    "operationId": "undo_step_api_v1_agent_threads__thread_id__undo_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "thread_id",
+      "required": true,
+      "schema": {
+       "title": "Thread Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AgentUndoRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AgentUndoResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Undo Step"
    }
   },
   "/api/v1/ai/tasks": {
