@@ -79,6 +79,19 @@ class WorkspaceRevisionConflict(Exception):
         )
 
 
+class WorkspaceItemDuplicate(Exception):
+    """N108：目标工作区已有该条目且 onDuplicate='conflict'（映射 409）。
+
+    默认 onDuplicate='skip' 时幂等收敛，不抛此异常。"""
+
+    def __init__(self, workspace_id: str, item_ref: str) -> None:
+        self.workspace_id = workspace_id
+        self.item_ref = item_ref
+        super().__init__(
+            "Item already exists in the target workspace."
+        )
+
+
 @dataclass(frozen=True)
 class WorkspaceSummary:
     id: str
@@ -338,6 +351,110 @@ class WorkspaceStore:
             added_at=now,
             group_name=clean_group,
         )
+
+    # -- N108 跨工作区移动 -----------------------------------------------------
+
+    async def move_item(
+        self,
+        workspace_id: str,
+        item_ref: str,
+        target_workspace_id: str,
+        *,
+        keep_in_source: bool = False,
+        on_duplicate: str = "skip",
+    ) -> dict[str, Any] | None:
+        """N108：把条目移动到另一个自己的工作区（同一 ItemRef，绝不复制
+        底层对象）。
+
+        - 幂等：源非成员 → None（404）；目标已有该 ref 时默认
+          ``on_duplicate='skip'``（幂等收敛，结果带 duplicate=True），
+          ``'conflict'`` 显式选择 409；
+        - ``keep_in_source=True`` = 两个工作区同时持有（同 ref 两行成员
+          关系，内容仍只有一份）；
+        - 追加到目标末尾（position = max+1）；固定/分组元数据不跨区携带
+          （固定是「本工作区别丢」的意图，分组是呈现层语义）；
+        - 源移除时同事务清掉指向该条目的续读指针；两侧 revision 各
+          bump 一次（P15 并发凭据）。
+        """
+        if on_duplicate not in ("skip", "conflict"):
+            raise WorkspaceInvalid("onDuplicate must be 'skip' or 'conflict'.")
+        if target_workspace_id == workspace_id:
+            raise WorkspaceInvalid("Target workspace must differ from the source.")
+        parsed = parse_item_ref(item_ref)
+        clean_ref = parsed.format()
+
+        def _tx(conn: sqlite3.Connection) -> dict[str, Any]:
+            source_row = conn.execute(
+                "SELECT id FROM workspaces WHERE id = ?", (workspace_id,)
+            ).fetchone()
+            if source_row is None:
+                raise WorkspaceNotFound(workspace_id)
+            target_row = conn.execute(
+                "SELECT id FROM workspaces WHERE id = ?", (target_workspace_id,)
+            ).fetchone()
+            if target_row is None:
+                raise WorkspaceNotFound(target_workspace_id)
+            source_item = conn.execute(
+                "SELECT item_ref FROM workspace_items WHERE workspace_id = ? AND item_ref = ?",
+                (workspace_id, clean_ref),
+            ).fetchone()
+            if source_item is None:
+                return None
+            duplicate = (
+                conn.execute(
+                    "SELECT 1 FROM workspace_items WHERE workspace_id = ? AND item_ref = ?",
+                    (target_workspace_id, clean_ref),
+                ).fetchone()
+                is not None
+            )
+            if duplicate and on_duplicate == "conflict":
+                raise WorkspaceItemDuplicate(target_workspace_id, clean_ref)
+            if not duplicate:
+                pos_row = conn.execute(
+                    "SELECT COALESCE(MAX(position), 0) AS p FROM workspace_items WHERE workspace_id = ?",
+                    (target_workspace_id,),
+                ).fetchone()
+                next_position = (int(pos_row["p"]) if pos_row is not None else 0) + 1
+                now = utc_now()
+                conn.execute(
+                    "INSERT INTO workspace_items (workspace_id, item_ref, position, added_at, group_name, pinned) VALUES (?, ?, ?, ?, NULL, 0)",
+                    (target_workspace_id, clean_ref, next_position, now),
+                )
+                conn.execute(
+                    "UPDATE workspaces SET revision = revision + 1 WHERE id = ?",
+                    (target_workspace_id,),
+                )
+            source_removed = False
+            if not keep_in_source:
+                conn.execute(
+                    "DELETE FROM workspace_items WHERE workspace_id = ? AND item_ref = ?",
+                    (workspace_id, clean_ref),
+                )
+                conn.execute(
+                    "DELETE FROM workspace_resume WHERE workspace_id = ? AND item_ref = ?",
+                    (workspace_id, clean_ref),
+                )
+                conn.execute(
+                    "UPDATE workspaces SET revision = revision + 1 WHERE id = ?",
+                    (workspace_id,),
+                )
+                source_removed = True
+            position_row = conn.execute(
+                "SELECT position FROM workspace_items WHERE workspace_id = ? AND item_ref = ?",
+                (target_workspace_id, clean_ref),
+            ).fetchone()
+            return {
+                "itemRef": clean_ref,
+                "sourceWorkspaceId": workspace_id,
+                "targetWorkspaceId": target_workspace_id,
+                "duplicate": duplicate,
+                "sourceRemoved": source_removed,
+                "targetPosition": (
+                    int(position_row["position"]) if position_row is not None else None
+                ),
+            }
+
+        return await transaction(self._db, _tx)
 
     async def remove_item(
         self, workspace_id: str, item_ref: str, *, force: bool = False

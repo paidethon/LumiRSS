@@ -289,6 +289,9 @@ class RestorePreviewBody(BaseModel):
 class RestoreExecuteBody(BaseModel):
     restoreSessionId: str = Field(min_length=1)
     confirmation: str = Field(min_length=1)
+    # N187：逐对象冲突策略（path → 'skip'|'overwrite'；缺省 skip =
+    # 保留现状）。lumi.sqlite / library-assets/ 文件 / freshrss-data/。
+    decisions: dict[str, str] | None = None
 
 
 @router.get(
@@ -596,7 +599,29 @@ async def restore_execute(
     job = await jobs.create("restore", "restore")
     await jobs.start(job["id"])
     try:
-        result = await engine.run_restore(service, body.restoreSessionId, body.confirmation)
+        try:
+            result = await engine.run_restore(
+                service,
+                body.restoreSessionId,
+                body.confirmation,
+                decisions=body.decisions,
+            )
+        except Exception as exc:
+            # N187：决策载荷非法 → 稳定 400（不消耗恢复会话状态）。
+            from lumirss.restore import RestoreInvalidDecision
+
+            if isinstance(exc, RestoreInvalidDecision):
+                await jobs.fail(job["id"], str(exc)[:300])
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "error": {
+                            "type": "invalid_restore_decisions",
+                            "message": str(exc)[:300],
+                        }
+                    },
+                )
+            raise
     except Exception as exc:
         # run_restore / service.execute 只抛出脱敏后的安全消息（静态文本或
         # RestoreFailed 包装），截断兜底防止异常长的内容进入 job 历史。

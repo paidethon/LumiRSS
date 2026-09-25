@@ -180,8 +180,12 @@ def test_backup_includes_library_assets_and_restore_stages_them(
         (extract_dir / member).parent.mkdir(parents=True, exist_ok=True)
         (extract_dir / member).write_bytes(b"<html>asset</html>")
         target_root = data_dir / "restored-library" / "assets"
+        # N187：逐文件策略——显式 overwrite 才覆盖。
         RestoreService._restore_library_assets(
-            [member], {member: extract_dir / member}, target_root
+            [member],
+            {member: extract_dir / member},
+            target_root,
+            {member: "overwrite"},
         )
         restored = target_root / Path(member).relative_to("library-assets")
         assert restored.read_bytes() == b"<html>asset</html>"

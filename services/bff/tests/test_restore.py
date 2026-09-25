@@ -171,7 +171,14 @@ def test_restore_creates_safety_backup_and_restores(tmp_path, monkeypatch):
 
     service = _service(tmp_path, monkeypatch, live_db, safety=fake_safety)
     preview = run(service.preview(zip_path))
-    result = run(service.execute(preview["restoreSessionId"], "RESTORE"))
+    # N187：整库对象需显式 overwrite 决策（缺省 skip = 保留现状）。
+    result = run(
+        service.execute(
+            preview["restoreSessionId"],
+            "RESTORE",
+            decisions={"lumi.sqlite": "overwrite"},
+        )
+    )
 
     assert called["safety"] == 1
     assert result["lumiRestored"] is True

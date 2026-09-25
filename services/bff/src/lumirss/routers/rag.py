@@ -10,6 +10,8 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 
 from lumirss.models import (
+    RagAnswersToNoteRequest,
+    RagAnswersToNoteResult,
     RagAskCitation,
     RagAskExcerpt,
     RagAskRequest,
@@ -30,6 +32,9 @@ from lumirss.models import (
     RagExclusionPut,
     RagInconsistencyItem,
     RagInconsistencyList,
+    RagIndexVersion,
+    RagIndexVersionSwitch,
+    RagIndexVersionSwitchRequest,
     RagRebuildPauseResult,
     RagRebuildResult,
     RagRebuildSubsetRequest,
@@ -41,8 +46,13 @@ from lumirss.models import (
     RagStatus,
     RagSubsetJobView,
 )
-from lumirss.rag import MODEL_ID as MODEL_ID_EXPORT
-from lumirss.rag import RagJobNotFound, RagService, chunk_scheme, chunk_text_with_spans
+from lumirss.rag import (
+    RagJobNotFound,
+    RagModelUnknown,
+    RagService,
+    chunk_scheme,
+    chunk_text_with_spans,
+)
 
 from ..deps import _get_rag_service
 
@@ -55,6 +65,54 @@ async def rag_status(request: Request) -> RagStatus:
     info, resource state, last error."""
     service: RagService = _get_rag_service(request)
     return RagStatus(**await service.status())
+
+
+# ---------------------------------------------------------------------------
+# N157 索引版本切换（模型可配置；rebuild 写新 model_id 后原子 swap）
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/v1/rag/index-version", response_model=RagIndexVersion)
+async def rag_index_version(request: Request) -> RagIndexVersion:
+    """N157：当前索引版本——live 模型 + 维度 + 按 model_id 的行数。
+
+    modelId/dim 是 LIVE 口径：rebuild 进行中仍指向旧模型（旧索引全程
+    可读可查），swap 完成后自然切到新模型。configuredModel 单独回显
+    下一次 rebuild 将写入的模型。"""
+    service: RagService = _get_rag_service(request)
+    return RagIndexVersion(**await service.index_version())
+
+
+@router.post(
+    "/api/v1/rag/index-version", response_model=RagIndexVersionSwitch
+)
+async def rag_index_version_switch(
+    payload: RagIndexVersionSwitchRequest, request: Request
+) -> RagIndexVersionSwitch:
+    """N157：切换目标模型（settings 持久化；下一次 rebuild 生效）。
+
+    切换本身零写入现有索引；目录外模型诚实 400 unknown_model。"""
+    from fastapi.responses import JSONResponse
+
+    service: RagService = _get_rag_service(request)
+    try:
+        result = await service.set_model(payload.modelId)
+    except RagModelUnknown as exc:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": {
+                    "type": "unknown_model",
+                    "message": str(exc),
+                }
+            },
+        )
+    return RagIndexVersionSwitch(
+        modelId=result["modelId"],
+        dim=result["dim"],
+        rebuildRequired=True,
+        note="已保存目标模型；执行 rebuild 后写入新 model_id 并原子交换。",
+    )
 
 
 @router.post("/api/v1/rag/enable", response_model=RagEnableResult)
@@ -289,7 +347,7 @@ async def rag_search(
                 text=item["text"][:400],
                 score=round(float(item["score"]), 4),
                 title=item.get("title") or None,
-                modelId=MODEL_ID_EXPORT,
+                modelId=result.get("modelId"),
             )
             for item in items
         ],
@@ -474,6 +532,146 @@ async def rag_chunk_preview(
     )
 
 
+@router.post(
+    "/api/v1/rag/answers-to-note", response_model=RagAnswersToNoteResult
+)
+async def rag_answers_to_note(
+    payload: RagAnswersToNoteRequest, request: Request
+):
+    """N160：从答案生成证据笔记。
+
+    - ``selectedCitationIds`` 是该会话里 assistant 消息 id（带引用）；
+      非 assistant / 不属于该会话 → 422 citation_invalid（诚实拒绝，
+      绝不静默截断）；
+    - 摘录段取 rag_chunks 里 LIVE 模型的精确分块文本（引用 ref +
+      原文 span），生成内容段显式标注「AI 生成」，人工修改段留空；
+    - 笔记 source='ai_answer'：后续每次编辑先把上一版推入
+      lumi_note_revisions（provenance 保留，0131）。"""
+    from fastapi.responses import JSONResponse
+
+    from lumirss.rag import DEFAULT_MODEL_ID as _DEFAULT_MODEL
+    from lumirss.rag import live_model_id as _live_model_id
+
+    from ..deps import _get_agent_store
+
+    db = request.app.state.db
+    await db.migrate()
+    thread_id = payload.threadId
+    agent_store = _get_agent_store(request)
+    if await agent_store.get_thread(thread_id) is None:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": {"type": "thread_not_found", "message": "会话不存在。"}
+            },
+        )
+
+    answers: list[dict] = []
+    missing: list[str] = []
+    for message_id in payload.selectedCitationIds[:20]:
+        message = await agent_store.get_message(thread_id, message_id)
+        if message is None or message["role"] != "assistant":
+            missing.append(message_id)
+            continue
+        answers.append(message)
+    if missing:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {
+                    "type": "citation_invalid",
+                    "message": "所选答案不存在或不携带引用："
+                    + ", ".join(missing[:5]),
+                }
+            },
+        )
+    if not answers:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {
+                    "type": "citation_invalid",
+                    "message": "至少选择一条带引用的回答。",
+                }
+            },
+        )
+
+    model_id = await _live_model_id(db, _DEFAULT_MODEL)
+    excerpts: list[dict[str, str]] = []
+    seen_refs: set[str] = set()
+    for message in answers:
+        for ref in list(message.get("citations") or [])[:8]:
+            if ref in seen_refs:
+                continue
+            seen_refs.add(ref)
+            title_row = await db.fetch_one(
+                "SELECT title FROM search_entries WHERE entry_ref = ?", (ref,)
+            )
+            if title_row is None:
+                title_row = await db.fetch_one(
+                    "SELECT title FROM search_library WHERE ref = ?", (ref,)
+                )
+            title = str(title_row["title"]) if title_row else ""
+            chunk_rows = await db.fetch_all(
+                "SELECT text FROM rag_chunks WHERE ref = ? AND model_id = ? ORDER BY ord ASC LIMIT 2",
+                (ref, model_id),
+            )
+            span = ""
+            if chunk_rows:
+                span = "\n".join(str(r["text"] or "") for r in chunk_rows)
+            else:
+                body_row = await db.fetch_one(
+                    "SELECT content_text FROM search_entries WHERE entry_ref = ?",
+                    (ref,),
+                )
+                if body_row is None:
+                    body_row = await db.fetch_one(
+                        "SELECT body FROM search_library WHERE ref = ?", (ref,)
+                    )
+                if body_row is not None:
+                    keys = body_row.keys()
+                    raw = (
+                        body_row["content_text"]
+                        if "content_text" in keys
+                        else body_row["body"]
+                    )
+                    span = str(raw or "")
+            if span.strip():
+                excerpts.append(
+                    {"ref": ref, "title": title, "text": span.strip()[:400]}
+                )
+
+    answer_text = "\n\n".join(
+        str((m.get("content") or {}).get("text") or "").strip()
+        for m in answers
+        if str((m.get("content") or {}).get("text") or "").strip()
+    )
+    title = (payload.title or "").strip()
+    if not title:
+        first_text = str(
+            (answers[0].get("content") or {}).get("text") or ""
+        ).strip()
+        title = first_text[:40] or "答案证据笔记"
+
+    from lumirss.lumi_notes_lifecycle import NoteLifecycleStore
+
+    note = await NoteLifecycleStore(db).create_answer_note(
+        title=title,
+        question="",
+        answer=answer_text,
+        excerpts=excerpts,
+        workspace_id=payload.workspaceId,
+    )
+    return RagAnswersToNoteResult(
+        noteId=note["uuid"],
+        title=note["title"],
+        contentMd=note["contentMd"],
+        excerptCount=len(excerpts),
+        revisionCount=0,
+        createdAt=note["createdAt"],
+    )
+
+
 @router.post("/api/v1/rag/ask", response_model=RagAskResponse)
 async def rag_ask(payload: RagAskRequest, request: Request):
     """同步 RAG 问答（N151/N154/N155）。
@@ -555,6 +753,11 @@ async def rag_ask(payload: RagAskRequest, request: Request):
                 },
             )
 
+    from lumirss.rag import DEFAULT_MODEL_ID as _DEFAULT_MODEL
+    from lumirss.rag import live_model_id as _live_model_id
+
+    ask_model_id = await _live_model_id(db, _DEFAULT_MODEL)
+
     async def _excerpts_for(refs: list[str]) -> list[RagAskExcerpt]:
         """refs → 原文片段（rag_chunks 优先，投影回退；每 ref 有界）。"""
         excerpts: list[RagAskExcerpt] = []
@@ -562,7 +765,7 @@ async def rag_ask(payload: RagAskRequest, request: Request):
             title = await _ref_title(db, ref)
             rows = await db.fetch_all(
                 "SELECT ord, text FROM rag_chunks WHERE ref = ? AND model_id = ? ORDER BY ord ASC LIMIT 3",
-                (ref, MODEL_ID_EXPORT),
+                (ref, ask_model_id),
             )
             if rows:
                 for row in rows:
@@ -645,7 +848,7 @@ async def rag_ask(payload: RagAskRequest, request: Request):
         body = await _ref_body(db, ref) or ""
         chunk_rows = await db.fetch_all(
             "SELECT text FROM rag_chunks WHERE ref = ? AND model_id = ? ORDER BY ord ASC LIMIT 4",
-            (ref, MODEL_ID_EXPORT),
+            (ref, ask_model_id),
         )
         if chunk_rows:
             body = "\n".join(str(r["text"] or "") for r in chunk_rows)
@@ -781,10 +984,14 @@ async def _ref_body(db, ref: str) -> str | None:
 
 async def _refs_indexed(db, refs: list[str]) -> bool:
     """refs 是否已有当前模型的分块（语义可用性如实回显用）。"""
+    from lumirss.rag import DEFAULT_MODEL_ID as _DEFAULT_MODEL
+    from lumirss.rag import live_model_id as _live_model_id
+
+    model_id = await _live_model_id(db, _DEFAULT_MODEL)
     for ref in refs[:8]:
         row = await db.fetch_one(
             "SELECT 1 FROM rag_chunks WHERE ref = ? AND model_id = ? LIMIT 1",
-            (ref, MODEL_ID_EXPORT),
+            (ref, model_id),
         )
         if row is not None:
             return True

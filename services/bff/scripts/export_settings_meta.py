@@ -53,7 +53,7 @@ HEADER = """\
 
 
 def ts_value(value: object) -> str:
-    """Render a Python scalar as a TypeScript literal."""
+    """Render a Python scalar (or a flat list of scalars) as TypeScript."""
     if value is None:
         return "null"
     if isinstance(value, bool):
@@ -62,6 +62,12 @@ def ts_value(value: object) -> str:
         return repr(value)
     if isinstance(value, str):
         return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
+    if isinstance(value, list):
+        # N058：list 字段（readerPresets）默认恒为空列表——生成空数组
+        # 字面量（元素结构由服务端 pydantic 校验，前端不依赖生成形状）。
+        if not value:
+            return "[]"
+        return "[" + ", ".join(ts_value(item) for item in value) + "]"
     raise TypeError(f"unsupported scalar: {value!r}")
 
 

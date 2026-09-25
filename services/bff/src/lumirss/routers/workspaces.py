@@ -43,6 +43,8 @@ from lumirss.models import (
     WorkspaceItem,
     WorkspaceItemAddRequest,
     WorkspaceItemGroupMoveRequest,
+    WorkspaceItemMoveRequest,
+    WorkspaceItemMoveResult,
     WorkspaceItemPinRequest,
     WorkspaceItemsResolvedResponse,
     WorkspaceItemsResponse,
@@ -77,6 +79,7 @@ from lumirss.util import utc_now
 from lumirss.workspaces import (
     RESERVED_WORKSPACE_ID,
     WorkspaceInvalid,
+    WorkspaceItemDuplicate,
     WorkspaceNotFound,
     WorkspaceStore,
 )
@@ -327,6 +330,58 @@ async def remove_workspace_item(
     if not removed:
         raise WorkspaceInvalid("Item is not a member of this workspace.")
     return Response(status_code=204)
+
+
+@router.post(
+    "/api/v1/workspaces/{workspace_id}/items/{item_ref}/move",
+    response_model=WorkspaceItemMoveResult,
+)
+async def move_workspace_item(
+    workspace_id: str,
+    item_ref: str,
+    payload: WorkspaceItemMoveRequest,
+    request: Request,
+) -> Any:
+    """N108：跨工作区移动成员（同一 ItemRef——底层对象绝不复制）。
+
+    - 幂等：目标已有该条目默认 skip（结果 duplicate=true，绝不产生
+      第二份内容）；``onDuplicate='conflict'`` 显式选择 409；
+    - ``keepInSource=true`` 保留源成员关系（双工作区同持）；
+    - 预览侧（Web 移动对话框）用既有列表 API 展示重复/关系影响。"""
+    from fastapi.responses import JSONResponse
+
+    if payload.targetWorkspaceId == workspace_id:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {
+                    "type": "invalid_workspace",
+                    "message": "目标工作区不能与源工作区相同。",
+                }
+            },
+        )
+    store: WorkspaceStore = _get_workspace_store(request)
+    try:
+        result = await store.move_item(
+            workspace_id,
+            item_ref,
+            payload.targetWorkspaceId,
+            keep_in_source=payload.keepInSource,
+            on_duplicate=payload.onDuplicate,
+        )
+    except WorkspaceItemDuplicate:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": {
+                    "type": "workspace_item_duplicate",
+                    "message": "目标工作区已存在该条目（onDuplicate=conflict）。",
+                }
+            },
+        )
+    if result is None:
+        raise WorkspaceInvalid("Item is not a member of this workspace.")
+    return WorkspaceItemMoveResult(**result)
 
 
 @router.get(

@@ -22,6 +22,47 @@ class DryRunUnsupported(Exception):
     """只读工具没有预演（F097：404/422 诚实返回）。"""
 
 
+# N162：批量写入的 args 形态——``itemRefs``（列表）替代单个 ``itemRef``。
+# 单次审批绑定整个 args（args_hash），因此批量预演 + 单次批准即可覆盖
+# 整批；批准后执行路径逐对象落地（幂等语义与单对象一致）。
+_BATCH_ARG_KEY = "itemRefs"
+_BATCH_PREVIEW_SAMPLES = 10
+
+
+def _batch_refs(args: dict) -> list[str] | None:
+    """args 携带批量 ref 列表 → 清洗后的列表；单对象形态 → None。
+
+    空列表/非字符串列表不算批量（走单对象路径，由单对象校验报错）。"""
+    raw = args.get(_BATCH_ARG_KEY)
+    if not isinstance(raw, list):
+        return None
+    refs = [str(r) for r in raw if isinstance(r, str) and r.strip()]
+    return refs or None
+
+
+def _batch_preview(
+    target: str,
+    per_object: list[dict],
+    uncertain: list[str],
+) -> dict:
+    """N162：聚合预演卡片——单次批准覆盖整批。
+
+    - perObjectDeltas 最多展示 10 个样本（如实标注截断）；
+    - uncertainCount > 0 = 整批标记不确定（审批 UI 必须整批提示），
+      但不改变批准语义（幂等重复仍可安全放行）。"""
+    return {
+        "target": target,
+        "changes": [],
+        "uncertain": list(uncertain),
+        "batch": {
+            "objectCount": len(per_object),
+            "perObjectDeltas": per_object[:_BATCH_PREVIEW_SAMPLES],
+            "perObjectTruncated": max(len(per_object) - _BATCH_PREVIEW_SAMPLES, 0),
+            "uncertainCount": len(uncertain),
+        },
+    }
+
+
 # N169: write tools with recorded before/after diffs and undo semantics.
 # save_bookmark deliberately NOT included (a created library item is
 # user data — undo would silently delete; unsupported → 422).
@@ -85,6 +126,21 @@ def build_undo_support(**services):
         if tool not in UNDOABLE_WRITE_TOOLS:
             return None
         snapshot_args = dict(args or {})
+        # N162：批量形态 → 逐对象快照（provenance 与单对象一致）。
+        refs = _batch_refs(snapshot_args)
+        if refs is not None:
+            items = []
+            for raw in refs:
+                per_args = dict(snapshot_args)
+                per_args.pop(_BATCH_ARG_KEY, None)
+                per_args["itemRef"] = raw
+                snapshot = (
+                    await _workspace_snapshot(per_args)
+                    if tool == "add_to_workspace"
+                    else await _tag_snapshot(per_args)
+                )
+                items.append(snapshot)
+            return {"phase": phase, "batch": True, "items": items}
         if tool == "add_to_workspace":
             snapshot = await _workspace_snapshot(snapshot_args)
         else:
@@ -101,31 +157,62 @@ def build_undo_support(**services):
             from lumirss.agent_store import UndoUnsupported
 
             raise UndoUnsupported("写入台账缺少撤销快照，无法撤销。")
-        if tool == "add_to_workspace":
-            from lumirss.agent_store import UndoConflict
-
-            current = await _workspace_snapshot(args)
-            if not current["member"]:
-                raise UndoConflict(
-                    "条目已不在目标工作区（写入后被移出），撤销跳过。"
-                )
-            if (
-                current["position"] != after.get("position")
-                or current["groupName"] != after.get("groupName")
-                or current["pinned"] != after.get("pinned")
-            ):
-                raise UndoConflict(
-                    "工作区条目在写入后被修改过（位置/固定/分组），撤销跳过。"
-                )
-            await workspaces.remove_item(
-                str(current["workspaceId"]), str(current["itemRef"])
-            )
+        # N162：批量撤销 = 逐对象差异回滚；冲突对象如实报告并跳过。
+        if before is not None and before.get("batch"):
+            results = []
+            for entry_before in before.get("items", []):
+                per_args = dict(args or {})
+                per_args.pop(_BATCH_ARG_KEY, None)
+                per_args["itemRef"] = entry_before.get("itemRef")
+                per_before = dict(entry_before)
+                per_after = dict(after)
+                per_after.pop("batch", None)
+                per_after.pop("items", None)
+                try:
+                    if tool == "add_to_workspace":
+                        outcome = await _undo_workspace(per_args, per_before, per_after)
+                    else:
+                        outcome = await _undo_tag(per_args, per_before, per_after)
+                except Exception as exc:  # noqa: BLE001 — 单对象冲突不拦整批
+                    outcome = {"undone": False, "conflictReason": str(exc)[:200]}
+                results.append(outcome)
             return {
-                "undone": True,
+                "undone": all(r.get("undone") for r in results),
                 "tool": tool,
-                "workspaceId": current["workspaceId"],
-                "itemRef": current["itemRef"],
+                "batch": True,
+                "results": results,
             }
+        if tool == "add_to_workspace":
+            return await _undo_workspace(args, before, after)
+        return await _undo_tag(args, before, after)
+
+    async def _undo_workspace(args: dict, before: dict | None, after: dict | None) -> dict:
+        from lumirss.agent_store import UndoConflict
+
+        current = await _workspace_snapshot(args)
+        if not current["member"]:
+            raise UndoConflict(
+                "条目已不在目标工作区（写入后被移出），撤销跳过。"
+            )
+        if (
+            current["position"] != after.get("position")
+            or current["groupName"] != after.get("groupName")
+            or current["pinned"] != after.get("pinned")
+        ):
+            raise UndoConflict(
+                "工作区条目在写入后被修改过（位置/固定/分组），撤销跳过。"
+            )
+        await workspaces.remove_item(
+            str(current["workspaceId"]), str(current["itemRef"])
+        )
+        return {
+            "undone": True,
+            "tool": "add_to_workspace",
+            "workspaceId": current["workspaceId"],
+            "itemRef": current["itemRef"],
+        }
+
+    async def _undo_tag(args: dict, before: dict | None, after: dict | None) -> dict:
         from lumirss.agent_store import UndoConflict
 
         current = await _tag_snapshot(args)
@@ -136,7 +223,7 @@ def build_undo_support(**services):
         await tags.detach(str(current["itemRef"]), str(current["name"]))
         return {
             "undone": True,
-            "tool": tool,
+            "tool": "add_tag",
             "itemRef": current["itemRef"],
             "name": current["name"],
         }
@@ -316,6 +403,23 @@ def build_registry(**services) -> ToolRegistry:
 
     async def tool_add_to_workspace(args: dict) -> dict:
         workspace_id = str(args.get("workspaceId") or "read-later")
+        refs = _batch_refs(args)
+        if refs is not None:
+            # N162：批量形态——单次批准覆盖整批（args_hash 绑定批量 args）。
+            results = []
+            for raw in refs:
+                item = await workspaces.add_item(
+                    workspace_id, parse_item_ref(raw).format()
+                )
+                results.append(
+                    {"ref": item.item_ref, "position": item.position}
+                )
+            return {
+                "added": True,
+                "workspaceId": workspace_id,
+                "objectCount": len(results),
+                "results": results,
+            }
         item_ref = parse_item_ref(str(args.get("itemRef") or "")).format()
         item = await workspaces.add_item(workspace_id, item_ref)
         return {"added": True, "workspaceId": workspace_id, "position": item.position}
@@ -423,6 +527,24 @@ def build_registry(**services) -> ToolRegistry:
     )
     async def tool_add_tag(args: dict) -> dict:
         tag_store = services["tags"]
+        refs = _batch_refs(args)
+        if refs is not None:
+            # N162：批量形态——逐对象幂等落地，单次批准覆盖整批。
+            name = str(args.get("name") or "")
+            results = []
+            for raw in refs:
+                binding = await tag_store.attach(
+                    parse_item_ref(raw).format(), name, origin="manual"
+                )
+                results.append(
+                    {"ref": binding["ref"], "name": binding["name"]}
+                )
+            return {
+                "tagged": True,
+                "name": name,
+                "objectCount": len(results),
+                "results": results,
+            }
         item_ref = parse_item_ref(str(args.get("itemRef") or "")).format()
         binding = await tag_store.attach(
             item_ref, str(args.get("name") or ""), origin="manual"
@@ -431,14 +553,14 @@ def build_registry(**services) -> ToolRegistry:
 
     registry.register_write(
         "add_tag",
-        "给一个条目（ItemRef）打一个手动标签",
+        "给一个条目（ItemRef）打一个手动标签；也可传 itemRefs 列表批量打标",
         {
             "type": "object",
             "properties": {
                 "itemRef": {"type": "string"},
+                "itemRefs": {"type": "array", "items": {"type": "string"}},
                 "name": {"type": "string"},
             },
-            "required": ["itemRef", "name"],
         },
         tool_add_tag,
     )
@@ -467,6 +589,35 @@ def build_dry_run(**services):
                 "changes": [],
                 "uncertain": ["目标工作区不存在（执行时将失败）"],
             }
+        refs = _batch_refs(args)
+        if refs is not None:
+            members = {
+                item.item_ref for item in await workspaces.list_items(workspace_id, limit=500)
+            }
+            per = []
+            uncertain = []
+            for ref in refs:
+                try:
+                    item_ref = parse_item_ref(ref).format()
+                except ValueError:
+                    item_ref = ref
+                already = item_ref in members
+                per.append(
+                    {
+                        "ref": item_ref,
+                        "changes": (
+                            []
+                            if already
+                            else [{"field": "membership", "from": "absent", "to": item_ref}]
+                        ),
+                        "uncertain": [] if not already else ["条目已在工作区中（幂等重复）"],
+                    }
+                )
+                if already:
+                    uncertain.append(f"{item_ref}: 条目已在工作区中（幂等重复）")
+            return _batch_preview(
+                f"workspace:{workspace_id}（{summary.name}）", per, uncertain
+            )
         raw_ref = str(args.get("itemRef") or "")
         try:
             item_ref = parse_item_ref(raw_ref).format()
@@ -527,6 +678,32 @@ def build_dry_run(**services):
 
     async def dry_run_add_tag(args: dict) -> dict:
         tags = services["tags"]
+        refs = _batch_refs(args)
+        if refs is not None:
+            name = str(args.get("name") or "")
+            per = []
+            uncertain = []
+            for raw in refs:
+                try:
+                    item_ref = parse_item_ref(raw).format()
+                except ValueError:
+                    item_ref = raw
+                current = {t["name"] for t in await tags.tags_for_item(item_ref)}
+                already = name in current
+                per.append(
+                    {
+                        "ref": item_ref,
+                        "changes": (
+                            []
+                            if already
+                            else [{"field": "tag", "from": None, "to": name}]
+                        ),
+                        "uncertain": [] if not already else ["标签已存在（幂等）"],
+                    }
+                )
+                if already:
+                    uncertain.append(f"{item_ref}: 标签已存在（幂等）")
+            return _batch_preview(f"tag:{name} × {len(per)}", per, uncertain)
         raw_ref = str(args.get("itemRef") or "")
         name = str(args.get("name") or "")
         try:

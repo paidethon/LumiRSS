@@ -239,6 +239,10 @@ class AgentLoop:
         """Public view of the registered whitelist (regression tests)."""
         return sorted(set(self._registry._read) | set(self._registry._write))
 
+    def read_tool_names(self) -> list[str]:
+        """N163：只读工具名单（研究模式预设的 read-tool 白名单）。"""
+        return sorted(self._registry._read)
+
     def effective_tool_names(self, policy: dict | None) -> list[str]:
         """N151：白名单 ∩ 会话工具权限（readonly 剔除写工具）——
         scope 摘要卡的 toolCount 用，与回合执行前同一评估口径。"""
