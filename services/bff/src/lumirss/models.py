@@ -1962,6 +1962,29 @@ class WorkspaceItemsResponse(BaseModel):
     items: list[WorkspaceItem]
 
 
+class WorkspaceSearchHit(BaseModel):
+    """N109：工作区内检索的单条命中（成员范围严格限定）。"""
+
+    itemRef: str
+    domain: Literal["rss", "library"]
+    title: str
+    """命中摘要（≤160 字符；内容命中取匹配处上下文，仅标题命中取标题）。"""
+    excerpt: str = ""
+    matchedIn: Literal["title", "content", "title+content"] = "title"
+
+
+class WorkspaceSearchResponse(BaseModel):
+    """Envelope for GET /api/v1/workspaces/{id}/search?q=（N109）.
+
+    ``results`` 上限 200 条（``truncated`` 如实标记截断）；只包含该
+    工作区自己的成员——其他工作区的条目绝不出现。"""
+
+    workspaceId: str
+    query: str
+    truncated: bool = False
+    results: list[WorkspaceSearchHit]
+
+
 class WorkspaceGroup(BaseModel):
     """N101：一个分组（name=null = 未分组隐式前置组）；组内 position 序。"""
 
