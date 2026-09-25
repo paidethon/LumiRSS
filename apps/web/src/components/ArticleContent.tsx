@@ -14,6 +14,7 @@ import {
 } from '../lib/remote-images'
 import { attachExternalLinkMenu, CleanLinkPreviewDialog } from './CleanLinkCopy'
 import { WideTablePanel } from './WideTablePanel'
+import { CodeReaderPanel } from './CodeReaderPanel'
 import {
   buildParaLink,
   paraStableId,
@@ -21,6 +22,12 @@ import {
 } from '../lib/para-anchor'
 import { withHeadingIds } from '../lib/article-toc'
 import { decorateCodeCopyButtons } from '../lib/code-copy'
+import { countCodeLines, CODE_READER_MIN_LINES } from '../lib/code-reader'
+import { renderMath } from '../lib/katex-render'
+import {
+  captureAnchorText,
+  findAnchorElement,
+} from '../lib/reading-position'
 import { TABLE_WIDE_EXTRA_PX } from '../lib/reader-tools'
 import { useAppSettings } from '../store/app-settings'
 import { prefersDarkScheme, resolveTheme } from '../lib/theme'
@@ -37,6 +44,31 @@ const ArticleLightbox = lazy(() => import('./ArticleLightbox'))
 // 「复制失败」——失败可见，不假装成功。~1.5s 后还原。
 const PARA_LINK_FEEDBACK_MS = 1500
 
+/** N060：滚动锚点候选（与 lib/reading-position findAnchorElement、
+ * Reader 的保存选择器同一族元素；文档序取视口顶线上方最近者）。 */
+const ANCHOR_SELECTOR = [
+  'p',
+  'li',
+  'pre',
+  'blockquote',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+]
+  .map((tag) => `.lumi-reader-article ${tag}`)
+  .join(', ')
+
+/** N060：视口顶判定线（与 Reader 保存逻辑一致：top 80px 线上方最近块）。 */
+const ANCHOR_VIEWPORT_OFFSET_PX = 80
+
+/** N060：标题候选（最近标题降级用；h1–h6 全算标题）。 */
+const HEADING_SELECTOR = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']
+  .map((tag) => `.lumi-reader-article ${tag}`)
+  .join(', ')
+
 const PARA_LINK_SVG = (paths: string) =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${paths}</svg>`
 
@@ -45,6 +77,11 @@ const ICON_LINK = PARA_LINK_SVG(
 )
 const ICON_CHECK = PARA_LINK_SVG('<path d="M20 6 9 17l-5-5"/>')
 const ICON_ERROR = PARA_LINK_SVG('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>')
+// N057：展开代码（lucide maximize-2 同形；DOM 装饰场景内联 SVG，
+// 同段落链接按钮的既定例外模式）。
+const ICON_CODE_EXPAND = PARA_LINK_SVG(
+  '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" x2="14" y1="3" y2="10"/><line x1="3" x2="10" y1="21" y2="14"/>',
+)
 
 /** 构造段落复制链接按钮：纯图标（可访问名由 aria-label 提供，正文流
  * 中无文案）；点击复制 `${origin}/?entry=&para=` 段落链接，成功/失败
@@ -85,6 +122,101 @@ function createParaLinkButton(
       )
   })
   return button
+}
+
+/** N062：图片说明提取——最近 figure 的 figcaption 文本，否则 img 的
+ * title 属性，否则 aria-label；都没有 → null（灯箱明示「未提供说明」，
+ * 不拿 alt 冒充说明）。连续空白规范化。 */
+export function extractImageCaption(img: HTMLImageElement): string | null {
+  const figcaption = img.closest('figure')?.querySelector('figcaption')?.textContent
+  const candidates = [
+    figcaption ?? '',
+    img.getAttribute('title') ?? '',
+    img.getAttribute('aria-label') ?? '',
+  ]
+  for (const candidate of candidates) {
+    const text = candidate.replace(/\s+/g, ' ').trim()
+    if (text !== '') return text
+  }
+  return null
+}
+
+/** N062：图片来源主机名（img.src 属性经浏览器解析为绝对地址；data:/
+ * 相对失败等取不到 → null，灯箱显示「来源未知」）。 */
+export function extractImageHost(img: HTMLImageElement): string | null {
+  try {
+    return new URL(img.src).hostname !== '' ? new URL(img.src).hostname : null
+  } catch {
+    return null
+  }
+}
+
+/** N064：公式专注视图（ArticleContent 文件内的内部组件——katex 输出
+ * 先过唯一净化点 sanitizeArticleHtmlCached 再进 dangerouslySetInnerHTML，
+ * 与脚注弹层同模式；更大的展示字号由 .lumi-formula-focus 提供）。
+ * 「复制 LaTeX」复制的是渲染管线的 TeX 原文（data-lumi-tex）；
+ * 渲染失败诚实显示（可复制源码，不假装成功）。 */
+function FormulaFocusView({ tex, display }: { tex: string; display: boolean }) {
+  const [html, setHtml] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    setHtml(null)
+    setFailed(false)
+    void renderMath(tex, display).then((out) => {
+      if (cancelled) return
+      if (out === null) {
+        setFailed(true)
+        return
+      }
+      setHtml(sanitizeArticleHtmlCached(out))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [tex, display])
+  const [feedback, setFeedback] = useState<string | null>(null)
+  async function copyLaTeX() {
+    try {
+      await navigator.clipboard.writeText(tex)
+      setFeedback('已复制 LaTeX')
+    } catch {
+      setFeedback('复制失败：请检查剪贴板权限')
+    }
+    window.setTimeout(() => setFeedback(null), 2000)
+  }
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div
+        className="flex items-center gap-2 border-b border-[var(--lumi-border)] px-4 py-2"
+        data-testid="formula-toolbar"
+      >
+        <span className="text-sm font-medium text-[var(--lumi-text-primary)]">公式</span>
+        <span className="flex-1" />
+        {feedback !== null && (
+          <span role="status" className="text-xs text-[var(--lumi-accent-text)]">
+            {feedback}
+          </span>
+        )}
+        <Button size="sm" variant="secondary" onClick={() => void copyLaTeX()}>
+          复制 LaTeX
+        </Button>
+      </div>
+      <div data-testid="formula-view" className="min-h-0 flex-1 overflow-auto p-6">
+        {failed ? (
+          <p className="text-sm text-[var(--lumi-text-secondary)]">
+            公式渲染失败，可用「复制 LaTeX」取得源码。
+          </p>
+        ) : html === null ? (
+          <p className="text-sm text-[var(--lumi-text-secondary)]" role="status">
+            公式渲染中…
+          </p>
+        ) : (
+          <div className="lumi-formula-focus" dangerouslySetInnerHTML={{ __html: html }} />
+        )}
+      </div>
+    </div>
+  )
 }
 
 /** ArticleContent — 正文渲染边界（0006 建立；0012 Gate 4 升级为
@@ -144,10 +276,34 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
     variantState.ref === detail.entryRef ? variantState.kind : 'current'
   const setVariant = (kind: 'current' | 'last_known_full') =>
     setVariantState({ ref: detail.entryRef, kind })
+  // N060：切换前记录当前视口锚点（段落文本前缀 + 滚动比例），新内容
+  // 渲染完成后由下方 effect 重锚定。绝不触碰已读状态。
+  const captureSwitchAnchor = (): { anchorText: string | null; ratio: number } | null => {
+    const scroller = getScrollContainer()
+    if (scroller === null) return null
+    const max = scroller.scrollHeight - scroller.clientHeight
+    const ratio = max > 0 ? Math.min(1, Math.max(0, scroller.scrollTop / max)) : 0
+    const containerTop = scroller.getBoundingClientRect().top
+    let anchor: Element | null = null
+    for (const el of scroller.querySelectorAll(ANCHOR_SELECTOR)) {
+      if (el.getBoundingClientRect().top > containerTop + ANCHOR_VIEWPORT_OFFSET_PX) break
+      anchor = el
+    }
+    return { anchorText: captureAnchorText(anchor), ratio }
+  }
+  const switchVariant = (kind: 'current' | 'last_known_full') => {
+    pendingAnchorRef.current = captureSwitchAnchor()
+    setVariant(kind)
+  }
 
   // F14：图片灯箱状态；F16：表格展开面板状态。打开前保存滚动容器
   // scrollTop，关闭后还原（面板不改变正文阅读位置）。
-  const [lightbox, setLightbox] = useState<{ images: LightboxImage[]; index: number } | null>(null)
+  // N061：sources 保存灯箱各图对应的正文源 img（「在原文中查看」定位用）。
+  const [lightbox, setLightbox] = useState<{
+    images: LightboxImage[]
+    index: number
+    sources: HTMLImageElement[]
+  } | null>(null)
   // F059：脚注弹层状态（Escape 关闭；「返回引用」滚动回触发标记）。
   const [footnotePopover, setFootnotePopover] = useState<{
     number: string
@@ -164,8 +320,18 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
     return () => document.removeEventListener('keydown', onKey)
   }, [footnotePopover])
   const [tablePanel, setTablePanel] = useState<{ table: HTMLTableElement } | null>(null)
+  // N057：代码独立阅读页状态；N064：公式专注视图状态（同一灯箱遮罩，
+  // 内容模式）。打开前保存滚动位置，关闭后还原。
+  const [codePanel, setCodePanel] = useState<{ pre: HTMLPreElement } | null>(null)
+  const [formulaPanel, setFormulaPanel] = useState<{ tex: string; display: boolean } | null>(null)
   const savedScrollRef = useRef<number | null>(null)
-  const lastImageRef = useRef<HTMLImageElement | null>(null)
+  // 关闭后的焦点归还目标（触发元素：图片 / 展开按钮 / 公式 span）。
+  const focusReturnRef = useRef<HTMLElement | null>(null)
+  // N060：内容版本切换重锚定——切换时刻记录（锚点文本 + 滚动比例），
+  // 新内容渲染完成后消费（见下方 effect）。
+  const pendingAnchorRef = useRef<{ anchorText: string | null; ratio: number } | null>(null)
+  const [anchorNotice, setAnchorNotice] = useState(false)
+  const anchorNoticeTimerRef = useRef<number | undefined>(undefined)
 
   // F048：web 策略失败徽标 + 未启用策略时的单篇「试读」（临时预览，不改来源策略）。
   const extractOnceMutation = useMutation({
@@ -350,6 +516,55 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
   const getScrollContainer = (): HTMLElement | null =>
     contentRef.current?.closest('.lumi-reader-article')?.parentElement ?? null
 
+  // N060：内容版本切换后的重锚定。管线是异步的：pendingAnchorRef 在
+  // 切换时刻记录（captureSwitchAnchor），htmlWithIds 更新（新内容已入
+  // DOM）后在此消费——findAnchorElement 命中原段落/标题 → 回到原位；
+  // 匹配失败 → 按切换前滚动比例在标题序列上取最近的标题（内容高度已
+  // 变化，几何位置不可比，文档序比例取点是可解释的诚实近似；最坏也只
+  // 落在最后一个标题，绝不落到文末）+ 诚实提示；全文无标题 → 回到顶部
+  // （同样绝不到文末），不显示虚假的「已定位」文案。整个流程只写
+  // scrollTop，绝不触碰已读状态。
+  useEffect(() => {
+    const pending = pendingAnchorRef.current
+    if (pending === null) return
+    pendingAnchorRef.current = null
+    const scroller = getScrollContainer()
+    if (scroller === null) return
+    const anchor =
+      pending.anchorText !== null ? findAnchorElement(scroller, pending.anchorText) : null
+    if (anchor !== null) {
+      const top =
+        anchor.getBoundingClientRect().top -
+        scroller.getBoundingClientRect().top +
+        scroller.scrollTop
+      scroller.scrollTop = Math.max(0, top - 12)
+      return
+    }
+    const headings = Array.from(scroller.querySelectorAll(HEADING_SELECTOR))
+    if (headings.length > 0) {
+      const index = Math.min(
+        headings.length - 1,
+        Math.floor(pending.ratio * headings.length),
+      )
+      const target = headings[index] as HTMLElement
+      const top =
+        target.getBoundingClientRect().top -
+        scroller.getBoundingClientRect().top +
+        scroller.scrollTop
+      scroller.scrollTop = Math.max(0, top - 12)
+      setAnchorNotice(true)
+      window.clearTimeout(anchorNoticeTimerRef.current)
+      anchorNoticeTimerRef.current = window.setTimeout(() => setAnchorNotice(false), 3500)
+    } else {
+      scroller.scrollTop = 0
+    }
+  }, [htmlWithIds])
+
+  // N060：提取试读失败时渲染源不变——作废挂起的重锚定（诚实地不跳）。
+  useEffect(() => {
+    if (extractOnceMutation.isError) pendingAnchorRef.current = null
+  }, [extractOnceMutation.isError])
+
   // F14/F16 渲染后装饰（幂等）：图片 zoom-in 标记 + 过宽表格展开按钮。
   // hidden 且未允许时不接线图片——无图可点，不偷偷加载。
   useEffect(() => {
@@ -386,7 +601,43 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
       button.dataset.lumiTableExpand = 'true'
       wrap.appendChild(button)
     }
+    // N057：长代码块（> 20 行）出现「展开代码」图标入口（同表格展开的
+    // DOM 装饰模式，幂等）；点击经下方事件委托打开独立阅读页。
+    for (const pre of container.querySelectorAll('pre')) {
+      if (pre.querySelector('[data-lumi-code-expand]') !== null) continue
+      const text = (pre.querySelector('code') ?? pre).textContent ?? ''
+      if (countCodeLines(text) <= CODE_READER_MIN_LINES) continue
+      const button = container.ownerDocument.createElement('button')
+      button.type = 'button'
+      button.className = 'lumi-code-expand-btn'
+      button.dataset.lumiCodeExpand = 'true'
+      button.setAttribute('aria-label', '展开代码')
+      button.title = '展开代码'
+      button.innerHTML = ICON_CODE_EXPAND
+      pre.appendChild(button)
+    }
+    // N064：公式专注视图接线（渲染后装饰，幂等）。只有带 data-lumi-tex
+    // （管线渲染、持有 TeX 原文）的公式可交互——上游自带 KaTeX HTML 无
+    // 原文可复制重渲，诚实不提供放大入口。
+    for (const el of container.querySelectorAll<HTMLElement>('span[data-lumi-tex]')) {
+      if (el.dataset.lumiFormulaReady === 'true') continue
+      el.dataset.lumiFormulaReady = 'true'
+      el.tabIndex = 0
+      el.setAttribute('role', 'button')
+      el.setAttribute('aria-label', '放大公式')
+    }
   }, [htmlWithIds, hasHtml, imageMode, imagesAllowed])
+
+  // N064：公式专注视图打开（点击 + 键盘 Enter/Space 同一入口）。
+  // 无 TeX 原文（data-lumi-tex 缺失/空白）→ 不开面板，诚实不假装。
+  const openFormulaPanel = (el: Element): void => {
+    const tex = el.getAttribute('data-lumi-tex') ?? ''
+    if (tex.trim() === '') return
+    const scroller = getScrollContainer()
+    savedScrollRef.current = scroller?.scrollTop ?? null
+    focusReturnRef.current = el instanceof HTMLElement ? el : null
+    setFormulaPanel({ tex, display: el.querySelector('.katex-display') !== null })
+  }
 
   // F14/F16 事件委托：点击图片 → 灯箱；点击「展开查看」→ 表格面板。
   // 委托挂在容器上（容器节点跨 innerHTML 重渲染持久），装饰标记每次
@@ -424,15 +675,34 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
         if (table !== null) {
           const scroller = getScrollContainer()
           savedScrollRef.current = scroller?.scrollTop ?? null
+          focusReturnRef.current = expandButton as HTMLElement
           setTablePanel({ table: table as HTMLTableElement })
           return
         }
+      }
+      // N057：展开代码 → 独立阅读页（同一灯箱遮罩，内容模式）。
+      const codeExpandButton = target.closest('[data-lumi-code-expand]')
+      if (codeExpandButton !== null) {
+        const pre = codeExpandButton.closest('pre')
+        if (pre !== null) {
+          const scroller = getScrollContainer()
+          savedScrollRef.current = scroller?.scrollTop ?? null
+          focusReturnRef.current = codeExpandButton as HTMLElement
+          setCodePanel({ pre: pre as HTMLPreElement })
+          return
+        }
+      }
+      // N064：公式专注视图（有 TeX 原文才可开——诚实降级）。
+      const formulaEl = target.closest('[data-lumi-formula-ready]')
+      if (formulaEl !== null) {
+        openFormulaPanel(formulaEl)
+        return
       }
       const img = target.closest('img[data-lumi-lightbox-ready]') as HTMLImageElement | null
       if (img !== null) {
         const scroller = getScrollContainer()
         savedScrollRef.current = scroller?.scrollTop ?? null
-        lastImageRef.current = img
+        focusReturnRef.current = img
         const all = Array.from(
           container.querySelectorAll<HTMLImageElement>('img[data-lumi-lightbox-ready]'),
         )
@@ -440,13 +710,32 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
           images: all.map((el) => ({
             src: el.src,
             alt: el.getAttribute('alt') ?? '',
+            caption: extractImageCaption(el),
+            host: extractImageHost(el),
           })),
           index: Math.max(0, all.indexOf(img)),
+          sources: all,
         })
       }
     }
     container.addEventListener('click', onClick)
     return () => container.removeEventListener('click', onClick)
+  }, [htmlWithIds, hasHtml])
+
+  useEffect(() => {
+    const container = contentRef.current
+    if (container === null || !hasHtml) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return
+      const target = event.target as Element | null
+      const el = target?.closest?.('[data-lumi-formula-ready]') ?? null
+      if (el !== null && target instanceof HTMLElement) {
+        event.preventDefault()
+        openFormulaPanel(el)
+      }
+    }
+    container.addEventListener('keydown', onKey)
+    return () => container.removeEventListener('keydown', onKey)
   }, [htmlWithIds, hasHtml])
 
 
@@ -459,15 +748,38 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
     setTablePanel(null)
     restoreScrollAndFocus()
   }
+  // N057/N064：代码阅读页 / 公式专注视图关闭——与表格面板同一还原语义
+  //（滚动位置复原 + 焦点归还触发元素）。
+  const closeCodePanel = () => {
+    setCodePanel(null)
+    restoreScrollAndFocus()
+  }
+  const closeFormulaPanel = () => {
+    setFormulaPanel(null)
+    restoreScrollAndFocus()
+  }
+  // N061：在原文中查看——关闭灯箱后滚动到正文源图（定位滚动取代
+  // 「回到打开前位置」，savedScroll 作废防陈旧还原），焦点随源图。
+  const locateImageInArticle = (index: number) => {
+    const source = lightbox?.sources[index] ?? null
+    setLightbox(null)
+    savedScrollRef.current = null
+    focusReturnRef.current = null
+    if (source !== null) {
+      source.scrollIntoView({ block: 'center' })
+      source.focus()
+    }
+  }
   const restoreScrollAndFocus = () => {
     const scroller = getScrollContainer()
     if (scroller !== null && savedScrollRef.current !== null) {
       scroller.scrollTop = savedScrollRef.current
     }
     savedScrollRef.current = null
-    // 焦点返回触发图片（图片装饰时已带 tabIndex=-1）。
-    lastImageRef.current?.focus()
-    lastImageRef.current = null
+    // 焦点返回触发元素（图片装饰时已带 tabIndex=-1；展开按钮/公式
+    // span 各自带可聚焦语义）。
+    focusReturnRef.current?.focus()
+    focusReturnRef.current = null
   }
 
   if (hasHtml) {
@@ -483,6 +795,16 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
             原文已变化，无法定位
           </p>
         )}
+        {/* N060：版本切换重锚定失败 → 最近标题降级的诚实提示 */}
+        {anchorNotice && (
+          <p
+            role="status"
+            data-testid="anchor-notice"
+            className="mb-2 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2.5 py-1.5 text-xs text-[var(--lumi-text-secondary)]"
+          >
+            已定位到最近标题
+          </p>
+        )}
         <ArticleToc toc={toc} />
         {/* F048：提取失败诚实徽标 / 单篇「用提取正文试读」（不启用策略时临时预览） */}
         {(showExtractBadge || detail.extractPolicy !== 'web') && (
@@ -493,7 +815,16 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
               </span>
             )}
             {detail.extractPolicy !== 'web' && (
-              <Button size="sm" variant="ghost" disabled={extractOnceMutation.isPending} onClick={() => extractOnceMutation.mutate()}>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={extractOnceMutation.isPending}
+                onClick={() => {
+                  // N060：提取试读也是内容源切换——同样重锚定。
+                  pendingAnchorRef.current = captureSwitchAnchor()
+                  extractOnceMutation.mutate()
+                }}
+              >
                 {extractOnceMutation.isPending ? '提取中…' : '用提取正文试读'}
               </Button>
             )}
@@ -515,7 +846,7 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
               <button
                 type="button"
                 aria-pressed={variant === 'current'}
-                onClick={() => setVariant('current')}
+                onClick={() => switchVariant('current')}
                 className={cxRaw(
                   'min-h-7 rounded-[var(--lumi-radius-full)] px-2 py-0.5 transition-colors duration-[var(--lumi-motion-fast)]',
                   'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
@@ -529,9 +860,9 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
               {lastFullVariant !== null && (
                 <button
                   type="button"
-                  data-testid="variant-last-full"
-                  aria-pressed={variant === 'last_known_full'}
-                  onClick={() => setVariant('last_known_full')}
+                data-testid="variant-last-full"
+                aria-pressed={variant === 'last_known_full'}
+                onClick={() => switchVariant('last_known_full')}
                   className={cxRaw(
                     'min-h-7 rounded-[var(--lumi-radius-full)] px-2 py-0.5 transition-colors duration-[var(--lumi-motion-fast)]',
                     'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
@@ -650,12 +981,14 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
         />
         {/* F14：图片灯箱（portal；焦点归还与滚动还原由本组件负责）。
             F16：表格展开面板（同一灯箱遮罩，内容模式）。lazy+Suspense：
-            打开瞬间未加载完时渲染 null，随后自动出现。 */}
+            打开瞬间未加载完时渲染 null，随后自动出现。
+            N061：onLocate 接「在原文中查看」。 */}
         <Suspense fallback={null}>
           <ArticleLightbox
             open={lightbox !== null}
             images={lightbox?.images}
             startIndex={lightbox?.index ?? 0}
+            onLocate={locateImageInArticle}
             onClose={closeLightbox}
           />
         </Suspense>
@@ -666,6 +999,29 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
             onClose={closeTablePanel}
           >
             {tablePanel !== null && <WideTablePanel table={tablePanel.table} />}
+          </ArticleLightbox>
+        </Suspense>
+        {/* N057：代码块独立阅读页（同一灯箱遮罩，内容模式；关闭还原
+            滚动位置 + 焦点归还「展开代码」按钮）。 */}
+        <Suspense fallback={null}>
+          <ArticleLightbox
+            open={codePanel !== null}
+            label="代码查看"
+            onClose={closeCodePanel}
+          >
+            {codePanel !== null && <CodeReaderPanel pre={codePanel.pre} />}
+          </ArticleLightbox>
+        </Suspense>
+        {/* N064：公式专注视图（同一灯箱遮罩，内容模式）。 */}
+        <Suspense fallback={null}>
+          <ArticleLightbox
+            open={formulaPanel !== null}
+            label="公式查看"
+            onClose={closeFormulaPanel}
+          >
+            {formulaPanel !== null && (
+              <FormulaFocusView tex={formulaPanel.tex} display={formulaPanel.display} />
+            )}
           </ArticleLightbox>
         </Suspense>
       </>

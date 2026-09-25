@@ -17,6 +17,14 @@ export interface CodeCopyDeps {
 const REVERT_MS = 1600
 const BUTTON_CLASS = 'code-copy-btn'
 
+/** <pre><code> 的复制源文本（N057 独立阅读页共用同一逻辑）。
+ * 取 textContent（Shiki 输出无行号，天然无行号污染），结尾换行剥离，
+ * 空白/缩进原样保留。 */
+export function codeBlockText(pre: Element): string {
+  const code = pre.querySelector('code')
+  return ((code ?? pre).textContent ?? '').replace(/\n$/, '')
+}
+
 export function decorateCodeCopyButtons(
   container: HTMLElement,
   deps: CodeCopyDeps = {},
@@ -30,8 +38,7 @@ export function decorateCodeCopyButtons(
 
   for (const pre of container.querySelectorAll('pre')) {
     if (pre.querySelector(`.${BUTTON_CLASS}`) !== null) continue
-    const code = pre.querySelector('code')
-    const source = (code ?? pre).textContent ?? ''
+    const source = codeBlockText(pre)
     if (source.trim() === '') continue
 
     const button = container.ownerDocument.createElement('button')
@@ -40,7 +47,7 @@ export function decorateCodeCopyButtons(
     button.textContent = '复制'
     button.setAttribute('aria-label', '复制代码')
     button.addEventListener('click', () => {
-      const text = ((code ?? pre).textContent ?? '').replace(/\n$/, '')
+      const text = codeBlockText(pre)
       writeText(text)
         .then(() => {
           button.textContent = '已复制 ✓'
