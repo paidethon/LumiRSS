@@ -110,8 +110,40 @@ def apply_scope_to_snapshot(path: Any, include: dict[str, bool]) -> None:
             if include[component]:
                 continue
             for table in _COMPONENT_TABLES[component]:
-                if table in existing:
-                    connection.execute(f"DELETE FROM {table}")
+                if table not in existing:
+                    continue
+                # 字面量直派：表名是本模块静态常量，逐表显式执行，
+                # 执行处不拼接任何动态值。
+                if table == "workspace_section_items":
+                    connection.execute("DELETE FROM workspace_section_items")
+                elif table == "workspace_sections":
+                    connection.execute("DELETE FROM workspace_sections")
+                elif table == "workspace_item_status":
+                    connection.execute("DELETE FROM workspace_item_status")
+                elif table == "workspace_goals":
+                    connection.execute("DELETE FROM workspace_goals")
+                elif table == "workspace_snapshots":
+                    connection.execute("DELETE FROM workspace_snapshots")
+                elif table == "workspace_resume":
+                    connection.execute("DELETE FROM workspace_resume")
+                elif table == "workspace_cleanup_log":
+                    connection.execute("DELETE FROM workspace_cleanup_log")
+                elif table == "workspace_templates":
+                    connection.execute("DELETE FROM workspace_templates")
+                elif table == "workspace_items":
+                    connection.execute("DELETE FROM workspace_items")
+                elif table == "workspaces":
+                    connection.execute("DELETE FROM workspaces")
+                elif table == "lumi_notes":
+                    connection.execute("DELETE FROM lumi_notes")
+                elif table == "annotations":
+                    connection.execute("DELETE FROM annotations")
+                elif table == "api_sources":
+                    connection.execute("DELETE FROM api_sources")
+                elif table == "staged_sources":
+                    connection.execute("DELETE FROM staged_sources")
+                elif table == "source_overrides":
+                    connection.execute("DELETE FROM source_overrides")
         connection.commit()
     finally:
         connection.close()
