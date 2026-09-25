@@ -3165,6 +3165,16 @@
    },
    "BackupCreate": {
     "properties": {
+     "include": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/BackupScopeInclude"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
      "target": {
       "default": "local",
       "enum": [
@@ -3370,6 +3380,256 @@
      }
     },
     "title": "BackupJobSummary",
+    "type": "object"
+   },
+   "BackupScopeComponent": {
+    "properties": {
+     "component": {
+      "title": "Component",
+      "type": "string"
+     },
+     "count": {
+      "title": "Count",
+      "type": "integer"
+     },
+     "included": {
+      "title": "Included",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "component",
+     "included",
+     "count"
+    ],
+    "title": "BackupScopeComponent",
+    "type": "object"
+   },
+   "BackupScopeInclude": {
+    "description": "N185：备份用户数据范围（缺省全 True = 与历史默认一致）。",
+    "properties": {
+     "annotations": {
+      "default": true,
+      "title": "Annotations",
+      "type": "boolean"
+     },
+     "notes": {
+      "default": true,
+      "title": "Notes",
+      "type": "boolean"
+     },
+     "sourceConfig": {
+      "default": true,
+      "title": "Sourceconfig",
+      "type": "boolean"
+     },
+     "workspaces": {
+      "default": true,
+      "title": "Workspaces",
+      "type": "boolean"
+     }
+    },
+    "title": "BackupScopeInclude",
+    "type": "object"
+   },
+   "BackupScopePreview": {
+    "description": "POST /api/v1/backups/preview-scope — 范围选择预览（只读）。\n\nper-component 计数 + always-excluded 清单（凭据 / FreshRSS 内容）。",
+    "properties": {
+     "alwaysExcluded": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Alwaysexcluded",
+      "type": "array"
+     },
+     "components": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/BackupScopeComponent"
+      },
+      "title": "Components",
+      "type": "array"
+     },
+     "scope": {
+      "$ref": "#/components/schemas/BackupScopeInclude"
+     }
+    },
+    "required": [
+     "scope"
+    ],
+    "title": "BackupScopePreview",
+    "type": "object"
+   },
+   "BackupScopePreviewBody": {
+    "description": "POST /api/v1/backups/preview-scope 体（include 缺省 = 全包含）。",
+    "properties": {
+     "include": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/BackupScopeInclude"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "title": "BackupScopePreviewBody",
+    "type": "object"
+   },
+   "BackupVerifyFindings": {
+    "description": "N186：独立完整性自检四项发现（全部为真才算健康）。",
+    "properties": {
+     "checksumOk": {
+      "title": "Checksumok",
+      "type": "boolean"
+     },
+     "manifestCountsMatch": {
+      "title": "Manifestcountsmatch",
+      "type": "boolean"
+     },
+     "readable": {
+      "title": "Readable",
+      "type": "boolean"
+     },
+     "versionCompatible": {
+      "title": "Versioncompatible",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "checksumOk",
+     "manifestCountsMatch",
+     "readable",
+     "versionCompatible"
+    ],
+    "title": "BackupVerifyFindings",
+    "type": "object"
+   },
+   "BackupVerifyIssues": {
+    "description": "具体问题：损坏成员 / 缺失附件 / 版本不兼容（健康时全空/None）。",
+    "properties": {
+     "corruptFile": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Corruptfile",
+      "type": "array"
+     },
+     "missingAttachment": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Missingattachment",
+      "type": "array"
+     },
+     "versionIncompatible": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Versionincompatible"
+     }
+    },
+    "title": "BackupVerifyIssues",
+    "type": "object"
+   },
+   "BackupVerifyManifest": {
+    "properties": {
+     "components": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Components",
+      "type": "array"
+     },
+     "createdAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Createdat"
+     },
+     "currentDbSchemaVersion": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Currentdbschemaversion"
+     },
+     "lumiDbSchemaVersion": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lumidbschemaversion"
+     },
+     "lumiVersion": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lumiversion"
+     }
+    },
+    "title": "BackupVerifyManifest",
+    "type": "object"
+   },
+   "BackupVerifyReport": {
+    "description": "GET/POST /api/v1/backups/verify — 独立自检报告（不建恢复会话）。",
+    "properties": {
+     "findings": {
+      "$ref": "#/components/schemas/BackupVerifyFindings"
+     },
+     "issues": {
+      "$ref": "#/components/schemas/BackupVerifyIssues"
+     },
+     "manifest": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/BackupVerifyManifest"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "ok": {
+      "title": "Ok",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "ok",
+     "findings",
+     "issues"
+    ],
+    "title": "BackupVerifyReport",
     "type": "object"
    },
    "BatchEditApplyItem": {
@@ -5538,6 +5798,63 @@
      "question"
     ],
     "title": "ConversationQuestion",
+    "type": "object"
+   },
+   "DataFlowItem": {
+    "description": "一个能力的数据外发实况（N181，来自当前真实配置）。\n\nconfigured=true 时给出 providerHost（仅主机名，绝不含路径/密钥/\n用户名）与数据类别；configured=false 时其余字段缺省——UI 显示\n「不发送」。local=true 表示数据不离开本机（如浏览器 TTS）。",
+    "properties": {
+     "capability": {
+      "title": "Capability",
+      "type": "string"
+     },
+     "configured": {
+      "default": false,
+      "title": "Configured",
+      "type": "boolean"
+     },
+     "dataCategories": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Datacategories",
+      "type": "array"
+     },
+     "local": {
+      "default": false,
+      "title": "Local",
+      "type": "boolean"
+     },
+     "providerHost": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Providerhost"
+     }
+    },
+    "required": [
+     "capability"
+    ],
+    "title": "DataFlowItem",
+    "type": "object"
+   },
+   "DataFlowsResponse": {
+    "properties": {
+     "flows": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/DataFlowItem"
+      },
+      "title": "Flows",
+      "type": "array"
+     }
+    },
+    "title": "DataFlowsResponse",
     "type": "object"
    },
    "DigestPreview": {
@@ -14766,6 +15083,110 @@
     "title": "RestoreResult",
     "type": "object"
    },
+   "RetentionNotice": {
+    "description": "N188：数据保留到期提醒（只读；推迟生效期内 dueSoon=false）。",
+    "properties": {
+     "affectedCounts": {
+      "additionalProperties": true,
+      "default": {},
+      "title": "Affectedcounts",
+      "type": "object"
+     },
+     "dueAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Dueat"
+     },
+     "dueSoon": {
+      "title": "Duesoon",
+      "type": "boolean"
+     },
+     "enabled": {
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "noticeWindowDays": {
+      "title": "Noticewindowdays",
+      "type": "integer"
+     },
+     "postponedUntil": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Postponeduntil"
+     },
+     "protected": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Protected",
+      "type": "array"
+     },
+     "quizNote": {
+      "default": "",
+      "title": "Quiznote",
+      "type": "string"
+     }
+    },
+    "required": [
+     "enabled",
+     "dueSoon",
+     "noticeWindowDays"
+    ],
+    "title": "RetentionNotice",
+    "type": "object"
+   },
+   "RetentionPostponeBody": {
+    "description": "N188：推迟天数（超出 1–30 的部分在服务端钳制收敛）。",
+    "properties": {
+     "days": {
+      "title": "Days",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "days"
+    ],
+    "title": "RetentionPostponeBody",
+    "type": "object"
+   },
+   "RetentionPostponeResult": {
+    "description": "N188：POST /storage/retention/postpone 的返回（实际生效的推迟）。",
+    "properties": {
+     "days": {
+      "title": "Days",
+      "type": "integer"
+     },
+     "postponedUntil": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Postponeduntil"
+     }
+    },
+    "required": [
+     "days"
+    ],
+    "title": "RetentionPostponeResult",
+    "type": "object"
+   },
    "ReviewQueueAdd": {
     "additionalProperties": false,
     "description": "POST /api/v1/review-queue body。",
@@ -16823,14 +17244,49 @@
     "title": "SettingsHistoryList",
     "type": "object"
    },
+   "SettingsRevertConflict": {
+    "description": "N184：一个未能回退的键与原因（显式清单，不再静默）。",
+    "properties": {
+     "key": {
+      "title": "Key",
+      "type": "string"
+     },
+     "reason": {
+      "title": "Reason",
+      "type": "string"
+     }
+    },
+    "required": [
+     "key",
+     "reason"
+    ],
+    "title": "SettingsRevertConflict",
+    "type": "object"
+   },
    "SettingsRevertResult": {
-    "description": "回退结果：applied=已应用的键值；skipped=因新修改被跳过的键。",
+    "description": "回退结果。\n\n- applied / skipped：历史线格式（键值映射），保持兼容；\n- N184 显式化：restored=已回退的键列表；conflicts=未能回退的键与\n  原因（键在记录之后又被改过 → 回退不覆盖新修改）。",
     "properties": {
      "applied": {
       "additionalProperties": true,
       "default": {},
       "title": "Applied",
       "type": "object"
+     },
+     "conflicts": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/SettingsRevertConflict"
+      },
+      "title": "Conflicts",
+      "type": "array"
+     },
+     "restored": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Restored",
+      "type": "array"
      },
      "skipped": {
       "additionalProperties": true,
@@ -23241,6 +23697,45 @@
     "summary": "Compare Backups"
    }
   },
+  "/api/v1/backups/preview-scope": {
+   "post": {
+    "description": "N185：备份内容选择预览（只读）。\n\n按请求的范围给出逐组件将进入备份的行数（当前用户库实时计数），\n并如实列出永远排除的内容（凭据与密钥 / FreshRSS 内容）。本端点\n不创建任务、不写任何文件。",
+    "operationId": "preview_backup_scope_api_v1_backups_preview_scope_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BackupScopePreviewBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BackupScopePreview"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Preview Backup Scope"
+   }
+  },
   "/api/v1/backups/remote": {
    "get": {
     "description": "List backups stored on WebDAV (flat names + sizes, no secret values).",
@@ -23258,6 +23753,120 @@
      }
     },
     "summary": "List Remote Backups"
+   }
+  },
+  "/api/v1/backups/verify": {
+   "get": {
+    "description": "N186（GET 形式）：独立完整性自检——校验报告，不建恢复会话。",
+    "operationId": "verify_backup_get_api_v1_backups_verify_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "source",
+      "required": false,
+      "schema": {
+       "default": "local",
+       "enum": [
+        "local",
+        "remote"
+       ],
+       "title": "Source",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "jobId",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Jobid"
+      }
+     },
+     {
+      "in": "query",
+      "name": "fileName",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Filename"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BackupVerifyReport"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Verify Backup Get"
+   },
+   "post": {
+    "description": "N186（POST 形式）：独立完整性自检——校验报告，不建恢复会话。\n\n复用 restore.preview 的校验内核（manifest 结构/版本规则、流式\nSHA-256、sqlite integrity），但逐项分类为发现而非首个失败即中断；\n四项发现（checksumOk / manifestCountsMatch / readable /\nversionCompatible）+ 具体问题（corruptFile / missingAttachment /\nversionIncompatible）如实返回。绝不触发恢复，也不改任何文件。",
+    "operationId": "verify_backup_post_api_v1_backups_verify_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RestorePreviewBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BackupVerifyReport"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Verify Backup Post"
    }
   },
   "/api/v1/backups/webdav": {
@@ -31432,6 +32041,25 @@
     "summary": "Opml Import Preview"
    }
   },
+  "/api/v1/privacy/data-flows": {
+   "get": {
+    "description": "N181：逐来源数据外发清单（来自真实配置，只读，无网络请求）。",
+    "operationId": "get_data_flows_api_v1_privacy_data_flows_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DataFlowsResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get Data Flows"
+   }
+  },
   "/api/v1/qa-templates": {
    "get": {
     "operationId": "list_qa_templates_api_v1_qa_templates_get",
@@ -35159,7 +35787,7 @@
   },
   "/api/v1/settings/history/{history_id}/revert": {
    "post": {
-    "description": "F33：回退一次历史变更。\n\n冲突语义（回退不覆盖新修改）：对每个变更键，若当前值已不再等于\n该条记录的 after 值（之后又被改过），则跳过该键并如实返回；\n其余键应用 before 值。回退本身作为一次 update 记入历史（可再\n次撤销）；至少一个键被应用时才有实际写入。",
+    "description": "F33：回退一次历史变更。\n\n冲突语义（回退不覆盖新修改）：对每个变更键，若当前值已不再等于\n该条记录的 after 值（之后又被改过），则跳过该键并如实返回；\n其余键应用 before 值。回退本身作为一次 update 记入历史（可再\n次撤销）；至少一个键被应用时才有实际写入。\n\nN184 显式化：冲突键不再只以 skipped 映射出现——响应带 restored\n（已回退键列表）与 conflicts（键 + 原因清单），由 UI 明示。",
     "operationId": "revert_settings_history_api_v1_settings_history__history_id__revert_post",
     "parameters": [
      {
@@ -36017,6 +36645,74 @@
      }
     },
     "summary": "Apply Storage Retention"
+   }
+  },
+  "/api/v1/storage/retention/notice": {
+   "get": {
+    "description": "N188：到期提醒（只读）。策略启用且将有行在提醒窗口（7 天）内到期\n（或已到期）→ dueSoon=true + dueAt + 将影响计数（F114 预览口径）；\n保护类（收藏/人工笔记/批注/卡片/凭据/运行中任务）如实列出。推迟\n生效期内提醒被抑制。本端点绝不删除任何数据——apply 保持人工唯一\n入口，没有任何后台调度会调用它。",
+    "operationId": "retention_notice_api_v1_storage_retention_notice_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RetentionNotice"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Retention Notice"
+   }
+  },
+  "/api/v1/storage/retention/postpone": {
+   "delete": {
+    "description": "N188：取消推迟（提醒恢复按 dueAt 出现）。",
+    "operationId": "cancel_retention_postpone_api_v1_storage_retention_postpone_delete",
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Cancel Retention Postpone"
+   },
+   "post": {
+    "description": "N188：推迟到期提醒（days 钳制到 1–30；超过上界按 30 天收敛）。\n只推迟「提醒」，不改变策略边界，也不影响手动 apply。",
+    "operationId": "postpone_retention_api_v1_storage_retention_postpone_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RetentionPostponeBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RetentionPostponeResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Postpone Retention"
    }
   },
   "/api/v1/storage/retention/preview": {

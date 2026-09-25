@@ -201,6 +201,11 @@ import {
   addDigestPoolEntry,
   applyStorageRetention,
   backfillMailImap,
+  getDataFlows,
+  getRetentionNotice,
+  postponeRetention,
+  previewBackupScope,
+  verifyBackup,
   createMailRule,
   deleteMailRule,
   dryRunInboxIngest,
@@ -238,7 +243,7 @@ import type {
   RssHubCredentialInput,
   TranslationSegmentBlockInput,
 } from './client'
-import type { AiPurposeKey } from './types'
+import type { AiPurposeKey, BackupScopeInclude } from './types'
 import type { BacklogCondition } from './client'
 import type { MailImapSettingsUpdate } from './client'
 import type { UiView } from '../lib/read-later'
@@ -1194,7 +1199,8 @@ export function useBackupJob(id: string | null, enabled: boolean) {
 export function useCreateBackupMutation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (target: 'local' | 'webdav') => createBackup(target),
+    mutationFn: (vars: { target: 'local' | 'webdav'; include?: BackupScopeInclude }) =>
+      createBackup(vars.target, vars.include),
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['backups'] }),
@@ -1387,6 +1393,32 @@ export function useRestoreExecuteMutation() {
       // 重拉恢复后的数据。（客户端设置在 RestoreWizard 中经 reload 重置。）
       await queryClient.invalidateQueries()
     },
+  })
+}
+
+// ---- N181 数据外发 / N185 备份范围 / N186 独立自检 ----
+
+/** N181：逐来源数据外发清单（服务端真实配置；只读）。 */
+export function useDataFlows() {
+  return useQuery({
+    queryKey: ['privacy', 'data-flows'],
+    queryFn: ({ signal }) => getDataFlows(signal),
+    staleTime: 30_000,
+  })
+}
+
+/** N185：备份内容选择预览（只读；不创建任务）。 */
+export function usePreviewBackupScopeMutation() {
+  return useMutation({
+    mutationFn: (include?: Partial<BackupScopeInclude>) => previewBackupScope(include),
+  })
+}
+
+/** N186：独立完整性自检（只出报告，不建恢复会话）。 */
+export function useBackupVerifyMutation() {
+  return useMutation({
+    mutationFn: (body: { source: 'local' | 'remote'; jobId?: string; fileName?: string }) =>
+      verifyBackup(body),
   })
 }
 
@@ -3573,6 +3605,24 @@ export function useRetentionPreviewMutation() {
 
 export function useRetentionApplyMutation() {
   return useMutation({ mutationFn: () => applyStorageRetention() })
+}
+
+/** N188：数据保留到期提醒（只读）。 */
+export function useRetentionNotice() {
+  return useQuery({
+    queryKey: ['storage', 'retention', 'notice'],
+    queryFn: ({ signal }) => getRetentionNotice(signal),
+  })
+}
+
+export function useRetentionPostponeMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (days: number) => postponeRetention(days),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['storage', 'retention', 'notice'] })
+    },
+  })
 }
 
 // ---- N041/N042/N043/N044 今日必读队列 ----

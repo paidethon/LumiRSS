@@ -96,6 +96,10 @@ import { exportLumiData } from '../../api/client'
 import { StorageUsageSection } from './StorageUsageSection'
 import { StorageRetentionSection } from './StorageRetentionSection'
 import { SettingsHistorySection } from './SettingsHistorySection'
+// N183：离线资料设备配额（仅本设备 Cache Storage，不触碰服务器数据）
+import { OfflineQuotaSection } from './OfflineQuotaSection'
+// N181：逐来源数据外发清单（来自真实配置，只读）
+import { PrivacyDataFlowsSection } from './PrivacyDataFlowsSection'
 // R03：来源显示别名（设备本地 Map<feedTitle, alias>，仅展示层替换）
 import { SourceAliasSettings } from '../SourceAliasSettings'
 
@@ -568,6 +572,8 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
             queryClient.clear()
           },
         },
+        // N183：离线资料设备配额（枚举/用量/清理预览/应用；只删本设备缓存条目）
+        { type: 'custom', node: <OfflineQuotaSection /> },
         { type: 'title', value: '设置' },
         {
           type: 'action',
@@ -595,9 +601,12 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         },
         // F36：存储用量（口径明确，只读统计 + 预算提醒展示）
         { type: 'custom', node: <StorageUsageSection /> },
-        // F114：派生数据保留策略（默认关；预览 → 应用）
+        // F114：派生数据保留策略（默认关；预览 → 应用；N188 到期提醒横幅）
         { type: 'custom', node: <StorageRetentionSection /> },
         { type: 'custom', node: <DataBackupSection /> },
+        { type: 'title', value: '隐私' },
+        // N181：逐来源数据外发清单（未配置 = 不发送）
+        { type: 'custom', node: <PrivacyDataFlowsSection /> },
       ]
     case 'services':
       // 0018 Gate 9：账户与服务 —— 会话账户安全（session 模式）+ 真实

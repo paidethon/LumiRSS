@@ -1490,6 +1490,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/backups/preview-scope": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Backup Scope
+         * @description N185：备份内容选择预览（只读）。
+         *
+         *     按请求的范围给出逐组件将进入备份的行数（当前用户库实时计数），
+         *     并如实列出永远排除的内容（凭据与密钥 / FreshRSS 内容）。本端点
+         *     不创建任务、不写任何文件。
+         */
+        post: operations["preview_backup_scope_api_v1_backups_preview_scope_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/backups/remote": {
         parameters: {
             query?: never;
@@ -1504,6 +1528,36 @@ export interface paths {
         get: operations["list_remote_backups_api_v1_backups_remote_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/backups/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Verify Backup Get
+         * @description N186（GET 形式）：独立完整性自检——校验报告，不建恢复会话。
+         */
+        get: operations["verify_backup_get_api_v1_backups_verify_get"];
+        put?: never;
+        /**
+         * Verify Backup Post
+         * @description N186（POST 形式）：独立完整性自检——校验报告，不建恢复会话。
+         *
+         *     复用 restore.preview 的校验内核（manifest 结构/版本规则、流式
+         *     SHA-256、sqlite integrity），但逐项分类为发现而非首个失败即中断；
+         *     四项发现（checksumOk / manifestCountsMatch / readable /
+         *     versionCompatible）+ 具体问题（corruptFile / missingAttachment /
+         *     versionIncompatible）如实返回。绝不触发恢复，也不改任何文件。
+         */
+        post: operations["verify_backup_post_api_v1_backups_verify_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5143,6 +5197,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/privacy/data-flows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Data Flows
+         * @description N181：逐来源数据外发清单（来自真实配置，只读，无网络请求）。
+         */
+        get: operations["get_data_flows_api_v1_privacy_data_flows_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/qa-templates": {
         parameters: {
             query?: never;
@@ -6842,6 +6916,9 @@ export interface paths {
          *     该条记录的 after 值（之后又被改过），则跳过该键并如实返回；
          *     其余键应用 before 值。回退本身作为一次 update 记入历史（可再
          *     次撤销）；至少一个键被应用时才有实际写入。
+         *
+         *     N184 显式化：冲突键不再只以 skipped 映射出现——响应带 restored
+         *     （已回退键列表）与 conflicts（键 + 原因清单），由 UI 明示。
          */
         post: operations["revert_settings_history_api_v1_settings_history__history_id__revert_post"];
         delete?: never;
@@ -7317,6 +7394,55 @@ export interface paths {
          */
         post: operations["apply_storage_retention_api_v1_storage_retention_apply_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/storage/retention/notice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Retention Notice
+         * @description N188：到期提醒（只读）。策略启用且将有行在提醒窗口（7 天）内到期
+         *     （或已到期）→ dueSoon=true + dueAt + 将影响计数（F114 预览口径）；
+         *     保护类（收藏/人工笔记/批注/卡片/凭据/运行中任务）如实列出。推迟
+         *     生效期内提醒被抑制。本端点绝不删除任何数据——apply 保持人工唯一
+         *     入口，没有任何后台调度会调用它。
+         */
+        get: operations["retention_notice_api_v1_storage_retention_notice_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/storage/retention/postpone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Postpone Retention
+         * @description N188：推迟到期提醒（days 钳制到 1–30；超过上界按 30 天收敛）。
+         *     只推迟「提醒」，不改变策略边界，也不影响手动 apply。
+         */
+        post: operations["postpone_retention_api_v1_storage_retention_postpone_post"];
+        /**
+         * Cancel Retention Postpone
+         * @description N188：取消推迟（提醒恢复按 dueAt 出现）。
+         */
+        delete: operations["cancel_retention_postpone_api_v1_storage_retention_postpone_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -10236,6 +10362,7 @@ export interface components {
         };
         /** BackupCreate */
         BackupCreate: {
+            include?: components["schemas"]["BackupScopeInclude"] | null;
             /**
              * Target
              * @default local
@@ -10299,6 +10426,128 @@ export interface components {
             target?: string | null;
         } & {
             [key: string]: unknown;
+        };
+        /** BackupScopeComponent */
+        BackupScopeComponent: {
+            /** Component */
+            component: string;
+            /** Count */
+            count: number;
+            /** Included */
+            included: boolean;
+        };
+        /**
+         * BackupScopeInclude
+         * @description N185：备份用户数据范围（缺省全 True = 与历史默认一致）。
+         */
+        BackupScopeInclude: {
+            /**
+             * Annotations
+             * @default true
+             */
+            annotations: boolean;
+            /**
+             * Notes
+             * @default true
+             */
+            notes: boolean;
+            /**
+             * Sourceconfig
+             * @default true
+             */
+            sourceConfig: boolean;
+            /**
+             * Workspaces
+             * @default true
+             */
+            workspaces: boolean;
+        };
+        /**
+         * BackupScopePreview
+         * @description POST /api/v1/backups/preview-scope — 范围选择预览（只读）。
+         *
+         *     per-component 计数 + always-excluded 清单（凭据 / FreshRSS 内容）。
+         */
+        BackupScopePreview: {
+            /**
+             * Alwaysexcluded
+             * @default []
+             */
+            alwaysExcluded: string[];
+            /**
+             * Components
+             * @default []
+             */
+            components: components["schemas"]["BackupScopeComponent"][];
+            scope: components["schemas"]["BackupScopeInclude"];
+        };
+        /**
+         * BackupScopePreviewBody
+         * @description POST /api/v1/backups/preview-scope 体（include 缺省 = 全包含）。
+         */
+        BackupScopePreviewBody: {
+            include?: components["schemas"]["BackupScopeInclude"] | null;
+        };
+        /**
+         * BackupVerifyFindings
+         * @description N186：独立完整性自检四项发现（全部为真才算健康）。
+         */
+        BackupVerifyFindings: {
+            /** Checksumok */
+            checksumOk: boolean;
+            /** Manifestcountsmatch */
+            manifestCountsMatch: boolean;
+            /** Readable */
+            readable: boolean;
+            /** Versioncompatible */
+            versionCompatible: boolean;
+        };
+        /**
+         * BackupVerifyIssues
+         * @description 具体问题：损坏成员 / 缺失附件 / 版本不兼容（健康时全空/None）。
+         */
+        BackupVerifyIssues: {
+            /**
+             * Corruptfile
+             * @default []
+             */
+            corruptFile: string[];
+            /**
+             * Missingattachment
+             * @default []
+             */
+            missingAttachment: string[];
+            /** Versionincompatible */
+            versionIncompatible?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** BackupVerifyManifest */
+        BackupVerifyManifest: {
+            /**
+             * Components
+             * @default []
+             */
+            components: string[];
+            /** Createdat */
+            createdAt?: string | null;
+            /** Currentdbschemaversion */
+            currentDbSchemaVersion?: number | null;
+            /** Lumidbschemaversion */
+            lumiDbSchemaVersion?: number | null;
+            /** Lumiversion */
+            lumiVersion?: string | null;
+        };
+        /**
+         * BackupVerifyReport
+         * @description GET/POST /api/v1/backups/verify — 独立自检报告（不建恢复会话）。
+         */
+        BackupVerifyReport: {
+            findings: components["schemas"]["BackupVerifyFindings"];
+            issues: components["schemas"]["BackupVerifyIssues"];
+            manifest?: components["schemas"]["BackupVerifyManifest"] | null;
+            /** Ok */
+            ok: boolean;
         };
         /** BatchEditApplyItem */
         BatchEditApplyItem: {
@@ -11254,6 +11503,43 @@ export interface components {
             maxChars?: number | null;
             /** Question */
             question: string;
+        };
+        /**
+         * DataFlowItem
+         * @description 一个能力的数据外发实况（N181，来自当前真实配置）。
+         *
+         *     configured=true 时给出 providerHost（仅主机名，绝不含路径/密钥/
+         *     用户名）与数据类别；configured=false 时其余字段缺省——UI 显示
+         *     「不发送」。local=true 表示数据不离开本机（如浏览器 TTS）。
+         */
+        DataFlowItem: {
+            /** Capability */
+            capability: string;
+            /**
+             * Configured
+             * @default false
+             */
+            configured: boolean;
+            /**
+             * Datacategories
+             * @default []
+             */
+            dataCategories: string[];
+            /**
+             * Local
+             * @default false
+             */
+            local: boolean;
+            /** Providerhost */
+            providerHost?: string | null;
+        };
+        /** DataFlowsResponse */
+        DataFlowsResponse: {
+            /**
+             * Flows
+             * @default []
+             */
+            flows: components["schemas"]["DataFlowItem"][];
         };
         /**
          * DigestPreview
@@ -15259,6 +15545,57 @@ export interface components {
             safetyBackupId?: string | null;
         };
         /**
+         * RetentionNotice
+         * @description N188：数据保留到期提醒（只读；推迟生效期内 dueSoon=false）。
+         */
+        RetentionNotice: {
+            /**
+             * Affectedcounts
+             * @default {}
+             */
+            affectedCounts: {
+                [key: string]: unknown;
+            };
+            /** Dueat */
+            dueAt?: string | null;
+            /** Duesoon */
+            dueSoon: boolean;
+            /** Enabled */
+            enabled: boolean;
+            /** Noticewindowdays */
+            noticeWindowDays: number;
+            /** Postponeduntil */
+            postponedUntil?: string | null;
+            /**
+             * Protected
+             * @default []
+             */
+            protected: string[];
+            /**
+             * Quiznote
+             * @default
+             */
+            quizNote: string;
+        };
+        /**
+         * RetentionPostponeBody
+         * @description N188：推迟天数（超出 1–30 的部分在服务端钳制收敛）。
+         */
+        RetentionPostponeBody: {
+            /** Days */
+            days: number;
+        };
+        /**
+         * RetentionPostponeResult
+         * @description N188：POST /storage/retention/postpone 的返回（实际生效的推迟）。
+         */
+        RetentionPostponeResult: {
+            /** Days */
+            days: number;
+            /** Postponeduntil */
+            postponedUntil?: string | null;
+        };
+        /**
          * ReviewQueueAdd
          * @description POST /api/v1/review-queue body。
          */
@@ -16165,8 +16502,22 @@ export interface components {
             items: components["schemas"]["SettingsHistoryEntry"][];
         };
         /**
+         * SettingsRevertConflict
+         * @description N184：一个未能回退的键与原因（显式清单，不再静默）。
+         */
+        SettingsRevertConflict: {
+            /** Key */
+            key: string;
+            /** Reason */
+            reason: string;
+        };
+        /**
          * SettingsRevertResult
-         * @description 回退结果：applied=已应用的键值；skipped=因新修改被跳过的键。
+         * @description 回退结果。
+         *
+         *     - applied / skipped：历史线格式（键值映射），保持兼容；
+         *     - N184 显式化：restored=已回退的键列表；conflicts=未能回退的键与
+         *       原因（键在记录之后又被改过 → 回退不覆盖新修改）。
          */
         SettingsRevertResult: {
             /**
@@ -16176,6 +16527,16 @@ export interface components {
             applied: {
                 [key: string]: unknown;
             };
+            /**
+             * Conflicts
+             * @default []
+             */
+            conflicts: components["schemas"]["SettingsRevertConflict"][];
+            /**
+             * Restored
+             * @default []
+             */
+            restored: string[];
             /**
              * Skipped
              * @default {}
@@ -20221,6 +20582,39 @@ export interface operations {
             };
         };
     };
+    preview_backup_scope_api_v1_backups_preview_scope_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackupScopePreviewBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupScopePreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_remote_backups_api_v1_backups_remote_get: {
         parameters: {
             query?: never;
@@ -20237,6 +20631,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RemoteBackupsResponse"];
+                };
+            };
+        };
+    };
+    verify_backup_get_api_v1_backups_verify_get: {
+        parameters: {
+            query?: {
+                source?: "local" | "remote";
+                jobId?: string | null;
+                fileName?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupVerifyReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_backup_post_api_v1_backups_verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestorePreviewBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupVerifyReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -26639,6 +27099,26 @@ export interface operations {
             };
         };
     };
+    get_data_flows_api_v1_privacy_data_flows_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataFlowsResponse"];
+                };
+            };
+        };
+    };
     list_qa_templates_api_v1_qa_templates_get: {
         parameters: {
             query?: never;
@@ -30283,6 +30763,77 @@ export interface operations {
                         [key: string]: unknown;
                     };
                 };
+            };
+        };
+    };
+    retention_notice_api_v1_storage_retention_notice_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetentionNotice"];
+                };
+            };
+        };
+    };
+    postpone_retention_api_v1_storage_retention_postpone_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetentionPostponeBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetentionPostponeResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_retention_postpone_api_v1_storage_retention_postpone_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

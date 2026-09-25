@@ -33,17 +33,25 @@ export function SettingsHistorySection() {
     staleTime: 30_000,
   })
   const queryClient = useQueryClient()
-  // F111：确认对话框（entryId）+ 结果展示（applied/skipped）
+  // F111：确认对话框（entryId）+ 结果展示
+  // N184：冲突显式化——restored/conflicts（服务端逐键给出原因），不再静默。
   const [confirmId, setConfirmId] = useState<number | null>(null)
   const [result, setResult] = useState<{
     applied: Record<string, unknown>
     skipped: Record<string, unknown>
+    restored: string[]
+    conflicts: { key: string; reason: string }[]
   } | null>(null)
 
   const revert = useMutation({
     mutationFn: (historyId: number) => revertSettingsHistory(historyId),
     onSuccess: async (data) => {
-      setResult({ applied: data.applied, skipped: data.skipped })
+      setResult({
+        applied: data.applied,
+        skipped: data.skipped,
+        restored: data.restored ?? [],
+        conflicts: data.conflicts ?? [],
+      })
       setConfirmId(null)
       await queryClient.invalidateQueries({ queryKey: ['settings-history'] })
       await queryClient.invalidateQueries({ queryKey: ['server-settings'] })
@@ -150,21 +158,33 @@ export function SettingsHistorySection() {
         </div>
       ) : null}
 
-      {/* F111：结果展示（applied N / skipped 列表 + 原因） */}
+      {/* F111/N184：结果展示——已回退键 + 显式冲突清单（键 + 原因） */}
       {result !== null ? (
         <div
           className="mt-2 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-3 text-xs"
           data-revert-result=""
         >
           <p className="font-medium text-[var(--lumi-text-primary)]">
-            已应用 {Object.keys(result.applied).length} 个键。
+            已回退 {result.restored.length} 个键。
           </p>
-          {Object.keys(result.skipped).length > 0 ? (
-            <p className="mt-1 text-[var(--lumi-text-secondary)]">
-              跳过 {Object.keys(result.skipped).length} 个键：
-              {Object.keys(result.skipped).join('、')}
-              （键已被后续修改，回退不覆盖新修改）。
+          {result.restored.length > 0 && (
+            <p className="mt-0.5 text-[var(--lumi-text-secondary)]">
+              回退生效：{result.restored.join('、')}
             </p>
+          )}
+          {result.conflicts.length > 0 ? (
+            <div className="mt-1" data-revert-conflicts="">
+              <p className="text-[var(--lumi-text-secondary)]">
+                冲突 {result.conflicts.length} 个键，未回退：
+              </p>
+              <ul className="mt-0.5 flex flex-col gap-0.5">
+                {result.conflicts.map((conflict) => (
+                  <li key={conflict.key} data-revert-conflict={conflict.key} className="text-[var(--lumi-text-secondary)]">
+                    {conflict.key}——{conflict.reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
           ) : null}
           <div className="mt-2">
             <Button variant="ghost" size="sm" onClick={() => setResult(null)}>

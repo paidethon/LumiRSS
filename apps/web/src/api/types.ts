@@ -126,6 +126,18 @@ export type RemoteBackupsResponse = Schemas['RemoteBackupsResponse']
 export type RestorePreview = Schemas['RestorePreview']
 export type RestoreResult = Schemas['RestoreResult']
 
+// ---- N181 数据外发 / N185 备份范围 / N186 独立自检 / N188 到期提醒 ----
+
+export type DataFlowItem = Schemas['DataFlowItem']
+export type DataFlowsResponse = Schemas['DataFlowsResponse']
+export type BackupScopeInclude = Schemas['BackupScopeInclude']
+export type BackupScopePreview = Schemas['BackupScopePreview']
+export type BackupVerifyReport = Schemas['BackupVerifyReport']
+export type BackupVerifyFindings = Schemas['BackupVerifyFindings']
+export type BackupVerifyIssues = Schemas['BackupVerifyIssues']
+export type RetentionNoticeData = Schemas['RetentionNotice']
+export type RetentionPostponeData = Schemas['RetentionPostponeResult']
+
 // ---- 0022 Global Search ----
 
 export type SearchItem = Schemas['SearchItem']
