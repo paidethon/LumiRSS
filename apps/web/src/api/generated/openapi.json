@@ -8829,6 +8829,11 @@
       "title": "Includeexampleitems",
       "type": "boolean"
      },
+     "includeStructure": {
+      "default": false,
+      "title": "Includestructure",
+      "type": "boolean"
+     },
      "name": {
       "title": "Name",
       "type": "string"
@@ -14326,6 +14331,133 @@
     "title": "PoolReorderBody",
     "type": "object"
    },
+   "QaConflictEvidence": {
+    "description": "冲突句的证据定位：ref + 块序号（rag_chunks.ord；无分块时为\n正文句序号）。",
+    "properties": {
+     "blockIndex": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Blockindex"
+     },
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     }
+    },
+    "required": [
+     "ref"
+    ],
+    "title": "QaConflictEvidence",
+    "type": "object"
+   },
+   "QaConflictItem": {
+    "properties": {
+     "aEvidence": {
+      "$ref": "#/components/schemas/QaConflictEvidence"
+     },
+     "aQuote": {
+      "title": "Aquote",
+      "type": "string"
+     },
+     "aRef": {
+      "title": "Aref",
+      "type": "string"
+     },
+     "bEvidence": {
+      "$ref": "#/components/schemas/QaConflictEvidence"
+     },
+     "bQuote": {
+      "title": "Bquote",
+      "type": "string"
+     },
+     "bRef": {
+      "title": "Bref",
+      "type": "string"
+     },
+     "diffKind": {
+      "enum": [
+       "number",
+       "date",
+       "other"
+      ],
+      "title": "Diffkind",
+      "type": "string"
+     },
+     "overlap": {
+      "title": "Overlap",
+      "type": "number"
+     }
+    },
+    "required": [
+     "aRef",
+     "bRef",
+     "aQuote",
+     "bQuote",
+     "diffKind",
+     "aEvidence",
+     "bEvidence",
+     "overlap"
+    ],
+    "title": "QaConflictItem",
+    "type": "object"
+   },
+   "QaConflictRequest": {
+    "additionalProperties": false,
+    "description": "refs ≤5、≥2，全部必须在本人投影范围内（不存在 → 422）。",
+    "properties": {
+     "refs": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 5,
+      "minItems": 2,
+      "title": "Refs",
+      "type": "array"
+     }
+    },
+    "required": [
+     "refs"
+    ],
+    "title": "QaConflictRequest",
+    "type": "object"
+   },
+   "QaConflictResponse": {
+    "description": "N156 POST /api/v1/qa/conflicts — 纯词法对照（零模型调用）。\n\n``basis`` 恒为 ``lexical``；``note`` 是给 UI 的诚实口径：基于文本\n比对，非语义裁决——差异不必然是错误，判断留给读者。",
+    "properties": {
+     "basis": {
+      "const": "lexical",
+      "default": "lexical",
+      "title": "Basis",
+      "type": "string"
+     },
+     "conflicts": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/QaConflictItem"
+      },
+      "title": "Conflicts",
+      "type": "array"
+     },
+     "note": {
+      "default": "基于文本比对，非语义裁决",
+      "title": "Note",
+      "type": "string"
+     },
+     "pairsCompared": {
+      "default": 0,
+      "title": "Pairscompared",
+      "type": "integer"
+     }
+    },
+    "title": "QaConflictResponse",
+    "type": "object"
+   },
    "QaTemplate": {
     "properties": {
      "createdAt": {
@@ -15404,7 +15536,7 @@
     "type": "object"
    },
    "RagCoverage": {
-    "description": "GET /api/v1/rag/coverage —— 语料 ↔ 索引的真实分桶（N152）。\n\nindexable/indexed/stale 来自行与 content_hash，failed 来自最近\nrag_jobs 作业的 skipped 记录。",
+    "description": "GET /api/v1/rag/coverage —— 语料 ↔ 索引的真实分桶（N152）。\n\nindexable/indexed/stale 来自行与 content_hash，failed 来自最近\nrag_jobs 作业的 skipped 记录。N158：``staleRefs`` 是过期 ref 明细\n（≤500，有界）——覆盖率卡片「重建所选」的输入。",
     "properties": {
      "failed": {
       "default": 0,
@@ -15429,6 +15561,14 @@
       "default": 0,
       "title": "Stale",
       "type": "integer"
+     },
+     "staleRefs": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Stalerefs",
+      "type": "array"
      },
      "unsupported": {
       "$ref": "#/components/schemas/RagCoverageUnsupported"
@@ -15521,6 +15661,175 @@
      "enabled"
     ],
     "title": "RagEnableResult",
+    "type": "object"
+   },
+   "RagEvalRerunDiff": {
+    "description": "rerun 差分（三组引用列表；语义见 rag_eval.py 模块注释）。",
+    "properties": {
+     "hitExpected": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Hitexpected",
+      "type": "array"
+     },
+     "missed": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Missed",
+      "type": "array"
+     },
+     "newHits": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Newhits",
+      "type": "array"
+     },
+     "nowActualRefs": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Nowactualrefs",
+      "type": "array"
+     },
+     "query": {
+      "title": "Query",
+      "type": "string"
+     },
+     "ranAt": {
+      "title": "Ranat",
+      "type": "string"
+     },
+     "sampleId": {
+      "title": "Sampleid",
+      "type": "string"
+     },
+     "storedActualRefs": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Storedactualrefs",
+      "type": "array"
+     }
+    },
+    "required": [
+     "sampleId",
+     "query",
+     "ranAt"
+    ],
+    "title": "RagEvalRerunDiff",
+    "type": "object"
+   },
+   "RagEvalSample": {
+    "properties": {
+     "actualRefs": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Actualrefs",
+      "type": "array"
+     },
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "expectedRefs": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Expectedrefs",
+      "type": "array"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "kind": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Kind"
+     },
+     "query": {
+      "title": "Query",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "query",
+     "createdAt"
+    ],
+    "title": "RagEvalSample",
+    "type": "object"
+   },
+   "RagEvalSampleCreate": {
+    "additionalProperties": false,
+    "properties": {
+     "expectedRefs": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 50,
+      "title": "Expectedrefs",
+      "type": "array"
+     },
+     "kind": {
+      "anyOf": [
+       {
+        "maxLength": 64,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Kind"
+     },
+     "query": {
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Query",
+      "type": "string"
+     }
+    },
+    "required": [
+     "query"
+    ],
+    "title": "RagEvalSampleCreate",
+    "type": "object"
+   },
+   "RagEvalSampleList": {
+    "properties": {
+     "cap": {
+      "default": 50,
+      "title": "Cap",
+      "type": "integer"
+     },
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/RagEvalSample"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "title": "RagEvalSampleList",
     "type": "object"
    },
    "RagExclusionItem": {
@@ -15780,6 +16089,66 @@
     "title": "RagRebuildResult",
     "type": "object"
    },
+   "RagRebuildSubsetRequest": {
+    "additionalProperties": false,
+    "properties": {
+     "refs": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 50,
+      "minItems": 1,
+      "title": "Refs",
+      "type": "array"
+     }
+    },
+    "required": [
+     "refs"
+    ],
+    "title": "RagRebuildSubsetRequest",
+    "type": "object"
+   },
+   "RagRebuildSubsetResult": {
+    "properties": {
+     "chunks": {
+      "default": 0,
+      "title": "Chunks",
+      "type": "integer"
+     },
+     "jobId": {
+      "title": "Jobid",
+      "type": "string"
+     },
+     "missing": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Missing",
+      "type": "array"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "total": {
+      "default": 0,
+      "title": "Total",
+      "type": "integer"
+     },
+     "updated": {
+      "default": 0,
+      "title": "Updated",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "jobId",
+     "status"
+    ],
+    "title": "RagRebuildSubsetResult",
+    "type": "object"
+   },
    "RagRepairRequest": {
     "additionalProperties": false,
     "properties": {
@@ -15988,6 +16357,72 @@
      "fastembedAvailable"
     ],
     "title": "RagStatus",
+    "type": "object"
+   },
+   "RagSubsetJobView": {
+    "description": "N158 作业进度轮询视图（done/total + skipped 明细）。",
+    "properties": {
+     "chunks": {
+      "default": 0,
+      "title": "Chunks",
+      "type": "integer"
+     },
+     "done": {
+      "default": 0,
+      "title": "Done",
+      "type": "integer"
+     },
+     "jobId": {
+      "title": "Jobid",
+      "type": "string"
+     },
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "missing": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Missing",
+      "type": "array"
+     },
+     "pending": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Pending",
+      "type": "array"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "total": {
+      "default": 0,
+      "title": "Total",
+      "type": "integer"
+     },
+     "updatedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Updatedat"
+     }
+    },
+    "required": [
+     "jobId",
+     "kind",
+     "status"
+    ],
+    "title": "RagSubsetJobView",
     "type": "object"
    },
    "ReadLaterItem": {
@@ -18786,6 +19221,11 @@
    "SaveAsTemplateRequest": {
     "additionalProperties": false,
     "properties": {
+     "includeStructure": {
+      "default": false,
+      "title": "Includestructure",
+      "type": "boolean"
+     },
      "name": {
       "maxLength": 50,
       "minLength": 1,
@@ -20479,6 +20919,35 @@
      }
     },
     "title": "SettingsRevertResult",
+    "type": "object"
+   },
+   "SharePackageRequest": {
+    "additionalProperties": false,
+    "description": "N116 POST .../share-package — 只读静态 HTML 分享包。\n\n``includeNotes`` 固定 false（Literal[False]）：私人摘录笔记绝不进\n分享包——传 true 是客户端错误（422），不是静默忽略。",
+    "properties": {
+     "includeNotes": {
+      "const": false,
+      "default": false,
+      "title": "Includenotes",
+      "type": "boolean"
+     },
+     "sectionIds": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 100,
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sectionids"
+     }
+    },
+    "title": "SharePackageRequest",
     "type": "object"
    },
    "SnapshotCreate": {
@@ -23227,6 +23696,116 @@
     "title": "Workspace",
     "type": "object"
    },
+   "WorkspaceArchiveEntry": {
+    "properties": {
+     "archived": {
+      "default": true,
+      "title": "Archived",
+      "type": "boolean"
+     },
+     "archivedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Archivedat"
+     },
+     "description": {
+      "default": "",
+      "title": "Description",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "itemCount": {
+      "title": "Itemcount",
+      "type": "integer"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "position": {
+      "title": "Position",
+      "type": "integer"
+     },
+     "reserved": {
+      "default": false,
+      "title": "Reserved",
+      "type": "boolean"
+     },
+     "revision": {
+      "default": 1,
+      "title": "Revision",
+      "type": "integer"
+     },
+     "summary": {
+      "$ref": "#/components/schemas/WorkspaceArchiveSummary"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "position",
+     "itemCount",
+     "summary"
+    ],
+    "title": "WorkspaceArchiveEntry",
+    "type": "object"
+   },
+   "WorkspaceArchiveSummary": {
+    "description": "N119 单个归档工作区的摘要（归档列表卡片渲染的输入）。\n\n``daysActive`` = created_at → archived_at 的整天数（同日归档为 0，\n诚实下限）；``goalProgress`` 为 null = 无目标。",
+    "properties": {
+     "archivedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Archivedat"
+     },
+     "daysActive": {
+      "default": 0,
+      "title": "Daysactive",
+      "type": "integer"
+     },
+     "doneCount": {
+      "title": "Donecount",
+      "type": "integer"
+     },
+     "goalProgress": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Goalprogress"
+     },
+     "itemCount": {
+      "title": "Itemcount",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "itemCount",
+     "doneCount"
+    ],
+    "title": "WorkspaceArchiveSummary",
+    "type": "object"
+   },
    "WorkspaceBoardResponse": {
     "properties": {
      "columns": {
@@ -23401,6 +23980,306 @@
     "title": "WorkspaceCleanupUndoResult",
     "type": "object"
    },
+   "WorkspaceCollectApplyResult": {
+    "description": "N118 应用：命中条目以 ref 引用进工作区（幂等）。\n\n``skippedDisabled``=true 表示规则处于暂停态、本次调用没有生效\n（诚实回显而非静默成功）。",
+    "properties": {
+     "added": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Added",
+      "type": "array"
+     },
+     "addedCount": {
+      "default": 0,
+      "title": "Addedcount",
+      "type": "integer"
+     },
+     "capReached": {
+      "default": false,
+      "title": "Capreached",
+      "type": "boolean"
+     },
+     "enabled": {
+      "default": true,
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "ruleAddedCount": {
+      "default": 0,
+      "title": "Ruleaddedcount",
+      "type": "integer"
+     },
+     "ruleId": {
+      "title": "Ruleid",
+      "type": "string"
+     },
+     "skippedExisting": {
+      "default": 0,
+      "title": "Skippedexisting",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "ruleId"
+    ],
+    "title": "WorkspaceCollectApplyResult",
+    "type": "object"
+   },
+   "WorkspaceCollectPreview": {
+    "description": "N118 预演（dry-run）：投影命中清单（有界 50），绝不写库。",
+    "properties": {
+     "alreadyMemberCount": {
+      "default": 0,
+      "title": "Alreadymembercount",
+      "type": "integer"
+     },
+     "bounded": {
+      "default": false,
+      "title": "Bounded",
+      "type": "boolean"
+     },
+     "matchCount": {
+      "default": 0,
+      "title": "Matchcount",
+      "type": "integer"
+     },
+     "matches": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/WorkspaceCollectPreviewItem"
+      },
+      "title": "Matches",
+      "type": "array"
+     },
+     "remainingCap": {
+      "default": 0,
+      "title": "Remainingcap",
+      "type": "integer"
+     },
+     "ruleId": {
+      "title": "Ruleid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "ruleId"
+    ],
+    "title": "WorkspaceCollectPreview",
+    "type": "object"
+   },
+   "WorkspaceCollectPreviewItem": {
+    "properties": {
+     "alreadyMember": {
+      "default": false,
+      "title": "Alreadymember",
+      "type": "boolean"
+     },
+     "feedTitle": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Feedtitle"
+     },
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     },
+     "publishedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Publishedat"
+     },
+     "title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     }
+    },
+    "required": [
+     "itemRef"
+    ],
+    "title": "WorkspaceCollectPreviewItem",
+    "type": "object"
+   },
+   "WorkspaceCollectRule": {
+    "properties": {
+     "addedCount": {
+      "default": 0,
+      "title": "Addedcount",
+      "type": "integer"
+     },
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "enabled": {
+      "default": true,
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "feedUrl": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Feedurl"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "keyword": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Keyword"
+     },
+     "maxItems": {
+      "default": 100,
+      "title": "Maxitems",
+      "type": "integer"
+     },
+     "tag": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Tag"
+     },
+     "updatedAt": {
+      "title": "Updatedat",
+      "type": "string"
+     },
+     "workspaceId": {
+      "title": "Workspaceid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "workspaceId",
+     "createdAt",
+     "updatedAt"
+    ],
+    "title": "WorkspaceCollectRule",
+    "type": "object"
+   },
+   "WorkspaceCollectRuleCreate": {
+    "additionalProperties": false,
+    "description": "N118 规则创建：三种来源条件（feedUrl | tag | keyword）必须恰好\n给出一种；maxItems 是本规则累计收集上限（≤100，硬顶）。",
+    "properties": {
+     "enabled": {
+      "default": true,
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "feedUrl": {
+      "anyOf": [
+       {
+        "maxLength": 2000,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Feedurl"
+     },
+     "keyword": {
+      "anyOf": [
+       {
+        "maxLength": 100,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Keyword"
+     },
+     "maxItems": {
+      "default": 100,
+      "maximum": 100.0,
+      "minimum": 1.0,
+      "title": "Maxitems",
+      "type": "integer"
+     },
+     "tag": {
+      "anyOf": [
+       {
+        "maxLength": 100,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Tag"
+     }
+    },
+    "title": "WorkspaceCollectRuleCreate",
+    "type": "object"
+   },
+   "WorkspaceCollectRuleEnabledPatch": {
+    "additionalProperties": false,
+    "properties": {
+     "enabled": {
+      "title": "Enabled",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "enabled"
+    ],
+    "title": "WorkspaceCollectRuleEnabledPatch",
+    "type": "object"
+   },
+   "WorkspaceCollectRuleList": {
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/WorkspaceCollectRule"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "title": "WorkspaceCollectRuleList",
+    "type": "object"
+   },
    "WorkspaceCreate": {
     "additionalProperties": false,
     "description": "POST /api/v1/workspaces.",
@@ -23444,6 +24323,18 @@
       },
       "title": "Skippedexamplerefs",
       "type": "array"
+     },
+     "structure": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Structure"
      },
      "workspace": {
       "$ref": "#/components/schemas/Workspace"
@@ -24103,6 +24994,117 @@
      "name"
     ],
     "title": "WorkspaceSnapshotCreate",
+    "type": "object"
+   },
+   "WorkspaceSnapshotDiff": {
+    "description": "N115 GET .../snapshots/{a}/diff/{b} — 只读差异（ref 全部可经\n既有 views/resolve 端点定位；本端点绝不解析内容）。",
+    "properties": {
+     "added": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Added",
+      "type": "array"
+     },
+     "groupChanges": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/WorkspaceSnapshotDiffGroupChange"
+      },
+      "title": "Groupchanges",
+      "type": "array"
+     },
+     "moved": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/WorkspaceSnapshotDiffMove"
+      },
+      "title": "Moved",
+      "type": "array"
+     },
+     "removed": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Removed",
+      "type": "array"
+     },
+     "snapshotA": {
+      "title": "Snapshota",
+      "type": "string"
+     },
+     "snapshotB": {
+      "title": "Snapshotb",
+      "type": "string"
+     }
+    },
+    "required": [
+     "snapshotA",
+     "snapshotB"
+    ],
+    "title": "WorkspaceSnapshotDiff",
+    "type": "object"
+   },
+   "WorkspaceSnapshotDiffGroupChange": {
+    "description": "两快照都存在、但分组归属发生变化的 ref（None = 未分组）。\n\n``from`` 是 Python 关键字：字段名 ``from_group`` + wire alias ``from``\n（FastAPI 响应默认按 alias 序列化）。",
+    "properties": {
+     "from": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "From"
+     },
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     },
+     "to": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "To"
+     }
+    },
+    "required": [
+     "ref"
+    ],
+    "title": "WorkspaceSnapshotDiffGroupChange",
+    "type": "object"
+   },
+   "WorkspaceSnapshotDiffMove": {
+    "description": "两快照都存在、但位置发生变化的 ref。",
+    "properties": {
+     "fromPos": {
+      "title": "Frompos",
+      "type": "integer"
+     },
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     },
+     "toPos": {
+      "title": "Topos",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "ref",
+     "fromPos",
+     "toPos"
+    ],
+    "title": "WorkspaceSnapshotDiffMove",
     "type": "object"
    },
    "WorkspaceSnapshotList": {
@@ -36786,6 +37788,45 @@
     "summary": "Update Qa Template"
    }
   },
+  "/api/v1/qa/conflicts": {
+   "post": {
+    "description": "N156：资料冲突对照（≤5 refs、本人范围、纯词法）。\n\n- refs 去重后需 ≥2 且全部存在于本用户投影（不存在 → 422\n  citation_invalid——与 ask 同一捏造引用拦截口径）；\n- 文本收集复用 N154 rag_evidence（rag_chunks 优先，投影回退）；\n- 两两组合做句级词法比对；证据块定位 = quote 所在 rag_chunks.ord\n  （无分块回退为正文句序号）；\n- 零模型调用：本端点不 import 任何 provider 设施。",
+    "operationId": "qa_conflicts_api_v1_qa_conflicts_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/QaConflictRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QaConflictResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Qa Conflicts"
+   }
+  },
   "/api/v1/queue/snapshots": {
    "get": {
     "description": "快照列表（新→旧）。",
@@ -37439,6 +38480,134 @@
     "summary": "Rag Enable"
    }
   },
+  "/api/v1/rag/eval-samples": {
+   "get": {
+    "description": "N159：样例列表（新→旧；cap=50 由存储层诚实强制）。",
+    "operationId": "list_rag_eval_samples_api_v1_rag_eval_samples_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagEvalSampleList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Rag Eval Samples"
+   },
+   "post": {
+    "description": "N159：保存评测样例——服务端【立即】执行一次真实检索并捕获\n实际命中（不是裸期望）。私有：只进本用户库，绝不进入任何导出/\n分享包/备份组件（local-only，见 rag_eval.py 模块注释）。",
+    "operationId": "create_rag_eval_sample_api_v1_rag_eval_samples_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RagEvalSampleCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagEvalSample"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Rag Eval Sample"
+   }
+  },
+  "/api/v1/rag/eval-samples/{sample_id}": {
+   "delete": {
+    "operationId": "delete_rag_eval_sample_api_v1_rag_eval_samples__sample_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "sample_id",
+      "required": true,
+      "schema": {
+       "title": "Sample Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Rag Eval Sample"
+   }
+  },
+  "/api/v1/rag/eval-samples/{sample_id}/rerun": {
+   "post": {
+    "description": "N159：重放查询并与存档差分（hitExpected / missed / newHits；\nstored/now 两份命中原样回显——绝不只给结论不给证据）。",
+    "operationId": "rerun_rag_eval_sample_api_v1_rag_eval_samples__sample_id__rerun_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "sample_id",
+      "required": true,
+      "schema": {
+       "title": "Sample Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagEvalRerunDiff"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rerun Rag Eval Sample"
+   }
+  },
   "/api/v1/rag/exclusions": {
    "get": {
     "description": "F091：来源列表 + 排除状态 + 受影响分块计数预览。",
@@ -37549,6 +38718,165 @@
      }
     },
     "summary": "Rag Rebuild Pause"
+   }
+  },
+  "/api/v1/rag/rebuild/refs": {
+   "post": {
+    "description": "N158：局部重建——只重嵌给定 refs（≤50，本用户库范围）。\n\n- 复用增量管线（只替换这些 ref 的行），绝不触碰其他分块\n  （无全量 wipe）；投影中不存在的 ref 诚实进 ``missing``；\n- 进度持久化在 rag_jobs（kind=rebuild_subset，{done, total}），\n  轮询 GET .../refs/{jobId}；取消 = 现有暂停。",
+    "operationId": "rag_rebuild_subset_api_v1_rag_rebuild_refs_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RagRebuildSubsetRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagRebuildSubsetResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rag Rebuild Subset"
+   }
+  },
+  "/api/v1/rag/rebuild/refs/{job_id}": {
+   "get": {
+    "description": "N158：子集作业进度轮询（done/total + pending + missing 明细）。",
+    "operationId": "rag_rebuild_subset_status_api_v1_rag_rebuild_refs__job_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "job_id",
+      "required": true,
+      "schema": {
+       "title": "Job Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagSubsetJobView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rag Rebuild Subset Status"
+   }
+  },
+  "/api/v1/rag/rebuild/refs/{job_id}/pause": {
+   "post": {
+    "description": "N158：取消 = 暂停（批间安全点生效；游标持久化，可续）。",
+    "operationId": "rag_rebuild_subset_pause_api_v1_rag_rebuild_refs__job_id__pause_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "job_id",
+      "required": true,
+      "schema": {
+       "title": "Job Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagRebuildPauseResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rag Rebuild Subset Pause"
+   }
+  },
+  "/api/v1/rag/rebuild/refs/{job_id}/resume": {
+   "post": {
+    "description": "N158：从持久化游标继续 paused 的子集作业（幂等）。",
+    "operationId": "rag_rebuild_subset_resume_api_v1_rag_rebuild_refs__job_id__resume_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "job_id",
+      "required": true,
+      "schema": {
+       "title": "Job Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagRebuildSubsetResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rag Rebuild Subset Resume"
    }
   },
   "/api/v1/rag/rebuild/resume": {
@@ -43509,14 +44837,16 @@
   },
   "/api/v1/workspace-archive": {
    "get": {
-    "description": "F084 归档列表入口（默认导航隐藏，这里显式可见）。",
+    "description": "F084 归档列表入口（默认导航隐藏，这里显式可见）。\n\nN119：每个归档工作区附摘要卡（itemCount / doneCount / goalProgress\n/ archivedAt / daysActive）——全部从真实行派生，绝不估算。",
     "operationId": "list_archived_workspaces_api_v1_workspace_archive_get",
     "responses": {
      "200": {
       "content": {
        "application/json": {
         "schema": {
-         "items": {},
+         "items": {
+          "$ref": "#/components/schemas/WorkspaceArchiveEntry"
+         },
          "title": "Response List Archived Workspaces Api V1 Workspace Archive Get",
          "type": "array"
         }
@@ -44264,6 +45594,290 @@
      }
     },
     "summary": "Workspace Cleanup Undo"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/collect-rules": {
+   "get": {
+    "description": "N118：规则列表（created_at 升序）。未知工作区 → 404。",
+    "operationId": "list_collect_rules_api_v1_workspaces__workspace_id__collect_rules_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceCollectRuleList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Collect Rules"
+   },
+   "post": {
+    "description": "N118：创建规则（feedUrl | tag | keyword 恰好其一；maxItems ≤100）。\n\n规则只是条件 + 上限 + 开关，绝不后台执行——收集只由显式 apply\n触发（手动按钮语义，见模块注释）。",
+    "operationId": "create_collect_rule_api_v1_workspaces__workspace_id__collect_rules_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceCollectRuleCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceCollectRule"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Collect Rule"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/collect-rules/{rule_id}": {
+   "delete": {
+    "operationId": "delete_collect_rule_api_v1_workspaces__workspace_id__collect_rules__rule_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "rule_id",
+      "required": true,
+      "schema": {
+       "title": "Rule Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Collect Rule"
+   },
+   "patch": {
+    "description": "N118：暂停/恢复（enabled set 语义；不触碰 added_count）。",
+    "operationId": "patch_collect_rule_api_v1_workspaces__workspace_id__collect_rules__rule_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "rule_id",
+      "required": true,
+      "schema": {
+       "title": "Rule Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceCollectRuleEnabledPatch"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceCollectRule"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Patch Collect Rule"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/collect-rules/{rule_id}/apply": {
+   "post": {
+    "description": "N118：手动应用——命中条目以 ref 引用进工作区（幂等；受规则\n``maxItems`` 累计上限约束；暂停规则零新增并诚实回显 enabled）。",
+    "operationId": "apply_collect_rule_api_v1_workspaces__workspace_id__collect_rules__rule_id__apply_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "rule_id",
+      "required": true,
+      "schema": {
+       "title": "Rule Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceCollectApplyResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Apply Collect Rule"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/collect-rules/{rule_id}/preview": {
+   "post": {
+    "description": "N118：预演（dry-run，有界 50）——投影实时匹配，绝不写库、\n绝不触发上游抓取。",
+    "operationId": "preview_collect_rule_api_v1_workspaces__workspace_id__collect_rules__rule_id__preview_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "rule_id",
+      "required": true,
+      "schema": {
+       "title": "Rule Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceCollectPreview"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Preview Collect Rule"
    }
   },
   "/api/v1/workspaces/{workspace_id}/compile": {
@@ -45591,6 +47205,54 @@
     "summary": "Remove Workspace Section Item"
    }
   },
+  "/api/v1/workspaces/{workspace_id}/share-package": {
+   "post": {
+    "description": "N116：汇编只读分享包（自包含静态 HTML 下载）。\n\n- 与 N114 同一大纲/解析口径；私人笔记绝不进入（includeNotes\n  固定 false——传 true 是 422 契约错误，不是静默忽略）；\n- 引文链接策略：绝对 http(s) → 真链接；应用内路由 → 仅当配置\n  ``LUMIRSS_PUBLIC_URL`` 时拼公开绝对链接，否则纯文本诚实省略；\n- 每条附来源标注，文末隐私提示；包内绝无 cookie/token/凭据/\n  绝对本地路径（测试断言）。",
+    "operationId": "export_share_package_api_v1_workspaces__workspace_id__share_package_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SharePackageRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Export Share Package"
+   }
+  },
   "/api/v1/workspaces/{workspace_id}/snapshots": {
    "get": {
     "description": "快照列表（新→旧）。未知工作区 → 404（诚实报错）。",
@@ -45677,6 +47339,64 @@
      }
     },
     "summary": "Capture Workspace Snapshot"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/snapshots/{snapshot_id_a}/diff/{snapshot_id_b}": {
+   "get": {
+    "description": "N115：两快照差异（纯只读）。\n\n- ``added`` / ``removed``：B 相对 A 的成员增减（ref 列表）；\n- ``moved``：两者都有但位置变化（fromPos → toPos）；\n- ``groupChanges``：两者都有但分组归属变化（null = 未分组）；\n- ref 的内容定位走既有 views/resolve 端点（本端点绝不解析内容，\n  绝不触碰工作区成员行）。",
+    "operationId": "diff_workspace_snapshots_api_v1_workspaces__workspace_id__snapshots__snapshot_id_a__diff__snapshot_id_b__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "snapshot_id_a",
+      "required": true,
+      "schema": {
+       "title": "Snapshot Id A",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "snapshot_id_b",
+      "required": true,
+      "schema": {
+       "title": "Snapshot Id B",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceSnapshotDiff"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Diff Workspace Snapshots"
    }
   },
   "/api/v1/workspaces/{workspace_id}/snapshots/{snapshot_id}": {

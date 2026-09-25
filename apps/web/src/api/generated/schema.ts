@@ -5814,6 +5814,33 @@ export interface paths {
         patch: operations["update_qa_template_api_v1_qa_templates__template_id__patch"];
         trace?: never;
     };
+    "/api/v1/qa/conflicts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Qa Conflicts
+         * @description N156：资料冲突对照（≤5 refs、本人范围、纯词法）。
+         *
+         *     - refs 去重后需 ≥2 且全部存在于本用户投影（不存在 → 422
+         *       citation_invalid——与 ask 同一捏造引用拦截口径）；
+         *     - 文本收集复用 N154 rag_evidence（rag_chunks 优先，投影回退）；
+         *     - 两两组合做句级词法比对；证据块定位 = quote 所在 rag_chunks.ord
+         *       （无分块回退为正文句序号）；
+         *     - 零模型调用：本端点不 import 任何 provider 设施。
+         */
+        post: operations["qa_conflicts_api_v1_qa_conflicts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/queue/snapshots": {
         parameters: {
             query?: never;
@@ -6177,6 +6204,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/rag/eval-samples": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Rag Eval Samples
+         * @description N159：样例列表（新→旧；cap=50 由存储层诚实强制）。
+         */
+        get: operations["list_rag_eval_samples_api_v1_rag_eval_samples_get"];
+        put?: never;
+        /**
+         * Create Rag Eval Sample
+         * @description N159：保存评测样例——服务端【立即】执行一次真实检索并捕获
+         *     实际命中（不是裸期望）。私有：只进本用户库，绝不进入任何导出/
+         *     分享包/备份组件（local-only，见 rag_eval.py 模块注释）。
+         */
+        post: operations["create_rag_eval_sample_api_v1_rag_eval_samples_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rag/eval-samples/{sample_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Rag Eval Sample */
+        delete: operations["delete_rag_eval_sample_api_v1_rag_eval_samples__sample_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rag/eval-samples/{sample_id}/rerun": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rerun Rag Eval Sample
+         * @description N159：重放查询并与存档差分（hitExpected / missed / newHits；
+         *     stored/now 两份命中原样回显——绝不只给结论不给证据）。
+         */
+        post: operations["rerun_rag_eval_sample_api_v1_rag_eval_samples__sample_id__rerun_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/rag/exclusions": {
         parameters: {
             query?: never;
@@ -6252,6 +6343,91 @@ export interface paths {
          * @description F093：请求暂停（当前批完成后停；游标持久化）。
          */
         post: operations["rag_rebuild_pause_api_v1_rag_rebuild_pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rag/rebuild/refs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rag Rebuild Subset
+         * @description N158：局部重建——只重嵌给定 refs（≤50，本用户库范围）。
+         *
+         *     - 复用增量管线（只替换这些 ref 的行），绝不触碰其他分块
+         *       （无全量 wipe）；投影中不存在的 ref 诚实进 ``missing``；
+         *     - 进度持久化在 rag_jobs（kind=rebuild_subset，{done, total}），
+         *       轮询 GET .../refs/{jobId}；取消 = 现有暂停。
+         */
+        post: operations["rag_rebuild_subset_api_v1_rag_rebuild_refs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rag/rebuild/refs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rag Rebuild Subset Status
+         * @description N158：子集作业进度轮询（done/total + pending + missing 明细）。
+         */
+        get: operations["rag_rebuild_subset_status_api_v1_rag_rebuild_refs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rag/rebuild/refs/{job_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rag Rebuild Subset Pause
+         * @description N158：取消 = 暂停（批间安全点生效；游标持久化，可续）。
+         */
+        post: operations["rag_rebuild_subset_pause_api_v1_rag_rebuild_refs__job_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rag/rebuild/refs/{job_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rag Rebuild Subset Resume
+         * @description N158：从持久化游标继续 paused 的子集作业（幂等）。
+         */
+        post: operations["rag_rebuild_subset_resume_api_v1_rag_rebuild_refs__job_id__resume_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9043,6 +9219,9 @@ export interface paths {
         /**
          * List Archived Workspaces
          * @description F084 归档列表入口（默认导航隐藏，这里显式可见）。
+         *
+         *     N119：每个归档工作区附摘要卡（itemCount / doneCount / goalProgress
+         *     / archivedAt / daysActive）——全部从真实行派生，绝不估算。
          */
         get: operations["list_archived_workspaces_api_v1_workspace_archive_get"];
         put?: never;
@@ -9336,6 +9515,96 @@ export interface paths {
          * @description N120：按日志恢复被移除的行（缺省 = 最近一条；重复 undo 幂等）。
          */
         post: operations["workspace_cleanup_undo_api_v1_workspaces__workspace_id__cleanup_undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/collect-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Collect Rules
+         * @description N118：规则列表（created_at 升序）。未知工作区 → 404。
+         */
+        get: operations["list_collect_rules_api_v1_workspaces__workspace_id__collect_rules_get"];
+        put?: never;
+        /**
+         * Create Collect Rule
+         * @description N118：创建规则（feedUrl | tag | keyword 恰好其一；maxItems ≤100）。
+         *
+         *     规则只是条件 + 上限 + 开关，绝不后台执行——收集只由显式 apply
+         *     触发（手动按钮语义，见模块注释）。
+         */
+        post: operations["create_collect_rule_api_v1_workspaces__workspace_id__collect_rules_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/collect-rules/{rule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Collect Rule */
+        delete: operations["delete_collect_rule_api_v1_workspaces__workspace_id__collect_rules__rule_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Patch Collect Rule
+         * @description N118：暂停/恢复（enabled set 语义；不触碰 added_count）。
+         */
+        patch: operations["patch_collect_rule_api_v1_workspaces__workspace_id__collect_rules__rule_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/collect-rules/{rule_id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Collect Rule
+         * @description N118：手动应用——命中条目以 ref 引用进工作区（幂等；受规则
+         *     ``maxItems`` 累计上限约束；暂停规则零新增并诚实回显 enabled）。
+         */
+        post: operations["apply_collect_rule_api_v1_workspaces__workspace_id__collect_rules__rule_id__apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/collect-rules/{rule_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Collect Rule
+         * @description N118：预演（dry-run，有界 50）——投影实时匹配，绝不写库、
+         *     绝不触发上游抓取。
+         */
+        post: operations["preview_collect_rule_api_v1_workspaces__workspace_id__collect_rules__rule_id__preview_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9767,6 +10036,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspace_id}/share-package": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Export Share Package
+         * @description N116：汇编只读分享包（自包含静态 HTML 下载）。
+         *
+         *     - 与 N114 同一大纲/解析口径；私人笔记绝不进入（includeNotes
+         *       固定 false——传 true 是 422 契约错误，不是静默忽略）；
+         *     - 引文链接策略：绝对 http(s) → 真链接；应用内路由 → 仅当配置
+         *       ``LUMIRSS_PUBLIC_URL`` 时拼公开绝对链接，否则纯文本诚实省略；
+         *     - 每条附来源标注，文末隐私提示；包内绝无 cookie/token/凭据/
+         *       绝对本地路径（测试断言）。
+         */
+        post: operations["export_share_package_api_v1_workspaces__workspace_id__share_package_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspace_id}/snapshots": {
         parameters: {
             query?: never;
@@ -9786,6 +10082,32 @@ export interface paths {
          *     绝不复制内容；上限 50 个/工作区）。
          */
         post: operations["capture_workspace_snapshot_api_v1_workspaces__workspace_id__snapshots_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/snapshots/{snapshot_id_a}/diff/{snapshot_id_b}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Diff Workspace Snapshots
+         * @description N115：两快照差异（纯只读）。
+         *
+         *     - ``added`` / ``removed``：B 相对 A 的成员增减（ref 列表）；
+         *     - ``moved``：两者都有但位置变化（fromPos → toPos）；
+         *     - ``groupChanges``：两者都有但分组归属变化（null = 未分组）；
+         *     - ref 的内容定位走既有 views/resolve 端点（本端点绝不解析内容，
+         *       绝不触碰工作区成员行）。
+         */
+        get: operations["diff_workspace_snapshots_api_v1_workspaces__workspace_id__snapshots__snapshot_id_a__diff__snapshot_id_b__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -13778,6 +14100,11 @@ export interface components {
              * @default false
              */
             includeExampleItems: boolean;
+            /**
+             * Includestructure
+             * @default false
+             */
+            includeStructure: boolean;
             /** Name */
             name: string;
             /** Templateid */
@@ -16371,6 +16698,75 @@ export interface components {
             /** Orderedids */
             orderedIds: number[];
         };
+        /**
+         * QaConflictEvidence
+         * @description 冲突句的证据定位：ref + 块序号（rag_chunks.ord；无分块时为
+         *     正文句序号）。
+         */
+        QaConflictEvidence: {
+            /** Blockindex */
+            blockIndex?: number | null;
+            /** Ref */
+            ref: string;
+        };
+        /** QaConflictItem */
+        QaConflictItem: {
+            aEvidence: components["schemas"]["QaConflictEvidence"];
+            /** Aquote */
+            aQuote: string;
+            /** Aref */
+            aRef: string;
+            bEvidence: components["schemas"]["QaConflictEvidence"];
+            /** Bquote */
+            bQuote: string;
+            /** Bref */
+            bRef: string;
+            /**
+             * Diffkind
+             * @enum {string}
+             */
+            diffKind: "number" | "date" | "other";
+            /** Overlap */
+            overlap: number;
+        };
+        /**
+         * QaConflictRequest
+         * @description refs ≤5、≥2，全部必须在本人投影范围内（不存在 → 422）。
+         */
+        QaConflictRequest: {
+            /** Refs */
+            refs: string[];
+        };
+        /**
+         * QaConflictResponse
+         * @description N156 POST /api/v1/qa/conflicts — 纯词法对照（零模型调用）。
+         *
+         *     ``basis`` 恒为 ``lexical``；``note`` 是给 UI 的诚实口径：基于文本
+         *     比对，非语义裁决——差异不必然是错误，判断留给读者。
+         */
+        QaConflictResponse: {
+            /**
+             * Basis
+             * @default lexical
+             * @constant
+             */
+            basis: "lexical";
+            /**
+             * Conflicts
+             * @default []
+             */
+            conflicts: components["schemas"]["QaConflictItem"][];
+            /**
+             * Note
+             * @default 基于文本比对，非语义裁决
+             */
+            note: string;
+            /**
+             * Pairscompared
+             * @default 0
+             */
+            pairsCompared: number;
+        };
         /** QaTemplate */
         QaTemplate: {
             /** Createdat */
@@ -16831,7 +17227,8 @@ export interface components {
          * @description GET /api/v1/rag/coverage —— 语料 ↔ 索引的真实分桶（N152）。
          *
          *     indexable/indexed/stale 来自行与 content_hash，failed 来自最近
-         *     rag_jobs 作业的 skipped 记录。
+         *     rag_jobs 作业的 skipped 记录。N158：``staleRefs`` 是过期 ref 明细
+         *     （≤500，有界）——覆盖率卡片「重建所选」的输入。
          */
         RagCoverage: {
             /**
@@ -16856,6 +17253,11 @@ export interface components {
              * @default 0
              */
             stale: number;
+            /**
+             * Stalerefs
+             * @default []
+             */
+            staleRefs: string[];
             unsupported?: components["schemas"]["RagCoverageUnsupported"];
         };
         /**
@@ -16907,6 +17309,86 @@ export interface components {
         RagEnableResult: {
             /** Enabled */
             enabled: boolean;
+        };
+        /**
+         * RagEvalRerunDiff
+         * @description rerun 差分（三组引用列表；语义见 rag_eval.py 模块注释）。
+         */
+        RagEvalRerunDiff: {
+            /**
+             * Hitexpected
+             * @default []
+             */
+            hitExpected: string[];
+            /**
+             * Missed
+             * @default []
+             */
+            missed: string[];
+            /**
+             * Newhits
+             * @default []
+             */
+            newHits: string[];
+            /**
+             * Nowactualrefs
+             * @default []
+             */
+            nowActualRefs: string[];
+            /** Query */
+            query: string;
+            /** Ranat */
+            ranAt: string;
+            /** Sampleid */
+            sampleId: string;
+            /**
+             * Storedactualrefs
+             * @default []
+             */
+            storedActualRefs: string[];
+        };
+        /** RagEvalSample */
+        RagEvalSample: {
+            /**
+             * Actualrefs
+             * @default []
+             */
+            actualRefs: string[];
+            /** Createdat */
+            createdAt: string;
+            /**
+             * Expectedrefs
+             * @default []
+             */
+            expectedRefs: string[];
+            /** Id */
+            id: string;
+            /** Kind */
+            kind?: string | null;
+            /** Query */
+            query: string;
+        };
+        /** RagEvalSampleCreate */
+        RagEvalSampleCreate: {
+            /** Expectedrefs */
+            expectedRefs?: string[];
+            /** Kind */
+            kind?: string | null;
+            /** Query */
+            query: string;
+        };
+        /** RagEvalSampleList */
+        RagEvalSampleList: {
+            /**
+             * Cap
+             * @default 50
+             */
+            cap: number;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["RagEvalSample"][];
         };
         /**
          * RagExclusionItem
@@ -17014,6 +17496,38 @@ export interface components {
             /** Status */
             status?: string | null;
         };
+        /** RagRebuildSubsetRequest */
+        RagRebuildSubsetRequest: {
+            /** Refs */
+            refs: string[];
+        };
+        /** RagRebuildSubsetResult */
+        RagRebuildSubsetResult: {
+            /**
+             * Chunks
+             * @default 0
+             */
+            chunks: number;
+            /** Jobid */
+            jobId: string;
+            /**
+             * Missing
+             * @default []
+             */
+            missing: string[];
+            /** Status */
+            status: string;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+            /**
+             * Updated
+             * @default 0
+             */
+            updated: number;
+        };
         /** RagRepairRequest */
         RagRepairRequest: {
             /** Refs */
@@ -17094,6 +17608,45 @@ export interface components {
             vecRows: number;
             /** Vectable */
             vecTable: boolean;
+        };
+        /**
+         * RagSubsetJobView
+         * @description N158 作业进度轮询视图（done/total + skipped 明细）。
+         */
+        RagSubsetJobView: {
+            /**
+             * Chunks
+             * @default 0
+             */
+            chunks: number;
+            /**
+             * Done
+             * @default 0
+             */
+            done: number;
+            /** Jobid */
+            jobId: string;
+            /** Kind */
+            kind: string;
+            /**
+             * Missing
+             * @default []
+             */
+            missing: string[];
+            /**
+             * Pending
+             * @default []
+             */
+            pending: string[];
+            /** Status */
+            status: string;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+            /** Updatedat */
+            updatedAt?: string | null;
         };
         /**
          * ReadLaterItem
@@ -18307,6 +18860,11 @@ export interface components {
         };
         /** SaveAsTemplateRequest */
         SaveAsTemplateRequest: {
+            /**
+             * Includestructure
+             * @default false
+             */
+            includeStructure: boolean;
             /** Name */
             name: string;
         };
@@ -19084,6 +19642,23 @@ export interface components {
             skipped: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * SharePackageRequest
+         * @description N116 POST .../share-package — 只读静态 HTML 分享包。
+         *
+         *     ``includeNotes`` 固定 false（Literal[False]）：私人摘录笔记绝不进
+         *     分享包——传 true 是客户端错误（422），不是静默忽略。
+         */
+        SharePackageRequest: {
+            /**
+             * Includenotes
+             * @default false
+             * @constant
+             */
+            includeNotes: false;
+            /** Sectionids */
+            sectionIds?: string[] | null;
         };
         /**
          * SnapshotCreate
@@ -20279,6 +20854,64 @@ export interface components {
              */
             revision: number;
         };
+        /** WorkspaceArchiveEntry */
+        WorkspaceArchiveEntry: {
+            /**
+             * Archived
+             * @default true
+             */
+            archived: boolean;
+            /** Archivedat */
+            archivedAt?: string | null;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Id */
+            id: string;
+            /** Itemcount */
+            itemCount: number;
+            /** Name */
+            name: string;
+            /** Position */
+            position: number;
+            /**
+             * Reserved
+             * @default false
+             */
+            reserved: boolean;
+            /**
+             * Revision
+             * @default 1
+             */
+            revision: number;
+            summary: components["schemas"]["WorkspaceArchiveSummary"];
+        };
+        /**
+         * WorkspaceArchiveSummary
+         * @description N119 单个归档工作区的摘要（归档列表卡片渲染的输入）。
+         *
+         *     ``daysActive`` = created_at → archived_at 的整天数（同日归档为 0，
+         *     诚实下限）；``goalProgress`` 为 null = 无目标。
+         */
+        WorkspaceArchiveSummary: {
+            /** Archivedat */
+            archivedAt?: string | null;
+            /**
+             * Daysactive
+             * @default 0
+             */
+            daysActive: number;
+            /** Donecount */
+            doneCount: number;
+            /** Goalprogress */
+            goalProgress?: {
+                [key: string]: unknown;
+            } | null;
+            /** Itemcount */
+            itemCount: number;
+        };
         /** WorkspaceBoardResponse */
         WorkspaceBoardResponse: {
             /**
@@ -20369,6 +21002,164 @@ export interface components {
             restoredSectionRefs: number;
         };
         /**
+         * WorkspaceCollectApplyResult
+         * @description N118 应用：命中条目以 ref 引用进工作区（幂等）。
+         *
+         *     ``skippedDisabled``=true 表示规则处于暂停态、本次调用没有生效
+         *     （诚实回显而非静默成功）。
+         */
+        WorkspaceCollectApplyResult: {
+            /**
+             * Added
+             * @default []
+             */
+            added: string[];
+            /**
+             * Addedcount
+             * @default 0
+             */
+            addedCount: number;
+            /**
+             * Capreached
+             * @default false
+             */
+            capReached: boolean;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Ruleaddedcount
+             * @default 0
+             */
+            ruleAddedCount: number;
+            /** Ruleid */
+            ruleId: string;
+            /**
+             * Skippedexisting
+             * @default 0
+             */
+            skippedExisting: number;
+        };
+        /**
+         * WorkspaceCollectPreview
+         * @description N118 预演（dry-run）：投影命中清单（有界 50），绝不写库。
+         */
+        WorkspaceCollectPreview: {
+            /**
+             * Alreadymembercount
+             * @default 0
+             */
+            alreadyMemberCount: number;
+            /**
+             * Bounded
+             * @default false
+             */
+            bounded: boolean;
+            /**
+             * Matchcount
+             * @default 0
+             */
+            matchCount: number;
+            /**
+             * Matches
+             * @default []
+             */
+            matches: components["schemas"]["WorkspaceCollectPreviewItem"][];
+            /**
+             * Remainingcap
+             * @default 0
+             */
+            remainingCap: number;
+            /** Ruleid */
+            ruleId: string;
+        };
+        /** WorkspaceCollectPreviewItem */
+        WorkspaceCollectPreviewItem: {
+            /**
+             * Alreadymember
+             * @default false
+             */
+            alreadyMember: boolean;
+            /** Feedtitle */
+            feedTitle?: string | null;
+            /** Itemref */
+            itemRef: string;
+            /** Publishedat */
+            publishedAt?: string | null;
+            /** Title */
+            title?: string | null;
+        };
+        /** WorkspaceCollectRule */
+        WorkspaceCollectRule: {
+            /**
+             * Addedcount
+             * @default 0
+             */
+            addedCount: number;
+            /** Createdat */
+            createdAt: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Feedurl */
+            feedUrl?: string | null;
+            /** Id */
+            id: string;
+            /** Keyword */
+            keyword?: string | null;
+            /**
+             * Maxitems
+             * @default 100
+             */
+            maxItems: number;
+            /** Tag */
+            tag?: string | null;
+            /** Updatedat */
+            updatedAt: string;
+            /** Workspaceid */
+            workspaceId: string;
+        };
+        /**
+         * WorkspaceCollectRuleCreate
+         * @description N118 规则创建：三种来源条件（feedUrl | tag | keyword）必须恰好
+         *     给出一种；maxItems 是本规则累计收集上限（≤100，硬顶）。
+         */
+        WorkspaceCollectRuleCreate: {
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Feedurl */
+            feedUrl?: string | null;
+            /** Keyword */
+            keyword?: string | null;
+            /**
+             * Maxitems
+             * @default 100
+             */
+            maxItems: number;
+            /** Tag */
+            tag?: string | null;
+        };
+        /** WorkspaceCollectRuleEnabledPatch */
+        WorkspaceCollectRuleEnabledPatch: {
+            /** Enabled */
+            enabled: boolean;
+        };
+        /** WorkspaceCollectRuleList */
+        WorkspaceCollectRuleList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["WorkspaceCollectRule"][];
+        };
+        /**
          * WorkspaceCreate
          * @description POST /api/v1/workspaces.
          */
@@ -20390,6 +21181,10 @@ export interface components {
              * @default []
              */
             skippedExampleRefs: string[];
+            /** Structure */
+            structure?: {
+                [key: string]: unknown;
+            } | null;
             workspace: components["schemas"]["Workspace"];
         };
         /**
@@ -20675,6 +21470,64 @@ export interface components {
         WorkspaceSnapshotCreate: {
             /** Name */
             name: string;
+        };
+        /**
+         * WorkspaceSnapshotDiff
+         * @description N115 GET .../snapshots/{a}/diff/{b} — 只读差异（ref 全部可经
+         *     既有 views/resolve 端点定位；本端点绝不解析内容）。
+         */
+        WorkspaceSnapshotDiff: {
+            /**
+             * Added
+             * @default []
+             */
+            added: string[];
+            /**
+             * Groupchanges
+             * @default []
+             */
+            groupChanges: components["schemas"]["WorkspaceSnapshotDiffGroupChange"][];
+            /**
+             * Moved
+             * @default []
+             */
+            moved: components["schemas"]["WorkspaceSnapshotDiffMove"][];
+            /**
+             * Removed
+             * @default []
+             */
+            removed: string[];
+            /** Snapshota */
+            snapshotA: string;
+            /** Snapshotb */
+            snapshotB: string;
+        };
+        /**
+         * WorkspaceSnapshotDiffGroupChange
+         * @description 两快照都存在、但分组归属发生变化的 ref（None = 未分组）。
+         *
+         *     ``from`` 是 Python 关键字：字段名 ``from_group`` + wire alias ``from``
+         *     （FastAPI 响应默认按 alias 序列化）。
+         */
+        WorkspaceSnapshotDiffGroupChange: {
+            /** From */
+            from?: string | null;
+            /** Ref */
+            ref: string;
+            /** To */
+            to?: string | null;
+        };
+        /**
+         * WorkspaceSnapshotDiffMove
+         * @description 两快照都存在、但位置发生变化的 ref。
+         */
+        WorkspaceSnapshotDiffMove: {
+            /** Frompos */
+            fromPos: number;
+            /** Ref */
+            ref: string;
+            /** Topos */
+            toPos: number;
         };
         /**
          * WorkspaceSnapshotList
@@ -30745,6 +31598,39 @@ export interface operations {
             };
         };
     };
+    qa_conflicts_api_v1_qa_conflicts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QaConflictRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QaConflictResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_queue_snapshots_api_v1_queue_snapshots_get: {
         parameters: {
             query?: never;
@@ -31290,6 +32176,119 @@ export interface operations {
             };
         };
     };
+    list_rag_eval_samples_api_v1_rag_eval_samples_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagEvalSampleList"];
+                };
+            };
+        };
+    };
+    create_rag_eval_sample_api_v1_rag_eval_samples_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RagEvalSampleCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagEvalSample"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_rag_eval_sample_api_v1_rag_eval_samples__sample_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sample_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rerun_rag_eval_sample_api_v1_rag_eval_samples__sample_id__rerun_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sample_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagEvalRerunDiff"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     rag_exclusions_api_v1_rag_exclusions_get: {
         parameters: {
             query?: never;
@@ -31399,6 +32398,132 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RagRebuildPauseResult"];
+                };
+            };
+        };
+    };
+    rag_rebuild_subset_api_v1_rag_rebuild_refs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RagRebuildSubsetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagRebuildSubsetResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rag_rebuild_subset_status_api_v1_rag_rebuild_refs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagSubsetJobView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rag_rebuild_subset_pause_api_v1_rag_rebuild_refs__job_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagRebuildPauseResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rag_rebuild_subset_resume_api_v1_rag_rebuild_refs__job_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagRebuildSubsetResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -35983,7 +37108,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown[];
+                    "application/json": components["schemas"]["WorkspaceArchiveEntry"][];
                 };
             };
         };
@@ -36555,6 +37680,202 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkspaceCleanupUndoResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_collect_rules_api_v1_workspaces__workspace_id__collect_rules_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceCollectRuleList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_collect_rule_api_v1_workspaces__workspace_id__collect_rules_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceCollectRuleCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceCollectRule"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_collect_rule_api_v1_workspaces__workspace_id__collect_rules__rule_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_collect_rule_api_v1_workspaces__workspace_id__collect_rules__rule_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceCollectRuleEnabledPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceCollectRule"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_collect_rule_api_v1_workspaces__workspace_id__collect_rules__rule_id__apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceCollectApplyResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_collect_rule_api_v1_workspaces__workspace_id__collect_rules__rule_id__preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceCollectPreview"];
                 };
             };
             /** @description Validation Error */
@@ -37484,6 +38805,41 @@ export interface operations {
             };
         };
     };
+    export_share_package_api_v1_workspaces__workspace_id__share_package_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SharePackageRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_workspace_snapshots_api_v1_workspaces__workspace_id__snapshots_get: {
         parameters: {
             query?: never;
@@ -37537,6 +38893,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkspaceSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    diff_workspace_snapshots_api_v1_workspaces__workspace_id__snapshots__snapshot_id_a__diff__snapshot_id_b__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                snapshot_id_a: string;
+                snapshot_id_b: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSnapshotDiff"];
                 };
             };
             /** @description Validation Error */

@@ -7,20 +7,27 @@
  *   workspace_item_pinned → 诚实提示 + 「强制恢复」重试）；
  *   恢复成功展示 diff 摘要（已恢复/缺失/保留/移除——缺失条目已不在
  *   工作区，绝不复活）；
- * - 删除：Dialog 二次确认。
+ * - 删除：Dialog 二次确认；
+ * - N115 对比：先点一个快照的「对比」设为基准，再点另一个快照的
+ *   「与基准对比」→ 只读差异视图（added/removed/moved/groupChanges；
+ *   ref 定位走既有 views/resolve，本视图绝不解析内容）。
  * 诚实状态：加载 Skeleton / 空态 / 错误重试，与工作区页一致。
  */
 
 import { useState } from 'react'
-import { Camera, History, Loader2, RotateCcw, Trash2 } from 'lucide-react'
+import { Camera, Diff, History, Loader2, RotateCcw, Trash2 } from 'lucide-react'
 import {
   useCaptureWorkspaceSnapshotMutation,
   useDeleteWorkspaceSnapshotMutation,
   useRestoreWorkspaceSnapshotMutation,
   useWorkspaceSessionSnapshots,
+  useWorkspaceSnapshotDiff,
 } from '../api/queries'
 import { ApiError } from '../api/client'
-import type { WorkspaceSnapshot, WorkspaceSnapshotRestoreResult } from '../api/types'
+import type {
+  WorkspaceSnapshot,
+  WorkspaceSnapshotRestoreResult,
+} from '../api/types'
 import { formatPublishedAt } from '../lib/date-format'
 import { Button } from './ui/Button'
 import { Dialog } from './ui/Dialog'
@@ -157,6 +164,112 @@ function RestoreSnapshotDialog({
   )
 }
 
+/** N115：两快照差异 Dialog（只读；方向 = 基准 → 目标）。 */
+function SnapshotDiffDialog({
+  workspaceId,
+  base,
+  target,
+  onClose,
+}: {
+  workspaceId: string
+  base: WorkspaceSnapshot
+  target: WorkspaceSnapshot
+  onClose: () => void
+}) {
+  const diff = useWorkspaceSnapshotDiff(workspaceId, base.id, target.id)
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={`快照对比：「${base.name}」→「${target.name}」`}
+      panelClassName="max-w-xl"
+    >
+      <div className="flex flex-col gap-2" data-testid="workspace-snapshot-diff">
+        <p className="text-[11px] text-[var(--lumi-text-tertiary)]">
+          只读差异 · 条目以引用列出，点开条目可定位原文（走既有解析视图）。
+        </p>
+        {diff.isPending && <Skeleton className="h-24 w-full" />}
+        {diff.isError && (
+          <p role="alert" className="text-xs text-[var(--lumi-danger)]">
+            {diff.error instanceof Error ? diff.error.message : '差异加载失败，请稍后重试。'}
+          </p>
+        )}
+        {diff.data !== undefined && (
+          <>
+            {diff.data.added.length === 0 &&
+              diff.data.removed.length === 0 &&
+              diff.data.moved.length === 0 &&
+              diff.data.groupChanges.length === 0 && (
+                <p role="status" className="text-xs text-[var(--lumi-text-secondary)]">
+                  两个快照的成员与排序完全一致。
+                </p>
+              )}
+            {diff.data.added.length > 0 && (
+              <section aria-label="新增条目" data-diff-added="">
+                <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">
+                  新增（目标有、基准无）· {diff.data.added.length}
+                </h4>
+                <ul className="mt-1 flex flex-col gap-0.5">
+                  {diff.data.added.map((ref) => (
+                    <li key={ref} className="truncate text-xs text-[var(--lumi-text-secondary)]">
+                      <code className="text-[10px]">{ref}</code>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            {diff.data.removed.length > 0 && (
+              <section aria-label="移除条目" data-diff-removed="">
+                <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">
+                  移除（基准有、目标无）· {diff.data.removed.length}
+                </h4>
+                <ul className="mt-1 flex flex-col gap-0.5">
+                  {diff.data.removed.map((ref) => (
+                    <li key={ref} className="truncate text-xs text-[var(--lumi-text-secondary)]">
+                      <code className="text-[10px]">{ref}</code>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            {diff.data.moved.length > 0 && (
+              <section aria-label="位置变化" data-diff-moved="">
+                <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">
+                  位置变化 · {diff.data.moved.length}
+                </h4>
+                <ul className="mt-1 flex flex-col gap-0.5">
+                  {diff.data.moved.map((move) => (
+                    <li key={move.ref} className="truncate text-xs text-[var(--lumi-text-secondary)]">
+                      <code className="text-[10px]">{move.ref}</code> · 第 {move.fromPos} → 第{' '}
+                      {move.toPos}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            {diff.data.groupChanges.length > 0 && (
+              <section aria-label="分组变化" data-diff-groups="">
+                <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">
+                  分组变化 · {diff.data.groupChanges.length}
+                </h4>
+                <ul className="mt-1 flex flex-col gap-0.5">
+                  {diff.data.groupChanges.map((change) => (
+                    <li key={change.ref} className="truncate text-xs text-[var(--lumi-text-secondary)]">
+                      <code className="text-[10px]">{change.ref}</code> ·{' '}
+                      {change.from ?? '未分组'} → {change.to ?? '未分组'}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </>
+        )}
+      </div>
+    </Dialog>
+  )
+}
+
 export function WorkspaceSnapshotsPanel({ workspaceId }: { workspaceId: string }) {
   const snapshots = useWorkspaceSessionSnapshots(workspaceId)
   const capture = useCaptureWorkspaceSnapshotMutation()
@@ -165,6 +278,9 @@ export function WorkspaceSnapshotsPanel({ workspaceId }: { workspaceId: string }
   // 恢复 / 删除的目标（条件挂载 Dialog）。
   const [restoreTarget, setRestoreTarget] = useState<WorkspaceSnapshot | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<WorkspaceSnapshot | null>(null)
+  // N115：对比基准 + 对比目标（null = 未进入对比流）。
+  const [diffBase, setDiffBase] = useState<WorkspaceSnapshot | null>(null)
+  const [diffTarget, setDiffTarget] = useState<WorkspaceSnapshot | null>(null)
   // 最近一次恢复的 diff 摘要（诚实展示：缺失/保留/移除）。
   const [lastResult, setLastResult] = useState<
     (WorkspaceSnapshotRestoreResult & { snapshotName: string }) | null
@@ -255,6 +371,7 @@ export function WorkspaceSnapshotsPanel({ workspaceId }: { workspaceId: string }
           还没有快照。整理前保存一份，随时可以按名字恢复当天的分组与顺序。
         </p>
       ) : (
+        <>
         <ul className="mt-2 flex flex-col gap-1.5" aria-label="快照列表">
           {snapshots.data.items.map((snapshot) => (
             <li
@@ -268,6 +385,28 @@ export function WorkspaceSnapshotsPanel({ workspaceId }: { workspaceId: string }
                   {snapshot.itemCount} 条 · {formatPublishedAt(snapshot.createdAt)}
                 </span>
               </span>
+              {diffBase !== null && diffBase.id !== snapshot.id && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setDiffTarget(snapshot)}
+                >
+                  <Diff aria-hidden className="size-4" />
+                  与「{diffBase.name}」对比
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-pressed={diffBase?.id === snapshot.id}
+                onClick={() => {
+                  setDiffBase((prev) => (prev?.id === snapshot.id ? null : snapshot))
+                  setDiffTarget(null)
+                }}
+              >
+                <Diff aria-hidden className="size-4" />
+                {diffBase?.id === snapshot.id ? '取消基准' : '设为对比基准'}
+              </Button>
               <Button
                 variant="secondary"
                 size="sm"
@@ -287,6 +426,12 @@ export function WorkspaceSnapshotsPanel({ workspaceId }: { workspaceId: string }
             </li>
           ))}
         </ul>
+        {diffBase !== null && (
+          <p className="mt-1.5 text-[11px] text-[var(--lumi-text-tertiary)]" role="status">
+            已选基准「{diffBase.name}」——再点另一个快照的「与基准对比」查看差异。
+          </p>
+        )}
+        </>
       )}
       {deleteTarget !== null && (
         <Dialog
@@ -343,6 +488,14 @@ export function WorkspaceSnapshotsPanel({ workspaceId }: { workspaceId: string }
           onRestored={(result) =>
             setLastResult({ ...result, snapshotName: restoreTarget.name })
           }
+        />
+      )}
+      {diffBase !== null && diffTarget !== null && (
+        <SnapshotDiffDialog
+          workspaceId={workspaceId}
+          base={diffBase}
+          target={diffTarget}
+          onClose={() => setDiffTarget(null)}
         />
       )}
     </section>
