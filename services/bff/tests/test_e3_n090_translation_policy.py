@@ -20,8 +20,7 @@ def _seed_projection(entry_ref: str) -> None:
     async def seed():
         await app.state.db.migrate()
         await app.state.db.execute(
-            "INSERT INTO search_entries (item_id, entry_ref, feed_url, feed_title, title, author, url, content_text, published_at, fetched_at)"
-            " VALUES (?, ?, ?, ?, ?, '', '', '', '2026-01-01T00:00:00Z', 0)",
+            "INSERT INTO search_entries (item_id, entry_ref, feed_url, feed_title, title, author, url, content_text, published_at, fetched_at) VALUES (?, ?, ?, ?, ?, '', '', '', '2026-01-01T00:00:00Z', 0)",
             (
                 f"urn:test:{entry_ref}",
                 entry_ref,
@@ -129,8 +128,7 @@ def test_n090_other_sources_unaffected(client, monkeypatch):
     async def seed():
         await app.state.db.migrate()
         await app.state.db.execute(
-            "INSERT INTO search_entries (item_id, entry_ref, feed_url, feed_title, title, author, url, content_text, published_at, fetched_at)"
-            " VALUES (?, ?, ?, ?, ?, '', '', '', '2026-01-01T00:00:00Z', 0)",
+            "INSERT INTO search_entries (item_id, entry_ref, feed_url, feed_title, title, author, url, content_text, published_at, fetched_at) VALUES (?, ?, ?, ?, ?, '', '', '', '2026-01-01T00:00:00Z', 0)",
             (f"urn:test:{ref}", ref, other_feed, "正常来源", "标题"),
         )
 
