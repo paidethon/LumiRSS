@@ -1,6 +1,6 @@
 {
  "schema": "lumirss-implementation-status/v1",
- "generated_at": "2026-09-25T22:30:00Z",
+ "generated_at": "2026-09-26T00:30:00Z",
  "release": {
   "integration_branch": "feat/20260923-source-reader-platform",
   "base_sha": "99b45da"
@@ -237,7 +237,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-001",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N002",
@@ -250,7 +250,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-002",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N003",
@@ -263,7 +263,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-003",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N004",
@@ -276,7 +276,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-004",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N005",
@@ -289,7 +289,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-005",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定",
+   "release_sha": "9aaf5e1f1b5e",
    "replacement_delivered": true
   },
   {
@@ -303,7 +303,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-006",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N007",
@@ -316,7 +316,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-007",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N008",
@@ -329,7 +329,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-008",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N009",
@@ -342,7 +342,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-009",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N010",
@@ -355,7 +355,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-010",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N011",
@@ -368,7 +368,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-011",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N012",
@@ -381,7 +381,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-012",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N013",
@@ -394,7 +394,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-013",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N014",
@@ -407,7 +407,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-014",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N015",
@@ -420,7 +420,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-015",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N016",
@@ -433,7 +433,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-016",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N017",
@@ -446,7 +446,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-017",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N018",
@@ -459,7 +459,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-018",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N019",
@@ -472,7 +472,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-019",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N020",
@@ -485,7 +485,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-020",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N021",
@@ -498,7 +498,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-021",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N022",
@@ -511,7 +511,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-022",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定",
+   "release_sha": "9aaf5e1f1b5e",
    "replacement_delivered": true
   },
   {
@@ -525,7 +525,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-023",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N024",
@@ -538,7 +538,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-024",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N025",
@@ -551,7 +551,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-025",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N026",
@@ -564,7 +564,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-026",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N027",
@@ -577,7 +577,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-027",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N028",
@@ -590,7 +590,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-028",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N029",
@@ -603,7 +603,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-029",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N030",
@@ -616,7 +616,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-030",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N031",
@@ -629,7 +629,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-031",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N032",
@@ -642,7 +642,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-032",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N033",
@@ -655,7 +655,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-033",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N034",
@@ -668,7 +668,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-034",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N035",
@@ -681,7 +681,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-035",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N036",
@@ -694,7 +694,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-036",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N037",
@@ -707,7 +707,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-037",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N038",
@@ -720,7 +720,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-038",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N039",
@@ -733,7 +733,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-039",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N040",
@@ -746,7 +746,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-040",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N041",
@@ -759,7 +759,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-041",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N042",
@@ -772,7 +772,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-042",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N043",
@@ -785,7 +785,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-043",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N044",
@@ -798,7 +798,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-044",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N045",
@@ -811,7 +811,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-045",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N046",
@@ -824,7 +824,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-046",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N047",
@@ -837,7 +837,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-047",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N048",
@@ -850,7 +850,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-048",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N049",
@@ -863,7 +863,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-049",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N050",
@@ -876,7 +876,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-050",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N051",
@@ -889,7 +889,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-051",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N052",
@@ -902,7 +902,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-052",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N053",
@@ -915,7 +915,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-053",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N054",
@@ -928,7 +928,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-054",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N055",
@@ -941,7 +941,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-055",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N056",
@@ -954,7 +954,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-056",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N057",
@@ -967,7 +967,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-057",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N058",
@@ -980,7 +980,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-058",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N059",
@@ -993,7 +993,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-059",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N060",
@@ -1006,7 +1006,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-060",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N061",
@@ -1019,7 +1019,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-061",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N062",
@@ -1032,7 +1032,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-062",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N063",
@@ -1045,7 +1045,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-063",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N064",
@@ -1058,7 +1058,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-064",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N065",
@@ -1071,7 +1071,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-065",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N066",
@@ -1084,7 +1084,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-066",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N067",
@@ -1097,7 +1097,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-067",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N068",
@@ -1110,7 +1110,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-068",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N069",
@@ -1123,7 +1123,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-069",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N070",
@@ -1136,7 +1136,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-070",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N071",
@@ -1149,7 +1149,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-071",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N072",
@@ -1162,7 +1162,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-072",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定",
+   "release_sha": "9aaf5e1f1b5e",
    "replacement_delivered": true
   },
   {
@@ -1176,7 +1176,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-073",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N074",
@@ -1189,7 +1189,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-074",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N075",
@@ -1202,7 +1202,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-075",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N076",
@@ -1215,7 +1215,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-076",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N077",
@@ -1228,7 +1228,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-077",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N078",
@@ -1241,7 +1241,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-078",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N079",
@@ -1254,7 +1254,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-079",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N080",
@@ -1267,7 +1267,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-080",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N081",
@@ -1280,7 +1280,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-081",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N082",
@@ -1293,7 +1293,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-082",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N083",
@@ -1306,7 +1306,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-083",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N084",
@@ -1319,7 +1319,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-084",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N085",
@@ -1332,7 +1332,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-085",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定",
+   "release_sha": "9aaf5e1f1b5e",
    "replacement_delivered": true
   },
   {
@@ -1346,7 +1346,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-086",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N087",
@@ -1359,7 +1359,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-087",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N088",
@@ -1372,7 +1372,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-088",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N089",
@@ -1385,7 +1385,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-089",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N090",
@@ -1398,7 +1398,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-090",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N091",
@@ -1411,7 +1411,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-091",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N092",
@@ -1424,7 +1424,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-092",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N093",
@@ -1437,7 +1437,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-093",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N094",
@@ -1450,7 +1450,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-094",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N095",
@@ -1463,7 +1463,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-095",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N096",
@@ -1476,7 +1476,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-096",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定",
+   "release_sha": "9aaf5e1f1b5e",
    "replacement_delivered": true
   },
   {
@@ -1490,7 +1490,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-097",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N098",
@@ -1503,7 +1503,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-098",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N099",
@@ -1528,7 +1528,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-100",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N101",
@@ -1541,7 +1541,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-101",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N102",
@@ -1554,7 +1554,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-102",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N103",
@@ -1567,7 +1567,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-103",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N104",
@@ -1580,7 +1580,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-104",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N105",
@@ -1593,7 +1593,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-105",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N106",
@@ -1606,7 +1606,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-106",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N107",
@@ -1619,7 +1619,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-107",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N108",
@@ -1632,7 +1632,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-108",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N109",
@@ -1645,7 +1645,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-109",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N110",
@@ -1658,7 +1658,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-110",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N111",
@@ -1671,7 +1671,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-111",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N112",
@@ -1684,7 +1684,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-112",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N113",
@@ -1697,7 +1697,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-113",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N114",
@@ -1710,7 +1710,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-114",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N115",
@@ -1723,7 +1723,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-115",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N116",
@@ -1736,7 +1736,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-116",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N117",
@@ -1749,7 +1749,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-117",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N118",
@@ -1762,7 +1762,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-118",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N119",
@@ -1775,7 +1775,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-119",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定",
+   "release_sha": "9aaf5e1f1b5e",
    "replacement_delivered": true
   },
   {
@@ -1789,7 +1789,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-120",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N121",
@@ -1802,7 +1802,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-121",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N122",
@@ -1815,7 +1815,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-122",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N123",
@@ -1828,7 +1828,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-123",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N124",
@@ -1841,7 +1841,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-124",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定",
+   "release_sha": "9aaf5e1f1b5e",
    "replacement_delivered": true
   },
   {
@@ -1855,7 +1855,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-125",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N126",
@@ -1868,7 +1868,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-126",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N127",
@@ -1881,7 +1881,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-127",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N128",
@@ -1894,7 +1894,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-128",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N129",
@@ -1907,7 +1907,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-129",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N130",
@@ -1920,7 +1920,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-130",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N131",
@@ -1933,7 +1933,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-131",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N132",
@@ -1946,7 +1946,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-132",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N133",
@@ -1959,7 +1959,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-133",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N134",
@@ -1972,7 +1972,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-134",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N135",
@@ -1985,7 +1985,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-135",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N136",
@@ -1998,7 +1998,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-136",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N137",
@@ -2011,7 +2011,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-137",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N138",
@@ -2024,7 +2024,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-138",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N139",
@@ -2037,7 +2037,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-139",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N140",
@@ -2050,7 +2050,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-140",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N141",
@@ -2063,7 +2063,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-141",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N142",
@@ -2076,7 +2076,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-142",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N143",
@@ -2089,7 +2089,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-143",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N144",
@@ -2102,7 +2102,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-144",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N145",
@@ -2115,7 +2115,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-145",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N146",
@@ -2128,7 +2128,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-146",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定",
+   "release_sha": "9aaf5e1f1b5e",
    "replacement_delivered": true
   },
   {
@@ -2142,7 +2142,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-147",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N148",
@@ -2155,7 +2155,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-148",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N149",
@@ -2168,7 +2168,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-149",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N150",
@@ -2181,7 +2181,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-150",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N151",
@@ -2194,7 +2194,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-151",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N152",
@@ -2207,7 +2207,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-152",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N153",
@@ -2220,7 +2220,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-153",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N154",
@@ -2233,7 +2233,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-154",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N155",
@@ -2246,7 +2246,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-155",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N156",
@@ -2259,7 +2259,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-156",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N157",
@@ -2272,7 +2272,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-157",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N158",
@@ -2285,7 +2285,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-158",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N159",
@@ -2298,7 +2298,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-159",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N160",
@@ -2311,7 +2311,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-160",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N161",
@@ -2324,7 +2324,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-161",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N162",
@@ -2337,7 +2337,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-162",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定",
+   "release_sha": "9aaf5e1f1b5e",
    "replacement_delivered": true
   },
   {
@@ -2351,7 +2351,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-163",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定",
+   "release_sha": "9aaf5e1f1b5e",
    "replacement_delivered": true
   },
   {
@@ -2365,7 +2365,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-164",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N165",
@@ -2378,7 +2378,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-165",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N166",
@@ -2391,7 +2391,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-166",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N167",
@@ -2404,7 +2404,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-167",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N168",
@@ -2417,7 +2417,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-168",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N169",
@@ -2430,7 +2430,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-169",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N170",
@@ -2443,7 +2443,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-170",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N171",
@@ -2456,7 +2456,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-171",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N172",
@@ -2469,7 +2469,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-172",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N173",
@@ -2482,7 +2482,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-173",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N174",
@@ -2495,7 +2495,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-174",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N175",
@@ -2508,7 +2508,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-175",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N176",
@@ -2521,7 +2521,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-176",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N177",
@@ -2534,7 +2534,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-177",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定",
+   "release_sha": "9aaf5e1f1b5e",
    "replacement_delivered": true
   },
   {
@@ -2548,7 +2548,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-178",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N179",
@@ -2561,7 +2561,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-179",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N180",
@@ -2574,7 +2574,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-180",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N181",
@@ -2587,7 +2587,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-181",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N182",
@@ -2600,7 +2600,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-182",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定",
+   "release_sha": "9aaf5e1f1b5e",
    "replacement_delivered": true
   },
   {
@@ -2614,7 +2614,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-183",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N184",
@@ -2627,7 +2627,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-184",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N185",
@@ -2640,7 +2640,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-185",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N186",
@@ -2653,7 +2653,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-186",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N187",
@@ -2666,7 +2666,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-187",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N188",
@@ -2679,7 +2679,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-188",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N189",
@@ -2692,7 +2692,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-189",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N190",
@@ -2705,7 +2705,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-190",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N191",
@@ -2718,7 +2718,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-191",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N192",
@@ -2731,7 +2731,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-192",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N193",
@@ -2744,7 +2744,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-193",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N194",
@@ -2757,7 +2757,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-194",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定",
+   "release_sha": "9aaf5e1f1b5e",
    "replacement_delivered": true
   },
   {
@@ -2771,7 +2771,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-195",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N196",
@@ -2784,7 +2784,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-196",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N197",
@@ -2797,7 +2797,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-197",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N198",
@@ -2810,7 +2810,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-198",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N199",
@@ -2823,7 +2823,7 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-199",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   },
   {
    "id": "N200",
@@ -2836,17 +2836,22 @@
    "replacement_id": "",
    "acceptance": "见任务书 N-200",
    "evidence": [],
-   "release_sha": "本分支合并后由部署阶段钉定"
+   "release_sha": "9aaf5e1f1b5e"
   }
  ],
  "deployment": {
-  "production": {
+  "production_current": {
    "image_tag": "194c9d217c1b",
-   "commit": "194c9d217c1b673a1780d8729640bd7da65ee94f",
-   "upgraded_at": "2026-09-24T04:36Z",
-   "backup": "backups/20260924-043640",
-   "dashboard": "https://rss.oouo.top/project/"
-  }
+   "note": "P 阶段中间版本(2026-09-24 已部署并验收,备份 backups/20260924-043640,看板/LibreTranslate 已上线)"
+  },
+  "final_release": {
+   "merge_commit": "9aaf5e1f1b5e",
+   "pr": "https://github.com/paidethon/LumiRSS/pull/58",
+   "images": "GHCR 已由 CI 推送;本地离线包已导出(staged /tmp/lumi-rel)",
+   "deploy_status": "BLOCKED: 会话 SSH 凭证(01-new.zephyr.pem 附件)在部署阶段被平台清理;~/.ssh/linshi.pem 不匹配任何服务器账户",
+   "next_action": "恢复 SSH 凭证后: scp /tmp/lumi-rel/* root@rss.oouo.top:/tmp/ && ssh root@rss.oouo.top 'cd /opt/lumirss && git fetch && git checkout 9aaf5e1 && sed -i s/^LUMIRSS_IMAGE_TAG=.*/LUMIRSS_IMAGE_TAG=9aaf5e1f1b5/ .env.prod && ./lumirss import-images /tmp/lumi-rel && ./lumirss update'"
+  },
+  "dashboard": "https://rss.oouo.top/project/ (194c9d2 版看板;最终版看板随 PR58 分发,待升级后重新拷贝 dist)"
  },
  "summary": {
   "p_total": 20,
