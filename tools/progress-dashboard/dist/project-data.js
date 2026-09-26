@@ -2,8 +2,8 @@
 // Source of truth: docs/implementation-status.json (task ledger).
 // Consumed by index.html (window.LUMIRSS_PROJECT). Compact rows only.
 window.LUMIRSS_PROJECT = {
-  "generatedAt": "2026-09-26T18:52:34Z",
-  "source": "docs/implementation-status.json@a1582ea",
+  "generatedAt": "2026-09-26T19:26:00Z",
+  "source": "docs/implementation-status.json@61cf646",
   "summary": {
     "pTotal": 20,
     "nTotal": 200,
