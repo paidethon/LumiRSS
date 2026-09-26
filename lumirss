@@ -313,18 +313,12 @@ images_pull_or_build() { # $1 = "--build" (dev-only; refused on prod compose)
   # Pull output varies across compose versions; when the images are already
   # present locally (e.g. pre-seeded via './lumirss import-images' on an
   # air-gapped host), use them — but never build: a failed pull must not
-  # silently swap the pinned release for a local build. Resolve the refs
-  # from compose config itself so this check can't drift from the image
-  # names 'up' will actually run (registry path changed once already).
-  local img missing=0
-  while IFS= read -r img; do
-    [[ -z "$img" ]] && continue
-    if ! docker_cmd image inspect "$img" >/dev/null 2>&1; then
-      missing=1
-      break
-    fi
-  done < <(DC_D config --images)
-  if [[ "$missing" -eq 0 ]]; then
+  # silently swap the pinned release for a local build. Names must stay in
+  # sync with docker-compose.prod.yml / publish-images.yml (the registry
+  # path gained the repository segment once already and this check missed
+  # it).
+  if docker_cmd image inspect "ghcr.io/paidethon/lumirss/lumirss-web:$tag" >/dev/null 2>&1 \
+      && docker_cmd image inspect "ghcr.io/paidethon/lumirss/lumirss-bff:$tag" >/dev/null 2>&1; then
     warn "pull output not confirmed — using existing local images (tag: $tag)"
     return 0
   fi
