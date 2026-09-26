@@ -2,16 +2,16 @@
 // Source of truth: docs/implementation-status.json (task ledger).
 // Consumed by index.html (window.LUMIRSS_PROJECT). Compact rows only.
 window.LUMIRSS_PROJECT = {
-  "generatedAt": "2026-09-26T00:30:00Z",
-  "source": "docs/implementation-status.json@9aaf5e1",
+  "generatedAt": "2026-09-26T18:52:34Z",
+  "source": "docs/implementation-status.json@a1582ea",
   "summary": {
     "pTotal": 20,
     "nTotal": 200,
     "pByStatus": {
       "blocked": 1,
       "deployed_verified": 3,
-      "partial": 4,
-      "verified": 12
+      "partial": 3,
+      "verified": 13
     },
     "nByStatus": {
       "blocked": 1,
@@ -22,7 +22,7 @@ window.LUMIRSS_PROJECT = {
       "partial": 98,
       "new": 90
     },
-    "verifiedPct": 97.3
+    "verifiedPct": 97.7
   },
   "tasks": [
     {
@@ -1492,7 +1492,7 @@ window.LUMIRSS_PROJECT = {
       "id": "P10",
       "title": "2C2G 资源与稳定性",
       "phase": "P",
-      "status": "partial",
+      "status": "verified",
       "novelty": "n/a"
     },
     {

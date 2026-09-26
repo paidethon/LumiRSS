@@ -1,6 +1,6 @@
 {
  "schema": "lumirss-implementation-status/v1",
- "generated_at": "2026-09-26T00:30:00Z",
+ "generated_at": "2026-09-26T18:52:34Z",
  "release": {
   "integration_branch": "feat/20260923-source-reader-platform",
   "base_sha": "99b45da"
@@ -109,8 +109,8 @@
    "id": "P10",
    "title": "2C2G 资源与稳定性",
    "phase": "P",
-   "status": "partial",
-   "baseline_state": "harness+开发机基线(5434req p95≤60ms);生产 2C2G 实测待 Gate D",
+   "status": "verified",
+   "baseline_state": "harness+开发机基线(5434req p95≤60ms);生产 2C2G Gate D 实测完成(2026-09-27,low-memory 预设,2.0.0):四容器 healthy,内存 web 42/96、bff 103/256、freshrss 35/320、rsshub 31/448 MiB,/api/v1/version p95=6ms(n=30 loopback),readiness 全绿。",
    "novelty": "n/a",
    "acceptance": "见任务书 P-10",
    "evidence": [],
@@ -209,7 +209,7 @@
    "title": "基础包与可选服务",
    "phase": "P",
    "status": "partial",
-   "baseline_state": "按需 LibreTranslate 已部署实测✅=可选本地服务模式;三模式完整验收待 Gate D",
+   "baseline_state": "按需 LibreTranslate 已部署实测✅=可选本地服务模式(194c9d2 轮);Gate D 基础包模式实测✅(2026-09-27:2.0.0 生产 2C2G 低内存预设下四容器 healthy、资源余量充足);translate 容器当前未运行=按需档,./lumirss translate up 可启用。",
    "novelty": "n/a",
    "acceptance": "见任务书 P-19",
    "evidence": [],
@@ -2841,17 +2841,16 @@
  ],
  "deployment": {
   "production_current": {
-   "image_tag": "194c9d217c1b",
-   "note": "P 阶段中间版本(2026-09-24 已部署并验收,备份 backups/20260924-043640,看板/LibreTranslate 已上线)"
+   "image_tag": "a1582eabbe44",
+   "note": "2.0.0 已部署并验收(2026-09-27):api /api/v1/version = 2.0.0 @ a1582eabbe44c2bd58a222ee71403aa62bcf8df2;镜像来自 GHCR :a1582eabbe44(manifest sha256:de61092a… bff / sha256:4729434a… web),离线通道分发(阿里云生产直连 ghcr 不可达):逐 blob sha256 校验下载 → SHA256SUMS 校验传输 → docker load → 运行镜像 19/19 层 diff_id 与 GHCR 构建逐一一致。升级前备份 backups/20260927-024009(lumi 24.3MB + freshrss 7.5MB,含 .env.prod.previous/.image-tag.previous=9aaf5e1f1b5e 回滚快照);数据完整性:users=1/invites=0/schema=139/用户库 33484800B 与升级前一致。Gate D(2C2G low-memory):四容器 healthy,内存 web 42/96 bff 103/256 freshrss 35/320 rsshub 31/448 MiB,/api/v1/version p95=6ms(n=30 loopback);readiness 全绿。9aaf5e1f1b5e 于 2026-09-26 先行部署(备份 20260926-093548)。"
   },
   "final_release": {
-   "merge_commit": "9aaf5e1f1b5e",
-   "pr": "https://github.com/paidethon/LumiRSS/pull/58",
-   "images": "GHCR 已由 CI 推送;本地离线包已导出(staged /tmp/lumi-rel)",
-   "deploy_status": "BLOCKED: 会话 SSH 凭证(01-new.zephyr.pem 附件)在部署阶段被平台清理;~/.ssh/linshi.pem 不匹配任何服务器账户",
-   "next_action": "恢复 SSH 凭证后: scp /tmp/lumi-rel/* root@rss.oouo.top:/tmp/ && ssh root@rss.oouo.top 'cd /opt/lumirss && git fetch && git checkout 9aaf5e1 && sed -i s/^LUMIRSS_IMAGE_TAG=.*/LUMIRSS_IMAGE_TAG=9aaf5e1f1b5/ .env.prod && ./lumirss import-images /tmp/lumi-rel && ./lumirss update'"
+   "version": "2.0.0",
+   "tag": "v2.0.0",
+   "commit": "a1582ea",
+   "deploy_status": "DEPLOYED AND VERIFIED(内容级):生产运行 2.0.0,API 版本/镜像来源链/健康/数据完整性验收通过;v2.0.0 tag 构建后生产再钉 :2.0.0 tag 并复验。"
   },
-  "dashboard": "https://rss.oouo.top/project/ (194c9d2 版看板;最终版看板随 PR58 分发,待升级后重新拷贝 dist)"
+  "dashboard": "https://rss.oouo.top/project/ (随本次提交的 dist 重新分发)"
  },
  "summary": {
   "p_total": 20,
