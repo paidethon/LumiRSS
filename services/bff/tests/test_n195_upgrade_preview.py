@@ -24,7 +24,7 @@ from lumirss.storage import Database
 PASSWORD = "prev-" + _secrets.token_urlsafe(9)
 OWNER_USER = "owner"
 A_USER = "alice"
-CURRENT_VERSION = "0.2.0"
+CURRENT_VERSION = "2.0.0"
 
 
 @pytest.fixture()
@@ -130,13 +130,13 @@ def test_valid_manifest_shows_target_and_new_migrations(preview_env, monkeypatch
     target_migrations.append("9999_future.sql")
     path = _write_manifest(
         env,
-        _manifest("0.3.0", target_migrations, min_compat="0.1.0"),
+        _manifest("2.1.0", target_migrations, min_compat="0.1.0"),
     )
     monkeypatch.setenv("LUMIRSS_RELEASE_MANIFEST", path)
     data = _preview(env)
     assert data["available"] is True
     assert data["currentVersion"] == CURRENT_VERSION
-    assert data["targetVersion"] == "0.3.0"
+    assert data["targetVersion"] == "2.1.0"
     assert data["newMigrations"] == ["9999_future.sql"]
     assert data["minCompat"] == "0.1.0"
     assert data["blocked"] is False
@@ -172,7 +172,7 @@ def test_database_ahead_of_target_is_blocked(preview_env, monkeypatch):
     # 旧代码跑在新库上）→ 必须阻断。
     monkeypatch.setenv(
         "LUMIRSS_RELEASE_MANIFEST",
-        _write_manifest(env, _manifest("0.3.0", ["0001_core.sql"])),
+        _write_manifest(env, _manifest("2.1.0", ["0001_core.sql"])),
     )
     data = _preview(env)
     assert data["blocked"] is True

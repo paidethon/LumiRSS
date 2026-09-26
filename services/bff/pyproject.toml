@@ -1,6 +1,6 @@
 [project]
 name = "lumirss-bff"
-version = "0.2.0"
+version = "2.0.0"
 description = "LumiRSS Backend-for-Frontend (BFF)"
 requires-python = ">=3.12"
 dependencies = [

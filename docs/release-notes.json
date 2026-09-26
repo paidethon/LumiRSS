@@ -1,5 +1,5 @@
 {
-  "version": "0.2.0",
+  "version": "2.0.0",
   "features": [
     { "id": "P01", "title": "管理员/成员多账户与密码登录", "entry": "/settings" },
     { "id": "P02", "title": "邀请制交付与保数据升级", "entry": "/admin" },
@@ -15,7 +15,7 @@
     { "id": "P13", "title": "快捷键与功能目录", "entry": "/" },
     { "id": "P14", "title": "分组小说式阅读设置", "entry": "/settings" },
     { "id": "P15", "title": "Edge 式工作区", "entry": "/" },
-    { "id": "P17", "title": "TTS 朗读基础与增强", "entry": "/settings" },
+    { "id": "P18", "title": "TTS 朗读基础与增强", "entry": "/settings" },
     { "id": "P20", "title": "Agent/RAG 边界强化", "entry": "/" },
     { "id": "N001", "title": "邀请方案模板与批量生成", "entry": "/admin", "adminOnly": true },
     { "id": "N002", "title": "预约生效邀请（服务端时钟）", "entry": "/admin", "adminOnly": true },
