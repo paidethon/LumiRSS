@@ -30,9 +30,20 @@ LOW_MEMORY=0
 COMPOSE_ARGS=(-f docker-compose.prod.yml)
 UPSTREAM_PORT="18080"
 
-DC_D() { # compose via docker_cmd; export the port so compose interpolation
-         # always matches the persisted .env.prod value
-  LUMIRSS_UPSTREAM_PORT="$UPSTREAM_PORT" docker_cmd compose \
+DC_D() { # compose via docker_cmd; export the persisted .env.prod values that
+         # compose interpolation consumes, so a service's `environment:` always
+         # matches the file. ARCH-10: the web container no longer receives the
+         # whole .env.prod (BFF secrets must not live in the web/Caddy env) —
+         # it gets exactly the variables its entrypoint/Caddyfile render with,
+         # exported here right before the compose call.
+  local k v
+  export LUMIRSS_UPSTREAM_PORT="$UPSTREAM_PORT"
+  for k in DOMAIN LUMIRSS_AUTH_MODE LUMIRSS_AUTH_USER LUMIRSS_AUTH_HASH \
+           LUMIRSS_EXTERNAL_CADDY LUMIRSS_INTERNAL_TOKEN; do
+    v="$(env_value "$k")"
+    export "$k=$v"
+  done
+  docker_cmd compose \
     "${COMPOSE_ARGS[@]}" "$@"
 }
 
