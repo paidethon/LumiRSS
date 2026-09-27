@@ -1,16 +1,23 @@
 name: Publish images
 
-# Builds and pushes the BFF + Web images to GHCR on every merge to main
-# and on version tags. `latest` tracks main; version tags are immutable
-# references for update/rollback (LUMIRSS_IMAGE_TAG in .env.prod pins).
-# Each run also emits an unsigned (plain-checksum) release-manifest.json
-# + SHA256SUMS: workflow artifact always, attached to the tag's GitHub
-# Release when one already exists (this workflow never creates releases).
+# Builds and pushes the BFF + Web images to GHCR.ARCH-04 same-SHA gate:
+# a push to main only publishes AFTER the CI workflow has concluded
+# "success" on that exact commit (workflow_run carries the tested SHA);
+# tag/manual triggers query the commit's latest completed CI run and
+# refuse to publish without a green one. A failing commit therefore can
+# never become a production image. `latest` tracks main; version tags
+# are immutable references for update/rollback (LUMIRSS_IMAGE_TAG in
+# .env.prod pins). Each run also emits an unsigned (plain-checksum)
+# release-manifest.json + SHA256SUMS: workflow artifact always, attached
+# to the tag's GitHub Release when one already exists (this workflow
+# never creates releases).
 
 on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
   push:
-    branches:
-      - main
     tags:
       - "v*"
   workflow_dispatch:
@@ -20,16 +27,58 @@ permissions:
   packages: write
 
 concurrency:
-  group: publish-${{ github.ref }}
+  group: publish-${{ github.event.workflow_run.head_branch || github.ref }}
   cancel-in-progress: false
 
 jobs:
+  # Same-SHA quality gate: every publish path must be able to name one
+  # commit whose CI run concluded success. workflow_run gives that
+  # directly; tag/manual runs look the run up by head_sha.
+  ci-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require successful CI on the exact commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            sha="${{ github.event.workflow_run.head_sha }}"
+            conclusion="${{ github.event.workflow_run.conclusion }}"
+            echo "CI on $sha concluded: $conclusion"
+            [[ "$conclusion" == "success" ]]
+            exit 0
+          fi
+          sha="${{ github.sha }}"
+          conclusion="$(gh api \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$sha&status=completed&per_page=1" \
+            --jq '.workflow_runs[0].conclusion // empty')"
+          if [[ -z "$conclusion" ]]; then
+            echo "no completed CI run for $sha — refusing to publish" >&2
+            exit 1
+          fi
+          if [[ "$conclusion" != "success" ]]; then
+            echo "CI on $sha concluded '$conclusion' — refusing to publish" >&2
+            exit 1
+          fi
+          echo "CI on $sha: success"
+
   push-images:
+    needs: ci-gate
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # workflow_run events check out the default branch tip by
+          # default; pin to the commit CI actually tested.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Resolve tested SHA
+        id: tested
+        run: echo "sha=${{ github.event.workflow_run.head_sha || github.sha }}" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
@@ -42,13 +91,14 @@ jobs:
         id: tags
         run: |
           set -euo pipefail
+          sha="${{ steps.tested.outputs.sha }}"
           # GHCR rejects any uppercase character in the repository path;
           # GITHUB_REPOSITORY keeps the checkout casing (paidethon/LumiRSS).
           echo "repo=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
           else
-            echo "version=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+            echo "version=${sha::12}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build and push BFF image
@@ -58,10 +108,10 @@ jobs:
           context: ./services/bff
           push: true
           build-args: |
-            LUMIRSS_COMMIT=${{ github.sha }}
+            LUMIRSS_COMMIT=${{ steps.tested.outputs.sha }}
           tags: |
             ghcr.io/${{ steps.tags.outputs.repo }}/lumirss-bff:${{ steps.tags.outputs.version }}
-            ${{ github.ref == 'refs/heads/main' && format('ghcr.io/{0}/lumirss-bff:latest', steps.tags.outputs.repo) || '' }}
+            ${{ github.event_name == 'workflow_run' && format('ghcr.io/{0}/lumirss-bff:latest', steps.tags.outputs.repo) || '' }}
 
       - name: Build and push Web image
         id: web
@@ -70,10 +120,10 @@ jobs:
           context: ./apps/web
           push: true
           build-args: |
-            VITE_GIT_COMMIT=${{ github.sha }}
+            VITE_GIT_COMMIT=${{ steps.tested.outputs.sha }}
           tags: |
             ghcr.io/${{ steps.tags.outputs.repo }}/lumirss-web:${{ steps.tags.outputs.version }}
-            ${{ github.ref == 'refs/heads/main' && format('ghcr.io/{0}/lumirss-web:latest', steps.tags.outputs.repo) || '' }}
+            ${{ github.event_name == 'workflow_run' && format('ghcr.io/{0}/lumirss-web:latest', steps.tags.outputs.repo) || '' }}
 
       # Plain advisory manifest: no signing infrastructure (kept out of
       # scope for this project size), but every value an operator needs to
@@ -98,7 +148,7 @@ jobs:
             "schema": "lumirss-release-manifest/v1",
             "name": "LumiRSS",
             "version": "$version",
-            "git_sha": "$GITHUB_SHA",
+            "git_sha": "${{ steps.tested.outputs.sha }}",
             "generated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "images": {
               "bff": "ghcr.io/$repo/lumirss-bff@$bff_digest",
