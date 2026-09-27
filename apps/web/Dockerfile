@@ -4,7 +4,12 @@
 # proxies /api/* to the BFF. Single-user access control (optional Caddy
 # basic_auth) is rendered by docker-entrypoint.sh from LUMIRSS_AUTH_*.
 
-FROM node:24-slim AS build
+# node pinned by digest (ARCH-06, same drift policy as caddy below and
+# freshrss/rsshub in compose): build inputs stay reproducible and auditable.
+# Upgrade procedure: pick tag -> `docker manifest inspect node:<tag>` for the
+# index digest -> update here -> CI build + test before merging.
+# 0e0ff40… = node 24-slim (index digest at pin time).
+FROM node:24-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6 AS build
 WORKDIR /app
 # Build provenance for the About page (matches the BFF's GET /api/v1/version
 # contract): --build-arg VITE_GIT_COMMIT=<git sha> from compose / CI.

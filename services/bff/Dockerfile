@@ -13,10 +13,15 @@
 # syntax=docker/dockerfile:1
 
 # ---- builder: resolve + install the locked set into a venv with uv ----
-FROM python:3.12-slim AS builder
+# ARCH-06: base images are digest-pinned (tag@digest) so builds are
+# reproducible and auditable. Upgrade procedure (deliberate, tested):
+# 1) pick the new tag, 2) `docker manifest inspect <image:tag>` for its
+# index digest, 3) update here, 4) let CI build + test before merging.
+# Tag without digest would float; digest without tag hides what changed.
+FROM python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f AS builder
 
 # Pin uv to the version used in development/CI so the resolve is reproducible.
-COPY --from=ghcr.io/astral-sh/uv:0.12.6 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.12.6@sha256:88bc6eb1ccd4b82efd0e1b530caffabddf50dc2bf612e66c14ea25b8ee8a4d3d /uv /uvx /bin/
 
 ENV UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \
@@ -40,7 +45,7 @@ COPY scripts ./scripts
 RUN uv sync --frozen --no-dev --no-editable --extra rag
 
 # ---- runtime: minimal image carrying only the resolved venv ----
-FROM python:3.12-slim
+FROM python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
 
 # Build provenance (GET /api/v1/version): passed as
 # --build-arg LUMIRSS_COMMIT=<git sha> by docker-compose.prod.yml / CI so a
