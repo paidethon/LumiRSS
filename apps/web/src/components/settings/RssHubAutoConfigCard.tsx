@@ -273,8 +273,8 @@ function ApplyChainSection() {
         <li>此页保存期望配置，UI 如实显示「待应用」；重启不会带入新环境变量。</li>
         <li>
           点击
-          <Button size="sm" variant="ghost" className="mx-1" disabled={busy} onClick={() => void materialize()}>
-            {busy ? <Loader2 aria-hidden className="size-3 animate-spin" /> : '生成 env 文件'}
+          <Button size="sm" variant="ghost" className="mx-1" loading={busy} onClick={() => void materialize()}>
+            生成 env 文件
           </Button>
           —— BFF 服务端写出 0600 的 rsshub/rsshub.env（含秘密值，绝不回传浏览器）。
         </li>

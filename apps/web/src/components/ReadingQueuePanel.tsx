@@ -417,8 +417,9 @@ export function ReadingQueuePanel({
                 </option>
               ))}
             </select>
-            <Button size="sm" variant="primary" onClick={() => generate(false)} disabled={generateMutation.isPending}>
-              {generateMutation.isPending ? <Loader2 aria-hidden className="size-3.5 animate-spin" /> : '生成队列'}
+            {/* FIX-115：loading 契约——标签保留 + 内联 spinner + aria-busy */}
+            <Button size="sm" variant="primary" onClick={() => generate(false)} loading={generateMutation.isPending}>
+              生成队列
             </Button>
             <Button size="sm" variant="secondary" onClick={() => generate(true)} disabled={generateMutation.isPending}>
               重新生成

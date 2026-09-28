@@ -2,9 +2,16 @@
  *
  * 语义变体（variant）× 语义尺寸（size），颜色全部来自 --lumi-* token。
  * focus-visible 用统一 focus-ring token；动效时长用 motion token；
- * 禁止业务逻辑进 primitives。 */
+ * 禁止业务逻辑进 primitives。
+ *
+ * FIX-115 loading：加载反馈契约——
+ * - 文字标签永不消失（此前多处 `{pending ? <Spinner/> : '保存'}` 把
+ *   标签整个换成 spinner：宽度跳变 + 文字消失 + 无可访问反馈）；
+ * - spinner 内联渲染在标签前（aria-hidden，视觉尺寸 = 文本行高）；
+ * - aria-busy="true" + disabled（防重复提交；读屏可感知忙碌态）。 */
 
 import type { ButtonHTMLAttributes } from 'react'
+import { Loader2 } from 'lucide-react'
 import { cx } from './cx'
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger'
@@ -13,6 +20,8 @@ type Size = 'sm' | 'md'
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant
   size?: Size
+  /** 加载中：保留标签 + 内联 spinner + aria-busy + disabled（FIX-115） */
+  loading?: boolean
 }
 
 const variantClasses: Record<Variant, string> = {
@@ -43,14 +52,28 @@ export function Button({
   variant = 'secondary',
   size = 'md',
   type = 'button',
+  loading = false,
   className,
+  children,
+  disabled,
   ...rest
 }: ButtonProps) {
   return (
     <button
       type={type}
+      aria-busy={loading || undefined}
+      disabled={disabled === undefined ? loading : disabled || loading}
       className={cx(base, variantClasses[variant], sizeClasses[size], className)}
       {...rest}
-    />
+    >
+      {loading && (
+        <Loader2
+          aria-hidden="true"
+          data-loading-spinner=""
+          className="size-4 shrink-0 animate-spin"
+        />
+      )}
+      {children}
+    </button>
   )
 }

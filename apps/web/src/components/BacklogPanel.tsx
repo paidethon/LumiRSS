@@ -261,8 +261,9 @@ export function BacklogPanel({ onClose }: { onClose: () => void }) {
             ))}
           </select>
         </label>
-        <Button size="sm" variant="secondary" onClick={runPreview} disabled={preview.isPending}>
-          {preview.isPending ? <Loader2 aria-hidden className="size-3.5 animate-spin" /> : '预览'}
+        {/* FIX-115：loading 契约——标签保留 + 内联 spinner + aria-busy */}
+        <Button size="sm" variant="secondary" onClick={runPreview} loading={preview.isPending}>
+          预览
         </Button>
         <Button size="sm" variant="ghost" onClick={onClose}>
           关闭
