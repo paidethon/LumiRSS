@@ -32,6 +32,17 @@ RUN pnpm build
 # Caddy predates the `basic_auth` directive and crash-looped at start.
 # 98eb57d… = caddy 2.11.4 (alpine).
 FROM caddy:2-alpine@sha256:98eb57d882ccd5213d1688764db10c1ca2c58a1ca3a6717a3411ad798f7a423a
+
+# FIX-373: OCI labels on the SHIPPED stage, from the same two sources as
+# everything else: the repo VERSION file and the tested git SHA (the same
+# VITE_GIT_COMMIT the SPA bundle was built with). ARGs are stage-scoped, so
+# they must be re-declared here for the labels to resolve.
+ARG LUMIRSS_VERSION=""
+ARG VITE_GIT_COMMIT=""
+
+LABEL org.opencontainers.image.version="${LUMIRSS_VERSION}" \
+      org.opencontainers.image.revision="${VITE_GIT_COMMIT}"
+
 COPY --from=build /app/dist /srv
 COPY Caddyfile.noauth /etc/caddy/Caddyfile.noauth
 COPY Caddyfile.auth /etc/caddy/Caddyfile.auth

@@ -280,11 +280,13 @@ jobs:
       - name: Build BFF production image (uv --frozen lock install)
         run: >-
           docker build --build-arg LUMIRSS_COMMIT=${{ github.sha }}
+          --build-arg LUMIRSS_VERSION="$(cat VERSION)"
           -t lumirss-bff:ci services/bff
 
       - name: Build Web production image
         run: >-
           docker build --build-arg VITE_GIT_COMMIT=${{ github.sha }}
+          --build-arg LUMIRSS_VERSION="$(cat VERSION)"
           -t lumirss-web:ci apps/web
 
       - name: Confirm images were built
