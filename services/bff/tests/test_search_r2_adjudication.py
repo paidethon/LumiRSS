@@ -442,3 +442,54 @@ def test_fix315_same_published_at_rows_page_without_dup_or_drop(tmp_path):
     assert pages == 3
     assert sorted(seen) == sorted(f"tie row {n}" for n in range(9))
     assert len(seen) == len(set(seen)) == 9
+def test_fix315_synonym_expansion_pages_without_dup_or_drop(tmp_path):
+    """F078 同义词扩展激活时翻页：扩展命中只并入首页（注释契约
+    「并入首页」），keyset 必须来自主查询流的真实末位——合并行的
+    published_at 冒充分页边界会让未服务的主查询命中被跳过（丢失）、
+    扩展命中每页重复并入（重复）。"""
+    from lumirss.search_synonyms import SynonymStore
+
+    documents = [
+        doc("ai-1", "alpha report one", content="ai findings one", published_at="2026-09-06T00:00:00Z"),
+        doc("ai-2", "alpha report two", content="ai findings two", published_at="2026-09-05T00:00:00Z"),
+        doc("ai-3", "alpha report three", content="ai findings three", published_at="2026-09-04T12:00:00Z"),
+        doc("ml-1", "beta study", content="ml study notes", published_at="2026-09-04T00:00:00Z"),
+    ]
+    service = make_service(tmp_path, documents)
+    run(service.rebuild())
+    run(SynonymStore(service._db).create("ai", ["ml"]))
+
+    seen: list[str] = []
+    keyset = None
+    guard = 0
+    while True:
+        page = run(
+            service.search(
+                query="ai", limit=2, keyset=keyset, expand_synonyms=True
+            )
+        )
+        seen.extend(row["title"] for row in page["rows"])
+        guard += 1
+        assert guard < 10  # 有界翻页，绝不死循环
+        if not page["hasMore"] or page["nextKeyset"] is None:
+            break
+        keyset = page["nextKeyset"]
+    # 三条主查询命中（词条 ai）每条恰一次；扩展命中（ml）恰一次。
+    assert sorted(t for t in seen if t.startswith("alpha")) == [
+        "alpha report one",
+        "alpha report three",
+        "alpha report two",
+    ]
+    assert seen.count("beta study") == 1
+    assert len(seen) == len(set(seen))
+
+
+# ---------------------------------------------------------------------------
+# 保险：like_pattern 的转义契约（FIX-311 的机制基础）保持不变
+# ---------------------------------------------------------------------------
+
+
+def test_fix311_like_pattern_escape_contract_unchanged():
+    assert like_pattern("100%") == "%100\\%%"
+    assert like_pattern('say "hi"') == '%say "hi"%'
+    assert like_pattern("(a)*") == "%(a)*%"
