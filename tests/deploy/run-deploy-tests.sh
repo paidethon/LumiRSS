@@ -1307,6 +1307,53 @@ assert_contains "web absence is a FAIL" "web not running" "$d_out"
 rm -rf "$sb" "$stub_dir"
 
 # ---------------------------------------------------------------------------
+echo "== 24. FIX-198: doctor reports live and ready separately (live != ready) =="
+sb="$(new_sandbox)"
+stub_dir="$(mktemp -d)"
+cat > "$stub_dir/docker" <<'STUB'
+#!/bin/sh
+cmd="$1"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  info) exit 0;;
+  compose)
+    case "$*" in
+      *" config"*) printf '{"name": "lumirss-prod", "services": {"web": {}, "bff": {}, "freshrss": {}, "rsshub": {}}}';;
+      *" exec"*)
+        # LUMITEST_BFF_DOWN=1 -> the bff process answers nothing (both
+        # health probes fail); else exec succeeds like a healthy bff.
+        [ -n "${LUMITEST_BFF_DOWN:-}" ] && exit 1
+        exit 0;;
+      *) exit 0;;
+    esac;;
+  inspect)
+    name=""
+    for a in "$@"; do case "$a" in lumirss-*) name="$a";; esac; done
+    [ -n "${LUMITEST_ABSENT:-}" ] && [ "$name" = "$LUMITEST_ABSENT" ] && exit 1
+    case "$*" in
+      *OOMKilled*) echo false;;
+      *RestartCount*) echo 0;;
+      *"State.Health"*) echo none;;
+      *) echo running;;
+    esac;;
+  ps) exit 0;;
+  *) exit 0;;
+esac
+STUB
+chmod +x "$stub_dir/docker"
+d_out="$(cd "$sb" && cp -f .env.prod.example .env.prod \
+  && env PATH="$stub_dir:$PATH" ./lumirss doctor 2>&1)"
+assert_eq "healthy bff -> doctor exits 0" "0" "$?"
+assert_contains "live checked separately (PASS when process answers)" "bff live (process up)" "$d_out"
+assert_contains "ready checked separately with its real meaning (sqlite usable)" "bff ready (lumi.sqlite usable)" "$d_out"
+d_out="$(cd "$sb" && env PATH="$stub_dir:$PATH" LUMITEST_BFF_DOWN=1 ./lumirss doctor 2>&1)"
+assert_eq "dead bff probes are WARN-only (doctor still exits 0)" "0" "$?"
+assert_contains "live failure reported honestly" "bff live not OK" "$d_out"
+assert_contains "ready failure distinguishes itself from live" \
+  "live above may still be true" "$d_out"
+assert_not_contains "no FAIL on a dead bff (WARN semantics unchanged)" "FAIL " "$d_out"
+rm -rf "$sb" "$stub_dir"
+
+# ---------------------------------------------------------------------------
 echo
 echo "deploy-lifecycle tests: $PASS passed, $FAIL failed"
 if [[ "$FAIL" -gt 0 ]]; then exit 1; fi

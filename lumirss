@@ -957,8 +957,21 @@ except Exception:
           check INFO "$svc not running (optional service — off by design; start it explicitly if needed)"
         fi
       done
-      DC_D exec bff python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5).status==200 else 1)" >/dev/null 2>&1 \
-        && check PASS "bff health/ready" || check WARN "bff health/ready not OK"
+      # FIX-198: live 与 ready 分开如实报告——live（/health/live）只证明
+      # BFF 进程在、从不触碰 FreshRSS；ready（/health/ready）证明关键依赖
+      # lumi.sqlite 可用（503 = unavailable）。二者语义不同，合并成一条
+      # "health" 会把"进程活着但库坏了"误读为健康。这里只消费 BFF 现有
+      # 端点（BFF 端点自身的增强属另一批次）。
+      if DC_D exec bff python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=5).status==200 else 1)" >/dev/null 2>&1; then
+        check PASS "bff live (process up)"
+      else
+        check WARN "bff live not OK — process not answering"
+      fi
+      if DC_D exec bff python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5).status==200 else 1)" >/dev/null 2>&1; then
+        check PASS "bff ready (lumi.sqlite usable)"
+      else
+        check WARN "bff ready not OK (lumi.sqlite/dependencies unavailable) — live above may still be true"
+      fi
       # Resource-budget guard: a killed container means the limit is too
       # low for real traffic, never a successful "lower number".
       for svc in lumirss-web lumirss-bff lumirss-freshrss lumirss-rsshub; do
