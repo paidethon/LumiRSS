@@ -10,9 +10,26 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { isPlayableEnclosure } from '../lib/enclosure'
+import {
+  isPlayableEnclosure,
+  ENCLOSURE_POSITIONS_KEY,
+  ENCLOSURE_POSITIONS_LIMIT,
+  readEnclosurePositions,
+  recordEnclosurePosition,
+  clearEnclosurePositions,
+} from '../lib/enclosure'
 
-export { isPlayableEnclosure }
+// 续播位置存储（key/读写/清除）自本组件收口至 lib/enclosure——
+// auth-reset 的换账号清理只需要纯逻辑，不必拖入播放器模块。
+// 此处 re-export 兼容既有引用与测试。
+export {
+  isPlayableEnclosure,
+  ENCLOSURE_POSITIONS_KEY,
+  ENCLOSURE_POSITIONS_LIMIT,
+  readEnclosurePositions,
+  recordEnclosurePosition,
+  clearEnclosurePositions,
+}
 import {
   AlertCircle,
   Play,
@@ -28,8 +45,6 @@ import {
 import { Button } from './ui/Button'
 import { cx } from './ui/cx'
 
-export const ENCLOSURE_POSITIONS_KEY = 'lumirss-enclosure-positions'
-export const ENCLOSURE_POSITIONS_LIMIT = 50
 export const PLAYBACK_RATES = [0.75, 1, 1.25, 1.5, 2] as const
 export type PlaybackRate = (typeof PLAYBACK_RATES)[number]
 /** N100：网络失败允许的手动重试上限（1 次）——之后诚实死路，绝不
@@ -41,51 +56,9 @@ export interface EnclosureItem {
   type?: string | null
 }
 
-type PositionMap = Record<string, number>
-
-/** 读取续播位置表（corrupted → {}）。 */
-export function readEnclosurePositions(
-  storage: Storage | null = typeof localStorage === 'undefined' ? null : localStorage,
-): PositionMap {
-  if (storage === null) return {}
-  try {
-    const raw = storage.getItem(ENCLOSURE_POSITIONS_KEY)
-    if (raw === null) return {}
-    const parsed: unknown = JSON.parse(raw)
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
-    const out: PositionMap = {}
-    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
-      if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
-        out[key] = value
-      }
-    }
-    return out
-  } catch {
-    return {}
-  }
-}
-
-/** 记录播放位置（写入序近似 LRU：重写 key 移到末尾；超过 50 条逐出最旧）。 */
-export function recordEnclosurePosition(
-  id: string,
-  seconds: number,
-  storage: Storage | null = typeof localStorage === 'undefined' ? null : localStorage,
-): void {
-  if (storage === null) return
-  try {
-    const positions = readEnclosurePositions(storage)
-    delete positions[id]
-    positions[id] = Math.max(0, seconds)
-    const entries = Object.entries(positions)
-    const bounded = entries.slice(Math.max(0, entries.length - ENCLOSURE_POSITIONS_LIMIT))
-    storage.setItem(ENCLOSURE_POSITIONS_KEY, JSON.stringify(Object.fromEntries(bounded)))
-  } catch {
-    // 写失败静默：续播是本地增强数据
-  }
-}
-
-// isPlayableEnclosure 移至 lib/enclosure（Reader 首屏只需谓词，不必
-// 拖入整个播放器模块）；此处 re-export 兼容既有引用与测试。
+// isPlayableEnclosure / 续播位置存储移至 lib/enclosure（Reader 首屏只
+// 需要谓词、auth-reset 只需要清除函数，不必拖入整个播放器模块）；
+// 上方 re-export 兼容既有引用与测试。
 
 /** 单个附件播放器（显式开始；倍速；续播；N100 分型错误态 + 匹配处置）。
  * `alternatives` 为可选备选音源清单（同一条目的其它编码/码率）——解码

@@ -7,6 +7,8 @@
 
 import { useState } from 'react'
 
+import { useSettingsDirtySection } from './settings-dirty'
+
 import { ApiError } from '../../api/client'
 import type { RetentionApplyResult, RetentionPreview } from '../../api/client'
 import {
@@ -124,6 +126,15 @@ export function StorageRetentionSection() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [previewSeen, setPreviewSeen] = useState(false)
   const [applyResult, setApplyResult] = useState<RetentionApplyResult | null>(null)
+
+  const serverRetention = retention.data
+  // FIX-057：已输入但与服务端不同的保留天数 = 脏状态；登记给设置中心，
+  // 切分类 / 关闭设置前统一守护（须在加载/错误分支之前无条件调用）。
+  const retentionDirty =
+    serverRetention !== undefined &&
+    ((aiVersionsDays !== '' && String(serverRetention.aiVersionsDays ?? '') !== aiVersionsDays) ||
+      (taskLogDays !== '' && String(serverRetention.taskLogDays ?? '') !== taskLogDays))
+  useSettingsDirtySection('storage-retention', retentionDirty)
 
   if (retention.isPending) {
     return (

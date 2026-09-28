@@ -44,6 +44,7 @@ import { Button } from '../ui/Button'
 import { Select } from '../ui/Select'
 import { Switch } from '../ui/Switch'
 import { Skeleton } from '../ui/Skeleton'
+import { useSettingsDirtySection } from './settings-dirty'
 
 const DAY_LABELS = ['一', '二', '三', '四', '五', '六', '日']
 
@@ -295,6 +296,8 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
     (config.targetReadingMinutes ?? 0) !== targetReadingMinutes ||
     (config.clusterEnabled ?? false) !== clusterEnabled ||
     (config.missedIssuePolicy ?? 'backfill') !== missedIssuePolicy
+  // FIX-057：向设置中心登记脏状态——切分类 / 关闭设置前统一守护。
+  useSettingsDirtySection('gpt-digest-config', dirty)
 
   // §13.4：token 只存哈希——atomPath 为空 = 订阅地址已隐藏（明文不可
   // 重建），新地址经「轮换 token」一次性获取；UI 诚实呈现，不显示坏链。

@@ -146,3 +146,19 @@ export function hasUnsavedDraft(
 ): boolean {
   return currentText !== loadPreviewDraft(workspaceId, ref)
 }
+
+/** FIX-062：换账号清空工作区的本机足迹——最近关闭（A 的阅读历史）、
+ * 预览草稿（A 的未落库笔记内容）与分组折叠（键是 A 的工作区 id）。
+ * 直接移除键（而非写空态）：换账号后这些数据结构对 B 无意义。
+ * 由 lib/auth-reset 统一调用。 */
+export function clearWorkspaceTabFootprints(): void {
+  const store = storage()
+  if (store === null) return
+  for (const key of [RECENTLY_CLOSED_KEY, PREVIEW_DRAFTS_KEY, COLLAPSED_GROUPS_KEY]) {
+    try {
+      store.removeItem(key)
+    } catch {
+      /* 写失败静默 */
+    }
+  }
+}

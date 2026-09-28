@@ -30,6 +30,7 @@ import {
 import type { ApiError } from '../../api/client'
 import type { RssHubConfigItem } from '../../api/types'
 import { RssHubAutoConfigCard } from './RssHubAutoConfigCard'
+import { useSettingsDirtySection } from './settings-dirty'
 import { Button } from '../ui/Button'
 import { Select } from '../ui/Select'
 import { Skeleton } from '../ui/Skeleton'
@@ -213,6 +214,14 @@ export function RssHubControlCenter() {
     }
     return map
   }, [config.data])
+
+  // FIX-057：RSSHub desired 配置草稿向设置中心登记脏状态（须在
+  // isError / 加载分支之前无条件调用，保持 hooks 顺序稳定）。
+  const rsshubDirty =
+    draft !== null &&
+    config.data !== undefined &&
+    Object.keys(draft).some((key) => values[key] !== draft[key])
+  useSettingsDirtySection('rsshub', rsshubDirty)
 
   if (config.isError) {
     return (

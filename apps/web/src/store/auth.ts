@@ -31,27 +31,55 @@ interface AuthState {
   mode: 'basic' | 'session' | null
   /** 当前登录身份（session 模式多账户）；null = basic 模式或未探测到。 */
   identity: AuthIdentity | null
+  /** FIX-069：递增以请求 AuthGate 重新探测 /auth/session（跨标签页
+   * 身份同步等场景复用）。 */
+  probeNonce: number
   setStatus: (status: AuthGateStatus) => void
   setMode: (mode: 'basic' | 'session' | null) => void
   setIdentity: (identity: AuthIdentity | null) => void
+  requestProbe: () => void
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
   status: 'checking',
   mode: null,
   identity: null,
+  probeNonce: 0,
   setStatus: (status) => set({ status }),
   setMode: (mode) => set({ mode }),
   setIdentity: (identity) => set({ identity }),
+  requestProbe: () => set((state) => ({ probeNonce: state.probeNonce + 1 })),
 }))
 
+/** FIX-069：跨标签页身份广播的 localStorage 键。storage 事件只送达
+ * 其他标签页（写入方自身不触发），恰好是「通知别的标签页」的语义。 */
+export const AUTH_EPOCH_STORAGE_KEY = 'lumirss-auth-epoch'
+
+/** 广播一次身份变迁（登录/登出/服务端会话失效）。写失败静默——
+ * 广播是尽力而为的增强，单标签页的认证状态机不受影响。 */
+export function bumpAuthEpoch(): void {
+  if (typeof localStorage === 'undefined') return
+  try {
+    const random =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random()}`
+    localStorage.setItem(AUTH_EPOCH_STORAGE_KEY, random)
+  } catch {
+    /* 隐私模式 / 配额：尽力而为 */
+  }
+}
+
 /** rawRequest 在 401 session_required 时调用（幂等）。翻到未登录时
- * 一并清掉身份——旧身份残留会让账号菜单在登录页背后渲染幽灵数据。 */
+ * 一并清掉身份——旧身份残留会让账号菜单在登录页背后渲染幽灵数据。
+ * FIX-069：同时广播 epoch，让其他还挂着本会话应用子树的标签页立即
+ * 重置，而不是等它们各自的下一个 401。 */
 export function sessionExpired(): void {
   const { status, mode } = useAuthStore.getState()
   if (mode === 'session' && status === 'authenticated') {
     useAuthStore.getState().setStatus('unauthenticated')
     useAuthStore.getState().setIdentity(null)
+    bumpAuthEpoch()
   }
 }
 
