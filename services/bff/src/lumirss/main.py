@@ -61,6 +61,16 @@ from lumirss.routers import (
     lumi_export,
     lumi_notes,
     mail,
+    new231_note_versions,
+    new232_reanchor,
+    new233_summary,
+    new234_layers,
+    new235_templates,
+    new236_replies,
+    new237_quote_cards,
+    new238_layer_migration,
+    new239_conflicts,
+    new240_attachments,
     obsidian,
     operations,
     opml,
@@ -459,5 +469,16 @@ app.include_router(library_w5.router)
 app.include_router(workspace_w5.router)
 # N198 版本功能导览（成员可读；adminOnly 条目服务端角色过滤）
 app.include_router(whats_new.router)
+# NEW-231..240 笔记、标注与原文锚定（r2 N231 组；路由各自独立成文件）
+app.include_router(new231_note_versions.router)
+app.include_router(new232_reanchor.router)
+app.include_router(new233_summary.router)
+app.include_router(new234_layers.router)
+app.include_router(new235_templates.router)
+app.include_router(new236_replies.router)
+app.include_router(new237_quote_cards.router)
+app.include_router(new238_layer_migration.router)
+app.include_router(new239_conflicts.router)
+app.include_router(new240_attachments.router)
 
 register_error_handlers(app)

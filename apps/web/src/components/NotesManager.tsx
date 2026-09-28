@@ -33,6 +33,7 @@ import { mdPreviewHtml } from '../lib/md-preview'
 import { DraftRestoreBar } from './DraftRestoreBar'
 import { clearDraft, loadDraftIfNewer, saveDraft, type DraftRecord } from '../lib/draft-store'
 import { Button } from './ui/Button'
+import { New231NoteTools } from './new231/New231NoteTools'
 import { Dialog } from './ui/Dialog'
 import { EmptyState } from './ui/EmptyState'
 import { IconButton } from './ui/IconButton'
@@ -312,6 +313,8 @@ export function NotesManager() {
           删除失败：{del.error instanceof Error ? del.error.message : '请稍后重试。'}
         </p>
       )}
+      {/* NEW-231..240 笔记侧工具（修订对照/模板填空/冲突解决/附件清单） */}
+      <New231NoteTools noteId={editing?.uuid ?? null} />
       {editLoading && <p className="text-xs text-[var(--lumi-text-tertiary)]">加载笔记…</p>}
       {editError !== null && (
         <p role="alert" className="text-xs text-[var(--lumi-danger)]">{editError}</p>
