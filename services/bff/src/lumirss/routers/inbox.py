@@ -31,6 +31,7 @@ from fastapi.responses import JSONResponse
 
 from lumirss.credential_rotation import CredentialTestFailed, match_fallback
 from lumirss.cursor import InvalidCursor
+from lumirss.deps import StrictId
 from lumirss.errors import InvalidInboxPayload
 from lumirss.inbox_rules import (
     InboxRuleNotFound,
@@ -533,7 +534,7 @@ async def list_inbox_events(
 
 
 @router.post("/api/v1/inbox/events/{event_id}/replay")
-async def replay_inbox_event(event_id: int, request: Request) -> Response:
+async def replay_inbox_event(event_id: StrictId, request: Request) -> Response:
     """F107：失败事件重放（复用原载荷 + 既有 (source, guid) 幂等）。
 
     delivered/duplicate → 409 not_replayable；来源已删除 → 404；
@@ -762,7 +763,7 @@ async def dry_run_inbox_rule(
 
 @router.patch("/api/v1/inbox/rules/{rule_id}", response_model=InboxRule)
 async def patch_inbox_rule(
-    rule_id: int, payload: InboxRuleUpdate, request: Request
+    rule_id: StrictId, payload: InboxRuleUpdate, request: Request
 ) -> InboxRule:
     # FIX-361: model_dump 产出对外契约键（targetWorkspaceId），而 store
     # 合同键是 target_workspace_id —— 键名不匹配曾让该字段被静默丢弃
@@ -778,7 +779,7 @@ async def patch_inbox_rule(
 
 @router.post("/api/v1/inbox/rules/{rule_id}/move", response_model=InboxRule)
 async def move_inbox_rule(
-    rule_id: int, request: Request, direction: str = "up"
+    rule_id: StrictId, request: Request, direction: str = "up"
 ) -> InboxRule:
     """priority 上下移（应用顺序 = 列表顺序）。"""
     if direction not in ("up", "down"):
@@ -790,7 +791,7 @@ async def move_inbox_rule(
 
 
 @router.delete("/api/v1/inbox/rules/{rule_id}", status_code=204)
-async def delete_inbox_rule(rule_id: int, request: Request) -> Response:
+async def delete_inbox_rule(rule_id: StrictId, request: Request) -> Response:
     deleted = await _rule_store(request).delete_rule(rule_id)
     if not deleted:
         raise InboxRuleNotFound(str(rule_id))

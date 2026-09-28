@@ -8,7 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import JSONResponse
 
-from lumirss.deps import _get_control_adapter
+from lumirss.deps import StrictId, _get_control_adapter
 from lumirss.import_batch_store import ImportBatchStore
 from lumirss.models import (
     OpmlImportLogList,
@@ -213,7 +213,7 @@ async def opml_tree_apply(request: Request) -> dict[str, object]:
 
 
 @router.post("/api/v1/opml/import/{log_id}/undo", response_model=OpmlUndoResult)
-async def opml_import_undo(log_id: int, request: Request) -> dict[str, object]:
+async def opml_import_undo(log_id: StrictId, request: Request) -> dict[str, object]:
     """N018：撤销一次树对照导入（feed 移回原分类）。
 
     每行至多撤销一次；被移动 feed 的原分类已消失 / feed 已退订时逐项

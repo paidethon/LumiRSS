@@ -12,6 +12,7 @@
 
 from fastapi import APIRouter, Request, Response
 
+from lumirss.deps import StrictId
 from lumirss.item_relations import (
     ItemRelationStore,
     RelationDuplicate,
@@ -80,7 +81,7 @@ async def list_relations(request: Request, itemRef: str) -> RelationList:
 
 
 @router.delete("/api/v1/relations/{relation_id}", status_code=204)
-async def delete_relation(relation_id: int, request: Request) -> Response:
+async def delete_relation(relation_id: StrictId, request: Request) -> Response:
     deleted = await _store(request).delete(relation_id)
     if not deleted:
         raise RelationNotFound(str(relation_id))

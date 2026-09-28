@@ -4,6 +4,7 @@ import json
 
 from fastapi import APIRouter, Query, Request, Response
 
+from lumirss.deps import StrictId
 from lumirss.graph import build_graph
 from lumirss.models import (
     GraphResponse,
@@ -129,14 +130,14 @@ async def undo_tag_merge(request: Request) -> TagMergeUndoResult:
 
 
 @router.patch("/api/v1/tags/{tag_id}", response_model=TagBinding)
-async def rename_tag(tag_id: int, payload: TagRenameRequest, request: Request) -> TagBinding:
+async def rename_tag(tag_id: StrictId, payload: TagRenameRequest, request: Request) -> TagBinding:
     store: TagStore = _get_tag_store(request)
     record = await store.rename(tag_id, payload.name)
     return TagBinding(**record.to_dict())
 
 
 @router.delete("/api/v1/tags/{tag_id}", status_code=204)
-async def delete_tag(tag_id: int, request: Request) -> Response:
+async def delete_tag(tag_id: StrictId, request: Request) -> Response:
     store: TagStore = _get_tag_store(request)
     deleted = await store.delete(tag_id)
     if not deleted:
@@ -152,7 +153,7 @@ async def item_tags(request: Request, item_ref: str) -> dict:
 
 @router.get("/api/v1/tags/{tag_id}/items", response_model=TagItemsResponse)
 async def tag_items(
-    tag_id: int, request: Request, limit: int = 100
+    tag_id: StrictId, request: Request, limit: int = 100
 ) -> TagItemsResponse:
     """Server-driven list of one tag's items, each resolved (P0-10i):
     the client never filters a partially loaded timeline to show a tag."""

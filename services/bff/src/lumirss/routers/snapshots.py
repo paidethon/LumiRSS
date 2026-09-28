@@ -15,6 +15,7 @@ from typing import Literal
 from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel, Field
 
+from lumirss.deps import StrictId
 from lumirss.library_assets import (
     AssetNotFound,
     AssetStore,
@@ -262,7 +263,7 @@ async def list_snapshot_versions(asset_uuid: str, request: Request) -> dict:
 
 
 @router.get("/api/v1/library/snapshots/{asset_uuid}/versions/{version_id}")
-async def get_snapshot_version(asset_uuid: str, version_id: int, request: Request) -> dict:
+async def get_snapshot_version(asset_uuid: str, version_id: StrictId, request: Request) -> dict:
     """旧版查看（净化后纯文本）。"""
     version = await _version_store(request).get_version(version_id)
     if version is None or version["snapshotUuid"] != asset_uuid:
@@ -272,7 +273,7 @@ async def get_snapshot_version(asset_uuid: str, version_id: int, request: Reques
 
 @router.get("/api/v1/library/snapshots/{asset_uuid}/versions/{version_id}/diff")
 async def diff_snapshot_versions(
-    asset_uuid: str, version_id: int, request: Request, against: int = 0
+    asset_uuid: str, version_id: StrictId, request: Request, against: int = 0
 ) -> dict:
     """逐行 unified 文本差异（stdlib difflib；纯文本输出）。"""
     store = _version_store(request)
