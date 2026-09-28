@@ -30,11 +30,11 @@ bcrypt 哈希）→ 拉取 GHCR 预构建镜像（**prebuilt-only**：拉取失�
 
 | 命令 | 作用 |
 |---|---|
-| `./lumirss update` | 备份 → 拉取镜像 → `up -d` → 健康检查 |
+| `./lumirss update` | 备份（**失败即中止升级**：pull/切流/迁移都不发生，旧栈保持运行）→ 拉取镜像 → `up -d` → 健康检查 |
 | `./lumirss status` | 容器状态、健康、web/bff 版本（commit）与镜像 tag |
 | `./lumirss logs [service] [-f]` | 全栈或单服务日志 |
-| `./lumirss backup` | lumi-data + freshrss-data 卷 tar.gz + 配置归档到 `./backups/`（`LUMIRSS_BACKUP_DIR` 可改） |
-| `./lumirss restore <backup.tar.gz> [--yes]` | 停 bff → 覆盖恢复卷 → 启动 → 健康检查（破坏性，需输入 `RESTORE` 或 `--yes`） |
+| `./lumirss backup` | 一致性卷备份到 `./backups/<stamp>/`（`LUMIRSS_BACKUP_DIR` 可改）：SQLite online-backup 快照（`lumi-sqlite/` + `freshrss-sqlite/`）+ 非 DB 文件 tar + `MANIFEST.txt`（sha256）+ `config.tar.gz`，见 [backup-restore.md](backup-restore.md) |
+| `./lumirss restore <backup.tar.gz> [--yes]` | 停 bff → 覆盖卷（files.tar）→ 校验并回写一致性快照（`MANIFEST.txt` sha256，不匹配拒绝）→ 启动 → 健康检查（破坏性，需输入 `RESTORE` 或 `--yes`） |
 | `./lumirss doctor` | PASS/WARN/FAIL 诊断（docker、compose、.env.prod、DNS、容器与健康、**OOM/重启计数**、备份就绪 `fullBackupReady`、磁盘、备份目录；external 模式另查公网暴露与 HTTPS；session 模式另查密码已初始化） |
 | `./lumirss rollback` | 回到上一镜像 tag + 恢复上一份 `.env.prod` 快照 |
 | `./lumirss caddy-config` | 打印宿主 Caddy 站点块（`BEGIN/END LUMIRSS` 管理标记；external 模式用） |
@@ -247,7 +247,7 @@ sudo ./lumirss set-password          # 安装/轮换 owner 密码；或 stdin / 
 ## 7. 升级与回滚
 
 ```bash
-./lumirss update        # 备份 → 拉取 → up → 健康检查（推荐）
+./lumirss update        # 备份（失败即中止，旧栈保持运行）→ 拉取 → up → 健康检查（推荐）
 ```
 
 手工等价：确认容器健康 → 在 UI 创建完整备份 →
@@ -281,12 +281,12 @@ npm run check:dashboard    # 校验 dist/ 与台账一致（漂移守卫）
 ### 8a. 复制到宿主目录 + handle_path 片段
 
 把 `dist/` 里的两个文件复制到宿主一个目录（如 `/var/www/lumirss-project`），
-然后在宿主 Caddyfile 的 `rss.oouo.top` 站点块内、`# BEGIN LUMIRSS`
+然后在宿主 Caddyfile 的 `rss.example.com` 站点块内、`# BEGIN LUMIRSS`
 管理块**之外**加一段（`handle_path` 排序在 `reverse_proxy` 之前，
 命中 `/project/*` 即终止，其余路径照常反代到 LumiRSS）：
 
 ```caddyfile
-rss.oouo.top {
+rss.example.com {
     handle_path /project/* {
         root * /var/www/lumirss-project
         file_server
@@ -320,7 +320,7 @@ Caddy 的用户需要该路径的读权限；git pull 后即生效）：
 caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy
 ```
 
-自检：`curl -fsS -o /dev/null -w '%{http_code}\n' https://rss.oouo.top/project/`
+自检：`curl -fsS -o /dev/null -w '%{http_code}\n' https://rss.example.com/project/`
 应返回 200。看板为纯静态公开内容（任务统计 + 架构一句话说明），不含
 任何上游凭据、服务器路径或账号数据；如不想公开，可在该 `handle_path`
 块内加 `basic_auth`（同 §5b）。

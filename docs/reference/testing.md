@@ -88,7 +88,8 @@ pnpm build
 node scripts/soak-memory.mjs        # 浏览器内存 soak（M0–M6 阶段采样
                                     # JSHeap/DOMNodes/listeners；--quick 冒烟，
                                     # --desktop/--mobile 单视口）
-node e2e/perf-measure.mjs           # LCP/CLS/资源体积（对运行中的栈）
+node e2e/perf-measure.mjs           # LCP/CLS/资源体积（对运行中的栈；
+                                    # 脚本 = apps/web/e2e/perf-measure.mjs）
 ```
 
 Soak 判定：warm-up 后 heap 趋于平台期即可；逐阶段线性增长（如每轮
@@ -102,7 +103,7 @@ Soak 判定：warm-up 后 heap 趋于平台期即可；逐阶段线性增长（�
 | BFF tests (Python 3.12) | `uv lock --check` → `uv run ruff check src tests scripts` → `uv run pytest -q` |
 | Generated contracts drift check | 重新生成 `api:generate` + `settings:generate`，`git diff --exit-code` 防漂移 |
 | Web tests / lint / build | `pnpm test` → `pnpm lint` → `pnpm build` |
-| Playwright Chromium smoke | 构建生产 bundle，静态预览（`LUMIRSS_E2E_BASE_URL=http://127.0.0.1:4173`，`LUMIRSS_CI_STATIC=1`）跑 `e2e/ci-smoke.spec.ts`（desktop-1440） |
+| Playwright Chromium smoke | 构建生产 bundle，静态预览（`LUMIRSS_E2E_BASE_URL=http://127.0.0.1:4173`，`LUMIRSS_CI_STATIC=1`）跑 `apps/web/e2e/ci-smoke.spec.ts`（desktop-1440） |
 | Production compose config | `docker compose -f docker-compose.prod.yml config` 渲染校验 |
 | Production image build (no push) | 本地构建 BFF 与 Web 生产镜像确认可构建（不 push） |
 

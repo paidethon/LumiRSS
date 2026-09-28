@@ -1,5 +1,9 @@
 # LumiRSS Reference Upstreams
 
+> **历史档案（frozen · 2026-09-28 归档）**：本文为 2026-08-28（Gate 0C）
+> 时点的基线存档，不再是当前指南；现状以
+> [docs/README.md](../README.md) 索引的活跃文档为准。
+
 > Purpose: pin research baselines so Lumi UI/behavior does not drift with
 > upstream changes. All values below are verified against locally cloned
 > repositories on 2026-08-28 (Gate 0C).

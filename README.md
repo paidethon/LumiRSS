@@ -55,7 +55,7 @@ client talks only to the Lumi BFF. Full explanation:
 git clone https://github.com/paidethon/LumiRSS.git && cd LumiRSS
 docker compose up -d          # FreshRSS + RSSHub
 cd services/bff && cp .env.example .env && uv sync && uv run uvicorn lumirss.main:app --reload
-cd ../web && pnpm install && pnpm dev
+cd ../../apps/web && pnpm install && pnpm dev
 ```
 
 Full guide: [docs/getting-started.md](docs/getting-started.md).

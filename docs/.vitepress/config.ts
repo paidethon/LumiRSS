@@ -40,7 +40,7 @@ const ARCHIVE = '历史与研究（存档）'
 export default defineConfig({
   lang: 'zh-CN',
   title: 'LumiRSS',
-  description: '单用户、自托管、source-first 的信息阅读器',
+  description: '邀请制多账户、自托管、source-first 的信息阅读器',
   cleanUrls: true,
   base,
   rewrites: {

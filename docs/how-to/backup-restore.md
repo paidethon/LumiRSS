@@ -8,10 +8,49 @@
 1. **UI / API（应用级，功能最全）**：设置 →「数据控制」（配置迁移 /
    完整备份 / 备份历史 / WebDAV / 恢复同页）。
 2. **`./lumirss backup` / `./lumirss restore`（卷级，整机运维）**：
-   把 `lumi-data`、`freshrss-data` 卷打成 tar.gz 存到 `./backups/`
-   （`LUMIRSS_BACKUP_DIR` 可改），连同 `.env.prod` 与 compose 文件一起
-   归档；`./lumirss restore <backup.tar.gz> [--yes]` 停 bff → 覆盖卷 →
-   启动 → 健康检查（破坏性操作，需输入 `RESTORE` 或 `--yes`）。
+   一致性卷备份到 `./backups/<stamp>/`（`LUMIRSS_BACKUP_DIR` 可改），
+   布局与一致性边界见下节；`./lumirss restore <backup.tar.gz> [--yes]`
+   停 bff → 覆盖卷 → 校验并回写快照 → 启动 → 健康检查（破坏性操作，
+   需输入 `RESTORE` 或 `--yes`）。
+
+## 卷级备份布局（`./lumirss backup`，FIX-192/209）
+
+一次备份 = 一个按时间戳命名的目录 + 一个 `LATEST` 指针：
+
+```text
+$BACKUP_DIR/<stamp>/            # 撞名自动退避为 <stamp>-<pid>，既有备份不受影响
+  MANIFEST.txt                  # 每个快照库的 sha256 + 体积 + CLI 版本（VERSION）
+  lumi-sqlite/…                 # 控制库 lumi.sqlite、users/<uid>/lumi.sqlite 的一致性快照
+  freshrss-sqlite/…             # FreshRSS db.sqlite 的一致性快照
+  lumi-data.files.tar.gz        # 非数据库文件的 file-level tar（*.sqlite 与
+  freshrss-data.files.tar.gz    #   -wal/-shm/-journal 边车一律排除）
+  config.tar.gz                 # .env.prod + docker-compose.prod.yml
+$BACKUP_DIR/LATEST              # 最近一次完整成功的 stamp 名（临时文件 + 原子 mv）
+```
+
+一致性边界（诚实声明）：
+
+- **数据库走 SQLite online backup API 快照**（`lumi-sqlite/` 与
+  `freshrss-sqlite/` 树，相对路径与卷内一致）：所有页来自**同一个 WAL
+  读点**，并发写入只会让快照落在更早的一致状态——绝不出现裸 tar 活库
+  （WAL 模式下主文件与 -wal 不一致）的缺页/撕裂。快照在备份容器内对
+  只读挂载执行；恢复时先整目录校验 `MANIFEST.txt` 的 sha256，再按相对
+  路径覆盖回卷。
+- **其余文件**（secrets、FreshRSS `config.php` 等）为 file-level tar
+  拷贝：低频写且本身容错。
+- **备份容器镜像**默认 = 栈自身的 BFF 镜像（python3 是 BFF 运行时的一
+  部分，离线主机零额外拉取）；`LUMIRSS_BACKUP_IMAGE` 可整体覆盖，但
+  覆盖镜像**必须提供 python3 + tar**——缺失时备份如实失败并整目录
+  回滚，绝不退回产出不一致备份的裸 tar。
+- `./lumirss update` 的第一阶段就是备份：**备份失败即中止升级**
+  （pull / 切流 / 迁移都不会发生，旧服务保持运行）。
+
+恢复：`./lumirss restore <backup.tar.gz> [--yes]` 按 `<backup.tar.gz>`
+所在目录里的 `lumi-sqlite/`（或 `freshrss-sqlite/`）快照树识别新格式：
+停 bff → 清空并解包对应卷的 files.tar → 校验 `MANIFEST.txt` sha256 →
+快照按相对路径覆盖回卷（校验失败拒绝恢复）→ 启动 → 健康检查。
+旧格式备份（整卷 tar、无快照树）保持历史行为；恢复目标卷按文件名含
+`freshrss-data` 与否选择。
 
 ## 应用级备份内容
 

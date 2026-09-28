@@ -37,6 +37,8 @@ RSS 来源，项目自有的 FastAPI BFF 与 React Web / PWA 客户端。
 | 产品范围与原则 | [product/PRD.md](product/PRD.md) |
 | 许可证 / 上游引用 | [LICENSE_AUDIT.md](upstream/LICENSE_AUDIT.md) · [UPSTREAMS.md](upstream/UPSTREAMS.md) |
 | 查历史里程碑 / 发布记录 | [history/milestones.md](history/milestones.md) |
+| 查冻结档案（recovery 账本 / 上游基线 / 阅读调研） | [audits/phase2-recovery.md](audits/phase2-recovery.md) · [upstream/SOURCE_MAP.md](upstream/SOURCE_MAP.md) · [design/reader-research.md](design/reader-research.md) |
+| 查文档处置结论 / SSOT 归属 | [doc-disposition.md](doc-disposition.md) |
 
 ## 阅读纪律
 

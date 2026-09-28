@@ -1,6 +1,6 @@
 # LumiRSS Web
 
-LumiRSS 的 React Web 客户端（0005 — Web Shell 起步）。
+LumiRSS 的 React Web 客户端。
 
 技术栈：React + TypeScript + Vite + Tailwind CSS v4 + TanStack Query +
 Zustand。开发时所有 API 请求走相对 `/api/v1/*` 路径，由 Vite dev
@@ -14,4 +14,4 @@ pnpm lint       # oxlint
 pnpm build      # 生产构建（tsc -b + vite build → dist/）
 ```
 
-完整说明见仓库根 `README.md` 与 `docs/milestones/0005-web-shell.md`。
+完整说明见仓库根 `README.md` 与 `docs/README.md`。

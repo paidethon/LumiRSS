@@ -1,5 +1,8 @@
 # Milestone History
 
+> **历史档案（frozen · 2026-09-28 归档）**：本文为历史记录，不再是当前
+> 指南；现状以 [docs/README.md](../README.md) 索引的活跃文档为准。
+
 > LumiRSS 已完成里程碑的归档索引。每个里程碑的完整 spec、验收清单与过程
 > 记录已从工作区移除，可在 Git 历史（`git log --diff-filter=D -- docs/milestones/`）
 > 中找回。正常开发无需预读本文。
@@ -64,7 +67,9 @@
   研究报告）与 `docs/audits/mobile-liquid-glass-acceptance.md` 已完成
   历史使命删除，Git 历史可恢复
   （`git log --diff-filter=D -- docs/research/`）。
-- **2026-09 邀请制多账户（0.2.0）**：一次性限时邀请 + `/activate` 自助
+- **2026-09 邀请制多账户（0.2.0）**〔勘误 2026-09-28：多账户实随
+  **2.0.0** 发布（见仓库根 `CHANGELOG.md` 与 ADR 0005），0.2.0 为原文
+  笔误——原文照录，不改写历史〕：一次性限时邀请 + `/activate` 自助
   激活、`/admin` 成员生命周期、FreshRSS 账号池（`scripts/freshrss_pool.sh`
   预建 + BFF 原子分配）、数据层拆分为控制库 + 每用户库、旧单用户数据
   幂等迁移为 owner。决策记录：
