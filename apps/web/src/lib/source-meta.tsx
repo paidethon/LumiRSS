@@ -34,7 +34,7 @@ export const SourceGlyph = memo(function SourceGlyph({ name }: { name: string })
     <span
       aria-hidden="true"
       data-source-glyph=""
-      className="flex size-4 shrink-0 select-none items-center justify-center rounded-[5px] bg-[var(--lumi-surface-hover)] text-[9px] font-semibold leading-none text-[var(--lumi-text-secondary)]"
+      className="flex size-4 shrink-0 select-none items-center justify-center rounded-[5px] bg-[var(--lumi-surface-hover)] text-[9px] font-semibold leading-tight text-[var(--lumi-text-secondary)]"
     >
       {sourceGlyphChar(name)}
     </span>

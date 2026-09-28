@@ -42,10 +42,20 @@
   /* O133：面板/弹层出场缓动（先快后缓的 soft out），供 transition-timing */
   --lumi-ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
 
-  /* 字体（Folo 实测 system 栈；不打包专有字体） */
+  /* 字体（system 栈；不打包专有字体）。
+   * FIX-299：CJK+Latin 混排基线稳健性——拉丁字符由 system-ui 命中
+   * （各平台 UI 字体，全拉丁覆盖），CJK 字符 system-ui 无字形后按序
+   * 回退：macOS PingFang SC → 旧 mac Hiragino Sans GB → Windows
+   * Microsoft YaHei → Linux/Android Noto Sans CJK SC，generic
+   * sans-serif 收尾。链路按平台覆盖面排序，任一平台只命中一个 CJK
+   * 字体；行高由 leading-tight（≥1.25）保证 CJK 字形的半行距分布
+   * 稳定（leading-none 的 1.0 行盒会让基线位置随回退字体的
+   * ascent/descent 切分漂移——已全量替换，见 FIX-299 守卫）。
+   * 曾列于 system-ui 之后的 'SN Pro'（Folo 品牌字体，未打包）不可达：
+   * 拉丁字符在 system-ui 已命中、CJK 字符它无字形——移除死条目。 */
   --lumi-font-sans:
-    system-ui, 'SN Pro', 'PingFang SC', 'Hiragino Sans GB',
-    'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
+    system-ui, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei',
+    'Noto Sans CJK SC', sans-serif;
   /* FIX-078：UI 字体档缺失时的兜底别名曾被引用却未定义
    * （app-settings/reader-style 的 `?? 'var(--lumi-font-default)'` 链）。 */
   --lumi-font-default: var(--lumi-font-sans);

@@ -150,7 +150,7 @@ function PurposeStatusLine({ status }: { status: AiPurposeStatus }) {
   return (
     <span
       className={cx(
-        'text-[11px] leading-none',
+        'text-[11px] leading-tight',
         status.configured
           ? 'text-[var(--lumi-text-tertiary)]'
           : 'text-[var(--lumi-danger)]',

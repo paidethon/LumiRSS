@@ -72,7 +72,7 @@ export function ReaderTypographyControls() {
   return (
     <div className="py-3">
       <div className="flex items-center justify-between gap-3">
-        <label className="text-sm font-medium leading-none text-[var(--lumi-text-primary)]">
+        <label className="text-sm font-medium leading-tight text-[var(--lumi-text-primary)]">
           正文排版
         </label>
         <button

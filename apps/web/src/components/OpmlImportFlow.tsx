@@ -116,7 +116,7 @@ export function OpmlPreviewItemsCard({
                   {item.title || item.xmlUrl}
                   <span
                     className={cx(
-                      'ml-2 inline-block rounded-full px-1.5 py-0.5 text-[10px] leading-none',
+                      'ml-2 inline-block rounded-full px-1.5 py-0.5 text-[10px] leading-tight',
                       item.status === 'new' &&
                         'bg-[var(--lumi-accent)]/15 text-[var(--lumi-accent-text)]',
                       item.status === 'duplicate' && 'bg-[var(--lumi-text-tertiary)]/15 text-[var(--lumi-text-tertiary)]',

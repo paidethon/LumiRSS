@@ -83,7 +83,7 @@ function RowShell({
         <label
           id={labelId}
           htmlFor={labelFor}
-          className="text-sm font-medium leading-none text-[var(--lumi-text-primary)]"
+          className="text-sm font-medium leading-tight text-[var(--lumi-text-primary)]"
         >
           {label}
         </label>

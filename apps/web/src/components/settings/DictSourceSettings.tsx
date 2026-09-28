@@ -34,7 +34,7 @@ export function DictSourceSettings() {
       <div>
         <label
           htmlFor="dict-api-url"
-          className="text-sm font-medium leading-none text-[var(--lumi-text-primary)]"
+          className="text-sm font-medium leading-tight text-[var(--lumi-text-primary)]"
         >
           选词词典来源
         </label>

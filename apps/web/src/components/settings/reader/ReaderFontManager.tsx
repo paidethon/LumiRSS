@@ -127,7 +127,7 @@ export function ReaderFontManager() {
 
   return (
     <div className="py-3">
-      <label className="text-sm font-medium leading-none text-[var(--lumi-text-primary)]">
+      <label className="text-sm font-medium leading-tight text-[var(--lumi-text-primary)]">
         自定义字体
       </label>
       <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">

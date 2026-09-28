@@ -70,7 +70,7 @@ export default function MobileTabBar() {
               )}
             >
               {tab.icon}
-              <span className={cx('text-[11px] leading-none', active && 'font-semibold')}>
+              <span className={cx('text-[11px] leading-tight', active && 'font-semibold')}>
                 {tab.label}
               </span>
             </button>
