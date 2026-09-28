@@ -6,8 +6,10 @@ synthesize 纯路径，路由层契约单测覆盖未配置 409）。
 """
 
 import asyncio
+import json
 import uuid
 
+import httpx
 import pytest
 
 from lumirss.storage import Database
@@ -23,21 +25,27 @@ from lumirss.tts_service import (
 )
 
 
-class FakeHttp:
-    """OpenAI 兼容 /audio/speech 替身：计数 POST，返回固定音频。"""
+class FakeHttp(httpx.AsyncClient):
+    """OpenAI 兼容 /audio/speech 替身：计数调用，返回固定音频。
+
+    FIX-249 之后 _call_provider 走真实 httpx 流式接口
+    （build_request + send(stream=True)），替身改为 MockTransport 客户端，
+    既有断言形状（calls[].url/json/headers）保持不变。"""
 
     def __init__(self, audio: bytes = b"fake-mp3-bytes"):
-        self.audio = audio
         self.calls: list[dict] = []
 
-    async def post(self, url, json=None, headers=None, timeout=None):
-        self.calls.append({"url": url, "json": json, "headers": headers})
-        return SimpleNamespace(status_code=200, content=self.audio)
+        def handler(request: httpx.Request) -> httpx.Response:
+            self.calls.append(
+                {
+                    "url": str(request.url),
+                    "json": json.loads(request.content.decode() or "{}"),
+                    "headers": dict(request.headers),
+                }
+            )
+            return httpx.Response(200, content=audio)
 
-
-class SimpleNamespace:
-    def __init__(self, **kwargs):
-        self.__dict__.update(kwargs)
+        super().__init__(transport=httpx.MockTransport(handler), trust_env=False)
 
 
 CONFIG = TtsProviderConfig(

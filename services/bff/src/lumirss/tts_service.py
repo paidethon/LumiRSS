@@ -199,23 +199,47 @@ async def synthesize(
 async def _call_provider(
     http: Any, config: TtsProviderConfig, *, text: str, voice: str
 ) -> bytes:
-    """OpenAI 兼容 /audio/speech 调用（恰好一次；错误分型稳定）。"""
+    """OpenAI 兼容 /audio/speech 调用（恰好一次；错误分型稳定）。
+
+    FIX-249：响应体流式读取并在 MAX_AUDIO_BYTES 处干净失败——旧实现
+    ``response.content`` 先把（解压后的）整个响应缓冲进内存再做长度
+    校验，一个 gzip 炸弹可在校验前把 BFF 内存打爆；现在解压输出一到
+    上限即断流，内存与解压工作量都被封顶。"""
     base = config.base_url.rstrip("/")
     url = f"{base}/audio/speech"
+    request = http.build_request(
+        "POST",
+        url,
+        json={
+            "model": config.model,
+            "input": text,
+            "voice": voice,
+            "response_format": "mp3",
+        },
+        headers={"Authorization": f"Bearer {config.api_key}"},
+        timeout=TTS_TIMEOUT_S,
+    )
     try:
-        response = await http.post(
-            url,
-            json={
-                "model": config.model,
-                "input": text,
-                "voice": voice,
-                "response_format": "mp3",
-            },
-            headers={"Authorization": f"Bearer {config.api_key}"},
-            timeout=TTS_TIMEOUT_S,
-        )
+        response = await http.send(request, stream=True)
     except Exception as exc:  # noqa: BLE001 — 网络/超时统一上游错误
         raise TtsUpstreamError(f"TTS provider 调用失败：{type(exc).__name__}") from exc
     if response.status_code != 200:
+        await response.aclose()
         raise TtsUpstreamError(f"TTS provider 返回 {response.status_code}。")
-    return response.content or b""
+    chunks: list[bytes] = []
+    total = 0
+    try:
+        async for chunk in response.aiter_bytes():
+            total += len(chunk)
+            if total > MAX_AUDIO_BYTES:
+                raise TtsUpstreamError(
+                    "provider 返回的音频超过 5MB 单条上限，未缓存。"
+                )
+            chunks.append(chunk)
+    except TtsUpstreamError:
+        raise
+    except Exception as exc:  # noqa: BLE001 — 读流中断统一上游错误
+        raise TtsUpstreamError(f"TTS provider 调用失败：{type(exc).__name__}") from exc
+    finally:
+        await response.aclose()
+    return b"".join(chunks)

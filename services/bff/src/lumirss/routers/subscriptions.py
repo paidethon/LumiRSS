@@ -878,6 +878,11 @@ async def _probe_feed_url(
 ) -> dict[str, object]:
     """单源探测：HEAD → 降级 GET → 有界读前 4KB 判定。
 
+    FIX-249：两个 GET 都是流式有界读取——降级 GET 只取状态/响应头（一个
+    解压字节都不读），正文嗅探读满 4KB 解压输出即断。旧实现
+    ``raw.content`` 先整读再切片，外部内容上的 gzip 炸弹会在探测内存里
+    无界展开。
+
     ``http_client`` 可注入（测试用 httpx.MockTransport，绝不打真实网络）。"""
     import contextlib
     import urllib.parse
@@ -892,31 +897,64 @@ async def _probe_feed_url(
         try:
             response = await client.head(feed_url, timeout=timeout_s, follow_redirects=False)
             if response.status_code in (405, 501):
-                response = await client.get(feed_url, timeout=timeout_s, follow_redirects=False)
+                # FIX-249: streamed header probe — the body is never read.
+                await response.aclose()
+                request = client.build_request("GET", feed_url, timeout=timeout_s)
+                response = await client.send(request, stream=True, follow_redirects=False)
+            try:
+                status_code = response.status_code
+                content_type = response.headers.get("content-type", "").lower()
+            finally:
+                await response.aclose()
         except httpx.UnsupportedProtocol:
             return {"status": "network_error"}
-        if response.status_code in (401, 403):
-            return {"status": "auth_error", "httpStatus": response.status_code}
-        if response.status_code in (404, 410):
-            return {"status": "not_found", "httpStatus": response.status_code}
-        if response.status_code == 429:
-            return {"status": "rate_limited", "httpStatus": response.status_code}
-        if response.status_code >= 400:
-            return {"status": "network_error", "httpStatus": response.status_code}
-        content_type = response.headers.get("content-type", "").lower()
+        if status_code in (401, 403):
+            return {"status": "auth_error", "httpStatus": status_code}
+        if status_code in (404, 410):
+            return {"status": "not_found", "httpStatus": status_code}
+        if status_code == 429:
+            return {"status": "rate_limited", "httpStatus": status_code}
+        if status_code >= 400:
+            return {"status": "network_error", "httpStatus": status_code}
         if any(marker in content_type for marker in ("xml", "rss", "atom")):
-            return {"status": "ok", "httpStatus": response.status_code}
+            return {"status": "ok", "httpStatus": status_code}
         body_head = b""
         with contextlib.suppress(Exception):
-            raw = await client.get(feed_url, timeout=timeout_s, follow_redirects=False)
-            body_head = raw.content[:4096]
+            body_head = await _bounded_body_head(client, feed_url, timeout_s)
         if b"<rss" in body_head or b"<feed" in body_head:
-            return {"status": "ok", "httpStatus": response.status_code}
-        return {"status": "bad_content", "httpStatus": response.status_code}
+            return {"status": "ok", "httpStatus": status_code}
+        return {"status": "bad_content", "httpStatus": status_code}
     except httpx.TimeoutException:
         return {"status": "timeout"}
     except httpx.HTTPError:
         return {"status": "network_error"}
+
+
+async def _bounded_body_head(
+    client, url: str, timeout_s: float, *, limit: int = 4096
+) -> bytes:
+    """FIX-249: stream-read at most ``limit`` DECOMPRESSED bytes.
+
+    ``aiter_bytes`` yields post-decompression output, so both the buffered
+    memory and the decompression work are capped: a gzip bomb pays at most
+    ~one chunk of decompression before the stream is aborted."""
+    import httpx
+
+    request = client.build_request("GET", url, timeout=timeout_s)
+    response = await client.send(request, stream=True, follow_redirects=False)
+    chunks: list[bytes] = []
+    received = 0
+    try:
+        async for chunk in response.aiter_bytes():
+            chunks.append(chunk)
+            received += len(chunk)
+            if received >= limit:
+                break
+    except httpx.HTTPError:
+        pass  # 读取中断：已到手的字节仍可用于嗅探
+    finally:
+        await response.aclose()
+    return b"".join(chunks)[:limit]
 
 
 def _subscription_json(subscription) -> dict[str, object]:
