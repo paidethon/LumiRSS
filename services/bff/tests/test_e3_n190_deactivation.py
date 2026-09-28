@@ -116,7 +116,9 @@ def test_n190_request_blocks_login_and_owner_restores(monkeypatch, tmp_path):
         member_id = next(r["id"] for r in users if r["username"] == MEMBER)
         # N009 提权门：resume 是敏感操作——先 step-up 再携带令牌。
         step = session_client.post(
-            "/api/v1/admin/step-up", json={"password": PASSWORD}, headers=owner
+            "/api/v1/admin/step-up",
+            json={"password": PASSWORD, "operation": "user_active", "targetUserId": member_id},
+            headers=owner,
         )
         assert step.status_code == 200, step.text
         owner_step = {**owner, "X-Lumi-Step-Up": step.json()["token"]}

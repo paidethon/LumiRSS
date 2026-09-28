@@ -111,11 +111,11 @@ def _set_role_direct(env, username: str, role: str) -> None:
     asyncio.run(run())
 
 
-def _step_up(env, who: str) -> dict:
-    """N009：为管理员铸造一次性提权令牌并返回带头的请求头。"""
+def _step_up(env, who: str, operation: str, target: str) -> dict:
+    """N009 + FIX-218：铸造作用域绑定（操作, 目标）的一次性提权令牌。"""
     minted = env["client"].post(
         "/api/v1/admin/step-up",
-        json={"password": PASSWORD},
+        json={"password": PASSWORD, "operation": operation, "targetUserId": target},
         headers={"cookie": env[who]["cookie"]},
     )
     assert minted.status_code == 200, minted.text
@@ -123,9 +123,15 @@ def _step_up(env, who: str) -> dict:
 
 
 def _post(env, who: str, path: str, json_body=None):
+    sensitive = any(seg in path for seg in ("/role", "/pause", "/resume"))
     headers = (
-        _step_up(env, who)
-        if who == "owner" and any(seg in path for seg in ("/role", "/pause", "/resume"))
+        _step_up(
+            env,
+            who,
+            operation=("user_role_change" if "/role" in path else ("user_paused" if "/pause" in path else "user_active")),
+            target=path.rstrip("/").split("/")[-2],
+        )
+        if who == "owner" and sensitive
         else {"cookie": env[who]["cookie"]}
     )
     return env["client"].post(path, json=json_body, headers=headers)

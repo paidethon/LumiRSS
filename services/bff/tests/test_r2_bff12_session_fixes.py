@@ -351,7 +351,9 @@ def _role_change(
 ):
     """owner-only 角色变更（每次自铸一次性 step-up 令牌）。"""
     step = client.post(
-        "/api/v1/admin/step-up", json={"password": password}, headers=owner_headers
+        "/api/v1/admin/step-up",
+        json={"password": password, "operation": "user_role_change", "targetUserId": user_id},
+        headers=owner_headers,
     )
     assert step.status_code == 200, step.text
     return client.post(

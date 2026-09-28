@@ -10,6 +10,10 @@
 - 令牌只存 SHA-256 散列（token_hash）；明文只在铸造响应里出现一次；
 - 消费是原子的单次语义（UPDATE ... WHERE used_at IS NULL AND
   expires_at > now）——重放/过期/他人令牌一律 403 step_up_required；
+- FIX-218 作用域绑定：令牌铸造时必须声明 (operation, targetUserId)，
+  消费时逐字匹配同一作用域串——为「重置 A 的密码」确认的密码证明
+  绝不能顺带授权「改 B 的角色」。跨操作/跨目标的令牌复用一律 403；
+  旧的无作用域令牌（operation 为 NULL）永不匹配，默认拒绝；
 - 非管理员铸造请求按普通 403 forbidden 拒绝（member 无法造令牌）；
 - 审计只记 mint/denied 动作与用户 id，绝不记令牌或密码。
 """
@@ -25,6 +29,23 @@ STEP_UP_HEADER = "X-Lumi-Step-Up"
 STEP_UP_TTL_MINUTES = 5
 _TOKEN_BYTES = 32
 
+# FIX-218：允许声明的作用域操作（与 admin 路由的守卫调用一一对应）。
+# 新敏感操作必须同时登记在这里与对应路由的 require_step_up 调用处。
+STEP_UP_OPERATIONS: tuple[str, ...] = (
+    "user_role_change",
+    "user_paused",
+    "user_active",
+    "user_password_reset",
+    "user_quota_set",
+)
+
+STEP_UP_OP_PATTERN = "^(?:" + "|".join(STEP_UP_OPERATIONS) + ")$"
+
+
+def step_up_scope(operation: str, target_user_id: str | None) -> str:
+    """(operation, target-resource) → 存库/比对的作用域串。"""
+    return f"{operation}:{target_user_id}" if target_user_id else operation
+
 
 class StepUpDenied(Exception):
     """铸造失败（密码错误）→ 400 invalid_credentials 口径。"""
@@ -36,10 +57,17 @@ def _expiry() -> str:
     ).isoformat(timespec="seconds")
 
 
-async def mint_step_up_token(db: Any, user_id: str, password: str) -> dict[str, Any] | None:
-    """验证管理员密码并铸造一次性令牌；密码错 → None（调用方 400）。"""
+async def mint_step_up_token(
+    db: Any, user_id: str, password: str, operation: str, target_user_id: str | None = None
+) -> dict[str, Any] | None:
+    """验证管理员密码并铸造**作用域绑定**的一次性令牌；密码错 → None。
+
+    令牌的 ``operation`` 列存 (operation, target) 合成作用域串；消费端
+    必须用同一作用域串才可能命中。"""
     from lumirss.accounts_store import verify_password_hash
 
+    if operation not in STEP_UP_OPERATIONS:
+        raise ValueError(f"Unknown step-up operation: {operation}.")
     await db.migrate()
     row = await db.fetch_one(
         "SELECT password_hash FROM users WHERE id = ?", (user_id,)
@@ -49,23 +77,27 @@ async def mint_step_up_token(db: Any, user_id: str, password: str) -> dict[str, 
     token = secrets.token_urlsafe(_TOKEN_BYTES)
     now = utc_now()
     await db.execute(
-        "INSERT INTO admin_step_up_tokens (token_hash, user_id, operation, created_at, expires_at) VALUES (?, ?, NULL, ?, ?)",
-        (hash_token(token), user_id, now, _expiry()),
+        "INSERT INTO admin_step_up_tokens (token_hash, user_id, operation, created_at, expires_at) VALUES (?, ?, ?, ?, ?)",
+        (hash_token(token), user_id, step_up_scope(operation, target_user_id), now, _expiry()),
     )
     return {
         "token": token,
+        "operation": operation,
+        "targetUserId": target_user_id,
         "expiresInMinutes": STEP_UP_TTL_MINUTES,
         "expiresAt": _expiry(),
     }
 
 
 async def consume_step_up_token(
-    db: Any, token: str | None, user_id: str
+    db: Any, token: str | None, user_id: str, operation: str, target_user_id: str | None = None
 ) -> bool:
-    """单次消费：存在 + 属于该管理员 + 未用过 + 未过期才放行。
+    """单次消费：存在 + 属于该管理员 + **作用域逐字匹配** + 未用过 +
+    未过期才放行。
 
     一条 UPDATE 完成「校验 + 作废」，重放并发也只会成功一次。
-    （rowcount 经事务回调读取——Database.execute 只回 lastrowid。）"""
+    （rowcount 经事务回调读取——Database.execute 只回 lastrowid。）
+    NULL operation 的旧格式令牌永不匹配任何要求的作用域——默认拒绝。"""
     if not token:
         return False
 
@@ -73,36 +105,49 @@ async def consume_step_up_token(
 
     from lumirss.db_tx import transaction
 
+    scope = step_up_scope(operation, target_user_id)
+
     def _tx(conn: sqlite3.Connection) -> bool:
         cursor = conn.execute(
-            "UPDATE admin_step_up_tokens SET used_at = ? WHERE token_hash = ? AND user_id = ? AND used_at IS NULL AND expires_at > ?",
-            (utc_now(), hash_token(token), user_id, utc_now()),
+            "UPDATE admin_step_up_tokens SET used_at = ? WHERE token_hash = ? AND user_id = ? AND operation IS ? AND used_at IS NULL AND expires_at > ?",
+            (utc_now(), hash_token(token), user_id, scope, utc_now()),
         )
         return bool(cursor.rowcount)
 
     return bool(await transaction(db, _tx))
 
 
-def step_up_required_response(operation: str) -> dict[str, Any]:
-    """403 step_up_required 错误体（提示如何铸造令牌）。"""
-    return {
+def step_up_required_response(
+    operation: str, target_user_id: str | None = None
+) -> dict[str, Any]:
+    """403 step_up_required 错误体（提示如何铸造**匹配作用域**的令牌）。"""
+    body: dict[str, Any] = {
         "error": {
             "type": "step_up_required",
-            "message": "该操作需要临时提权：先 POST /api/v1/admin/step-up，"
+            "message": "该操作需要临时提权：先 POST /api/v1/admin/step-up"
+            "（声明 operation 与 targetUserId），"
             f"再携带 {STEP_UP_HEADER} 头重试。",
             "operation": operation,
         }
     }
+    if target_user_id is not None:
+        body["error"]["targetUserId"] = target_user_id
+    return body
 
 
 async def require_step_up(
-    request: Any, principal: dict[str, str] | None, operation: str
+    request: Any,
+    principal: dict[str, str] | None,
+    operation: str,
+    target_user_id: str | None = None,
 ) -> Any:
-    """敏感路由的守卫：令牌有效 → None（放行）；否则 403 JSONResponse。
+    """敏感路由的守卫：令牌有效且作用域匹配 → None（放行）；否则 403。
 
     用法（admin 路由内，_require_admin 之后）::
 
-        denial = await require_step_up(request, principal, "user_role_change")
+        denial = await require_step_up(
+            request, principal, "user_role_change", user_id
+        )
         if denial is not None:
             return denial
     """
@@ -115,11 +160,11 @@ async def require_step_up(
     user_id = str((principal or {}).get("user_id") or "")
     db = request.app.state.control_db
     token = request.headers.get(STEP_UP_HEADER)
-    ok = await consume_step_up_token(db, token, user_id)
+    ok = await consume_step_up_token(db, token, user_id, operation, target_user_id)
     if not ok:
         return JSONResponse(
             status_code=403,
-            content=step_up_required_response(operation),
+            content=step_up_required_response(operation, target_user_id),
             headers={"Cache-Control": "no-store"},
         )
     return None

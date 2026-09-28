@@ -133,7 +133,9 @@ def test_fix022_admin_pause_blocks_old_cookie_read_and_write(monkeypatch, tmp_pa
             str(u["id"]) for u in users if str(u["username"]) == member_name
         )
         step = client.post(
-            "/api/v1/admin/step-up", json={"password": password}, headers=owner_headers
+            "/api/v1/admin/step-up",
+            json={"password": password, "operation": "user_paused", "targetUserId": member_id},
+            headers=owner_headers,
         )
         assert step.status_code == 200, step.text
         paused = client.post(
@@ -365,7 +367,9 @@ def test_fix213_recover_second_use_rejected_state_consistent(monkeypatch, tmp_pa
             str(u["id"]) for u in users if str(u["username"]) == member_name
         )
         step = client.post(
-            "/api/v1/admin/step-up", json={"password": password}, headers=owner_headers
+            "/api/v1/admin/step-up",
+            json={"password": password, "operation": "user_password_reset", "targetUserId": member_id},
+            headers=owner_headers,
         )
         reset = client.post(
             f"/api/v1/admin/users/{member_id}/reset-password",
@@ -486,7 +490,9 @@ def _grant_admin_role(client, owner_headers, password: str, member_name: str) ->
         str(u["id"]) for u in users if str(u["username"]) == member_name
     )
     step = client.post(
-        "/api/v1/admin/step-up", json={"password": password}, headers=owner_headers
+        "/api/v1/admin/step-up",
+        json={"password": password, "operation": "user_role_change", "targetUserId": member_id},
+        headers=owner_headers,
     )
     assert step.status_code == 200, step.text
     role = client.post(
@@ -517,7 +523,7 @@ def test_d03_admin_cannot_reset_owner_password(monkeypatch, tmp_path):
         # admin 提权后 step-up 用自己的（同一个随机生成的测试）密码。
         step = client.post(
             "/api/v1/admin/step-up",
-            json={"password": password},
+            json={"password": password, "operation": "user_password_reset", "targetUserId": owner_id},
             headers=admin_headers,
         )
         assert step.status_code == 200, step.text
@@ -544,7 +550,9 @@ def test_d03_owner_cannot_target_itself_via_reset_password(monkeypatch, tmp_path
         users = client.get("/api/v1/admin/users", headers=owner_headers).json()
         owner_id = next(str(u["id"]) for u in users if str(u.get("role")) == "owner")
         step = client.post(
-            "/api/v1/admin/step-up", json={"password": password}, headers=owner_headers
+            "/api/v1/admin/step-up",
+            json={"password": password, "operation": "user_password_reset", "targetUserId": owner_id},
+            headers=owner_headers,
         )
         assert step.status_code == 200, step.text
         reset = client.post(

@@ -148,7 +148,7 @@ def test_capacity_numbers_equal_raw_queries(capacity_env):
     bob_id = next(row["id"] for row in users if row["username"] == B_USER)
     step_up = env["client"].post(
         "/api/v1/admin/step-up",
-        json={"password": PASSWORD},
+        json={"password": PASSWORD, "operation": "user_paused", "targetUserId": bob_id},
         headers=env["owner"],
     )
     assert step_up.status_code == 200, step_up.text

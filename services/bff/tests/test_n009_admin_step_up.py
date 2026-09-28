@@ -85,8 +85,13 @@ def stepup_env(monkeypatch, tmp_path):
         }
 
 
-def _mint(client, headers, password=PASSWORD):
-    return client.post("/api/v1/admin/step-up", json={"password": password}, headers=headers)
+def _mint(client, headers, password=PASSWORD, operation="user_role_change", target=None):
+    """FIX-218：铸造作用域绑定令牌（operation + targetUserId 必填）。"""
+    return client.post(
+        "/api/v1/admin/step-up",
+        json={"password": password, "operation": operation, "targetUserId": target or A_USER},
+        headers=headers,
+    )
 
 
 def test_sensitive_ops_require_step_up_and_token_works(stepup_env):
@@ -111,8 +116,8 @@ def test_sensitive_ops_require_step_up_and_token_works(stepup_env):
     assert denied.status_code == 403
     assert denied.json()["error"]["type"] == "step_up_required"
 
-    # 铸造令牌 → 同一令牌执行敏感操作成功；重放 → 403（单次使用）。
-    minted = _mint(client, owner)
+    # 铸造令牌 → 同一作用域令牌执行敏感操作成功；重放 → 403（单次使用）。
+    minted = _mint(client, owner, operation="user_role_change", target=alice_id)
     assert minted.status_code == 200, minted.text
     token = minted.json()["token"]
     assert minted.json()["expiresInMinutes"] <= 5
@@ -191,7 +196,7 @@ def test_expired_or_invalid_token_denied(stepup_env):
 def test_member_cannot_mint_step_up_token(stepup_env):
     client = stepup_env["client"]
     member = stepup_env["member"]
-    forged = _mint(client, member)
+    forged = _mint(client, member, operation="user_quota_set", target=A_USER)
     assert forged.status_code == 403
     assert forged.json()["error"]["type"] == "forbidden"
 
@@ -200,11 +205,11 @@ def test_wrong_password_and_masked_audit(stepup_env):
     client = stepup_env["client"]
     owner = stepup_env["owner"]
 
-    wrong = _mint(client, owner, password="wrong-" + _secrets.token_urlsafe(8))
+    wrong = _mint(client, owner, password="wrong-" + _secrets.token_urlsafe(8), operation="user_quota_set", target=A_USER)
     assert wrong.status_code == 400
     assert wrong.json()["error"]["type"] == "invalid_credentials"
 
-    minted = _mint(client, owner)
+    minted = _mint(client, owner, operation="user_quota_set", target=A_USER)
     assert minted.status_code == 200
     token = minted.json()["token"]
 
