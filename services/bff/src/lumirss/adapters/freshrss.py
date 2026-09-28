@@ -904,9 +904,15 @@ class FreshRSSAdapter(FreshRSSSession):
 
         Returns None when the item has no usable id (it cannot be
         referenced at all); every other missing field is tolerated.
+
+        FIX-232：条目 ID 全链路是无损字符串。上游把短形 ID 发成 JSON
+        number（int）时，Python 整数解析天然精确（无 JavaScript number
+        的 2^53 精度损失），转成十进制字符串保真；JSON float（JS double
+        形状，精度已损）绝不转换成数字串——那会臆造一个可能指向错误
+        条目的 ID，按形状异常跳过。
         """
-        item_id = item.get("id")
-        if not isinstance(item_id, str) or not item_id:
+        item_id = FreshRSSAdapter._entry_id_of(item)
+        if item_id is None:
             return None
         title = item.get("title")
         title = title if isinstance(title, str) else ""
@@ -974,6 +980,28 @@ class FreshRSSAdapter(FreshRSSSession):
             "content_html": FreshRSSAdapter._content_html_of(item),
             "enclosure": enclosure,
         }
+
+    @staticmethod
+    def _entry_id_of(item: dict) -> str | None:
+        """The upstream entry id as an exact, lossless string (FIX-232).
+
+        - str: kept verbatim (long-form ``tag:google.com,…item/<16-hex>``
+          and decimal short form both pass through untouched);
+        - int (JSON number): Python parses big integers exactly, so the
+          decimal rendering is lossless — no 2^53 float semantics anywhere;
+        - float / bool / anything else: the id shape is unusable. A float
+          may already have lost digits (JavaScript-number serialization);
+          converting it to a string would fabricate an id that can address
+          the WRONG entry, so the item is skipped instead.
+        """
+        raw = item.get("id")
+        if isinstance(raw, bool):
+            return None
+        if isinstance(raw, str):
+            return raw or None
+        if isinstance(raw, int):
+            return str(raw)
+        return None
 
     @staticmethod
     def _content_html_of(item: dict) -> str:
