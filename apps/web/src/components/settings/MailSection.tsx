@@ -16,6 +16,8 @@
  * 所有 HTTP 经 src/api/client.ts；loading / empty / error 三态齐备。 */
 
 import { useState } from 'react'
+
+import { useSettingsDirtySection } from './settings-dirty'
 import { AlertCircle, CheckCircle2, Copy, MailPlus, Plus, RefreshCw, Send, Trash2, Wifi } from 'lucide-react'
 import {
   useCreateMailBridgeListMutation,
@@ -378,6 +380,22 @@ function DigestForm({ settings }: { settings: DigestSettings }) {
   // 真值，同时保留「用户编辑中不被无关重拉覆盖」的性质（数据未变 →
   // key 不变 → 不重挂）。
 
+  // FIX-057：与 formStateOf(settings) 基线的差异 + 未保存的 write-only
+  // 密码 = 脏状态；登记给设置中心，切分类 / 关闭设置前统一守护。
+  const baseline = formStateOf(settings)
+  const digestDirty =
+    form.enabled !== baseline.enabled ||
+    form.hour !== baseline.hour ||
+    form.source !== baseline.source ||
+    form.limitCount !== baseline.limitCount ||
+    form.smtpHost !== baseline.smtpHost ||
+    form.smtpPort !== baseline.smtpPort ||
+    form.smtpUser !== baseline.smtpUser ||
+    form.fromAddr !== baseline.fromAddr ||
+    form.toAddr !== baseline.toAddr ||
+    form.timezone !== baseline.timezone ||
+    form.smtpPassword !== ''
+  useSettingsDirtySection('mail-digest', digestDirty)
   const update = <K extends keyof DigestFormState>(key: K, value: DigestFormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
@@ -710,6 +728,20 @@ function ImapForm({ server }: { server: MailImapSettings }) {
   const [interval, setIntervalSeconds] = useState(String(server.intervalSeconds))
   const [enabled, setEnabled] = useState(server.enabled)
   const [password, setPassword] = useState('')
+
+  // FIX-057：与服务端值的差异 + 未保存的 write-only 密码 = 脏状态；
+  // 登记给设置中心，切分类 / 关闭设置前统一守护。
+  const imapDirty =
+    host !== server.host ||
+    port !== String(server.port) ||
+    user !== server.user ||
+    folder !== server.folder ||
+    ssl !== server.ssl ||
+    listUuid !== server.listUuid ||
+    interval !== String(server.intervalSeconds) ||
+    enabled !== server.enabled ||
+    password !== ''
+  useSettingsDirtySection('mail-imap', imapDirty)
 
   const save = () => {
     update.mutate(

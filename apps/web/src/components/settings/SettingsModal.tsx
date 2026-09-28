@@ -15,8 +15,10 @@
 import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import { Dialog } from '../ui/Dialog'
+import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
 import { SettingItemList } from './SettingItem'
+import { useHasDirtySettings } from './settings-dirty'
 import {
   CATEGORIES,
   categoryLabel,
@@ -27,6 +29,9 @@ import {
 import type { SettingsOpenDetail } from './settings-bridge'
 import { cx } from '../ui/cx'
 import { ReadingPreviewPane } from './reader/ReadingPreviewPane'
+
+/** FIX-057：被脏状态拦截、等待用户决策的导航意图。 */
+type PendingNav = { kind: 'category'; id: CategoryId } | { kind: 'close' } | null
 
 export default function SettingsModal({
   open,
@@ -40,6 +45,25 @@ export default function SettingsModal({
 }) {
   const [category, setCategory] = useState<CategoryId>('general')
   const items = useCategoryItems(category)
+  // FIX-057：任一表单分区登记了未保存更改 → 切分类 / 关闭前先确认。
+  const hasDirty = useHasDirtySettings()
+  const [pendingNav, setPendingNav] = useState<PendingNav>(null)
+
+  const requestNavigate = (id: CategoryId): void => {
+    if (id === category) return
+    if (hasDirty) setPendingNav({ kind: 'category', id })
+    else setCategory(id)
+  }
+  const requestClose = (): void => {
+    if (hasDirty) setPendingNav({ kind: 'close' })
+    else onClose()
+  }
+  const confirmPendingNav = (): void => {
+    if (pendingNav === null) return
+    if (pendingNav.kind === 'category') setCategory(pendingNav.id)
+    else onClose()
+    setPendingNav(null)
+  }
 
   // 深链请求（每次请求 seq 递增 → 对象身份变化即应用；同一分类重复
   // 请求同样生效）。未知 id 由 toCategoryId 安全降级为通用分类。
@@ -50,11 +74,11 @@ export default function SettingsModal({
   }, [openCategory])
 
   return (
-    <Dialog open={open} onClose={onClose} title="设置" panelClassName="!max-w-none w-auto p-0" hideTitle>
+    <Dialog open={open} onClose={requestClose} title="设置" panelClassName="!max-w-none w-auto p-0" hideTitle>
       {/* 自定义头部（Dialog 内置标题已隐藏；此 h2 即对话框的可访问名字） */}
       <div className="flex items-center justify-between border-b border-[var(--lumi-separator)] px-5 py-3.5">
         <h2 className="text-base font-semibold text-[var(--lumi-text-primary)]">设置</h2>
-        <IconButton icon={<X aria-hidden className="size-4" />} label="关闭设置" onClick={onClose} />
+        <IconButton icon={<X aria-hidden className="size-4" />} label="关闭设置" onClick={requestClose} />
       </div>
       {/* fresh-eyes Issue 7：上限叠加 Dialog 的 85dvh 减去自带头部，
           矮窗口下头部（含关闭按钮）不再被滚出可视区。 */}
@@ -69,7 +93,7 @@ export default function SettingsModal({
             <button
               key={c.id}
               type="button"
-              onClick={() => setCategory(c.id)}
+              onClick={() => requestNavigate(c.id)}
               aria-current={category === c.id ? 'true' : undefined}
               className={cx(
                 'flex items-center gap-2.5 rounded-[var(--lumi-radius-md)] px-2.5 py-1.5 text-left text-sm',
@@ -112,6 +136,28 @@ export default function SettingsModal({
           )}
         </div>
       </div>
+
+      {/* FIX-057：未保存更改的统一离场确认（Escape/遮罩由 Dialog 承担；
+          保存动作在各自分区——此处只提供 放弃 / 留下 两个选项）。 */}
+      <Dialog
+        open={pendingNav !== null}
+        onClose={() => setPendingNav(null)}
+        title="有未保存的更改"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setPendingNav(null)}>
+              继续编辑
+            </Button>
+            <Button variant="danger" onClick={confirmPendingNav}>
+              放弃并离开
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm leading-relaxed text-[var(--lumi-text-primary)]">
+          当前分区有未保存的更改。离开将丢弃这些更改；要保留请先在分区内保存。
+        </p>
+      </Dialog>
     </Dialog>
   )
 }

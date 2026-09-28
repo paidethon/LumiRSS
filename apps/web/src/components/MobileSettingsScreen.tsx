@@ -18,7 +18,10 @@ import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { CATEGORIES, CATEGORY_GROUPS, categoryLabel, toCategoryId, useCategoryItems, type CategoryId } from './settings/categories'
 import { SettingItemList } from './settings/SettingItem'
 import type { SettingsOpenDetail } from './settings/settings-bridge'
+import { useHasDirtySettings } from './settings/settings-dirty'
 import { Sheet } from './ui/Sheet'
+import { Dialog } from './ui/Dialog'
+import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
 import { useIsMobile } from '../lib/use-is-mobile'
 import { MobileReadingPreview } from './settings/reader/ReadingPreviewPane'
@@ -36,6 +39,24 @@ export default function MobileSettingsScreen({
   // null = 首页（分组列表）；非 null = 当前 push 的子页分类
   const [page, setPage] = useState<CategoryId | null>(null)
   const isMobile = useIsMobile()
+  // FIX-057：任一表单分区有未保存更改 → 返回/关闭前先确认。
+  const hasDirty = useHasDirtySettings()
+  const [pendingNav, setPendingNav] = useState<'back' | 'close' | null>(null)
+
+  const requestBack = (): void => {
+    if (hasDirty) setPendingNav('back')
+    else setPage(null)
+  }
+  const requestClose = (): void => {
+    if (hasDirty) setPendingNav('close')
+    else onClose()
+  }
+  const confirmPendingNav = (): void => {
+    if (pendingNav === null) return
+    if (pendingNav === 'back') setPage(null)
+    else onClose()
+    setPendingNav(null)
+  }
 
   // 深链请求：直达分类子页（同一分类重复请求同样生效——seq 身份变化）。
   useEffect(() => {
@@ -49,7 +70,7 @@ export default function MobileSettingsScreen({
   return (
     <Sheet
       open
-      onClose={onClose}
+      onClose={requestClose}
       label="设置"
       side="bottom"
       panelClassName="h-dvh max-h-none w-full flex flex-col rounded-none border-0 bg-[var(--lumi-canvas)]"
@@ -66,7 +87,7 @@ export default function MobileSettingsScreen({
               size="lg"
               icon={<X aria-hidden className="size-4" />}
               label="关闭设置"
-              onClick={onClose}
+              onClick={requestClose}
             />
           </header>
           <div
@@ -107,8 +128,29 @@ export default function MobileSettingsScreen({
         </>
       ) : (
         /* ---- 子页：push 全屏分类页（Folo mobile routes/<Category> 模式） ---- */
-        <SubPage id={page} onBack={() => setPage(null)} />
+        <SubPage id={page} onBack={requestBack} />
       )}
+
+      {/* FIX-057：未保存更改的统一离场确认（桌面 SettingsModal 同款语义）。 */}
+      <Dialog
+        open={pendingNav !== null}
+        onClose={() => setPendingNav(null)}
+        title="有未保存的更改"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setPendingNav(null)}>
+              继续编辑
+            </Button>
+            <Button variant="danger" onClick={confirmPendingNav}>
+              放弃并离开
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm leading-relaxed text-[var(--lumi-text-primary)]">
+          当前分区有未保存的更改。离开将丢弃这些更改；要保留请先在分区内保存。
+        </p>
+      </Dialog>
     </Sheet>
   )
 }

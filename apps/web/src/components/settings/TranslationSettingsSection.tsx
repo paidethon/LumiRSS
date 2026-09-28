@@ -24,6 +24,7 @@ import {
   useUpdateAiSettingsMutation,
 } from '../../api/queries'
 import { LocalTranslationCapabilitySection } from './LocalTranslationCapabilitySection'
+import { useSettingsDirtySection } from './settings-dirty'
 import { Select } from '../ui/Select'
 import { Button } from '../ui/Button'
 import { cx } from '../ui/cx'
@@ -72,6 +73,8 @@ export function TranslationSettingsSection() {
   const [libreUrl, setLibreUrl] = useState('')
   const [keyInput, setKeyInput] = useState('')
   const [dirty, setDirty] = useState(false)
+  // FIX-057：向设置中心登记脏状态——切分类 / 关闭设置前统一守护。
+  useSettingsDirtySection('translation', dirty)
 
   useEffect(() => {
     const s = settings.data

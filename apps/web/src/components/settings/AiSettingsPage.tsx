@@ -55,6 +55,7 @@ import { AiQuotaCard } from './AiQuotaCard'
 import { AiTaskCenterPanel } from './AiTaskCenterPanel'
 import { Button } from '../ui/Button'
 import { Select } from '../ui/Select'
+import { useSettingsDirtySection } from './settings-dirty'
 import { Skeleton } from '../ui/Skeleton'
 import { Switch } from '../ui/Switch'
 import { cx } from '../ui/cx'
@@ -312,6 +313,8 @@ function ProfileCard({ profile }: { profile: AiProfile }) {
     draft.provider !== profile.provider ||
     draft.baseUrl !== profile.baseUrl ||
     draft.model !== profile.model
+  // FIX-057：编辑中的 Profile 草稿向设置中心登记脏状态。
+  useSettingsDirtySection(`ai-profile-${profile.id}`, dirty)
 
   const saveEdit = () => {
     // gemini：Base URL 由服务端固定（官方接口），不上送。
@@ -852,6 +855,8 @@ function GlobalSettingsCard({ settings }: { settings: AiSettings }) {
     values.baseUrl !== settings.baseUrl ||
     values.model !== settings.model ||
     values.summaryLanguage !== settings.summaryLanguage
+  // FIX-057：全局默认配置草稿向设置中心登记脏状态。
+  useSettingsDirtySection('ai-global', dirty)
 
   return (
     <div className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3.5">

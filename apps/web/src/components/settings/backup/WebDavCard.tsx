@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
+import { useSettingsDirtySection } from '../settings-dirty'
 import { useTestWebDavMutation, useUpdateWebDavSettingsMutation, useWebDavSettings } from '../../../api/queries'
 import { DOCS_LINKS } from '../../../lib/docs-links'
 import { Button } from '../../ui/Button'
@@ -53,6 +54,8 @@ export function WebDavCard() {
       remoteDir !== settings.data.remoteDir ||
       tlsVerify !== settings.data.tlsVerify ||
       password.trim() !== '')
+  // FIX-057：WebDAV 表单向设置中心登记脏状态（数据 → 备份分区）。
+  useSettingsDirtySection('webdav', dirty)
 
   const doSave = () => {
     setSavedNote(null)
