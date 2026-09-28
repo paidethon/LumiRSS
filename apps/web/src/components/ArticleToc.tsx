@@ -26,6 +26,7 @@ import {
   findChapterSection,
   notifyChapterChange,
 } from '../lib/article-chapters'
+import { scrollBehavior } from '../lib/reduced-motion'
 
 /** ArticleContent 定位段落成功后派发（detail.element = 目标块）。 */
 const PARA_NAVIGATE_EVENT = 'lumi:para-navigate'
@@ -215,7 +216,7 @@ export function ArticleToc({ toc }: { toc: TocEntry[] }) {
                   }
                   document
                     .getElementById(entry.id)
-                    ?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+                    ?.scrollIntoView({ block: 'start', behavior: scrollBehavior() })
                 }}
                 className={
                   'w-full truncate rounded-[var(--lumi-radius-sm)] py-1 text-left text-[13px] transition-colors duration-[var(--lumi-motion-fast)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)] ' +

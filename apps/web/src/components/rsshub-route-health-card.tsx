@@ -18,6 +18,7 @@ import type { RssHubPreviewMetadata, RssHubRequires, RssHubRouteRun } from '../a
 import { formatCacheAge, summarizeRouteRuns } from '../lib/rsshub-health'
 import { managementErrorText } from '../lib/management-errors'
 import { rsshubFailureClassLabel } from '../lib/rsshub-params'
+import { scrollBehavior } from '../lib/reduced-motion'
 import { Button } from './ui/Button'
 import { cx } from './ui/cx'
 import { RssHubRequiresChips } from './rsshub-requires-chips'
@@ -41,10 +42,8 @@ type PreviewState =
 function jumpTo(elementId: string) {
   const el = document.getElementById(elementId)
   if (el === null) return
-  const reduceMotion =
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  el.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' })
+  // FIX-112：统一判定（应用内 data-motion-reduce + OS 偏好；此前只认 OS）
+  el.scrollIntoView({ block: 'center', behavior: scrollBehavior() })
 }
 
 function VerdictRow({

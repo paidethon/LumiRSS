@@ -37,6 +37,7 @@ import {
   collectSpeechCollection,
   type SpeechCollection,
 } from '../lib/reader-speech'
+import { scrollBehavior } from '../lib/reduced-motion'
 import type { ReaderViewMode } from '../lib/translation-blocks'
 import ArticleContent from './ArticleContent'
 // E1: N039 失效附件面板（lazy，随正文工具面板区块按需加载）
@@ -587,7 +588,8 @@ useEffect(() => {
     if (current !== undefined) {
       current.scrollIntoView({
         block: 'center',
-        behavior: document.documentElement.dataset.motionReduce === 'true' ? 'auto' : 'smooth',
+        // FIX-112：统一判定（应用内 + OS prefers-reduced-motion）
+        behavior: scrollBehavior(),
       })
     }
   }

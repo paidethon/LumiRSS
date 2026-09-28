@@ -5,6 +5,7 @@
  */
 
 import { clamp } from './clamp'
+import { scrollBehavior } from './reduced-motion'
 
 // ---- F17 按屏翻页 ----
 
@@ -24,12 +25,13 @@ export function pageTargetTop(
 }
 
 /** 按指定像素滚动容器（真实浏览器走平滑滚动；无 scrollBy 的环境
- * （jsdom / 极老浏览器）直接赋值 scrollTop——行为降级不缺失）。 */
+ * （jsdom / 极老浏览器）直接赋值 scrollTop——行为降级不缺失）。
+ * FIX-112：减少动效偏好（OS/应用内）下 behavior='auto' 瞬时翻页。 */
 export function scrollContainerBy(container: HTMLElement, deltaPx: number): void {
   const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight)
   if (typeof container.scrollBy === 'function') {
     try {
-      container.scrollBy({ top: deltaPx, behavior: 'smooth' })
+      container.scrollBy({ top: deltaPx, behavior: scrollBehavior() })
       return
     } catch {
       /* scrollBy 抛错（罕见实现差异）→ 落到直接赋值 */
