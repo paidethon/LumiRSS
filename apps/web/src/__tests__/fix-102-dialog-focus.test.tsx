@@ -4,9 +4,10 @@
  * 两种真实使用形态都要成立：
  *   A. 常驻挂载（open 翻 false，Dialog 留在树里）——Base UI 自带关闭还焦；
  *   B. 条件挂载（{open && <Dialog open …/>}，本应用 lazy 对话框的
- *      主流形态）——整棵 Dialog 卸载，Base UI 的还焦过渡没机会跑，
- *      焦点掉到 body。修复：原语在 open 起挂时捕获当前焦点，卸载时
- *      若焦点已丢失（activeElement 回到 body）则还焦给该元素。
+ *      主流形态）——整棵 Dialog 卸载。曾担心卸载后还焦过渡没机会跑、
+ *      焦点掉到 body；实测 Base UI 1.8 的 FloatingFocusManager
+ *      （DialogPopup 挂 restoreFocus）在整树卸载时同样把焦点还给
+ *      触发控件。无需 Lumi 侧补丁——本组用例即基线证据（BASELINE_OK）。
  */
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
