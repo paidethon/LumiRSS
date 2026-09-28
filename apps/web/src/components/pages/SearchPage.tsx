@@ -22,7 +22,7 @@
 
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { useInfiniteQuery, keepPreviousData, useQueryClient } from '@tanstack/react-query'
-import { BarChart3, Calendar, Camera, GitCompare, LineChart, Loader2, Rss, Search, SearchX, SlidersHorizontal, Sparkles, Unlink, X } from 'lucide-react'
+import { BarChart3, Calendar, Camera, GitCompare, LineChart, Loader2, Pencil, Rss, Search, SearchX, SlidersHorizontal, Sparkles, Unlink, X } from 'lucide-react'
 import {
   SEARCH_RESULTS_KEY,
   useDeleteSavedSearchViewMutation,
@@ -1526,18 +1526,35 @@ export default function SearchPage() {
                   className="w-28 bg-transparent py-1 text-xs text-[var(--lumi-text-primary)] focus:outline-none"
                 />
               ) : (
-                <button
-                  type="button"
-                  title="点击应用；双击重命名"
-                  onDoubleClick={() => {
-                    setRenamingId(saved.id)
-                    setRenameDraft(saved.name)
-                  }}
-                  onClick={() => applySavedView(saved)}
-                  className="max-w-48 truncate py-1 text-xs font-medium text-[var(--lumi-accent-text)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
-                >
-                  {saved.name}
-                </button>
+                <>
+                  <button
+                    type="button"
+                    title="点击应用；重命名用右侧铅笔（或双击）"
+                    onDoubleClick={() => {
+                      setRenamingId(saved.id)
+                      setRenameDraft(saved.name)
+                    }}
+                    onClick={() => applySavedView(saved)}
+                    className="max-w-48 truncate py-1 text-xs font-medium text-[var(--lumi-accent-text)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+                  >
+                    {saved.name}
+                  </button>
+                  {/* FIX-105：重命名不再只靠 hover 提示里的「双击」——触屏无
+                      hover、双击还会先触发单击应用。显式重命名入口对触屏
+                      与键盘可达（与比较/私有订阅同型 icon 按钮）。 */}
+                  <button
+                    type="button"
+                    data-testid={`saved-view-rename-${saved.id}`}
+                    onClick={() => {
+                      setRenamingId(saved.id)
+                      setRenameDraft(saved.name)
+                    }}
+                    aria-label={`重命名视图「${saved.name}」`}
+                    className="relative flex size-6 items-center justify-center rounded-full text-[var(--lumi-accent-text)] transition-colors after:absolute after:-inset-y-2.5 after:-inset-x-1 after:content-[''] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+                  >
+                    <Pencil aria-hidden className="size-3" />
+                  </button>
+                </>
               )}
               <button
                 type="button"
