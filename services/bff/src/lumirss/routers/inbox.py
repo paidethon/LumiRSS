@@ -764,9 +764,13 @@ async def dry_run_inbox_rule(
 async def patch_inbox_rule(
     rule_id: int, payload: InboxRuleUpdate, request: Request
 ) -> InboxRule:
-    rule = await _rule_store(request).update_rule(
-        rule_id, payload.model_dump(exclude_none=False)
-    )
+    # FIX-361: model_dump 产出对外契约键（targetWorkspaceId），而 store
+    # 合同键是 target_workspace_id —— 键名不匹配曾让该字段被静默丢弃
+    # （200 但值不变）。这里显式换名；其余字段由 store 按 None=未提供
+    # 合并，局部编辑不会擦除未提供字段。
+    patch = payload.model_dump(exclude_none=False)
+    patch["target_workspace_id"] = patch.pop("targetWorkspaceId")
+    rule = await _rule_store(request).update_rule(rule_id, patch)
     if rule is None:
         raise InboxRuleNotFound(str(rule_id))
     return _rule_model(rule)
