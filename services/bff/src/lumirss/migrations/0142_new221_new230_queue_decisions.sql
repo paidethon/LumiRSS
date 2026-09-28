@@ -128,18 +128,22 @@ CREATE TABLE section_plan_sections (
 
 CREATE INDEX ix_section_plan_sections ON section_plan_sections(plan_id, position);
 
--- NEW-228 阅读中断便签：一篇一个活跃便签（item_ref UNIQUE；归档后可
--- 再写新的）。与 N045 reading_notes（段落锚点一句话便签）互补：
--- 这里记「下次从哪里继续 + 正在想什么」，完成后显式归档。
+-- NEW-228 阅读中断便签：一篇一个活跃便签（partial UNIQUE 只约束未归档
+-- 行；归档后可写新便签 = 新旅程）。与 N045 reading_notes（段落锚点
+-- 一句话便签）互补：这里记「下次从哪里继续 + 正在想什么」，完成后
+-- 显式归档。
 CREATE TABLE interruption_notes (
     id TEXT PRIMARY KEY,
-    item_ref TEXT NOT NULL UNIQUE,
+    item_ref TEXT NOT NULL,
     resume_hint TEXT,
     thought TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     archived_at TEXT
 );
+
+CREATE UNIQUE INDEX ux_interruption_notes_active_ref
+  ON interruption_notes(item_ref) WHERE archived_at IS NULL;
 
 -- NEW-229 阅读约定卡：pact_key 是双方共持的约定口令（创建方生成，
 -- 对方 join 时携带同一 key 在自己库里建对称行）。行只记本人确认
