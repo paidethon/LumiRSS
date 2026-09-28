@@ -351,7 +351,14 @@ export function useEntries(scope: ContentScope, view: UiView, order: TimelineOrd
         },
         signal,
       ),
-    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    getNextPageParam: (lastPage, _allPages, _lastPageParam, allPageParams) => {
+      const next = lastPage.nextCursor
+      if (next === null) return undefined
+      // FIX-123：候选 cursor 已在已访问 pageParams 里（服务端异常重复）
+      // → 终止分页。否则 fetchNextPage 会永远循环、同一页反复追加。
+      // cursor opaque：只做相等性判断，绝不解析/改写。
+      return allPageParams.includes(next) ? undefined : next
+    },
     maxPages: 50,
     staleTime: 30_000,
     // P0-01：read-later 不再映射 view=all 客户端过滤——它走服务端时间线
@@ -369,7 +376,12 @@ export function useReadLaterTimeline(order: 'newest' | 'oldest' = 'newest') {
     initialPageParam: null as string | null,
     queryFn: ({ pageParam, signal }) =>
       getReadLaterTimeline({ cursor: pageParam, limit: 25, order }, signal),
-    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    getNextPageParam: (lastPage, _allPages, _lastPageParam, allPageParams) => {
+      const next = lastPage.nextCursor ?? undefined
+      if (next === undefined) return undefined
+      // FIX-123：cursor 重复 → 终止（同 useEntries，防止无限循环）。
+      return allPageParams.includes(next) ? undefined : next
+    },
     maxPages: 50,
     staleTime: 30_000,
   })
@@ -424,15 +436,22 @@ export function useSearch(
         },
         signal,
       ),
-    getNextPageParam: (lastPage) => {
+    getNextPageParam: (lastPage, _allPages, _lastPageParam, allPageParams) => {
       const rssDone = !lastPage.hasMore || lastPage.nextCursor == null
       const libraryDone =
         !lastPage.libraryHasMore || lastPage.libraryNextCursor == null
       if (rssDone && libraryDone) return undefined
-      return {
+      const next = {
         cursor: rssDone ? null : lastPage.nextCursor,
         libraryCursor: libraryDone ? null : lastPage.libraryNextCursor!,
       }
+      // FIX-123：双腿 cursor 对已访问过（服务端异常重复）→ 终止，
+      // 防止某一腿永远返回同一对 cursor 造成无限循环。
+      return allPageParams.some(
+        (p) => p.cursor === next.cursor && p.libraryCursor === next.libraryCursor,
+      )
+        ? undefined
+        : next
     },
     enabled: trimmed.length > 0,
     placeholderData: keepPreviousData,
