@@ -13,8 +13,6 @@ import io
 import json
 import zipfile
 
-from fastapi.testclient import TestClient
-
 from lumirss.import_batch_store import ImportBatchStore
 from lumirss.itemref import new_library_uuid
 from lumirss.lumi_data_wizard import (
@@ -24,8 +22,8 @@ from lumirss.lumi_data_wizard import (
     parse_import_zip,
 )
 from lumirss.lumi_notes import LumiNotesStore
-from lumirss.main import app
 from lumirss.mail_bridge import _process_attachments
+from lumirss.main import app
 from lumirss.tags import TagStore
 
 
