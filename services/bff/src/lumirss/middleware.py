@@ -659,7 +659,14 @@ def _client_key(scope) -> str:
 
 
 def login_attempts_allowed(scope) -> bool:
-    """True when the failure budget for this client is not exhausted."""
+    """True when the failure budget for this client is not exhausted.
+
+    FIX-219（R2）：准入时刻（单调时钟）记在该请求的 scope 上——成功
+    路径随后的解锁（reset_login_failures）只清除「准入前已存在」的
+    失败记录。这样并行请求的交错是确定性的：本请求准入之后才入账的
+    失败（并行的错误密码尝试）不会被并行的成功登录错误清空，窗口内
+    可入账的失败总数恒 ≤ LOGIN_FAILURE_LIMIT。
+    """
     now = time.monotonic()
     recent = [
         stamp
@@ -667,6 +674,7 @@ def login_attempts_allowed(scope) -> bool:
         if now - stamp < LOGIN_FAILURE_WINDOW_S
     ]
     _login_failures[_client_key(scope)] = recent
+    scope["lumi_login_admitted_at"] = now
     return len(recent) < LOGIN_FAILURE_LIMIT
 
 
@@ -675,7 +683,19 @@ def register_login_failure(scope) -> None:
 
 
 def reset_login_failures(scope) -> None:
-    _login_failures.pop(_client_key(scope), None)
+    """Unlock on success — but only the failures THIS request was
+    admitted with (FIX-219): everything registered after this request's
+    admission (a parallel failed attempt) survives and keeps counting."""
+    key = _client_key(scope)
+    stamps = _login_failures.get(key)
+    if not stamps:
+        return
+    admitted_at = scope.get("lumi_login_admitted_at")
+    if admitted_at is None:
+        # 兼容未走准入检查的直接调用：维持旧的整桶清除语义。
+        _login_failures.pop(key, None)
+        return
+    _login_failures[key] = [stamp for stamp in stamps if stamp > admitted_at]
 
 
 def login_retry_after_s(scope) -> int:
