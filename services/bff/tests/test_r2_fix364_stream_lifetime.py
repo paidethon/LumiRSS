@@ -25,8 +25,6 @@ import random
 import time
 import zipfile
 
-from lumirss.main import app
-
 
 def _deterministic_payload(size: int, seed: int) -> bytes:
     # %PDF- 头满足 FIX-322 附件内容嗅探（.pdf 必须带魔法字节）。
