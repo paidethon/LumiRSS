@@ -4,7 +4,10 @@
  * - 输入永远是 DOMPurify 输出（ArticleContent 管线产物）；本模块只做
  *   DOM 解析 + 给标题补确定性 id，不引入任何新内容——无脚本注入面。
  * - id 形如 `toc-<slug>`，slug 由标题文本派生；重复标题追加序号
- *   （toc-标题-2）。同一篇正文多次提取结果一致（锚点稳定）。
+ *   （toc-标题-2）。去重以文中既有 id 播种（h2–h4 自身被改写的旧 id
+ *   除外）——生成的 id 绝不与文中任何元素撞车（重复 DOM id 会让
+ *   getElementById 命中错误元素，目录跳错位置）。同一篇正文多次提取
+ *   结果一致（锚点稳定）。
  * - 空标题跳过；无标题文章返回空目录（不渲染面板）。
  * - 标题跳级（h2 直接到 h4）不建树，按文档顺序平铺 + level 缩进。
  * - 不改变文章原意：唯一的 DOM 修改是 heading 的 id 属性。
@@ -37,7 +40,20 @@ export function withHeadingIds(sanitizedHtml: string): TocResult {
   if (headings.length === 0) {
     return { html: sanitizedHtml, toc: [] }
   }
+  // FIX-261：去重集合以文中【既有】id 播种（本模块会改写 h2–h4 的 id，
+  // 这些旧 id 不算占用；h1/h5/h6 与其余元素的 id 原样保留、必须绕开）——
+  // 否则标题与既有元素撞 id（重复 DOM id 非法），getElementById 命中
+  // 文档序靠前的非标题元素，目录跳错位置。
   const used = new Set<string>()
+  for (const el of doc.querySelectorAll('[id]')) {
+    if (el.parentElement === null) continue
+    const tag = el.tagName
+    if ((tag === 'H2' || tag === 'H3' || tag === 'H4') && Array.from(headings).includes(el)) {
+      continue
+    }
+    const existing = el.id
+    if (existing !== '') used.add(existing)
+  }
   const toc: TocEntry[] = []
   for (const heading of headings) {
     const text = (heading.textContent ?? '').replace(/\s+/g, ' ').trim()
