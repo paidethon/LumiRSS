@@ -667,3 +667,40 @@ def test_n155_ask_excerpt_mode_never_calls_provider(ask_env, client):
     )
     assert fabricated.status_code == 422
     assert fabricated.json()["error"]["type"] == "citation_invalid"
+
+
+def test_n155_ask_excerpt_stale_chunks_fall_back_to_current_body(ask_env, client):
+    """FIX-316：分块 content_hash ≠ 当前投影正文 hash（正文已改、索引
+    未重建）时，摘录绝不携带旧正文版本的块位（ord）——按未索引口径
+    回退到当前正文（ord=0）；绝不让引用跳到旧版式的无关段落。"""
+    service = ask_env["service"]
+    db = ask_env["db"]
+    long_ref = f"library:{uuid.uuid4()}"
+    body_old = "\n\n".join(f"旧段落{index} " + "x" * 300 for index in range(4))
+    run(
+        LibrarySearchWriter(db).upsert(
+            ref=long_ref, kind="clip", title="长文一篇", body=body_old, url=None
+        )
+    )
+    run(service.index_refs([long_ref]))
+
+    async def _mutate():
+        await db.migrate()
+        await db.execute(
+            "UPDATE search_library SET body = ? WHERE ref = ?",
+            ("全新版本正文，内容与旧版完全不同。", long_ref),
+        )
+
+    run(_mutate())
+
+    response = client.post(
+        "/api/v1/rag/ask",
+        json={"question": "问", "refs": [long_ref], "mode": "excerpt"},
+    )
+    assert response.status_code == 200, response.text
+    excerpts = response.json()["excerpts"]
+    assert len(excerpts) == 1, "过期分块不得作为块位摘录返回"
+    excerpt = excerpts[0]
+    assert "全新版本正文" in excerpt["text"]  # 摘录是当前正文
+    assert "旧段落" not in excerpt["text"]  # 旧分块文本不外带
+    assert excerpt["ord"] == 0  # 旧版式的块位绝不外带

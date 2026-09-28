@@ -23,6 +23,7 @@ from lumirss.rag import (
     rag_index_pass,
     rrf_fuse,
     serialize_vector,
+    vec_extension_available,
 )
 from lumirss.search_library import LibrarySearchWriter
 from lumirss.storage import Database
@@ -30,6 +31,9 @@ from lumirss.storage import Database
 
 def _run(coroutine):
     return asyncio.run(coroutine)
+
+
+_RRF_K = 60
 
 
 def length_vector(text: str) -> list[float]:
@@ -126,6 +130,27 @@ def test_rrf_fusion_semantic_and_lexical():
     assert fused[0]["ref"] == "rss:a"
     assert fused[0]["hits"] == 2
     assert any(item["ref"] == "rss:b" for item in fused)
+
+
+def test_rrf_fuse_dedupes_within_leg_no_multi_chunk_double_weight():
+    """FIX-318：同一内容标识（ref）在一条腿里命中多个分块时，只按该腿
+    的最好名次计一次权——多分块文档不得靠重复计权压过真正两条腿都
+    命中的文档；融合结果每 ref 恰好一条且 hits 可解释（≤ 腿数）。"""
+    # B：两条腿各一次（语义 rank1 + 词法 rank3）；A：只在词法腿出现，
+    # 但有两个分块（rank1、rank2）。
+    semantic = [{"ref": "rss:b", "text": "tb", "kind": "rss", "title": "b", "chunk_id": 2}]
+    lexical = [
+        {"ref": "rss:a", "text": "ta1", "kind": "rss", "title": "a", "chunk_id": 1},
+        {"ref": "rss:a", "text": "ta2", "kind": "rss", "title": "a", "chunk_id": 3},
+        {"ref": "rss:b", "text": "tb", "kind": "rss", "title": "b", "chunk_id": 2},
+    ]
+    fused = rrf_fuse(semantic, lexical, k=5)
+    assert len(fused) == 2  # 同一内容标识只形成一个结果
+    by_ref = {item["ref"]: item for item in fused}
+    assert by_ref["rss:b"]["hits"] == 2  # 两条腿各计一次
+    assert by_ref["rss:a"]["hits"] == 1  # 单腿多分块 ≠ 多腿命中
+    assert fused[0]["ref"] == "rss:b"  # 双腿命中排在单腿多分块之前
+    assert by_ref["rss:a"]["score"] == pytest.approx(1.0 / (_RRF_K + 1))
 
 
 def test_serialize_vector_roundtrip():
@@ -547,3 +572,136 @@ def test_real_fastembed_smoke(rag_db):
     assert report["chunks"] >= 1
     result = _run(service.search("另一篇"))
     assert result["semanticUsed"] is True
+
+
+# -- FIX-319：kind 过滤在召回前生效（后过滤窗口造成假空）--------------------
+
+
+_NOTE_TITLE = "杂记"
+_NOTE_BODY = "n" * 300  # chunk = len(title)+3+300 = 305 chars
+
+
+def test_kind_filter_prefilter_reaches_matches_outside_top_window(rag_db):
+    """FIX-319：35 个 kind='note' 的分块与查询向量完全一致（距离 0），
+    唯一的 kind='clip' 目标排在全量 KNN 第 36 名之后——后过滤窗口
+    （先取 top-30 再滤 kind）把它丢成假空；过滤必须在召回内生效，
+    范围内匹配条目必须可达。"""
+    if not vec_extension_available():
+        pytest.skip("sqlite-vec unavailable in this environment")
+    writer = LibrarySearchWriter(rag_db)
+    _seed_projections(rag_db)
+    note_refs = []
+    for index in range(35):
+        ref = f"library:note-{index:04d}"
+        note_refs.append(ref)
+        _run(
+            writer.upsert(
+                ref=ref, kind="note", title=_NOTE_TITLE, body=_NOTE_BODY, url=None
+            )
+        )
+    service = RagService(rag_db)
+    install_fake_embedder(service)
+    _run(service.enable())
+    report = _run(service.rebuild())
+    assert report["chunks"] == 37  # 2 clips + 35 notes
+
+    # 查询向量与 note 分块完全一致（长度 305 → one-hot 同位），与 clip
+    # 目标（509）正交；零词法重叠。
+    query = "ź" * (len(_NOTE_TITLE) + 3 + len(_NOTE_BODY))
+    assert len(chunk_text(_NOTE_BODY, heading=_NOTE_TITLE)[0]) == len(query)
+
+    result = _run(service.search(query, kind="clip"))
+    assert result["semanticUsed"] is True, result["semanticError"]
+    hit_refs = {item["ref"] for item in result["items"]}
+    assert hit_refs >= {_DOC_A_REF, _DOC_B_REF}, (
+        "kind 匹配条目在 top-30 窗口外必须仍然可达（FIX-319）"
+    )
+
+    # 匹配 kind 的行数为 0 → 诚实空（而非降级成全量结果）。
+    empty = _run(service.search(query, kind="rss"))
+    assert empty["items"] == []
+
+
+# -- FIX-317：模型/维度切换按 model_id 分区，swap 原子迁移，绝不混检 --------
+
+
+class _DimFakeEmbedder:
+    """按维度出确定性 one-hot 向量的假 embedder（384/512 都可用）。"""
+
+    def __init__(self, dim: int) -> None:
+        self.dim = dim
+        self._model = object()  # 常驻桩（idle/loaded 语义）
+
+    @property
+    def loaded(self) -> bool:
+        return True
+
+    def unload(self) -> bool:
+        return True
+
+    def idle_expired(self) -> bool:
+        return False
+
+    async def embed(self, texts):
+        vectors = []
+        for text in texts:
+            vector = [0.0] * self.dim
+            vector[len(text) % self.dim] = 1.0
+            vectors.append(vector)
+        return vectors
+
+
+def test_model_switch_partitions_old_rows_and_swap_migrates_atomically(rag_db):
+    """FIX-317 baseline：换模型（512→384）后、rebuild swap 前，旧索引
+    只以旧模型口径完整可查（按 model_id 分区）；rebuild swap 把全部
+    行迁移到新模型/新维度表——旧模型的行数为 0，绝无新旧向量混合
+    参与同一次检索。"""
+    _seed_projections(rag_db)
+    service = RagService(rag_db)
+    fakes: dict[str, _DimFakeEmbedder] = {}
+
+    def _fake_for(model_id, model_dim):
+        return fakes.setdefault(model_id, _DimFakeEmbedder(model_dim))
+
+    service._embedder_for = _fake_for  # noqa: SLF001 — 测试缝
+    _run(service.enable())  # 默认 512 模型
+    assert _run(service.rebuild())["chunks"] == 2
+
+    # 切换目标模型（settings only；不动现有索引）。
+    switched = _run(service.set_model("BAAI/bge-small-en-v1.5"))
+    assert switched["dim"] == 384
+
+    # swap 前：旧索引继续可查（live 口径 = 旧模型），旧行完整分区在册。
+    live_id, live_dim = _run(service.live_model())
+    assert live_id == "BAAI/bge-small-zh-v1.5"
+    assert live_dim == 512
+    assert _run(service.row_counts()) == {"BAAI/bge-small-zh-v1.5": 2}
+    pre = _run(service.search("ź" * _target_chunk_len_a()))
+    assert pre["semanticUsed"] is True
+    assert pre["modelId"] == "BAAI/bge-small-zh-v1.5"
+
+    # rebuild swap：全部行迁移到新模型 + 384 维表。
+    report = _run(service.rebuild())
+    assert report["modelId"] == "BAAI/bge-small-en-v1.5"
+
+    def _counts(model_id):
+        rows = rag_db._fetch_all(
+            "SELECT COUNT(*) AS n FROM rag_chunks WHERE model_id = ?", (model_id,)
+        )
+        return int(rows[0]["n"])
+
+    assert _counts("BAAI/bge-small-zh-v1.5") == 0  # 旧行已被迁移，绝不残留
+    assert _counts("BAAI/bge-small-en-v1.5") == 2
+    assert _run(service.row_counts()) == {"BAAI/bge-small-en-v1.5": 2}
+    vec_count = _run(asyncio.to_thread(service._vec_count_sync))
+    assert vec_count == 2
+    dim_row = rag_db._fetch_all(
+        "SELECT value FROM rag_meta WHERE key = 'vec_dim'"
+    )
+    assert int(dim_row[0]["value"]) == 384
+
+    # swap 后检索按新模型/新维度口径（384 维 one-hot 精确命中）。
+    post = _run(service.search("ź" * _target_chunk_len_a()))
+    assert post["semanticUsed"] is True
+    assert post["modelId"] == "BAAI/bge-small-en-v1.5"
+    assert post["items"][0]["ref"] == _DOC_A_REF

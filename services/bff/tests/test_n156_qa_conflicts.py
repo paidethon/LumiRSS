@@ -138,3 +138,66 @@ def test_detect_conflicts_unit_level():
     assert all(
         {c["aRef"], c["bRef"]} == {"a", "b"} for c in conflicts
     )
+
+
+# -- FIX-316：引用块位来自旧正文版本 → 诚实缺位，绝不指向无关段落 ----------
+
+
+def test_stale_index_block_position_is_not_served_as_current(client, conflicting_refs):
+    """分块的 content_hash ≠ 当前投影正文 hash（正文已改、索引未重建）
+    时，冲突证据块定位必须诚实缺位（blockIndex=None），绝不把旧正文
+    版本的 rag_chunks.ord 当作当前文本的块位返回；仍新鲜的 ref 保持
+    正常块位。"""
+    from lumirss.main import app
+    from lumirss.rag import RagService
+
+    db = app.state.db
+    service = RagService(db, db_path=db.path)
+
+    async def _fake_embed(texts):
+        vectors = []
+        for text in texts:
+            vector = [0.0] * 512
+            vector[len(text) % 512] = 1.0
+            vectors.append(vector)
+        return vectors
+
+    service._embedder.embed = _fake_embed  # noqa: SLF001 — 测试缝
+    app.state.rag_service = service
+    try:
+        ref_a, ref_b = conflicting_refs
+
+        async def _index_and_mutate():
+            await db.migrate()
+            await service.index_refs([ref_a, ref_b])
+            # A 正文变更（金额改写）但索引未重建 → A 的分块整体过期。
+            await db.execute(
+                "UPDATE search_entries SET content_text = ? WHERE entry_ref = ?",
+                (
+                    "这家公司在年度大会上正式宣布完成新一轮融资 6,000 万美元。"
+                    "研发团队规模没有变化。"
+                    "筹备多时的发布会定于 2027-06-01 在上海临港举行。"
+                    "产品将于本月正式发布。",
+                    ref_a,
+                ),
+            )
+
+        run(_index_and_mutate())
+
+        response = client.post(
+            "/api/v1/qa/conflicts", json={"refs": [ref_a, ref_b]}
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["conflicts"], "过期分块仍是索引文本，冲突应被检出"
+        evidence_by_ref = {}
+        for conflict in body["conflicts"]:
+            evidence_by_ref[conflict["aRef"]] = conflict["aEvidence"]
+            evidence_by_ref[conflict["bRef"]] = conflict["bEvidence"]
+        # 过期 ref：旧块位绝不外带（FIX-316）。
+        assert evidence_by_ref[ref_a]["blockIndex"] is None
+        # 仍新鲜的 ref：正常块位保留。
+        assert evidence_by_ref[ref_b]["blockIndex"] is not None
+    finally:
+        app.state.rag_service = None
+        service.close()

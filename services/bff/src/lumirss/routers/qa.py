@@ -89,29 +89,47 @@ async def _ref_exists(db, ref: str) -> bool:
     return row is not None
 
 
-async def _evidence_for(db, ref: str, quote: str, model_id: str) -> QaConflictEvidence:
-    """quote → 证据块定位：rag_chunks 含该片段的 ord 优先；回退为
-    quote 在投影正文中的句序号；都找不到 = None（诚实缺位）。"""
-    needle = quote.strip()[:60]
-    rows = await db.fetch_all(
-        "SELECT ord, text FROM rag_chunks WHERE ref = ? AND model_id = ? ORDER BY ord ASC",
-        (ref, model_id),
-    )
-    if rows:
-        for row in rows:
-            if needle and needle in str(row["text"] or ""):
-                return QaConflictEvidence(ref=ref, blockIndex=int(row["ord"] or 0))
-    body_row = await db.fetch_one(
+async def _current_body(db, ref: str) -> str | None:
+    """当前投影正文（rss 正文优先，库正文回退；都不在 → None）。"""
+    row = await db.fetch_one(
         "SELECT content_text FROM search_entries WHERE entry_ref = ?", (ref,)
     )
-    if body_row is None:
-        body_row = await db.fetch_one(
-            "SELECT body AS content_text FROM search_library WHERE ref = ?", (ref,)
-        )
-    if body_row is not None and needle:
+    if row is not None:
+        return str(row["content_text"] or "")
+    row = await db.fetch_one(
+        "SELECT body AS content_text FROM search_library WHERE ref = ?", (ref,)
+    )
+    return str(row["content_text"] or "") if row is not None else None
+
+
+async def _evidence_for(db, ref: str, quote: str, model_id: str) -> QaConflictEvidence:
+    """quote → 证据块定位：rag_chunks 含该片段的 ord 优先；回退为
+    quote 在投影正文中的句序号；都找不到 = None（诚实缺位）。
+
+    FIX-316：分块行的 content_hash ≠ 当前投影正文 hash（正文已改、
+    索引未重建）时，其 ``ord`` 是旧正文版本的块位——绝不当作当前
+    文本坐标返回（否则证据会指向旧版式的无关段落），直接落到当前
+    正文句扫描；当前正文里也找不到 → 诚实 None。"""
+    from lumirss.rag import doc_content_hash
+
+    needle = quote.strip()[:60]
+    current_body = await _current_body(db, ref)
+    current_hash = (
+        doc_content_hash(current_body) if current_body is not None else None
+    )
+    rows = await db.fetch_all(
+        "SELECT ord, text, content_hash FROM rag_chunks WHERE ref = ? AND model_id = ? ORDER BY ord ASC",
+        (ref, model_id),
+    )
+    for row in rows:
+        if str(row["content_hash"] or "") != current_hash:
+            continue  # 旧版本的块位——绝不冒充当前坐标
+        if needle and needle in str(row["text"] or ""):
+            return QaConflictEvidence(ref=ref, blockIndex=int(row["ord"] or 0))
+    if current_body is not None and needle:
         from lumirss.qa_conflicts import split_sentences
 
-        for index, sentence in enumerate(split_sentences(str(body_row["content_text"] or ""))):
+        for index, sentence in enumerate(split_sentences(current_body)):
             if needle in sentence:
                 return QaConflictEvidence(ref=ref, blockIndex=index)
     return QaConflictEvidence(ref=ref, blockIndex=None)

@@ -1502,25 +1502,70 @@ class RagService:
         self, query_vec: list[float], kind: str | None, model_id: str
     ) -> list[dict[str, Any]]:
         """KNN over rag_vec (extension already loaded on the cached
-        connection); joined back to chunks for text + model filter."""
+        connection); joined back to chunks for text + model filter.
+
+        FIX-319：kind 过滤必须在召回前生效，绝不做「先取全量 top-N 再
+        过滤」的后过滤——那会把匹配 kind、但落在无过滤窗口之外的条目
+        丢成假空。带 kind 时 KNN 的 k 覆盖表内全部行（sqlite-vec 对
+        vec0 本就是全表距离计算，k 只截断输出），过滤后的距离序即
+        范围内完整排序；文本只取回最终保留的 ≤_LEXICAL_CANDIDATES 条
+        （内存有界）。"""
         connection = self._vec_connection()
-        rows = connection.execute(
-            "SELECT c.chunk_id, c.ref, c.kind, c.title, c.text, v.distance FROM rag_vec v JOIN rag_chunks c ON c.chunk_id = v.chunk_id WHERE c.model_id = ? AND v.embedding MATCH ? AND k = ? ORDER BY v.distance",
-            (model_id, serialize_vector(query_vec), _LEXICAL_CANDIDATES),
+        if kind is None:
+            rows = connection.execute(
+                "SELECT c.chunk_id, c.ref, c.kind, c.title, c.text, v.distance FROM rag_vec v JOIN rag_chunks c ON c.chunk_id = v.chunk_id WHERE c.model_id = ? AND v.embedding MATCH ? AND k = ? ORDER BY v.distance",
+                (model_id, serialize_vector(query_vec), _LEXICAL_CANDIDATES),
+            ).fetchall()
+            return [
+                {
+                    "chunk_id": int(row[0]),
+                    "ref": str(row[1]),
+                    "kind": str(row[2]),
+                    "title": str(row[3]),
+                    "text": str(row[4]),
+                }
+                for row in rows
+            ]
+        match_row = connection.execute(
+            "SELECT COUNT(*) AS n FROM rag_chunks WHERE model_id = ? AND kind = ?",
+            (model_id, kind),
+        ).fetchone()
+        if match_row is None or int(match_row["n"]) == 0:
+            return []  # 范围内本就没有可匹配行 → 诚实空
+        total_row = connection.execute(
+            "SELECT COUNT(*) AS n FROM rag_vec"
+        ).fetchone()
+        knn_k = max(int(total_row["n"]) if total_row is not None else 0, 1)
+        ranked = connection.execute(
+            "SELECT c.chunk_id, c.kind, v.distance FROM rag_vec v JOIN rag_chunks c ON c.chunk_id = v.chunk_id WHERE c.model_id = ? AND v.embedding MATCH ? AND k = ? ORDER BY v.distance",
+            (model_id, serialize_vector(query_vec), knn_k),
         ).fetchall()
-        results = [
+        kept: list[int] = []
+        for row in ranked:
+            if str(row["kind"]) != kind:
+                continue  # pre-filter：非范围内行在排序阶段即丢弃
+            kept.append(int(row["chunk_id"]))
+            if len(kept) >= _LEXICAL_CANDIDATES:
+                break
+        if not kept:
+            return []
+        placeholders = ",".join("?" * len(kept))
+        text_rows = connection.execute(
+            f"SELECT chunk_id, ref, kind, title, text FROM rag_chunks WHERE chunk_id IN ({placeholders})",
+            tuple(kept),
+        ).fetchall()
+        by_id = {int(row["chunk_id"]): row for row in text_rows}
+        return [
             {
-                "chunk_id": int(row[0]),
-                "ref": str(row[1]),
-                "kind": str(row[2]),
-                "title": str(row[3]),
-                "text": str(row[4]),
+                "chunk_id": chunk_id,
+                "ref": str(by_id[chunk_id]["ref"]),
+                "kind": str(by_id[chunk_id]["kind"]),
+                "title": str(by_id[chunk_id]["title"]),
+                "text": str(by_id[chunk_id]["text"]),
             }
-            for row in rows
+            for chunk_id in kept
+            if chunk_id in by_id
         ]
-        if kind is not None:
-            results = [r for r in results if r["kind"] == kind]
-        return results
 
 
 def _write_index_sync(
@@ -1712,13 +1757,24 @@ def rrf_fuse(
     *,
     k: int,
 ) -> list[dict[str, Any]]:
-    """Reciprocal-rank fusion; both legs optional (classic formulation)."""
+    """Reciprocal-rank fusion; both legs optional (classic formulation).
+
+    FIX-318：融合按内容标识（ref）去重——同一条腿里同一 ref 的多个
+    分块只按该腿最好名次计一次权（一条腿只投一票），否则多分块文档
+    会靠重复计权压过真正两条腿都命中的文档，且 ``hits`` 会虚高到
+    「超过腿数」而不可解释。每条结果恰好一个，``hits`` ∈ {1,2} 即
+    命中腿数，``score`` = 各命中腿 1/(k+rank+1) 之和。"""
     scores: dict[str, dict[str, Any]] = {}
 
     def add(items: list[dict[str, Any]], weight: float) -> None:
+        seen: set[str] = set()
         for rank, item in enumerate(items):
+            ref = item["ref"]
+            if ref in seen:
+                continue  # 同一腿内同一内容只按最好名次计一次
+            seen.add(ref)
             entry = scores.setdefault(
-                item["ref"], {**item, "score": 0.0, "hits": 0}
+                ref, {**item, "score": 0.0, "hits": 0}
             )
             entry["score"] += weight / (_RRF_K + rank + 1)
             entry["hits"] += 1
