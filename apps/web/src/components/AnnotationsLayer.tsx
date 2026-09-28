@@ -560,6 +560,10 @@ export function AnnotationsLayer({ entryRef, containerRef, contentVersion }: Ann
       {popover !== null &&
         createPortal(
           <AnnotationPopover
+            /* FIX-288：目标切换（编辑 A → 直接编辑 B / 编辑 → 新建）时
+               同位置复用实例会让 useState(initialNote) 残留上一条内容。
+               以目标身份为 key 强制重挂载——打开方式明确重置表单。 */
+            key={popover.mode === 'edit' ? `edit:${popover.annotation.id}` : 'create'}
             initialNote={popover.mode === 'edit' ? popover.annotation.note : ''}
             initialColor={popover.mode === 'edit' ? popover.annotation.color : 'yellow'}
             onSave={(note, color) => {
