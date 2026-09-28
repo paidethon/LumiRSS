@@ -1010,6 +1010,80 @@ assert_eq "no partial backup dir or LATEST temp left behind" "$count_before" \
 rm -rf "$sb" "$stub_dir" "$fail_stub"
 
 # ---------------------------------------------------------------------------
+echo "== 20. FIX-203: hostile backup filename must not change the restore command (real docker) =="
+if docker info >/dev/null 2>&1; then
+  sb="$(new_sandbox)"
+  stub_dir="$(mktemp -d)"
+  real_docker="$(command -v docker)"
+  # Quote-safe forwarder (bash arrays, no eval): rewrites project volume
+  # mounts onto harness bind dirs and passes EVERY argv byte-for-byte to the
+  # real docker — the hostile filename below contains quotes, so the section
+  # 17 eval-joining stub would itself corrupt it (harness artifact, not code).
+  cat > "$stub_dir/docker" <<'STUB'
+#!/bin/bash
+args=("$@")
+if [[ "${args[0]}" == "compose" ]]; then
+  case "${args[*]}" in
+    # bff image answer keeps backup_image() on a locally-present image
+    # (python:3.12-slim, as in section 17) instead of the GHCR fallback.
+    *" config"*) echo '{"name": "lumirss-prod", "services": {"bff": {"image": "python:3.12-slim"}}}';;
+    *) exit 0;;   # stop/start/exec (restore health wait) succeed
+  esac
+  exit 0
+fi
+for i in "${!args[@]}"; do
+  case "${args[$i]}" in
+    lumirss-prod_lumi-data:*) args[$i]="$LUMITEST_LUMI_VOL${args[$i]#lumirss-prod_lumi-data}";;
+    lumirss-prod_freshrss-data:*) args[$i]="$LUMITEST_FRS_VOL${args[$i]#lumirss-prod_freshrss-data}";;
+  esac
+done
+exec "$LUMITEST_REAL_DOCKER" "${args[@]}"
+STUB
+  chmod +x "$stub_dir/docker"
+
+  # Hand-made new-format backup: snapshot tree + MANIFEST.txt + the files tar
+  # under a HOSTILE name (space ; closed backticks command-substitution glob
+  # single+double quotes &). With the pre-fix string-concatenated
+  # `sh -c "tar xzf /bkp/$(basename …)"` the ; quotes and substitutions
+  # change the command meaning (tar fails / runs other commands). The
+  # parameterized form must extract the exact name with identical content.
+  stamp="$sb/bk-stamp"
+  mkdir -p "$stamp/lumi-sqlite"
+  python3 -c 'import sqlite3
+c = sqlite3.connect("'"$stamp"'/lumi-sqlite/lumi.sqlite")
+c.execute("CREATE TABLE t (v TEXT)")
+c.execute("INSERT INTO t VALUES (?)", ("fix203-snapshot",))
+c.commit()'
+  printf 'restore-canary\n' > "$stamp/canary.txt"
+  evil='lumi-data; sp ace;`id` $(date +%s)*'"'"'q"d&x.tar.gz'
+  tar -C "$stamp" -czf "$stamp/$evil" canary.txt
+  dig="$(sha256sum "$stamp/lumi-sqlite/lumi.sqlite" | cut -d' ' -f1)"
+  size="$(stat -c %s "$stamp/lumi-sqlite/lumi.sqlite")"
+  printf '# LumiRSS backup manifest (FIX-192)\n%s  %s  lumi-sqlite/lumi.sqlite\n' "$dig" "$size" > "$stamp/MANIFEST.txt"
+
+  vol="$sb/restore-vol"; mkdir -p "$vol"
+  rs_rc=0
+  rs_out="$(cd "$sb" && cp -f .env.prod.example .env.prod \
+    && env PATH="$stub_dir:$PATH" LUMITEST_LUMI_VOL="$vol" \
+    LUMITEST_FRS_VOL="$sb/unused-frs" LUMITEST_REAL_DOCKER="$real_docker" \
+    ./lumirss restore "$stamp/$evil" --yes 2>&1)" || rs_rc=$?
+  assert_eq "restore with hostile filename exits 0" "0" "$rs_rc"
+  assert_contains "restore verified the manifest checksums" "verifying MANIFEST.txt checksums" "$rs_out"
+  assert_eq "hostile-named tar extracted under its EXACT name (command meaning unchanged)" \
+    "restore-canary" "$(cat "$vol/canary.txt" 2>/dev/null || echo MISSING)"
+  assert_contains "snapshot overlay applied on top" "fix203-snapshot" \
+    "$(python3 -c 'import sqlite3; print(sqlite3.connect("'"$vol"'/lumi.sqlite").execute("SELECT v FROM t").fetchone()[0])' 2>/dev/null || echo BROKEN)"
+  if find "$vol" -name 'PWNED' -o -name '*hacked*' 2>/dev/null | grep -q .; then
+    bad "injection side effect appeared in the restored volume"
+  else
+    ok "no injection side effect in the restored volume"
+  fi
+  rm -rf "$sb" "$stub_dir"
+else
+  bad "docker daemon unavailable — FIX-203 hostile-filename tests NOT executed"
+fi
+
+# ---------------------------------------------------------------------------
 echo
 echo "deploy-lifecycle tests: $PASS passed, $FAIL failed"
 if [[ "$FAIL" -gt 0 ]]; then exit 1; fi
