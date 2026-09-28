@@ -13,6 +13,7 @@ Design constraints:
 
 import urllib.parse
 from collections.abc import Callable
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -57,6 +58,14 @@ SUPPORTED_TRANSLATION_ENGINES = (
 )
 KEY_TRANSLATION_ENGINE = "translation.engine"
 KEY_LIBRETRANSLATE_URL = "translation.libretranslate_url"
+
+# FIX-142：本地翻译的实际能力状态（最近一次有界探测的结果）。配置存在
+# （URL 非空）只说明"已配置"；是否真正可达由探测决定，且必须附带检查
+# 时间——"已启用"与"实际可用"不得混为一谈。
+LIBRETRANSLATE_STATUS_VALUES = ("ok", "failed")
+KEY_LIBRETRANSLATE_STATUS = "translation.libretranslate_status"
+KEY_LIBRETRANSLATE_CHECKED_AT = "translation.libretranslate_checked_at"
+KEY_LIBRETRANSLATE_DIAGNOSTIC = "translation.libretranslate_diagnostic"
 
 # F064：AI 配额（可空 = 不限）。window: "" | day | month；max_calls: 0..10000
 # （0 = 不限）。服务端本地时区窗口计数，见 ai_quota.py。
@@ -168,6 +177,35 @@ def _validate_translation_engine(value: str) -> str:
     return value
 
 
+def _validate_libretranslate_status(value: str) -> str:
+    if value not in LIBRETRANSLATE_STATUS_VALUES:
+        raise ValueError(
+            "libretranslate status must be one of: "
+            + ", ".join(LIBRETRANSLATE_STATUS_VALUES)
+        )
+    return value
+
+
+def _validate_probe_checked_at(value: str) -> str:
+    clean = value.strip()
+    if not clean:
+        return ""
+    try:
+        datetime.fromisoformat(clean)
+    except ValueError as exc:
+        raise ValueError("must be an ISO-8601 timestamp") from exc
+    return clean
+
+
+def _validate_probe_diagnostic(value: str) -> str:
+    clean = value.strip()
+    if len(clean) > 200:
+        raise ValueError("diagnostic must be at most 200 characters")
+    if any(ord(char) < 32 for char in clean):
+        raise ValueError("diagnostic must not contain control characters")
+    return clean
+
+
 # SecretsStore key NAME (not a credential) for the optional LibreTranslate
 # API key — write-only, same join convention as WEBDAV_SECRET_KEY.
 LIBRETRANSLATE_KEY_NAME = ".".join(("translation", "libretranslate-key"))
@@ -183,6 +221,9 @@ _SETTING_SPECS: dict[str, tuple[str, _ErrorSink]] = {
     KEY_TRANSLATION_LANGUAGE: ("zh-CN", _validate_translation_language),
     KEY_TRANSLATION_ENGINE: (TRANSLATION_ENGINE_AI, _validate_translation_engine),
     KEY_LIBRETRANSLATE_URL: ("", _validate_base_url),
+    KEY_LIBRETRANSLATE_STATUS: ("", _validate_libretranslate_status),
+    KEY_LIBRETRANSLATE_CHECKED_AT: ("", _validate_probe_checked_at),
+    KEY_LIBRETRANSLATE_DIAGNOSTIC: ("", _validate_probe_diagnostic),
     KEY_QUOTA_WINDOW: ("", _validate_quota_window),
     KEY_QUOTA_MAX_CALLS: ("0", _validate_quota_max_calls),
 }
@@ -270,3 +311,36 @@ class AiSettingsStore:
                     (key, value, _utc_now()),
                 )
         return next_values
+
+    async def record_libretranslate_probe(
+        self, *, status: str, diagnostic: str
+    ) -> str:
+        """Persist one bounded LibreTranslate probe outcome (FIX-142).
+
+        The capability state surfaced by GET /settings/ai reflects the
+        LAST actual probe — status + checked-at + a bounded diagnostic —
+        never a mere config-exists claim. Returns the checked-at stamp.
+        Written only by the probe endpoint; PUT /settings/ai cannot touch
+        these keys (they are not part of AiSettingsUpdate).
+        """
+        checked_at = _utc_now()
+        await self._db.migrate()
+        for key, value in (
+            (
+                KEY_LIBRETRANSLATE_STATUS,
+                _SETTING_SPECS[KEY_LIBRETRANSLATE_STATUS][1](status),
+            ),
+            (KEY_LIBRETRANSLATE_CHECKED_AT, checked_at),
+            (
+                KEY_LIBRETRANSLATE_DIAGNOSTIC,
+                _SETTING_SPECS[KEY_LIBRETRANSLATE_DIAGNOSTIC][1](diagnostic),
+            ),
+        ):
+            await self._db.execute(
+                "INSERT INTO lumi_settings (key, value, updated_at) "
+                "VALUES (?, ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
+                "updated_at = excluded.updated_at",
+                (key, value, checked_at),
+            )
+        return checked_at
