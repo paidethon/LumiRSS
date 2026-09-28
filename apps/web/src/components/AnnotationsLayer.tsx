@@ -34,6 +34,7 @@ import {
   type AnnotationColor,
   type RepairCandidate,
 } from '../lib/annotations'
+import { scrollBehavior } from '../lib/reduced-motion'
 
 // ---- 常量 ----
 
@@ -379,7 +380,7 @@ export function AnnotationsLayer({ entryRef, containerRef, contentVersion }: Ann
     if (range === undefined) return
     const start = range.startContainer
     const el = start.nodeType === Node.ELEMENT_NODE ? (start as Element) : start.parentElement
-    el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    el?.scrollIntoView({ block: 'center', behavior: scrollBehavior() })
   }
 
   const resultById = new Map(results.map((r) => [r.id, r]))

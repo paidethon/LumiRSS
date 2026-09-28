@@ -5,7 +5,10 @@
  * - 立即更新：有活跃草稿（注册表单草稿，F119）→ 先弹「有未保存草稿」
  *   保护确认（草稿本地持久，确认后刷新可恢复）；否则 location.reload；
  * - 稍后：本会话不再提示该版本；
- * - /version.json 404/网络失败 → 静默；认证 API 永不经过该机制。 */
+ * - /version.json 404/网络失败 → 静默；认证 API 永不经过该机制。
+ * - FIX-117：位置在移动底栏（tab bar 岛 + safe-area）之上
+ *   （bottom = safe-bottom + 4.5rem，与 InstallHint 同式；桌面 lg 恢复
+ *   bottom-6）——不再覆盖关键底栏；单实例（App 层单 state），不堆积。 */
 
 import { useEffect, useState } from 'react'
 
@@ -39,7 +42,7 @@ export default function VersionUpdateToast({
         aria-modal="false"
         aria-label="有未保存草稿"
         data-testid="version-update-draft-guard"
-        className="fixed bottom-4 left-1/2 z-[calc(var(--lumi-z-dialog)_+_1)] w-[min(94vw,26rem)] -translate-x-1/2 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface-elevated)] p-3 shadow-[var(--lumi-shadow-dialog)]"
+        className="fixed bottom-[calc(var(--safe-bottom)+4.5rem)] left-1/2 z-[calc(var(--lumi-z-dialog)_+_1)] w-[min(94vw,26rem)] -translate-x-1/2 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface-elevated)] p-3 shadow-[var(--lumi-shadow-dialog)] lg:bottom-6"
       >
         <p className="text-xs text-[var(--lumi-text-primary)]">
           你有未保存的草稿。草稿会保留在本机，更新后重新打开同一表单可恢复。仍要立即更新吗？
@@ -66,7 +69,7 @@ export default function VersionUpdateToast({
       role="status"
       aria-label={`发现新版本 ${newVersion}`}
       data-testid="version-update-toast"
-      className="fixed bottom-4 left-1/2 z-[calc(var(--lumi-z-dialog)_+_1)] flex w-[min(94vw,26rem)] -translate-x-1/2 flex-wrap items-center gap-2 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface-elevated)] p-3 shadow-[var(--lumi-shadow-dialog)]"
+      className="fixed bottom-[calc(var(--safe-bottom)+4.5rem)] left-1/2 z-[calc(var(--lumi-z-dialog)_+_1)] flex w-[min(94vw,26rem)] -translate-x-1/2 flex-wrap items-center gap-2 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface-elevated)] p-3 shadow-[var(--lumi-shadow-dialog)] lg:bottom-6"
     >
       <span className="min-w-0 flex-1 text-xs text-[var(--lumi-text-primary)]">
         发现新版本（当前 {APP_BUILD} → 新 {newVersion}）

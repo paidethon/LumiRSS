@@ -12,7 +12,7 @@
  * 全部 stub。 */
 
 import { useEffect, useState } from 'react'
-import { AlertCircle, ArrowDown, ArrowUp, CheckCircle2, Loader2, Plus, Trash2 } from 'lucide-react'
+import { AlertCircle, ArrowDown, ArrowUp, CheckCircle2, Plus, Trash2 } from 'lucide-react'
 
 import { ApiError } from '../../api/client'
 import type { MailParseDebug, MailRule, MailThread } from '../../api/client'
@@ -438,10 +438,11 @@ export function MailRulesPanel({ listUuid, onClose }: { listUuid: string; onClos
               variant="secondary"
               size="sm"
               data-rule-dryrun=""
-              disabled={sampleValue.trim() === '' || dryRun.isPending}
+              disabled={sampleValue.trim() === ''}
+              loading={dryRun.isPending}
               onClick={() => dryRun.mutate({ field: sampleField, value: sampleValue.trim() })}
             >
-              {dryRun.isPending ? <Loader2 aria-hidden className="size-3.5 animate-spin" /> : '试跑'}
+              试跑
             </Button>
           </div>
           {dryRun.data && (

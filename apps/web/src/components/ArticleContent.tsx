@@ -41,6 +41,7 @@ import {
   findAnchorElement,
 } from '../lib/reading-position'
 import { TABLE_WIDE_EXTRA_PX } from '../lib/reader-tools'
+import { scrollBehavior } from '../lib/reduced-motion'
 import { useAppSettings } from '../store/app-settings'
 import { prefersDarkScheme, resolveTheme } from '../lib/theme'
 import ArticleToc from './ArticleToc'
@@ -735,7 +736,8 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
               // 畸形百分号序列：按原文匹配
             }
             const el = container.ownerDocument.getElementById(id)
-            if (el !== null) el.scrollIntoView({ block: 'start', behavior: 'smooth' })
+            // FIX-112：减少动效偏好（OS/应用内）下瞬时定位，不做平滑滚动
+            if (el !== null) el.scrollIntoView({ block: 'start', behavior: scrollBehavior() })
           }
           return
         }

@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react'
-import { Link2, Loader2, Plus, Unlink } from 'lucide-react'
+import { Link2, Plus, Unlink } from 'lucide-react'
 import {
   searchEntries,
   type ItemRelationView,
@@ -139,8 +139,9 @@ function CreateRelationDialog({
                 className="min-h-11 w-full rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 text-sm"
                 aria-label="搜索要关联的条目"
               />
-              <Button variant="secondary" onClick={() => void runSearch()} disabled={searching}>
-                {searching ? <Loader2 aria-hidden className="size-4 animate-spin" /> : '搜索'}
+              {/* FIX-115：loading 契约——标签保留 + 内联 spinner + aria-busy */}
+              <Button variant="secondary" onClick={() => void runSearch()} loading={searching}>
+                搜索
               </Button>
             </div>
             <ul className="flex max-h-48 flex-col gap-1 overflow-y-auto">

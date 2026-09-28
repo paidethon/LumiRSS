@@ -14,6 +14,7 @@ import { clearAllDrafts } from './lib/draft-store'
 import { resetPrivacyOnBoot } from './lib/privacy-mask'
 import { EdgeSwipeBack } from './lib/edge-swipe'
 import { useAppRoute } from './lib/app-route'
+import { usePrefersReducedMotion } from './lib/reduced-motion'
 import { useTabletPortrait, useViewportTier } from './lib/use-viewport-tier'
 
 // F113：演示隐私遮罩是“会话内”开关——刷新即重置。模块加载（早于任何
@@ -98,8 +99,11 @@ const AdminScreen = lazy(() => import('./components/admin/AdminScreen'))
 function PageSkeleton() {
   return (
     <div className="flex flex-col gap-3 p-4" aria-label="页面加载中">
+      {/* FIX-116：行高对齐列表真实卡片行（canonical 88px，与
+        * .lumi-row-cv 的 contain-intrinsic-size 一致），懒加载页换入
+        * 时间线/列表时不再整体跳位 */}
       {Array.from({ length: 5 }, (_, i) => (
-        <Skeleton key={i} className="h-16 w-full" />
+        <Skeleton key={i} className="h-[5.5rem] w-full" />
       ))}
     </div>
   )
@@ -194,7 +198,9 @@ export default function App() {
   const settings = useAppSettings((s) => s.settings)
   // P1.3：侧滑/玻璃效果设置（settings 声明之后读取）。
   const swipeBackGesture = settings.swipeBackGesture
-  const reduceMotion = settings.reduceMotion
+  // FIX-112：侧滑跟手预览是大幅整页平移——应用内减少动效与 OS
+  // prefers-reduced-motion 等效生效（后者此前被遗漏）。
+  const reduceMotion = settings.reduceMotion || usePrefersReducedMotion()
   const glassEffect = settings.glassEffect
   useEffect(() => {
     const root = document.documentElement

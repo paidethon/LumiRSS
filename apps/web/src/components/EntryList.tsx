@@ -262,7 +262,9 @@ function ReadLaterList() {
         {isPending && (
           <div className="flex flex-col gap-3 p-4" aria-label="稍后读加载中">
             {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="flex flex-col gap-1.5">
+              /* FIX-116：行高对齐真实卡片（.lumi-row-cv 估算 88px），
+               * 加载完成换行时不再大幅布局偏移 */
+              <div key={i} className="flex min-h-[5.5rem] flex-col gap-1.5">
                 <Skeleton className="h-3 w-2/5" />
                 <Skeleton className="h-4 w-4/5" />
               </div>
@@ -1174,9 +1176,16 @@ function EntriesList() {
         {isPending && (
           <div className="flex flex-col gap-3 p-4" aria-label="文章加载中">
             {[0, 1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="flex flex-col gap-1.5">
+              /* FIX-116：行高对齐真实卡片（py-3 + 标题/摘要，canonical
+               * 估算 88px = .lumi-row-cv 的 contain-intrinsic-size），
+               * 首屏加载完成时列表不再整体上移 */
+              <div
+                key={i}
+                className="flex min-h-[5.5rem] flex-col justify-center gap-1.5 rounded-[var(--lumi-radius-lg)] px-3.5 py-3"
+              >
                 <Skeleton className="h-3 w-2/5" />
                 <Skeleton className="h-4 w-4/5" />
+                <Skeleton className="h-3 w-full" />
               </div>
             ))}
           </div>

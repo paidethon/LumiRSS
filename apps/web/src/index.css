@@ -772,6 +772,18 @@ html[data-reader-paper-texture='true'][data-reader-bg-preset='paper'] .lumi-read
       box-shadow: 0 8px 28px -12px rgb(0 0 0 / 0.32);
     }
   }
+  /* FIX-118：低性能设备降级。prefers-reduced-motion 是唯一标准化的
+   * 「设备偏弱/求稳」信号——backdrop-filter 每帧重采样背景（尤其
+   * 开关过渡与内容滚动时），对低端 GPU 是持续掉帧源。减少动效偏好下
+   * 一律回退完整不透明表面（观感不损坏；其余设备保持玻璃语言）。 */
+  @media (prefers-reduced-motion: reduce) {
+    html:not([data-glass='off']) .lumi-glass {
+      background: var(--lumi-elevated);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+      box-shadow: 0 8px 28px -12px rgb(0 0 0 / 0.32);
+    }
+  }
   html[data-glass='off'] .lumi-glass {
     background: var(--lumi-elevated);
     -webkit-backdrop-filter: none;

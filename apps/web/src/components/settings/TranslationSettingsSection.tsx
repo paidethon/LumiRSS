@@ -205,7 +205,8 @@ export function TranslationSettingsSection() {
                 <Button
                   size="sm"
                   variant="secondary"
-                  disabled={keyInput === '' || saveKey.isPending}
+                  disabled={keyInput === ''}
+                  loading={saveKey.isPending}
                   onClick={() =>
                     saveKey.mutate(keyInput, {
                       onSuccess: () => {
@@ -215,7 +216,7 @@ export function TranslationSettingsSection() {
                     })
                   }
                 >
-                  {saveKey.isPending ? <Loader2 aria-hidden className="size-3.5 animate-spin" /> : '保存 Key'}
+                  保存 Key
                 </Button>
                 {s.libretranslateKeyConfigured && (
                   <Button
@@ -237,7 +238,8 @@ export function TranslationSettingsSection() {
               <Button
                 size="sm"
                 variant="secondary"
-                disabled={test.isPending || libreUrl === ''}
+                disabled={libreUrl === ''}
+                loading={test.isPending}
                 onClick={() =>
                   test.mutate(undefined, {
                     onSuccess: (result) => setTestResult(result.message ?? ''),
@@ -246,7 +248,7 @@ export function TranslationSettingsSection() {
                   })
                 }
               >
-                {test.isPending ? <Loader2 aria-hidden className="size-3.5 animate-spin" /> : '测试连接'}
+                测试连接
               </Button>
               {testResult !== null && (
                 <span className="text-xs text-[var(--lumi-text-secondary)]">{testResult}</span>

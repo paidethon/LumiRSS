@@ -119,6 +119,7 @@ import { Skeleton } from '../ui/Skeleton'
 import UnifiedContentCard from '../UnifiedContentCard'
 import { staleState } from '../../lib/stale-label'
 import { DOCS_LINKS } from '../../lib/docs-links'
+import { scrollBehavior } from '../../lib/reduced-motion'
 import { cx } from '../ui/cx'
 
 /** N109：本工作区检索结果（命中 = 成员范围严格限定；打开 = 复用预览窗格）。 */
@@ -1116,11 +1117,9 @@ export default function WorkspacesPage() {
     if (resumeItem === null) return
     setResumeConsumedRef(resumeItem.ref)
     const el = itemEls.current.get(resumeItem.ref)
-    const reduceMotion =
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    // FIX-112：统一判定（应用内 data-motion-reduce + OS 偏好；此前只认 OS）
     if (el !== undefined && typeof el.scrollIntoView === 'function') {
-      el.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' })
+      el.scrollIntoView({ block: 'center', behavior: scrollBehavior() })
     }
     // 复用既有打开路由（lib/open-item.ts）；打开成功也回报指针（幂等）。
     if (openResolvedItem(resumeItem)) handleItemOpened(resumeItem.ref)
