@@ -332,10 +332,11 @@ class OpmlService:
         subscriptions = await self._control.list_subscriptions()
         existing_urls = {subscription.feed_url for subscription in subscriptions}
         items = self._build_items(parsed, existing_urls)
-        label_to_id = {
-            category.label: category.id
-            for category in await self._control.list_categories()
-        }
+        # FIX-240：同名分类取首个命中（与 _build_tree_plan 的文档化规则
+        # 一致；上游 UNIQUE(name) 下不可达分叉，规则仍显式钉定）。
+        label_to_id: dict[str, str] = {}
+        for category in await self._control.list_categories():
+            label_to_id.setdefault(category.label, category.id)
 
         added: list[dict[str, object]] = []
         duplicates: list[dict[str, str]] = []
@@ -568,7 +569,11 @@ class OpmlService:
         subscriptions = await self._control.list_subscriptions()
         categories = await self._control.list_categories()
         existing_urls = {subscription.feed_url for subscription in subscriptions}
-        label_to_id = {category.label: category.id for category in categories}
+        # FIX-240：首个命中规则（与 _build_tree_plan / flat 导入一致——
+        # 计划说“同名取第一个命中”，apply 就必须用同一规则解析）。
+        label_to_id: dict[str, str] = {}
+        for category in categories:
+            label_to_id.setdefault(category.label, category.id)
 
         added: list[dict[str, object]] = []
         moved: list[dict[str, object]] = []
