@@ -176,6 +176,25 @@ class SearchIndexService:
                     break
             if continuation is not None:
                 partial = True
+            # FIX-241：上游「缓存验证成功」（一页零条目 + 无 continuation，
+            # 即 HTTP 304 语义在 greader 投影里的形态）不得当成空 feed
+            # 覆盖既有文章——保留旧内容，只记录检查时间；真空库仍如实
+            # 建空投影。
+            if total == 0 and await self._store.count() > 0:
+                now = int(time.time())
+                await self._db.execute(
+                    "DROP TABLE IF EXISTS search_rebuild_stage"
+                )
+                await self._feeds.meta_set("last_synced_at", str(now * 1000))
+                await self._feeds.meta_set("partial", "1" if partial else "0")
+                await self._feeds.meta_set("rebuild_incomplete", "0")
+                return {
+                    "entryCount": 0,
+                    "pages": pages,
+                    "partial": partial,
+                    "elapsedMs": int((time.time() - started) * 1000),
+                    "keptExisting": True,
+                }
             now = int(time.time())
             await self._refresh_feed_categories(now)
             await self._writer.swap_staged()
@@ -194,6 +213,7 @@ class SearchIndexService:
             "pages": pages,
             "partial": partial,
             "elapsedMs": int((time.time() - started) * 1000),
+            "keptExisting": False,
         }
 
     async def sync_incremental(
