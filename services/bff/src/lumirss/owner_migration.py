@@ -128,7 +128,7 @@ async def ensure_owner_migration(db: Database, control_secrets) -> str | None:
     control-level SecretsStore. Called from lifespan before any request
     is served.
     """
-    from lumirss.accounts_store import AccountsStore, hash_password
+    from lumirss.accounts_store import AccountsStore, UsernameTaken, hash_password
 
     await db.migrate()
     accounts = AccountsStore(db)
@@ -154,12 +154,27 @@ async def ensure_owner_migration(db: Database, control_secrets) -> str | None:
         # password is set through the normal set-password flow — the
         # migration never invents a password anybody knows.
         legacy_hash = hash_password(secrets.token_urlsafe(32))
-    owner = await accounts.create_user(
-        username="owner",
-        password_hash=legacy_hash,
-        role="owner",
-        display_name="Owner",
-    )
+    try:
+        owner = await accounts.create_user(
+            username="owner",
+            password_hash=legacy_hash,
+            role="owner",
+            display_name="Owner",
+        )
+    except UsernameTaken:
+        # FIX-211（R2）：并发首次初始化（多 worker 同库冷启动）时，
+        # users.username 的 UNIQUE 约束保证至多建出一个 owner——输家
+        # 必须干净收敛到赢家创建的账户，绝不把 UNIQUE 冲突裸抛成启动
+        # 崩溃，也不留下半初始化状态（失败方此前只做过读判定，没有
+        # 写过任何行）。找不到赢家行说明是真正的数据异常，继续抛出。
+        for row in await accounts.list_users(limit=500):
+            if row.get("role") == "owner" and row.get("username") == "owner":
+                owner_id = str(row["id"])
+                await _seed_owner_env_binding(
+                    db, control_secrets, owner_id, users_root, only_if_unbound=True
+                )
+                return owner_id
+        raise
     owner_id = str(owner["id"])
 
     if _schema_is_pre_multitone(legacy_path):
