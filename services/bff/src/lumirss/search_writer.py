@@ -105,12 +105,14 @@ class SearchEntryWriter:
         """Append one upstream page into the rebuild staging table.
 
         content_max_len is carried over from the live projection so the
-        N032 trigger keeps its memory across rebuilds."""
+        N032 trigger keeps its memory across rebuilds — scoped to the SAME
+        (feed_url, item_id) entry (FIX-231): a same-ID row from another
+        feed never donates its content memory."""
 
         def _tx(conn: sqlite3.Connection) -> None:
             for doc, feed_url in zip(documents, feed_urls, strict=True):
                 conn.execute(
-                    "INSERT INTO search_rebuild_stage (item_id, entry_ref, feed_url, feed_title, title, author, url, content_text, published_at, read, starred, fetched_at, content_max_len, content_hash, time_flags, crawled_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, MAX(?, COALESCE((SELECT content_max_len FROM search_entries WHERE item_id = ?), 0)), ?, ?, ?)",
+                    "INSERT INTO search_rebuild_stage (item_id, entry_ref, feed_url, feed_title, title, author, url, content_text, published_at, read, starred, fetched_at, content_max_len, content_hash, time_flags, crawled_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, MAX(?, COALESCE((SELECT content_max_len FROM search_entries WHERE item_id = ? AND feed_url = ?), 0)), ?, ?, ?)",
                     (
                         doc.item_id,
                         doc.entryRef,
@@ -126,6 +128,7 @@ class SearchEntryWriter:
                         fetched_at,
                         len(doc.contentHtml or ""),
                         doc.item_id,
+                        feed_url,
                         content_hash(doc.contentHtml or ""),
                         classify_published_at(
                             doc.publishedAt or None, now_epoch=float(fetched_at)
@@ -138,12 +141,16 @@ class SearchEntryWriter:
 
     async def swap_staged(self) -> None:
         """Replace the live projection with the staged rows in ONE
-        transaction — the swap is the rebuild's only destructive step."""
+        transaction — the swap is the rebuild's only destructive step.
+
+        FIX-231：上游身份异常（同 ID 跨 feed）不得中止整个重建——
+        search_rebuild_stage 不再带 UNIQUE 约束；换入时按 item_id 取
+        rowid 最大的交付（交付顺序 = 上游翻页顺序，最后交付者生效）。"""
 
         def _tx(conn: sqlite3.Connection) -> None:
             conn.execute("DELETE FROM search_entries")
             conn.execute(
-                "INSERT INTO search_entries (item_id, entry_ref, feed_url, feed_title, title, author, url, content_text, published_at, read, starred, fetched_at, content_max_len, content_hash, time_flags, crawled_at) SELECT item_id, entry_ref, feed_url, feed_title, title, author, url, content_text, published_at, read, starred, fetched_at, content_max_len, content_hash, time_flags, crawled_at FROM search_rebuild_stage"
+                "INSERT INTO search_entries (item_id, entry_ref, feed_url, feed_title, title, author, url, content_text, published_at, read, starred, fetched_at, content_max_len, content_hash, time_flags, crawled_at) SELECT item_id, entry_ref, feed_url, feed_title, title, author, url, content_text, published_at, read, starred, fetched_at, content_max_len, content_hash, time_flags, crawled_at FROM search_rebuild_stage WHERE rowid IN (SELECT MAX(rowid) FROM search_rebuild_stage GROUP BY item_id)"
             )
 
         await transaction(self._db, _tx)
@@ -176,15 +183,23 @@ class SearchEntryWriter:
 def _replace_one(
     conn: sqlite3.Connection, doc: EntryDocument, feed_url: str, fetched_at: int
 ) -> None:
-    """One entry replace + bounded intake capture, inside the caller's tx."""
+    """One entry replace + bounded intake capture, inside the caller's tx.
+
+    FIX-231：同条目身份是 (feed_url, item_id)。FreshRSS 承诺条目 ID 全局
+    唯一；上游异常地让另一个 feed 交付同一 ID 时，绝不与既有行做跨文章
+    修订/变体捕获（两篇文章 diff 出的修订是伪造历史），不继承其
+    content_max_len，并清掉以 entry_ref 为键、无法区分归属的旧文章侧表
+    元数据——同 ID 的两篇不同文章不归并。
+    """
     new_html = doc.contentHtml or ""
     new_hash = content_hash(new_html)
     new_len = len(new_html)
     existing = conn.execute(
-        "SELECT title, content_hash, content_max_len FROM search_entries WHERE item_id = ?",
+        "SELECT title, content_hash, content_max_len, feed_url FROM search_entries WHERE item_id = ?",
         (doc.item_id,),
     ).fetchone()
-    if existing is not None:
+    same_entry = existing is not None and str(existing["feed_url"] or "") == feed_url
+    if same_entry:
         _capture_variant_and_revision(
             conn,
             doc,
@@ -195,6 +210,16 @@ def _replace_one(
             prev_hash=str(existing["content_hash"] or ""),
             prev_max=int(existing["content_max_len"] or 0),
             fetched_at=fetched_at,
+        )
+    elif existing is not None:
+        # 同 ID 换了交付来源（feed）：旧文章的变体/修订以 entry_ref 为键，
+        # 归属不可区分——丢弃，绝不与新文章混用。
+        conn.execute(
+            "DELETE FROM entry_content_variants WHERE entry_ref = ?",
+            (doc.entryRef,),
+        )
+        conn.execute(
+            "DELETE FROM entry_revisions WHERE entry_ref = ?", (doc.entryRef,)
         )
     else:
         # New entry via the incremental path: the first delivery IS the
@@ -216,8 +241,9 @@ def _replace_one(
             int(doc.read),
             int(doc.starred),
             fetched_at,
+            # 内容记忆（content_max_len）只在同一 (feed, id) 条目内累积。
             max(
-                int(existing["content_max_len"] or 0) if existing is not None else 0,
+                int(existing["content_max_len"] or 0) if same_entry else 0,
                 new_len,
             ),
             new_hash,

@@ -148,8 +148,11 @@ class SearchIndexService:
         # N031/N032/N034/N040：stage 表携带 intake 元数据列——
         # content_max_len 从活投影带入（子查询）、content_hash/time_flags
         # 按 stage 时刻计算、crawled_at 来自适配器——swap 后投影语义不变。
+        # FIX-231：stage 不带 UNIQUE 约束——上游身份异常（同 ID 跨 feed
+        # 交付）不得让 IntegrityError 中止整个重建；换入时由 swap_staged
+        # 按 item_id 去重（最后交付者生效）。
         await self._db.execute(
-            "CREATE TABLE search_rebuild_stage (item_id TEXT UNIQUE NOT NULL, entry_ref TEXT UNIQUE NOT NULL, feed_url TEXT NOT NULL, feed_title TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', author TEXT NOT NULL DEFAULT '', url TEXT NOT NULL DEFAULT '', content_text TEXT NOT NULL DEFAULT '', published_at TEXT NOT NULL, read INTEGER NOT NULL DEFAULT 0, starred INTEGER NOT NULL DEFAULT 0, fetched_at INTEGER NOT NULL, content_max_len INTEGER NOT NULL DEFAULT 0, content_hash TEXT NOT NULL DEFAULT '', time_flags INTEGER NOT NULL DEFAULT 0, crawled_at TEXT)"
+            "CREATE TABLE search_rebuild_stage (item_id TEXT NOT NULL, entry_ref TEXT NOT NULL, feed_url TEXT NOT NULL, feed_title TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', author TEXT NOT NULL DEFAULT '', url TEXT NOT NULL DEFAULT '', content_text TEXT NOT NULL DEFAULT '', published_at TEXT NOT NULL, read INTEGER NOT NULL DEFAULT 0, starred INTEGER NOT NULL DEFAULT 0, fetched_at INTEGER NOT NULL, content_max_len INTEGER NOT NULL DEFAULT 0, content_hash TEXT NOT NULL DEFAULT '', time_flags INTEGER NOT NULL DEFAULT 0, crawled_at TEXT)"
         )
         pages = 0
         total = 0
