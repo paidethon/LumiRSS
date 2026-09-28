@@ -53,12 +53,15 @@ def test_n181_libretranslate_engine_and_url(client):
     assert flows["ai-translation"]["configured"] is False
 
 
-def test_n181_tts_is_local_and_never_sends(client):
+def test_n181_tts_unconfigured_is_local_and_never_sends(client, monkeypatch):
+    """FIX-148：未配置 purpose=tts provider → 浏览器本机语音（无外发，
+    local=true）；provider 已配置的外发口径见 test_r2_fix148_tts_capability。"""
+    monkeypatch.delenv("AI_API_KEY", raising=False)
     flows = {
         item["capability"]: item
         for item in client.get("/api/v1/privacy/data-flows").json()["flows"]
     }
-    assert flows["tts"]["configured"] is True
+    assert flows["tts"]["configured"] is False
     assert flows["tts"]["local"] is True
     assert not flows["tts"]["providerHost"]
 

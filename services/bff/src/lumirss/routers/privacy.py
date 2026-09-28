@@ -3,7 +3,9 @@
 只读聚合，每个能力一条：configured 取自当前用户库 / 秘密库的真实配置
 （AI 摘要/翻译/对话 → ai.base_url；LibreTranslate → translation 引擎与
 URL；WebDAV → backup.webdav；IMAP → secrets 里的 mail_imap；远程图片 →
-便携设置 readerImageMode；TTS → 本机语音合成，恒为本机）。
+便携设置 readerImageMode；TTS → purpose=tts provider 解析，FIX-148：
+已配置 → 朗读文本外发该主机（服务端合成，N098/N099 导出链路）；
+未配置 → 浏览器本机语音合成，文本不出设备）。
 
 - providerHost 只含主机名：绝不返回路径、用户名、端口语义之外的任何
   信息，更不含密钥值（负向测试覆盖）；
@@ -78,8 +80,13 @@ def build_data_flows(
     webdav_doc: dict[str, Any],
     webdav_ready: bool,
     imap_config: Any,
+    tts_host: str | None = None,
 ) -> list[DataFlowItem]:
-    """纯函数组装（可独立测试）：输入全部来自当前请求者的真实配置。"""
+    """纯函数组装（可独立测试）：输入全部来自当前请求者的真实配置。
+
+    ``tts_host``：purpose=tts provider 已完整配置（base_url+model+key，
+    与 /tts/synthesize 的 409 判定同一口径）时的仅主机名；None = 浏览器
+    本机语音合成（FIX-148 两种能力如实区分）。"""
     ai_host = _hostname_of(ai.get("ai.base_url", ""))
     ai_ready = bool(ai_host) and bool(ai.get("ai.model", "").strip())
     engine = ai.get("translation.engine", "ai")
@@ -104,14 +111,15 @@ def build_data_flows(
         _configured_flow("libretranslate", libretranslate_host, ["待翻译文本"])
         if engine == "libretranslate" and libretranslate_host
         else _unconfigured_flow("libretranslate"),
-        # TTS：浏览器本机语音合成——文本不出设备
-        DataFlowItem(
-            capability="tts",
-            configured=True,
-            providerHost=None,
-            dataCategories=["当前朗读文本（仅在本机合成语音）"],
-            local=True,
-        ),
+        # TTS（FIX-148 能力区分，诚实口径）：
+        # - purpose=tts provider 已配置 → 服务端合成（N098/N099 导出链路
+        #   机械），朗读文本外发给该 provider（仅披露主机名）；
+        # - 未配置 → 浏览器本机语音合成（Web Speech），文本不出设备——
+        #   无外发，也不宣称服务端可产出/导出音频（N099 保持凭证阻塞，
+        #   不伪造能力）。
+        _configured_flow("tts", tts_host, ["当前朗读文本（服务端合成语音）"])
+        if tts_host
+        else DataFlowItem(capability="tts", configured=False, local=True),
         # 远程图片：图片显示关闭时不产生任何对外请求
         _configured_flow(
             "remote-images",
@@ -130,6 +138,32 @@ def build_data_flows(
         else _unconfigured_flow("imap"),
     ]
     return flows
+
+
+async def _tts_provider_host(request: Request) -> str | None:
+    """FIX-148：purpose=tts 的真实解析（与 /tts/synthesize 的 409 判定
+    同一 profile 链口径）。已完整配置（base_url+model+key）→ 仅主机名；
+    未配置/解析失败 → None（浏览器本机语音，文本不出设备）。绝不返回
+    密钥或路径。"""
+    try:
+        from lumirss.config import LumiSettings
+        from lumirss.deps import _get_ai_profile_store, _get_ai_settings_store
+        from lumirss.tts_service import TtsProviderConfig
+
+        profile_store = _get_ai_profile_store(request)
+        settings = await _get_ai_settings_store(request).load()
+        env_key = LumiSettings().AI_API_KEY.get_secret_value()
+        effective = await profile_store.effective_config("tts", settings, env_key)
+        config = TtsProviderConfig(
+            base_url=effective.base_url,
+            model=effective.model,
+            api_key=effective.api_key or "",
+        )
+        if not config.configured:
+            return None
+        return _hostname_of(config.base_url)
+    except Exception:  # noqa: BLE001 — 解析读不到 = 未配置，绝不 500
+        return None
 
 
 @router.get("/api/v1/privacy/data-flows", response_model=DataFlowsResponse)
@@ -152,6 +186,7 @@ async def get_data_flows(request: Request) -> DataFlowsResponse:
         webdav_doc,
         webdav_store.configured(webdav_doc),
         imap_config,
+        tts_host=await _tts_provider_host(request),
     )
     return DataFlowsResponse(flows=flows)
 
