@@ -184,6 +184,20 @@ def check_image_metadata() -> list[str]:
         "publish-images.yml: the release SHA256SUMS must be rebuilt over the "
         "actual asset set (scripts/release-sums.sh), never a hardcoded subset",
     )
+    _require(
+        publish,
+        r"scripts/verify-release-promotion\.py",
+        failures,
+        "publish-images.yml: promotion must verify tag commit == built SHA == "
+        "pushed digests before attaching (scripts/verify-release-promotion.py)",
+    )
+    _require(
+        publish,
+        r"scripts/check-release-assets\.py",
+        failures,
+        "publish-images.yml: the workflow must assert every required release "
+        "asset exists on the server before concluding (scripts/check-release-assets.py)",
+    )
 
     # ---- FIX-376: any setup-node cache must hash its lockfile -------------
     for wf in sorted((ROOT / ".github/workflows").glob("*.yml")):

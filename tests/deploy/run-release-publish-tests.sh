@@ -171,6 +171,144 @@ grep -q "gh release download" "$REPO_ROOT/.github/workflows/publish-images.yml" 
   || bad "publish-images.yml attach step does not pull existing assets into the checksum set"
 
 # ---------------------------------------------------------------------------
+echo "== 3. FIX-378: promotion identity (tag commit == built SHA == digests) =="
+# A prebuilt candidate may only be promoted under its own identity: the tag
+# must point at the commit CI tested, the manifest must describe THAT build,
+# and both image references must be digest-pinned to the digests the publish
+# run actually pushed. A rebuild is never silently "the same package".
+promo="$REPO_ROOT/scripts/verify-release-promotion.py"
+[[ -x "$promo" ]] && ok "scripts/verify-release-promotion.py exists and is executable" \
+  || bad "scripts/verify-release-promotion.py missing or not executable"
+
+SHA="0123456789abcdef0123456789abcdef01234567"
+BD="sha256:$(printf '1%.0s' $(seq 64))"
+WD="sha256:$(printf '2%.0s' $(seq 64))"
+pstage="$(mktemp -d "${TMPDIR:-/tmp}/lumirss-promo.XXXXXX")"
+cat > "$pstage/manifest.json" <<JSON
+{
+  "schema": "lumirss-release-manifest/v1",
+  "name": "LumiRSS",
+  "version": "2.0.1",
+  "git_sha": "$SHA",
+  "images": {
+    "bff": "ghcr.io/paidethon/lumirss/lumirss-bff@$BD",
+    "web": "ghcr.io/paidethon/lumirss/lumirss-web@$WD"
+  }
+}
+JSON
+promo_ok() { # args passthrough -> 0 expected
+  "$promo" "$@" >/dev/null 2>&1
+}
+if promo_ok --manifest "$pstage/manifest.json" --tag-commit "$SHA" --expected-sha "$SHA" \
+  --expected-version 2.0.1 --bff-digest "$BD" --web-digest "$WD"; then
+  ok "matching tag/build/manifest/digests promotes"
+else
+  bad "promotion verifier rejected a consistent candidate"
+fi
+promo_bad() { # desc args...
+  local desc="$1"; shift
+  if promo_ok "$@"; then bad "promotion accepted: $desc"; else ok "promotion rejected: $desc"; fi
+}
+promo_bad "manifest rebuilt from a different commit" \
+  --manifest <(sed "s/$SHA/ffffffffffffffffffffffffffffffffffffffff/" "$pstage/manifest.json") \
+  --tag-commit "$SHA" --expected-sha "$SHA" --expected-version 2.0.1 \
+  --bff-digest "$BD" --web-digest "$WD"
+promo_bad "tag moved off the built commit" \
+  --manifest "$pstage/manifest.json" --tag-commit "ffffffffffffffffffffffffffffffffffffffff" \
+  --expected-sha "$SHA" --expected-version 2.0.1 --bff-digest "$BD" --web-digest "$WD"
+promo_bad "version drift" \
+  --manifest "$pstage/manifest.json" --tag-commit "$SHA" --expected-sha "$SHA" \
+  --expected-version 9.9.9 --bff-digest "$BD" --web-digest "$WD"
+promo_bad "bff digest mismatch (rebuilt image)" \
+  --manifest "$pstage/manifest.json" --tag-commit "$SHA" --expected-sha "$SHA" \
+  --expected-version 2.0.1 --bff-digest "sha256:$(printf '3%.0s' $(seq 64))" --web-digest "$WD"
+promo_bad "mutable-tag reference instead of a digest pin" \
+  --manifest <(sed "s/@$BD/@v2.0.1/" "$pstage/manifest.json") \
+  --tag-commit "$SHA" --expected-sha "$SHA" --expected-version 2.0.1 \
+  --bff-digest "$BD" --web-digest "$WD"
+rm -rf "$pstage"
+
+# ---------------------------------------------------------------------------
+echo "== 4. FIX-379: required release assets asserted before green =="
+chk="$REPO_ROOT/scripts/check-release-assets.py"
+[[ -x "$chk" ]] && ok "scripts/check-release-assets.py exists and is executable" \
+  || bad "scripts/check-release-assets.py missing or not executable"
+
+astage="$(mktemp -d "${TMPDIR:-/tmp}/lumirss-assets.XXXXXX")"
+assets_ok() { # manifest tar sums...
+  local sums="$1"; shift
+  "$chk" --assets-json "$astage/assets.json" --sums "$sums" \
+    --required release-manifest.json SHA256SUMS >/dev/null 2>&1
+}
+mk_assets() { # manifest? sums?  (control what the "server" has; ".fake" suffix stripped for the asset name)
+  rm -f "$astage"/*.fake
+  [[ "${1:-}" == 1 ]] && printf 'manifest\n' > "$astage/release-manifest.json.fake"
+  [[ "${2:-}" == 1 ]] && printf 'sums\n'    > "$astage/SHA256SUMS.fake"
+  python3 - "$astage" <<'PY'
+import json, sys, pathlib
+stage = pathlib.Path(sys.argv[1])
+assets = [{"name": p.name[:-len(".fake")], "size": p.stat().st_size}
+          for p in sorted(stage.glob("*.fake"))]
+(stage / "assets.json").write_text(json.dumps({"assets": assets}))
+PY
+}
+printf 'manifest\n' > "$astage/release-manifest.json"
+printf '%s  release-manifest.json\n%s  SHA256SUMS\n' \
+  "$(printf 'a%.0s' $(seq 64))" "$(printf 'b%.0s' $(seq 64))" > "$astage/SHA256SUMS"
+
+mk_assets 1 1
+if assets_ok "$astage/SHA256SUMS"; then
+  ok "complete release (manifest+sums, sized) passes"
+else
+  bad "asset checker rejected a complete release"
+fi
+mk_assets 1 0
+if assets_ok "$astage/SHA256SUMS"; then
+  bad "missing SHA256SUMS asset NOT caught (half-finished release would end green)"
+else
+  ok "missing SHA256SUMS asset caught"
+fi
+mk_assets 0 1
+if assets_ok "$astage/SHA256SUMS"; then
+  bad "missing release-manifest.json NOT caught"
+else
+  ok "missing release-manifest.json caught"
+fi
+# zero-size upload = failure, not an asset
+mk_assets 1 1
+python3 - "$astage" <<'PY'
+import json, sys, pathlib
+stage = pathlib.Path(sys.argv[1])
+data = json.loads((stage / "assets.json").read_text())
+for a in data["assets"]:
+    if a["name"] == "SHA256SUMS":
+        a["size"] = 0
+(stage / "assets.json").write_text(json.dumps(data))
+PY
+if assets_ok "$astage/SHA256SUMS"; then
+  bad "zero-size asset treated as present"
+else
+  ok "zero-size asset caught"
+fi
+# sums <-> assets must match both ways (FIX-377 contract at attach time)
+mk_assets 1 1
+printf '%s  release-manifest.json\n%s  GONE.tar\n' \
+  "$(printf 'a%.0s' $(seq 64))" "$(printf 'c%.0s' $(seq 64))" > "$astage/SHA256SUMS"
+if assets_ok "$astage/SHA256SUMS"; then
+  bad "sums naming a non-asset NOT caught"
+else
+  ok "sums naming a phantom file caught"
+fi
+mk_assets 1 1
+printf '%s  release-manifest.json\n' "$(printf 'a%.0s' $(seq 64))" > "$astage/SHA256SUMS"
+if assets_ok "$astage/SHA256SUMS"; then
+  bad "asset without a sums entry NOT caught"
+else
+  ok "asset without a checksum entry caught"
+fi
+rm -rf "$astage"
+
+# ---------------------------------------------------------------------------
 echo
 echo "release-publish tests: $PASS passed, $FAIL failed"
 if [[ "$FAIL" -gt 0 ]]; then exit 1; fi

@@ -99,6 +99,42 @@ if python3 "$wt/scripts/check-image-metadata.py" >/dev/null 2>&1; then
 else
   ok "mutation: ci build without LUMIRSS_VERSION caught"
 fi
+cp "$REPO_ROOT/.github/workflows/ci.yml" "$wt/.github/workflows/ci.yml"
+
+# FIX-377/378/379: each release-publishing guard is pinned by the checker —
+# removing the workflow wiring must be caught.
+sed -i '/scripts\/release-sums\.sh/d' "$wt/.github/workflows/publish-images.yml"
+if python3 "$wt/scripts/check-image-metadata.py" >/dev/null 2>&1; then
+  bad "mutation: asset-set SHA256SUMS rebuild removed from attach NOT caught"
+else
+  ok "mutation: asset-set SHA256SUMS rebuild removed from attach caught"
+fi
+cp "$REPO_ROOT/.github/workflows/publish-images.yml" "$wt/.github/workflows/publish-images.yml"
+
+sed -i '/scripts\/verify-release-promotion\.py/d' "$wt/.github/workflows/publish-images.yml"
+if python3 "$wt/scripts/check-image-metadata.py" >/dev/null 2>&1; then
+  bad "mutation: promotion identity verification removed NOT caught"
+else
+  ok "mutation: promotion identity verification removed caught"
+fi
+cp "$REPO_ROOT/.github/workflows/publish-images.yml" "$wt/.github/workflows/publish-images.yml"
+
+sed -i '/scripts\/check-release-assets\.py/d' "$wt/.github/workflows/publish-images.yml"
+if python3 "$wt/scripts/check-image-metadata.py" >/dev/null 2>&1; then
+  bad "mutation: required-asset assertion removed NOT caught"
+else
+  ok "mutation: required-asset assertion removed caught"
+fi
+cp "$REPO_ROOT/.github/workflows/publish-images.yml" "$wt/.github/workflows/publish-images.yml"
+# FIX-377 half-fix: keeping release-sums but dropping the download of the
+# release's existing assets would silently under-cover again.
+sed -i '/gh release download/d' "$wt/.github/workflows/publish-images.yml"
+if python3 "$wt/scripts/check-image-metadata.py" >/dev/null 2>&1; then
+  bad "mutation: existing-asset download removed from attach NOT caught"
+else
+  ok "mutation: existing-asset download removed from attach caught"
+fi
+cp "$REPO_ROOT/.github/workflows/publish-images.yml" "$wt/.github/workflows/publish-images.yml"
 rm -rf "$wt"
 
 # ---------------------------------------------------------------------------
