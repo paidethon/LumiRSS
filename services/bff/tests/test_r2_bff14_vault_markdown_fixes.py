@@ -253,3 +253,122 @@ def test_fix337_full_note_lifecycle_leaves_vault_bytes_unchanged(obsidian, tmp_p
     assert first["added"] == 2  # 只索引 .md（附件文件不入投影）
     assert second["added"] == 0
     assert _hash_vault(vault) == before  # 原库逐字节不变
+
+
+# ---------------------------------------------------------------------------
+# FIX-334 — Wiki 链接同名笔记解析到任意文件：明确相对路径规则。
+#
+# 同名笔记（不同目录）命中同一个 basename/title wikilink 时，解析必须
+# 确定：先精确 rel_path，再「与链接方最近相对路径」（共享目录前缀最深
+# 优先，平局取字典序），绝不随 DB 行序任意 pick。
+# ---------------------------------------------------------------------------
+
+
+def _backlink_target(db, from_uuid: str) -> tuple[str | None, str | None]:
+    row = run(
+        db.fetch_one(
+            "SELECT target_uuid, broken, reason FROM obsidian_backlinks WHERE from_uuid = ? LIMIT 1",
+            (from_uuid,),
+        )
+    )
+    if row is None:
+        return None, None
+    return (str(row["target_uuid"]) if row["target_uuid"] else None), (
+        str(row["reason"]) if row["reason"] else None
+    )
+
+
+def test_fix334_same_name_wikilink_resolves_to_closest_relative_path(
+    obsidian, tmp_path
+):
+    """链接方 a/linking.md 的 [[shared]] 必须解析到 a/shared.md（同目录
+    最近），即使 b/shared.md 先入库（旧行为：无 ORDER BY + setdefault
+    → 任意 pick 先入行）。"""
+    service, tmp = obsidian
+    # 第一批：先只有 b/shared + 链接方（旧行为此时把 stem 锁在 b 行）。
+    vault = _write_vault(
+        tmp,
+        {
+            "b/shared.md": "---\ntitle: shared\n---\nB 版\n",
+            "a/linking.md": "---\ntitle: 链接方\n---\n参见 [[shared]]\n",
+        },
+    )
+    run(service.set_vault_path(str(vault)))
+    run(service.rescan())
+    # 第二批：a/shared 入库 → 重建后必须选同目录的 a/shared。
+    (vault / "a" / "shared.md").write_text(
+        "---\ntitle: shared\n---\nA 版\n", encoding="utf-8"
+    )
+    run(service.rescan())
+
+    rows = run(
+        service._db.fetch_all(
+            "SELECT item_uuid, rel_path FROM obsidian_notes ORDER BY rel_path"
+        )
+    )
+    by_rel = {str(row["rel_path"]): str(row["item_uuid"]) for row in rows}
+    target, reason = _backlink_target(service._db, by_rel["a/linking.md"])
+    assert reason is None
+    assert target == by_rel["a/shared.md"]
+
+
+def test_fix334_wikilink_tie_breaks_lexicographic_and_exact_path_wins(
+    obsidian, tmp_path
+):
+    service, tmp = obsidian
+    vault = _write_vault(
+        tmp,
+        {
+            # 链接方在根目录：x-shared 与 z-shared 都不共享目录 → 字典序
+            # 取 x-shared（与入库顺序无关）。
+            "linking.md": "---\ntitle: 根链接方\n---\n[[doc]]\n",
+            "z/doc.md": "---\ntitle: Z文档\n---\nZ\n",
+            "x/doc.md": "---\ntitle: X文档\n---\nX\n",
+        },
+    )
+    run(service.set_vault_path(str(vault)))
+    run(service.rescan())
+
+    rows = run(
+        service._db.fetch_all(
+            "SELECT item_uuid, rel_path FROM obsidian_notes ORDER BY rel_path"
+        )
+    )
+    by_rel = {str(row["rel_path"]): str(row["item_uuid"]) for row in rows}
+    target, reason = _backlink_target(service._db, by_rel["linking.md"])
+    assert reason is None
+    assert target == by_rel["x/doc.md"]
+
+    # 精确相对路径永远优先于 basename/title 歧义解析。
+    (vault / "linking.md").write_text(
+        "---\ntitle: 根链接方\n---\n[[z/doc]]\n", encoding="utf-8"
+    )
+    run(service.rescan())
+    target, reason = _backlink_target(service._db, by_rel["linking.md"])
+    assert reason is None
+    assert target == by_rel["z/doc.md"]
+
+
+def test_fix334_title_ambiguity_resolves_deterministically(obsidian, tmp_path):
+    service, tmp = obsidian
+    vault = _write_vault(
+        tmp,
+        {
+            "notes/guide.md": "---\ntitle: 指南\n---\n参见 [[指南]]\n",
+            "deep/nest/指南.md": "---\ntitle: 指南\n---\n深层版\n",
+            "deep/指南.md": "---\ntitle: 指南\n---\n中层级版\n",
+        },
+    )
+    run(service.set_vault_path(str(vault)))
+    run(service.rescan())
+    rows = run(
+        service._db.fetch_all(
+            "SELECT item_uuid, rel_path FROM obsidian_notes ORDER BY rel_path"
+        )
+    )
+    by_rel = {str(row["rel_path"]): str(row["item_uuid"]) for row in rows}
+    target, reason = _backlink_target(service._db, by_rel["notes/guide.md"])
+    # title 桶候选：链接方所在目录 notes 无同名 → 共享目录前缀 0 平局
+    # → rel_path 字典序（逐字节：ASCII 'n' < CJK '指'）→ deep/nest/指南。
+    assert reason is None
+    assert target == by_rel["deep/nest/指南.md"]

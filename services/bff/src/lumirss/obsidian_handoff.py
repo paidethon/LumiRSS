@@ -284,9 +284,14 @@ def build_projection_index(notes: list[dict[str, Any]]) -> dict[str, str]:
     """obsidian_notes 行 → 解析键集合（rel_path / stem / title）。
 
     与反链解析（obsidian_backlinks）同一套键规则，保证「校验说没问题的
-    wikilink，投影扫描也解析得出来」。"""
+    wikilink，投影扫描也解析得出来」。FIX-334：同名 stem/title 冲突时
+    按 rel_path 字典序取先者——索引构建不随入参行序任意 pick。"""
     index: dict[str, str] = {}
-    for note in notes:
+    ordered = sorted(
+        notes,
+        key=lambda note: str(note.get("relPath") or note.get("rel_path") or ""),
+    )
+    for note in ordered:
         rel_path = str(note.get("relPath") or note.get("rel_path") or "")
         title = str(note.get("title") or "").strip()
         if rel_path:
