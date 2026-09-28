@@ -720,13 +720,22 @@ export async function updateRegistrationPolicy(
 // mint 由管理台的密码对话框触发；单次使用——发出即清除）。
 
 /** N009：铸造管理员临时提权令牌（POST /admin/step-up；密码错 →
- * 400 invalid_credentials；member 调用 → 403 forbidden）。 */
+ * 400 invalid_credentials；member 调用 → 403 forbidden）。
+ * FIX-218：令牌绑定 (operation, targetUserId) 作用域——必须与重试
+ * 操作要求的作用域逐字匹配才会被消费；值来自 step_up_required 403
+ * 错误体的 operation/targetUserId 字段（ApiError.extra）。 */
 export async function mintAdminStepUpToken(
   password: string,
+  operation: string | null,
+  targetUserId: string | null,
 ): Promise<{ token: string; expiresInMinutes: number; header: string }> {
   const response = await rawRequest(`${API_BASE}/admin/step-up`, {
     method: 'POST',
-    body: JSON.stringify({ password }),
+    body: JSON.stringify({
+      password,
+      ...(operation !== null ? { operation } : {}),
+      ...(targetUserId !== null ? { targetUserId } : {}),
+    }),
     contentType: 'application/json',
   })
   if (!response.ok) throw await toApiError(response)

@@ -72,6 +72,7 @@ import {
   mintAdminStepUp,
   notifyStepUpRequired,
   onStepUpRequired,
+  type StepUpScope,
 } from '../../lib/step-up'
 import { formatListTime, formatRelativeTime } from '../../lib/date-format'
 import { Button } from '../ui/Button'
@@ -104,8 +105,12 @@ function adminActionError(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.type === 'network_error') return '网络不可用 —— 请检查网络连接后重试。'
     // N009：敏感操作需要临时提权——通知管理台弹出密码对话框。
+    // FIX-218：透传错误体声明的作用域，铸造匹配令牌后重试才被消费。
     if (error.type === 'step_up_required') {
-      notifyStepUpRequired()
+      notifyStepUpRequired({
+        operation: error.extra?.operation ?? null,
+        targetUserId: error.extra?.targetUserId ?? null,
+      })
       return '该操作需要临时提权验证（输入管理员密码后再试一次）。'
     }
     if (error.status === 403) return '需要管理员权限，操作被服务端拒绝。'
@@ -115,8 +120,17 @@ function adminActionError(error: unknown): string {
 }
 
 /** N009：临时提权密码对话框（铸造一次性令牌后关闭；下一次敏感操作
- * 自动携带 X-Lumi-Step-Up 头）。 */
-function StepUpDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+ * 自动携带 X-Lumi-Step-Up 头）。FIX-218：铸造时带上 403 错误体声明的
+ * (operation, targetUserId) 作用域——令牌只对该操作该目标可消费。 */
+function StepUpDialog({
+  open,
+  scope,
+  onClose,
+}: {
+  open: boolean
+  scope: StepUpScope | undefined
+  onClose: () => void
+}) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
@@ -125,7 +139,7 @@ function StepUpDialog({ open, onClose }: { open: boolean; onClose: () => void })
     setPending(true)
     setError(null)
     try {
-      await mintAdminStepUp(password)
+      await mintAdminStepUp(password, scope ?? { operation: null, targetUserId: null })
       setPassword('')
       onClose()
     } catch (err) {
@@ -2151,9 +2165,16 @@ export default function AdminScreen() {
   const [confirmError, setConfirmError] = useState<string | null>(null)
   const [confirmPending, setConfirmPending] = useState(false)
   // N009：敏感操作 403 step_up_required → 弹出临时提权密码对话框。
+  // FIX-218：携带服务端声明的作用域，铸造匹配令牌后重试才被消费。
   const [stepUpOpen, setStepUpOpen] = useState(false)
+  const [stepUpScope, setStepUpScope] = useState<StepUpScope | undefined>(
+    undefined,
+  )
   useEffect(() => {
-    return onStepUpRequired(() => setStepUpOpen(true))
+    return onStepUpRequired((scope) => {
+      setStepUpScope(scope)
+      setStepUpOpen(true)
+    })
   }, [])
 
   const forbidden =
@@ -2165,7 +2186,11 @@ export default function AdminScreen() {
 
   return (
     <div className="min-h-dvh overflow-y-auto bg-[var(--lumi-canvas)]" data-testid="admin-screen">
-      <StepUpDialog open={stepUpOpen} onClose={() => setStepUpOpen(false)} />
+      <StepUpDialog
+        open={stepUpOpen}
+        scope={stepUpScope}
+        onClose={() => setStepUpOpen(false)}
+      />
       <div className="mx-auto w-full max-w-5xl px-4 py-6">
         <div className="mb-5 flex items-center gap-3">
           <Button

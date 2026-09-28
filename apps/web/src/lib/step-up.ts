@@ -32,22 +32,43 @@ export function isStepUpRequiredError(error: unknown): boolean {
   return error instanceof ApiError && error.type === 'step_up_required'
 }
 
-/** 用管理员自己的密码铸造一次性令牌（5 分钟有效；失败抛 ApiError）。 */
-export async function mintAdminStepUp(password: string): Promise<void> {
-  const result = await mintAdminStepUpToken(password)
+/** FIX-218：403 step_up_required 声明的作用域（ApiError.extra 透传）。 */
+export interface StepUpScope {
+  operation: string | null
+  targetUserId: string | null
+}
+
+/** 用管理员自己的密码铸造一次性令牌（5 分钟有效；失败抛 ApiError）。
+ * FIX-218：铸造即声明作用域——值取自 step_up_required 403 错误体，
+ * 与重试操作要求的作用域逐字匹配才会被服务端消费。 */
+export async function mintAdminStepUp(
+  password: string,
+  scope: StepUpScope,
+): Promise<void> {
+  const result = await mintAdminStepUpToken(
+    password,
+    scope.operation,
+    scope.targetUserId,
+  )
   currentToken = result.token
 }
 
-/** step_up_required 事件（管理台监听并弹出密码对话框）。 */
+/** step_up_required 事件（管理台监听并弹出密码对话框）。
+ * detail 携带服务端声明的作用域，供铸造匹配令牌。 */
 const STEP_UP_EVENT = 'lumirss:step-up-required'
 
-export function notifyStepUpRequired(): void {
+export function notifyStepUpRequired(scope?: StepUpScope): void {
   if (typeof window === 'undefined') return
-  window.dispatchEvent(new CustomEvent(STEP_UP_EVENT))
+  window.dispatchEvent(new CustomEvent(STEP_UP_EVENT, { detail: scope }))
 }
 
-export function onStepUpRequired(handler: () => void): () => void {
+export function onStepUpRequired(
+  handler: (scope: StepUpScope | undefined) => void,
+): () => void {
   if (typeof window === 'undefined') return () => {}
-  window.addEventListener(STEP_UP_EVENT, handler)
-  return () => window.removeEventListener(STEP_UP_EVENT, handler)
+  const wrapped = (event: Event): void => {
+    handler((event as CustomEvent<StepUpScope | undefined>).detail)
+  }
+  window.addEventListener(STEP_UP_EVENT, wrapped)
+  return () => window.removeEventListener(STEP_UP_EVENT, wrapped)
 }
