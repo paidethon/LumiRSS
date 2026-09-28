@@ -107,3 +107,31 @@ def test_f073_export_multi_page_count_truncation_and_excerpt_only(client):
         json={"q": "alpha", "format": "markdown", "cap": 5},
     )
     assert "已截断" in md.text
+
+
+# ---------------------------------------------------------------------------
+# FIX-327 — 导出 CSV 公式前缀（含 TAB/CR/LF 前导形态）统一撇号转义，
+# 原文可追溯（去一个前导撇号即还原）。
+
+
+def test_fix327_formula_guard_tab_newline_prefixed_and_traceability():
+    # TAB/CR/LF 前导的公式形态同样触发防护（表格软件求值前会剥掉它们）。
+    assert looks_like_formula("\t=cmd") is True
+    assert looks_like_formula("\r=1+1|' /C calc") is True
+    assert looks_like_formula("\n\n@SUM(1)") is True
+    assert guard_cell("\t=cmd") == "'\t=cmd"
+    # 数值例外仍然成立（有意的可选择编码：数值列不转义、保持可排序）。
+    assert looks_like_formula("-2,000") is False
+    assert looks_like_formula("+123") is False
+    assert looks_like_formula("\t-2,000") is False
+    # 原文可追溯：被转义的值只前置恰好一个撇号，去掉即还原原值；
+    # 未触发的值原样通过（不添加任何前缀）。
+    for original in ("=cmd|' /C calc", "\t=1+1", "@x", "-1+1"):
+        guarded = guard_cell(original)
+        assert guarded.startswith("'")
+        assert guarded[1:] == original
+    assert guard_cell("普通文本") == "普通文本"
+    # 全量输出层：TAB 前导公式进入 build_csv 后已被转义为文本。
+    csv = build_csv(["标题"], [["\t=cmd('calc')"]])
+    assert "'\t=cmd('calc')" in csv
+    assert build_csv(["a"], [["\t=bad"]]).splitlines()[1].startswith("'")
