@@ -153,8 +153,11 @@ function SentinelState({
     <li
       ref={sentinelRef}
       aria-hidden={hasNextPage || isFetchingNextPage ? undefined : 'true'}
-      className="flex items-center justify-center py-4 max-lg:pb-[84px]"
-      style={{ paddingBottom: hasNextPage || isFetchingNextPage ? undefined : 'max(1rem, var(--safe-bottom))' }}
+      // FIX-099：<1024（底栏可见区间）列表尾必须预留 底栏(48+8px)+safe-area
+      // 的净空；此前「已到底」态用 inline paddingBottom max(1rem,safe) 覆盖
+      // 掉 84px 类——最后一条文章与「已经到底了」会沉到底栏之下。
+      // ≥1024 无底栏，保持 py-4 的 1rem 底距不变。
+      className="flex items-center justify-center py-4 max-lg:pb-[max(5.25rem,calc(3.5rem_+_0.5rem_+_var(--safe-bottom)))]"
     >
       {isFetchingNextPage ? (
         <Loader2

@@ -301,7 +301,7 @@ function ConfiguredView({ status }: { status: ObsidianStatus }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 max-lg:pb-[76px]">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 max-lg:pb-[calc(4.75rem_+_var(--safe-bottom))]">
         {/* 状态行：笔记数 / 上次扫描 / lastError（诚实展示） */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1">
           <h2 className="text-sm font-semibold text-[var(--lumi-text-primary)]">Obsidian 库</h2>

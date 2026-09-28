@@ -495,7 +495,7 @@ export default function SubscriptionsPage() {
           feedUrl: sub.feedUrl,
         }))}
       />
-      <div className="min-h-0 flex-1 overflow-y-auto p-3 max-lg:pb-[76px]">
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 max-lg:pb-[calc(4.75rem_+_var(--safe-bottom))]">
         {/* F40：首启向导（尚无订阅且未被关闭时显示；可整体关闭） */}
         {firstRunVisible && !firstRunDismissed ? (
           <FirstRunChecklist onClose={() => setFirstRunDismissed(true)} />

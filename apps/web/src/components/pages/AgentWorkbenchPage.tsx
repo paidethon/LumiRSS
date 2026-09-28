@@ -494,7 +494,7 @@ function ChatArea({
         role="log"
         aria-live="polite"
         aria-label="消息记录"
-        className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto p-3 max-lg:pb-[76px]"
+        className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto p-3 max-lg:pb-[calc(4.75rem_+_var(--safe-bottom))]"
       >
         {messages.isPending && (
           <div className="flex flex-col gap-2" aria-label="消息加载中">

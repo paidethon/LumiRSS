@@ -432,7 +432,7 @@ export default function ObsidianDevicesSection({ envRootConfigured }: { envRootC
   return (
     <section
       aria-label="设备与导出"
-      className="border-t border-[var(--lumi-separator)] px-3 py-4 max-lg:pb-[84px]"
+      className="border-t border-[var(--lumi-separator)] px-3 py-4 max-lg:pb-[calc(5.25rem_+_var(--safe-bottom))]"
       data-lumi-obsidian-devices-section=""
     >
       <button

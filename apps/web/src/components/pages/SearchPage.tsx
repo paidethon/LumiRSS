@@ -855,7 +855,7 @@ export default function SearchPage() {
   }, [])
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 max-lg:pb-[76px]">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 max-lg:pb-[calc(4.75rem_+_var(--safe-bottom))]">
         {/* 主搜索框：防抖自动 + Enter 立即；原生 × 清空；取消重置 */}
         <div className="flex gap-2">
           <div className="relative min-w-0 flex-1">

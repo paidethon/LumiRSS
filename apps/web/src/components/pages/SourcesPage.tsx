@@ -195,7 +195,7 @@ export default function SourcesPage() {
           />
         </Suspense>
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto p-3 max-lg:pb-[76px]">
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 max-lg:pb-[calc(4.75rem_+_var(--safe-bottom))]">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="flex items-center gap-1.5 text-base font-semibold text-[var(--lumi-text-primary)]">
             <Layers aria-hidden className="size-4" />

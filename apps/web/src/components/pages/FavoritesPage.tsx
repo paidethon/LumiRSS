@@ -196,7 +196,7 @@ export default function FavoritesPage() {
         {/* phase2 G6：库收藏（标题 / kind / url；libraryError 诚实小字） */}
         <section
           aria-label="库收藏"
-          className="border-t border-[var(--lumi-separator)] px-2 pb-2 pt-2 max-lg:pb-[84px]"
+          className="border-t border-[var(--lumi-separator)] px-2 pb-2 pt-2 max-lg:pb-[calc(5.25rem_+_var(--safe-bottom))]"
         >
           <h3 className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-[var(--lumi-text-tertiary)]">
             库收藏

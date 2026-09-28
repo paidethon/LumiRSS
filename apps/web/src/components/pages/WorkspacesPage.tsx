@@ -1324,7 +1324,7 @@ export default function WorkspacesPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 max-lg:pb-[76px]">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 max-lg:pb-[calc(4.75rem_+_var(--safe-bottom))]">
         {/* 头部：标题 + 新建工作区 + （非保留工作区）重命名/删除操作 */}
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-base font-semibold text-[var(--lumi-text-primary)]">工作区</h1>

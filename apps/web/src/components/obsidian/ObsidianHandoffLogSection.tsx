@@ -90,7 +90,7 @@ export default function ObsidianHandoffLogSection() {
   return (
     <section
       aria-label="交接记录"
-      className="border-t border-[var(--lumi-separator)] px-3 py-4 max-lg:pb-[84px]"
+      className="border-t border-[var(--lumi-separator)] px-3 py-4 max-lg:pb-[calc(5.25rem_+_var(--safe-bottom))]"
       data-lumi-handoff-log-section=""
     >
       <button
