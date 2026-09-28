@@ -120,9 +120,10 @@ class RoutingDatabase(Database):
             raise DatabaseError("Could not open the user database.") from exc
         connection.row_factory = sqlite3.Row
         try:
-            connection.execute("PRAGMA foreign_keys=ON")
-            connection.execute("PRAGMA busy_timeout=5000")
-            connection.execute("PRAGMA journal_mode=WAL")
+            # 共享 PRAGMA 配置（含 WAL 转换的并发安全重试，FIX-211）。
+            from lumirss.storage import configure_connection
+
+            configure_connection(connection)
         except sqlite3.Error as exc:
             connection.close()
             raise DatabaseError("Could not configure the user database.") from exc
@@ -132,6 +133,8 @@ class RoutingDatabase(Database):
 
     async def migrate(self) -> list[int]:
         uid = require_user_id()
+        from lumirss.storage import path_migrate_lock
+
         async with self._guard:
             lock = self._locks.get(uid)
             if lock is None:
@@ -140,11 +143,17 @@ class RoutingDatabase(Database):
         async with lock:
             if uid in self._migrated_users:
                 return []
-            from lumirss.migrations import apply_migrations
+            # FIX-211：实例内 per-uid 锁之外再取进程级路径锁——并发首
+            # 初始化会各自构建 RoutingDatabase 实例，同一用户库的迁移
+            # 必须跨实例串行；双重检查避免等待期间对手已完成。
+            async with await path_migrate_lock(self.path):
+                if uid in self._migrated_users:
+                    return []
+                from lumirss.migrations import apply_migrations
 
-            applied = await self._run(apply_migrations, self)
-            self._migrated_users.add(uid)
-            return applied
+                applied = await self._run(apply_migrations, self)
+                self._migrated_users.add(uid)
+                return applied
 
     def invalidate_migration_cache(self) -> None:
         self._migrated_users.clear()

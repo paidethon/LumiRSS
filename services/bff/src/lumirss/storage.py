@@ -16,6 +16,7 @@ the RSS-domain source of truth and lumi.sqlite must never shadow-copy it.
 
 import asyncio
 import sqlite3
+import time
 from collections.abc import Callable
 from contextlib import closing
 from pathlib import Path
@@ -24,8 +25,51 @@ from typing import Any, TypeVar
 T = TypeVar("T")
 
 
+def configure_connection(connection: sqlite3.Connection) -> None:
+    """Shared PRAGMA setup for every Lumi SQLite connection.
+
+    FIX-211: concurrent first-initialization opens the same fresh user
+    database from several RoutingDatabase instances at once; simultaneous
+    journal_mode=WAL conversions can transiently hit SQLITE_BUSY. Skip the
+    conversion when the file is already WAL and retry it a bounded number
+    of times before letting the sqlite3.Error reach the caller.
+    """
+    connection.execute("PRAGMA foreign_keys=ON")
+    connection.execute("PRAGMA busy_timeout=5000")
+    for attempt in range(3):
+        try:
+            mode = connection.execute("PRAGMA journal_mode").fetchone()
+            if mode is None or str(mode[0]).lower() != "wal":
+                connection.execute("PRAGMA journal_mode=WAL")
+            return
+        except sqlite3.OperationalError:
+            if attempt == 2:
+                raise
+            time.sleep(0.05 * (attempt + 1))
+
+
 class DatabaseError(Exception):
     """A storage-level failure (connection, migration, integrity)."""
+
+
+# 进程级迁移串行化（FIX-211）：同一进程内多个 Database 句柄（如并发
+# 首初始化各自构建的 RoutingDatabase 实例）可能同时对同一文件跑迁移，
+# 实例级 asyncio 锁管不住跨实例。按解析后的绝对路径加进程级锁；
+# 双重检查用实例 flag 保持热路径无额外开销。跨进程（多 worker 冷启动）
+# 由 apply_migrations 的 BEGIN IMMEDIATE 写锁保证至多一个应用者；
+# 该场景的迁移所有权唯一化在 FIX-353 下继续跟踪。
+_path_migrate_locks: dict[str, asyncio.Lock] = {}
+_path_migrate_locks_guard = asyncio.Lock()
+
+
+async def path_migrate_lock(path: Path) -> asyncio.Lock:
+    key = str(path.resolve())
+    async with _path_migrate_locks_guard:
+        lock = _path_migrate_locks.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            _path_migrate_locks[key] = lock
+        return lock
 
 
 def _statement_write_result(cursor: "sqlite3.Cursor", sql: str) -> int | None:
@@ -64,9 +108,7 @@ class Database:
             raise DatabaseError(f"Could not open Lumi database {self._path}.") from exc
         connection.row_factory = sqlite3.Row
         try:
-            connection.execute("PRAGMA foreign_keys=ON")
-            connection.execute("PRAGMA busy_timeout=5000")
-            connection.execute("PRAGMA journal_mode=WAL")
+            configure_connection(connection)
         except sqlite3.Error as exc:
             connection.close()
             raise DatabaseError("Could not configure Lumi database connection.") from exc
@@ -87,9 +129,12 @@ class Database:
                 return []
             from lumirss.migrations import apply_migrations
 
-            applied = await self._run(apply_migrations, self)
-            self._migrated = True
-            return applied
+            async with await path_migrate_lock(self._path):
+                if self._migrated:
+                    return []
+                applied = await self._run(apply_migrations, self)
+                self._migrated = True
+                return applied
 
     def _fetch_one(
         self, sql: str, params: tuple[Any, ...] = ()
