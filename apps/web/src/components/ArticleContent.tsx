@@ -7,7 +7,10 @@ import { getEntryExtractPreview } from '../api/client'
 import { Button } from './ui/Button'
 import { cx as cxRaw } from './ui/cx'
 import { useMutation } from '@tanstack/react-query'
-import { deferImages } from '../lib/article-images'
+import {
+  resolveRelativeMedia,
+  deferImages,
+} from '../lib/article-images'
 import {
   blockRemoteImages,
   decorateBlockedRemoteImages,
@@ -459,6 +462,12 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
     let out = withIds.html
     let deferredImageCount = 0
     let manualMediaCount = 0
+    // FIX-263：相对图片地址（src/srcset 各候选）按文章原站 URL 绝对化
+    // ——放在 defer/拦截之前，摘进 data-* 的是已绝对化的地址，浏览器
+    // 不再按应用源猜测（应用本地 /api/* 快照资源不受影响）。
+    if (detail.url !== null && detail.url !== undefined && detail.url !== '') {
+      out = resolveRelativeMedia(out, detail.url).html
+    }
     if (imageMode === 'hidden' && !imagesAllowed) {
       const deferred = deferImages(out)
       out = deferred.html
@@ -473,7 +482,7 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
       manualMediaCount = media.mediaCount
     }
     return { html: out, toc: withIds.toc, deferredImageCount, manualMediaCount }
-  }, [html, hasHtml, imageMode, imagesAllowed, blockRemote, manualMedia])
+  }, [html, hasHtml, imageMode, imagesAllowed, blockRemote, manualMedia, detail.url])
 
   // dangerouslySetInnerHTML 的 props 对象必须引用稳定：内联字面量在每次
   // 渲染都是新对象，React 更新该宿主元素时会重设 innerHTML——渲染后
