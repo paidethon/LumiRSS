@@ -15,6 +15,7 @@
 
 import type { QueryClient } from '@tanstack/react-query'
 import { useReaderUi, ALL_SCOPE } from '../store/reader-ui'
+import { bumpAuthEpoch } from '../store/auth'
 import { useSearchState } from '../store/search-state'
 import { clearBasketOnLogout } from '../store/search-basket'
 import { useUndo } from '../store/undo'
@@ -35,8 +36,16 @@ import { clearEnclosurePositions } from './enclosure'
 import { clearStashedSearchHits } from './search-hit-locate'
 
 /** 登录/登出后的统一状态重置。queryClient 由调用方传入（main.tsx /
- * useQueryClient 持有同一实例）。 */
-export function resetAccountState(queryClient: QueryClient): void {
+ * useQueryClient 持有同一实例）。
+ *
+ * FIX-069：默认广播 auth epoch（storage 事件送达其他标签页，让挂着
+ * 旧身份应用子树的标签页同步重置）。跨标签页事件处理器自身调用时传
+ * { broadcast: false }——否则 A↔B 标签页互相触发、乒乓循环。 */
+export function resetAccountState(
+  queryClient: QueryClient,
+  options: { broadcast?: boolean } = {},
+): void {
+  const broadcast = options.broadcast ?? true
   // 1. 服务端数据缓存：文章/订阅/收藏等投影全部作废（含内存外的
   //    Query persistence，若未来接入）。clear 内部已移除全部查询与
   //    mutation 缓存并通知订阅者。
@@ -84,4 +93,9 @@ export function resetAccountState(queryClient: QueryClient): void {
   //    ——B 登录翻转时重新 hydration 拿 B 自己的文档，B 的第一次设置
   //    变更绝不把 A 的整包快照 PATCH 进 B 的账号。
   resetAccountSettingsSync()
+
+  // 6. FIX-069：广播身份变迁（登录/登出/激活/注册都走本函数）。事件
+  //    只送达其他标签页；跨标签页处理器自身重置时以 broadcast:false
+  //    跳过本步，避免标签页间乒乓循环。
+  if (broadcast) bumpAuthEpoch()
 }
