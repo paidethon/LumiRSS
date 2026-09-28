@@ -31,6 +31,26 @@ describe('withHeadingIds', () => {
     expect(second.toc.map((t) => t.id)).toEqual(first.toc.map((t) => t.id))
   })
 
+  it('FIX-261：生成的 id 与文中既有非标题 id 不冲突（重复 DOM id 会让目录跳错元素）', () => {
+    const input = '<div id="toc-用法"></div><h2>用法</h2><p>一</p><h2>用法</h2>'
+    const { html, toc } = withHeadingIds(input)
+    // 非 heading 元素的 id 原样保留（不改原文语义）。
+    expect(html).toContain('<div id="toc-用法">')
+    // 标题绕开被占用的 id：文档内不存在任何重复 id。
+    expect(toc.map((t) => t.id)).toEqual(['toc-用法-2', 'toc-用法-3'])
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    const ids = [...doc.querySelectorAll('[id]')].map((el) => el.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    // 重新提取（同文）→ 相同 id（锚点稳定）。
+    expect(withHeadingIds(input).toc.map((t) => t.id)).toEqual(toc.map((t) => t.id))
+  })
+
+  it('FIX-261：不被改写的 h1/h5/h6 既有 id 也参与去重', () => {
+    const input = '<h5 id="toc-一"></h5><h2>一</h2>'
+    const { toc } = withHeadingIds(input)
+    expect(toc.map((t) => t.id)).toEqual(['toc-一-2'])
+  })
+
   it('空标题跳过；无标题文章返回空目录且 HTML 原样返回', () => {
     const withEmpty = withHeadingIds('<h2>   </h2><h2>有标题</h2>')
     expect(withEmpty.toc).toEqual([
