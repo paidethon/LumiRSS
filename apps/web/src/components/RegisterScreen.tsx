@@ -20,9 +20,13 @@
  * GET /auth/session 服务端核实（与 /auth/activate 同契约）；O157 先清
  * 上一账号足迹再翻门；带合法 ?next=（F015 同源路径校验）时回到认证
  * 前目标，否则进应用首页。
+ *
+ * FIX-289：成功回调只作用于仍有效的编辑会话——请求在途时表单被卸载
+ * （如用户点了「返回登录」），晚到的结果不再落地身份/导航，避免把
+ * 用户拖到一个已失效的页面。
  */
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Eye, EyeOff, Lock, UserPlus } from 'lucide-react'
 import {
@@ -96,12 +100,22 @@ export default function RegisterScreen() {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [formError, setFormError] = useState<string | null>(null)
   const [closed, setClosed] = useState(false)
+  // FIX-289：编辑会话存活标记——卸载后晚到的提交结果一律丢弃。
+  const aliveRef = useRef(true)
+  useEffect(() => {
+    aliveRef.current = true
+    return () => {
+      aliveRef.current = false
+    }
+  }, [])
 
   const strength = passwordStrength(password)
 
   /** F020 成功路径：服务端已发会话 → 身份服务端核实 → 清足迹 → 翻门 →
    * 回 ?next=（F015 校验）或应用首页。 */
   async function finishRegistration() {
+    // FIX-289：表单已卸载 → 本次编辑会话失效，不落地身份、不导航。
+    if (!aliveRef.current) return
     let identity = null
     try {
       identity = identityFromSession(await getAuthSession())
@@ -139,6 +153,8 @@ export default function RegisterScreen() {
         password,
         displayName: displayName !== '' ? displayName : null,
       })
+      // FIX-289：卸载后晚到的结果只丢弃，不再 setState / 翻门。
+      if (!aliveRef.current) return
       if (status.authenticated) {
         await finishRegistration()
         return
