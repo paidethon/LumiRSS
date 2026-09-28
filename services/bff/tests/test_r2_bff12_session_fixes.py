@@ -269,3 +269,130 @@ def test_fix026_failed_logins_audited_with_real_cause(monkeypatch, tmp_path):
             for value in row.values():
                 assert password not in str(value)
                 assert "wrong-" not in str(value)
+
+
+# ---------------------------------------------------------------------------
+# FIX-021 — 修改密码成功后其他会话按策略立即撤销（策略 = revoke-others，
+# 当前设备换发新会话）。两个独立 TestClient 即两个独立浏览器会话。
+
+
+def test_fix021_password_change_revokes_other_device_and_rotates_current(
+    monkeypatch, tmp_path
+):
+    db_path = _session_env(monkeypatch, tmp_path)
+    password = _fake("pw-")
+    new_password = _fake("new-")
+    with TestClient(app, base_url="http://lumirss.test") as device_a:
+        app.state.db = Database(db_path)
+        _set_owner_password(db_path, password)
+        login_a = _login(device_a, password=password)
+        assert login_a.status_code == 200
+        token_a = login_a.headers["set-cookie"].split(";")[0].split("=", 1)[1]
+        assert _session_row(db_path, token_a) is not None
+        with TestClient(app, base_url="http://lumirss.test") as device_b:
+            app.state.db = Database(db_path)
+            login_b = _login(device_b, password=password)
+            assert login_b.status_code == 200
+            old_token_b = login_b.headers["set-cookie"].split(";")[0].split("=", 1)[1]
+            changed = device_b.post(
+                "/api/v1/auth/password",
+                json={"currentPassword": password, "newPassword": new_password},
+            )
+            assert changed.status_code == 200, changed.text
+            # 当前设备换发是轮换：新 token ≠ 旧 token。
+            new_token_b = changed.headers["set-cookie"].split(";")[0].split("=", 1)[1]
+            assert new_token_b != old_token_b
+            # 当前设备用新 Cookie 继续；自己的旧 Cookie 已死。
+            assert device_b.get("/api/v1/auth/sessions").status_code == 200
+            assert (
+                device_b.get(
+                    "/api/v1/auth/sessions",
+                    headers={"cookie": f"lumirss_session={old_token_b}"},
+                ).status_code
+                == 401
+            )
+        # 另一台独立浏览器会话：改密成功那一刻已被撤销——读立即 401。
+        assert device_a.get("/api/v1/auth/sessions").status_code == 401
+        # 库级证据：A 设备的会话行物理删除（不是仅 Cookie 丢弃）。
+        assert _session_row(db_path, token_a) is None
+    # 旧密码不再可用，新密码可登录。
+    with TestClient(app, base_url="http://lumirss.test") as fresh:
+        app.state.db = Database(db_path)
+        assert _login(fresh, password=password).status_code == 401
+        assert _login(fresh, password=new_password).status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# FIX-023 — 角色变更即时生效：降权后同一会话的下一个 admin 请求立即
+# 403（角色每次请求从 users 表现读，无陈旧缓存；会话本身保留）。
+
+
+def _activate_member(client: TestClient, owner_headers, username: str, password: str):
+    """管理员发邀请 + 激活；返回该成员的请求头。"""
+    invite = client.post(
+        "/api/v1/admin/invites", json={"label": username}, headers=owner_headers
+    )
+    assert invite.status_code == 200, invite.text
+    activation = client.post(
+        "/api/v1/auth/activate",
+        json={
+            "token": invite.json()["token"],
+            "username": username,
+            "password": password,
+        },
+    )
+    assert activation.status_code == 200, activation.text
+    return _cookie_headers(activation)
+
+
+def _role_change(
+    client: TestClient, owner_headers, password: str, user_id: str, role: str
+):
+    """owner-only 角色变更（每次自铸一次性 step-up 令牌）。"""
+    step = client.post(
+        "/api/v1/admin/step-up", json={"password": password}, headers=owner_headers
+    )
+    assert step.status_code == 200, step.text
+    return client.post(
+        f"/api/v1/admin/users/{user_id}/role",
+        json={"role": role},
+        headers={**owner_headers, "X-Lumi-Step-Up": step.json()["token"]},
+    )
+
+
+def test_fix023_demoted_admin_next_admin_call_is_403(monkeypatch, tmp_path):
+    db_path = _session_env(monkeypatch, tmp_path)
+    password = _fake("pw-")
+    alice = "r023a" + _secrets.token_hex(3)
+    bob = "r023b" + _secrets.token_hex(3)
+    with TestClient(app, base_url="http://lumirss.test") as client:
+        _set_owner_password(db_path, password)
+        owner = _login(client, password=password)
+        owner_headers = _cookie_headers(owner)
+        alice_headers = _activate_member(client, owner_headers, alice, password)
+        _activate_member(client, owner_headers, bob, password)
+        users = client.get("/api/v1/admin/users", headers=owner_headers).json()
+        ids = {u["username"]: u["id"] for u in users}
+        assert (
+            _role_change(client, owner_headers, password, ids[alice], "admin").status_code
+            == 200
+        )
+        assert (
+            _role_change(client, owner_headers, password, ids[bob], "admin").status_code
+            == 200
+        )
+        # 基线：提权后同一会话立即具备 admin 能力（角色服务端派生）。
+        assert (
+            client.get("/api/v1/admin/users", headers=alice_headers).status_code == 200
+        )
+        # owner 降权 alice（bob 是第二活跃 admin → last-admin guard 放行）。
+        demoted = _role_change(client, owner_headers, password, ids[alice], "member")
+        assert demoted.status_code == 200, demoted.text
+        # 降权后 alice 的下一个 admin 请求立即 403 —— 无陈旧角色缓存。
+        after = client.get("/api/v1/admin/users", headers=alice_headers)
+        assert after.status_code == 403
+        assert after.json()["error"]["type"] == "forbidden"
+        # 会话行未被删除（是降权不是登出）：探针仍认证成功且角色已更新。
+        probe = client.get("/api/v1/auth/session", headers=alice_headers)
+        assert probe.status_code == 200
+        assert probe.json()["role"] == "member"
