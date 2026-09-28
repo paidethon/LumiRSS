@@ -364,13 +364,25 @@ wait_health() { # wait_health <timeout_seconds>
 # 把每个阶段（backup/pull/migrate/health）的运行/结果状态写入该路径的
 # JSON（schema lumirss-deploy-status/v1），BFF GET /admin/deploy-status
 # 把它只读转述给管理台进度页。写入是 best-effort：任何 I/O 失败只
-# warn，绝不影响升级本身。文件内容绝无秘密——只有阶段名、状态、
-# RFC3339(UTC) 时间戳与公开的镜像 tag。无效/缺失的旧文件会被整体
-# 重写，不让坏状态卡住新的升级。
+# warn，绝不影响升级本身。文件内容绝无秘密——只有 run_id、阶段名、
+# 状态、RFC3339(UTC) 时间戳与公开的镜像 tag。无效/缺失的旧文件会被整体
+# 重写，不让坏状态卡住新的升级；跨 run 的旧进度同样整体作废（FIX-208）。
+# FIX-208: 每次升级调用分配独立 run_id（UUID）——失败后的重试从零开始
+# 记进度，绝不沿用上一次的 startedAt 或残留阶段状态（否则管理台进度页
+# 会把两次升级混在一份 JSON 里，时间线完全失真）。deploy_status_write
+# 在发现文件里的 runId 与本次不同（或旧文件没有 runId）时整体作废旧
+# 内容重新开局。
+deploy_status_begin() {
+  [[ -n "${LUMIRSS_DEPLOY_STATUS_FILE:-}" ]] || return 0
+  LUMIRSS_DEPLOY_RUN_ID="$(python3 -c 'import uuid; print(uuid.uuid4().hex)' 2>/dev/null || true)"
+  LUMIRSS_DEPLOY_RUN_ID="${LUMIRSS_DEPLOY_RUN_ID:-run-$(date +%s)-$$}"
+}
+
 deploy_status_write() { # deploy_status_write STAGE STATUS [NOTE] ; result: deploy_status_write result STATUS
   [[ -n "${LUMIRSS_DEPLOY_STATUS_FILE:-}" ]] || return 0
   LUMIRSS_DEPLOY_STAGE="$1" LUMIRSS_DEPLOY_STATE="$2" LUMIRSS_DEPLOY_NOTE="${3:-}" \
   LUMIRSS_DEPLOY_PATH="$LUMIRSS_DEPLOY_STATUS_FILE" LUMIRSS_DEPLOY_TAG="${IMAGE_TAG:-}" \
+  LUMIRSS_DEPLOY_RUN_ID="${LUMIRSS_DEPLOY_RUN_ID:-}" \
   python3 -c '
 import datetime, json, os
 
@@ -379,6 +391,7 @@ now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isofor
 stage = os.environ["LUMIRSS_DEPLOY_STAGE"]
 state = os.environ["LUMIRSS_DEPLOY_STATE"]
 note = os.environ.get("LUMIRSS_DEPLOY_NOTE", "")
+run_id = os.environ.get("LUMIRSS_DEPLOY_RUN_ID", "")
 data = {}
 if os.path.exists(path):
     try:
@@ -392,8 +405,20 @@ data.setdefault("schema", "lumirss-deploy-status/v1")
 data.setdefault("command", "update")
 data["imageTag"] = os.environ.get("LUMIRSS_DEPLOY_TAG", "") or None
 data["updatedAt"] = now
+if run_id and data.get("runId") != run_id:
+    # FIX-208: 新的一次 run —— 上一次的 startedAt/阶段/result 全部作废。
+    data = {
+        "schema": "lumirss-deploy-status/v1",
+        "command": "update",
+        "runId": run_id,
+        "startedAt": now,
+        "imageTag": data.get("imageTag"),
+        "stages": {},
+    }
 if "startedAt" not in data:
     data["startedAt"] = now
+if run_id:
+    data["runId"] = run_id
 stages = data.setdefault("stages", {})
 if stage == "result":
     for entry in stages.values():
@@ -457,7 +482,35 @@ PY
 }
 
 # ---------------------------------------------------------------------------
+# FIX-195 升级锁：同一台机器同时触发两次 ./lumirss update（双击/手动重试
+# 撞上定时任务）绝不允许并发迁移或互相覆盖释放目录。用 flock(2) 独占锁：
+# - 原子性由内核保证（不带 mkdir 锁的 TOCTOU 竞态）；
+# - 崩溃/断电后 fd 随进程关闭、锁自动释放——不存在需要人工清理的"陈旧
+#   锁文件"，下一次运行直接可取（文件里只是 pid 提示，不是锁本身）；
+# - deploy 与 update 共用这把锁（二者都会重建容器、改写 .env.prod）。
+UPDATE_LOCK_FILE=".update.lock"
+
+acquire_update_lock() {
+  if ! command -v flock >/dev/null 2>&1; then
+    # Ubuntu 22.04/24.04 必带 util-linux；缺了就如实降级并提示，不静默。
+    warn "flock not available — concurrent update/deploy runs cannot be prevented (install util-linux)."
+    return 0
+  fi
+  exec 9>>"$UPDATE_LOCK_FILE" || { err "cannot open lock file $UPDATE_LOCK_FILE"; exit 1; }
+  if ! flock -n 9; then
+    local owner
+    owner="$(cat "$UPDATE_LOCK_FILE" 2>/dev/null || echo '?')"
+    err "another lumirss deploy/update is already running (holder pid: ${owner}; lock: $(pwd)/$UPDATE_LOCK_FILE)."
+    err "Concurrent runs could interleave migrations or clobber the release directory — refusing this run."
+    err "If no update is actually running, its lock was already released by the OS — simply retry."
+    exit 1
+  fi
+  # 持有者记录仅用于上面的报错提示；写入失败不影响锁的效力。
+  printf '%s\n' "$$" > "$UPDATE_LOCK_FILE" 2>/dev/null || true
+}
+
 cmd_deploy() {
+  acquire_update_lock   # FIX-195: 与 update 互斥（重建容器/写 .env.prod 的两个入口）
   preflight
   if ((LOW_MEMORY == 1)); then apply_low_memory_preset; fi
   if [[ -n "$AUTH_MODE_ARG" ]]; then apply_auth_mode "$AUTH_MODE_ARG"; fi
@@ -503,12 +556,59 @@ cmd_deploy() {
   fi
 }
 
+# ---------------------------------------------------------------------------
+# FIX-199 部署完成判定：升级宣布"完成"前必须自证——
+#   1) BFF /api/v1/version 经 compose 网络可达（与 './lumirss status' 同一
+#      通道，带内部 token；只取 version/commit，不打印其它内容）；
+#   2) 版本端点报告的 commit 与本次发布一致（可判定时：LUMIRSS_EXPECTED_
+#      COMMIT 覆盖 > git rev-parse HEAD；无法判定则明说跳过，不算失败）；
+#   3) lumirss-bff / lumirss-web 容器实际运行的镜像 ID 与本地按 tag 拉取的
+#      镜像 ID 一致（防 tag 漂移/旧容器未被重建）。
+# 任一硬性检查失败 → verify 阶段记 failed、result 记 failed 并以非零退出；
+# 回滚保持手动（runbook 约定），本命令绝不自动回滚。
+verify_deployment() { # verify_deployment TAG EXPECTED_COMMIT ; 0 = verified
+  local tag="$1" expected_commit="$2" rc=0
+  local token vout reported_commit svc img running_id pulled_id
+  token="$(env_value LUMIRSS_INTERNAL_TOKEN)"
+  vout="$(DC_D exec -e LT="$token" bff python -c "import urllib.request,json,os; req=urllib.request.Request('http://127.0.0.1:8000/api/v1/version', headers={'X-Lumi-Token': os.environ.get('LT','')}); print(urllib.request.urlopen(req, timeout=10).read().decode())" 2>/dev/null || true)"
+  reported_commit="$(printf '%s' "$vout" | python3 -c 'import json,sys
+try:
+    print(json.load(sys.stdin).get("commit") or "")
+except Exception:
+    print("")' 2>/dev/null || true)"
+  if [[ -z "$vout" ]]; then
+    err "verify: BFF /api/v1/version unreachable through the compose network — cannot prove what is running."
+    rc=1
+  fi
+  if [[ -n "$expected_commit" && -n "$reported_commit" && "$reported_commit" != "$expected_commit" ]]; then
+    err "verify: running BFF reports commit '$reported_commit' but this release is '$expected_commit' — version/commit mismatch."
+    rc=1
+  elif [[ -z "$expected_commit" || -z "$reported_commit" ]]; then
+    warn "verify: commit comparison skipped (expected='${expected_commit:-(unknown)}', reported='${reported_commit:-(none)}') — the image-digest check remains the hard gate."
+  fi
+  for svc in bff web; do
+    img="ghcr.io/paidethon/lumirss/lumirss-$svc:$tag"
+    running_id="$(docker_cmd inspect --format '{{.Image}}' "lumirss-$svc" 2>/dev/null || echo "")"
+    pulled_id="$(docker_cmd image inspect --format '{{.Id}}' "$img" 2>/dev/null || echo "")"
+    if [[ -z "$running_id" || -z "$pulled_id" ]]; then
+      err "verify: cannot compare the image of lumirss-$svc (running container: '${running_id:-(none)}', pulled '$img': '${pulled_id:-(none)}')."
+      rc=1
+    elif [[ "$running_id" != "$pulled_id" ]]; then
+      err "verify: lumirss-$svc is NOT running the pinned image (running=$running_id, pulled=$pulled_id) — recreate did not take effect or the tag moved."
+      rc=1
+    fi
+  done
+  return "$rc"
+}
+
 cmd_update() {
+  acquire_update_lock   # FIX-195: 第二个并发 run 在任何备份/拉取/迁移之前快速失败
   require_env_file
   preflight
   # N196: every stage is reported (running → ok/failed) into
   # $LUMIRSS_DEPLOY_STATUS_FILE when set; writes are best-effort and
   # never alter the upgrade flow itself.
+  deploy_status_begin   # FIX-208: 本次调用 = 新 run（新 runId，旧进度作废）
   deploy_status_write backup running
   if cmd_backup; then
     deploy_status_write backup ok
@@ -539,9 +639,22 @@ cmd_update() {
   deploy_status_write health running
   if wait_health 180; then
     deploy_status_write health ok
-    deploy_status_write result success
-    log "update complete."
-    ./lumirss status || true
+    # FIX-199: 健康检查只证明新容器活了；完成判定还要版本端点与镜像
+    # digest 都对得上本次发布。
+    deploy_status_write verify running "version endpoint + image digests must match the pinned release"
+    if verify_deployment "$IMAGE_TAG" \
+        "${LUMIRSS_EXPECTED_COMMIT:-$(git rev-parse HEAD 2>/dev/null || true)}"; then
+      deploy_status_write verify ok
+      deploy_status_write result success
+      log "update complete (verified: version endpoint + image digests match)."
+      ./lumirss status || true
+    else
+      deploy_status_write verify failed "running stack does not match the pinned release"
+      deploy_status_write result failed
+      err "update finished but post-switch verification FAILED — the running stack does not match the intended release."
+      err "Rollback is manual per runbook: './lumirss rollback'. Treat this deployment as unverified."
+      exit 1
+    fi
   else
     deploy_status_write health failed
     deploy_status_write result failed
@@ -805,37 +918,53 @@ cmd_restore() {
   if [[ "$target" == *freshrss-data* ]]; then vol="freshrss-data"; fi
   local proj
   proj="$(DC_D config --format json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("name","lumirss-prod"))' 2>/dev/null || echo lumirss-prod)"
-  log "stopping bff…"; DC_D stop bff >/dev/null 2>&1 || true
+  # FIX-202: 覆盖前必须停掉"这个卷"的全部写入者（备份 MANIFEST 记录的
+  # 写入者集合）。lumi-data 的写入者 = bff 容器（含其内置调度器）；
+  # freshrss-data 的写入者 = freshrss php 容器（cron 自动刷新）——只停
+  # bff 时，恢复 freshrss-data 可能与 cron 的 actualize 撕裂。bff 对
+  # freshrss-data 只是只读挂载，停它属于防御（operator 覆盖挂载场景）。
+  local writers="bff"
+  [[ "$vol" == "freshrss-data" ]] && writers="bff freshrss"
+  log "stopping writers ($writers)…"
+  # 有意不加引号：writers 展开为多个服务名。
+  DC_D stop $writers >/dev/null 2>&1 || true
   local bdir
   bdir="$(cd "$(dirname "$target")" && pwd)"
   log "restoring $vol from $target"
+  # FIX-203: 备份文件名绝不进入 sh -c 的 shell 源码——历史上
+  # `tar xzf /bkp/$(basename …)` 是字符串拼接，文件名里的空格/引号/
+  # 反引号/$(…) 会改变命令含义甚至注入命令。改为位置参数传入（"$1"），
+  # 语义与普通文件名完全一致；挂载路径本身一直是单 argv，不受影响。
+  local tar_name; tar_name="$(basename "$target")"
   # 与备份同一镜像来源（backup_image：覆盖 > BFF 镜像 > GHCR 回退）——
   # 离线主机恢复时不再依赖额外拉取 alpine。
   BACKUP_IMAGE="$(backup_image)"
   docker_cmd run --rm -v "${proj}_${vol}:/dst" -v "$bdir":/bkp:ro "$BACKUP_IMAGE" \
-    sh -c "rm -rf /dst/..?* /dst/.[!.]* /dst/* 2>/dev/null; tar xzf /bkp/$(basename "$target") -C /dst"
+    sh -c 'rm -rf /dst/..?* /dst/.[!.]* /dst/* 2>/dev/null; tar xzf "/bkp/$1" -C /dst' sh "$tar_name"
   # FIX-192: 新格式备份把一致性 SQLite 快照放在 lumi-sqlite/ 或
   # freshrss-sqlite/（见 cmd_backup）。存在则先整目录校验 MANIFEST.txt 的
   # sha256，再把快照按相对路径覆盖回卷。旧格式备份（整卷 tar、无快照树）
-  # 没有该目录，保持历史行为不变。
+  # 没有该目录，保持历史行为不变。FIX-203: $tree 同样走位置参数。
   local tree="lumi-sqlite"
   [[ "$vol" == "freshrss-data" ]] && tree="freshrss-sqlite"
   if [[ -d "$bdir/$tree" ]]; then
     log "overlaying consistent SQLite snapshots ($tree) and verifying MANIFEST.txt checksums"
     docker_cmd run --rm -v "${proj}_${vol}:/dst" -v "$bdir":/bkp:ro "$BACKUP_IMAGE" \
-      sh -c "cp -a /bkp/$tree/. /dst/ && cd /bkp && awk 'NF && \$1 !~ /^#/ {print \$1 \"  \" \$3}' MANIFEST.txt | sha256sum -c - >/dev/null" \
-      || { err "MANIFEST checksum mismatch — refusing an inconsistent restore."; DC_D start bff >/dev/null 2>&1 || true; exit 1; }
+      sh -c 'cp -a "/bkp/$1/." /dst/ && cd /bkp && awk "NF && \$1 !~ /^#/ {print \$1 \"  \" \$3}" MANIFEST.txt | sha256sum -c - >/dev/null' \
+      sh "$tree" \
+      || { err "MANIFEST checksum mismatch — refusing an inconsistent restore."; DC_D start $writers >/dev/null 2>&1 || true; exit 1; }
   fi
-  DC_D start bff >/dev/null 2>&1 || true
+  DC_D start $writers >/dev/null 2>&1 || true
   wait_health 180 && log "restore complete."
 }
 
 cmd_doctor() {
   local fail=0
-  check() { # check PASS|WARN|FAIL description…
+  check() { # check PASS|WARN|FAIL|INFO description…
     local level="$1"; shift
     case "$level" in
       PASS) log "PASS  $*";;
+      INFO) log "INFO  $*";;
       WARN) warn "WARN  $*";;
       FAIL) err   "FAIL  $*"; fail=1;;
     esac
@@ -853,19 +982,63 @@ cmd_doctor() {
   fi
   if docker_cmd info >/dev/null 2>&1; then
     if [[ -f "$ENV_FILE" ]]; then
-      local running
-      running="$(DC_D ps --status running 2>/dev/null | tail -n +2 | wc -l)"
-      [[ "$running" -eq 4 ]] && check PASS "4/4 containers running" || check WARN "only $running/4 containers running"
-      DC_D exec bff python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5).status==200 else 1)" >/dev/null 2>&1 \
-        && check PASS "bff health/ready" || check WARN "bff health/ready not OK"
-      for svc in lumirss-freshrss lumirss-rsshub; do
-        state="$(docker_cmd inspect --format '{{.State.Health.Status}}' "$svc" 2>/dev/null || echo missing)"
-        if [[ "$state" == "healthy" ]]; then
-          check PASS "$svc healthy"
+      # FIX-207: 期望容器集合来自实际启用的 compose 服务（config --format
+      # json），不再写死 "4/4"——被停用/裁剪的可选服务不误报缺失，关键
+      # 服务缺失不允许只降级为 WARN（漏报）。可选集：rsshub（AD-0018-3，
+      # BFF 只要求它 started、不要求健康）与 on-demand libretranslate。
+      local cfg_json enabled svc state health critical
+      cfg_json="$(DC_D config --format json 2>/dev/null || true)"
+      enabled="$(printf '%s' "$cfg_json" | python3 -c 'import json,sys
+try:
+    print("\n".join(sorted(json.load(sys.stdin).get("services", {}))))
+except Exception:
+    pass' 2>/dev/null || true)"
+      if [[ -z "$enabled" ]]; then
+        check WARN "compose config lists no services — cannot verify containers (is $ENV_FILE valid?)"
+      fi
+      for svc in $enabled; do
+        case "$svc" in
+          rsshub|libretranslate) critical=0;;
+          *) critical=1;;
+        esac
+        state="$(docker_cmd inspect --format '{{.State.Status}}' "lumirss-$svc" 2>/dev/null || echo absent)"
+        health="$(docker_cmd inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "lumirss-$svc" 2>/dev/null || echo absent)"
+        if [[ "$state" == "running" || "$state" == "healthy" ]]; then
+          case "$health" in
+            healthy|none|running)
+              check PASS "$svc running (health: $health)";;
+            starting)
+              check WARN "$svc running but its health check is still starting";;
+            *)
+              if ((critical == 1)); then
+                check FAIL "$svc unhealthy (health: $health) — core dependency"
+              else
+                check WARN "$svc unhealthy (health: $health)"
+              fi;;
+          esac
+        elif ((critical == 1)); then
+          check FAIL "$svc not running (state: $state) — core dependency"
         else
-          check WARN "$svc health: $state"
+          # 可选服务被停用是允许的常态（on-demand / 失败隔离），不算异常；
+          # 只有它 unhealthy 才值得提示。
+          check INFO "$svc not running (optional service — off by design; start it explicitly if needed)"
         fi
       done
+      # FIX-198: live 与 ready 分开如实报告——live（/health/live）只证明
+      # BFF 进程在、从不触碰 FreshRSS；ready（/health/ready）证明关键依赖
+      # lumi.sqlite 可用（503 = unavailable）。二者语义不同，合并成一条
+      # "health" 会把"进程活着但库坏了"误读为健康。这里只消费 BFF 现有
+      # 端点（BFF 端点自身的增强属另一批次）。
+      if DC_D exec bff python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=5).status==200 else 1)" >/dev/null 2>&1; then
+        check PASS "bff live (process up)"
+      else
+        check WARN "bff live not OK — process not answering"
+      fi
+      if DC_D exec bff python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5).status==200 else 1)" >/dev/null 2>&1; then
+        check PASS "bff ready (lumi.sqlite usable)"
+      else
+        check WARN "bff ready not OK (lumi.sqlite/dependencies unavailable) — live above may still be true"
+      fi
       # Resource-budget guard: a killed container means the limit is too
       # low for real traffic, never a successful "lower number".
       for svc in lumirss-web lumirss-bff lumirss-freshrss lumirss-rsshub; do
@@ -1041,9 +1214,18 @@ cmd_freshrss_init() { # make the internal FreshRSS usable by the BFF
 
   if ! docker_cmd exec lumirss-freshrss php ./cli/list-users.php 2>/dev/null | grep -qx "$user"; then
     log "creating FreshRSS user '$user'…"
+    # FIX-210: FreshRSS 1.29.1 的 create-user.php 只接受命令行参数传密码
+    # （cli/CliOptionsParser 无 env/stdin/文件通道；Docker 入口的
+    # FRESHRSS_USER 最终也展开成同一条 argv，且 env 常驻容器元数据更糟）
+    # ——上游不提供非 argv 的受控输入通道，argv 暴露无法在不绕过上游 CLI
+    # 的前提下消除。已做的最小收敛：
+    # - 不再传 --password（web 登录密码）：FreshRSS web 面板按设计不发布
+    #   端口、从不登录，少一份 argv 拷贝、少一个无人用的凭据；
+    # - 只保留 BFF 实际消费的 --api-password；明文仅存于 chmod 600 的
+    #   $ENV_FILE，绝不出现在日志/输出。
+    # 上游若未来提供 stdin/env/hash 通道，应立即替换此调用。
     docker_cmd exec lumirss-freshrss php ./cli/create-user.php \
       --user "$user" \
-      --password "$pw" \
       --api-password "$pw" \
       --no-default-feeds >/dev/null
   fi
@@ -1070,10 +1252,31 @@ cmd_export_images() { # ./lumirss export-images [--out DIR]
   local web_img="ghcr.io/paidethon/lumirss/lumirss-web:$tag"
   local bff_img="ghcr.io/paidethon/lumirss/lumirss-bff:$tag"
   local tar_name="lumirss-images-$tag.tar"
+  # FIX-205: 完整离线包 = 这个栈要跑的全部镜像。freshrss/rsshub 由 compose
+  # 按 digest 钉死，从 compose config 解析（单一事实来源，避免手抄 digest
+  # 漂移）；config 渲染失败时如实告警并只出 web+bff（不再是完整的离线
+  # 安装集）。FIX-206 的备份/恢复助手镜像 = 默认 BFF 镜像（backup_image），
+  # 已包含在包内，离线主机无需额外镜像。
+  local imgs=("$web_img" "$bff_img")
+  local stack_img
+  while IFS= read -r stack_img; do
+    [[ -n "$stack_img" ]] && imgs+=("$stack_img")
+  done < <(DC_D config --format json 2>/dev/null | python3 -c 'import json,sys
+try:
+    svcs = json.load(sys.stdin).get("services", {})
+    for name in ("freshrss", "rsshub"):
+        img = svcs.get(name, {}).get("image", "")
+        if img:
+            print(img)
+except Exception:
+    pass' 2>/dev/null || true)
+  if (( ${#imgs[@]} < 4 )); then
+    warn "could not resolve the freshrss/rsshub pinned images from compose — this bundle covers web+bff only and is NOT a complete offline install set."
+  fi
   mkdir -p "$out"
-  log "exporting $web_img + $bff_img → $out/$tar_name (offline bundle)"
-  docker_cmd save -o "$out/$tar_name" "$web_img" "$bff_img" \
-    || { err "docker save failed — are both images pulled on this host? ('LUMIRSS_IMAGE_TAG=$tag ./lumirss update')"; exit 1; }
+  log "exporting ${#imgs[@]} images → $out/$tar_name (offline bundle)"
+  docker_cmd save -o "$out/$tar_name" "${imgs[@]}" \
+    || { err "docker save failed — are all pinned images pulled on this host? ('LUMIRSS_IMAGE_TAG=$tag ./lumirss update')"; exit 1; }
   ( cd "$out" && sha256sum "$tar_name" > SHA256SUMS )
   local extra=""
   if [[ -f release-manifest.json ]]; then

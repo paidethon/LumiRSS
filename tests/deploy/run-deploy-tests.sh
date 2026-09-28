@@ -213,19 +213,35 @@ sb="$(new_sandbox)"
 stub_dir="$(mktemp -d)"
 cat > "$stub_dir/docker" <<'STUB'
 #!/bin/sh
-# stub docker: everything succeeds, compose subcommands answer sanely
+# stub docker: everything succeeds, compose subcommands answer sanely.
+# inspect answers per --format so FIX-207's per-service probes behave;
+# exec answers the version endpoint (FIX-199 verify) and inspect/image
+# agree on one image ID so the digest-parity gate passes.
 cmd="$1"; [ $# -gt 0 ] && shift
 case "$cmd" in
   info) exit 0;;
   run) exit 0;;
-  inspect) echo healthy;;
+  image)
+    case "$*" in
+      *inspect*) echo "sha256:stub-image-id";;
+      *) exit 0;;
+    esac;;
+  inspect)
+    case "$*" in
+      *"{{.Image}}"*) echo "sha256:stub-image-id";;
+      *OOMKilled*) echo false;;
+      *RestartCount*) echo 0;;
+      *"State.Health"*) echo none;;
+      *) echo running;;
+    esac;;
   ps) exit 0;;
   compose)
-    sub="$1"; shift
-    case "$sub" in
-      version) exit 0;;
-      config) echo '{"name": "lumirss-prod"}';;
-      pull) echo " Pulled";;
+    # COMPOSE_ARGS precede the subcommand, so match on the whole arg string
+    # (a sub="$1" case would never match: the first arg is "-f").
+    case "$*" in
+      *" config"*) echo '{"name": "lumirss-prod", "services": {"web": {}, "bff": {}, "freshrss": {}, "rsshub": {}}}';;
+      *" pull"*) echo " Pulled";;
+      *" exec"*) echo '{"commit": "stub-commit", "version": "2.0.1"}';;
       *) exit 0;;
     esac;;
   *) exit 0;;
@@ -253,14 +269,18 @@ cmd="$1"; [ $# -gt 0 ] && shift
 case "$cmd" in
   info) exit 0;;
   run) exit 0;;
-  inspect) exit 0;;   # images exist locally
+  image) echo "sha256:stub-image-id";;   # images exist locally
+  inspect)
+    case "$*" in
+      *"{{.Image}}"*) echo "sha256:stub-image-id";;
+      *) exit 0;;
+    esac;;
   ps) exit 0;;
   compose)
-    sub="$1"; shift
-    case "$sub" in
-      version) exit 0;;
-      config) echo '{"name": "lumirss-prod"}';;
-      pull) echo "Image lumirss-web:latest Skipped"; exit 0;;  # no " Pulled"
+    case "$*" in
+      *" config"*) echo '{"name": "lumirss-prod"}';;
+      *" pull"*) echo "Image lumirss-web:latest Skipped"; exit 0;;  # no " Pulled"
+      *" exec"*) echo '{"commit": "stub-commit", "version": "2.0.1"}';;
       *) exit 0;;
     esac;;
   *) exit 0;;
@@ -284,9 +304,12 @@ rm -rf "$sb" "$stub_dir" "$rebuild_log"
 echo "== 9. freshrss-init lifecycle (stub execs) =="
 sb="$(new_sandbox)"
 stub_dir="$(mktemp -d)"
+init_log="$(mktemp)"
 cat > "$stub_dir/docker" <<'STUB'
 #!/bin/sh
-# stub docker: execs succeed with empty output (FreshRSS CLI)
+# stub docker: execs succeed with empty output (FreshRSS CLI); every call
+# is logged so FIX-210 can assert what reaches process argv.
+echo "docker $*" >> "${LUMIRSS_TEST_DOCKER_LOG:?}"
 cmd="$1"; [ $# -gt 0 ] && shift
 case "$cmd" in
   info) exit 0;;
@@ -302,7 +325,7 @@ esac
 STUB
 chmod +x "$stub_dir/docker"
 init_out="$(cd "$sb" && cp -f .env.prod.example .env.prod \
-  && env PATH="$stub_dir:$PATH" ./lumirss freshrss-init 2>&1)"
+  && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$init_log" ./lumirss freshrss-init 2>&1)"
 rc=$?
 assert_eq "freshrss-init exits 0" "0" "$rc"
 assert_contains "freshrss-init installs FreshRSS" "installing FreshRSS" "$init_out"
@@ -313,10 +336,17 @@ assert_not_contains "freshrss-init never prints the generated password" \
   "$(grep '^FRESHRSS_API_PASSWORD=' "$sb/.env.prod" | cut -d= -f2-)" "$init_out"
 pw_val="$(grep '^FRESHRSS_API_PASSWORD=' "$sb/.env.prod" | cut -d= -f2-)"
 assert_eq "freshrss-init persists a usable FRESHRSS_API_PASSWORD" "32" "${#pw_val}"
-init2_out="$(cd "$sb" && env PATH="$stub_dir:$PATH" ./lumirss freshrss-init 2>&1)"
+# FIX-210: the ONLY password argument reaching process argv is the greader
+# API password FreshRSS 1.29.1 cannot consume any other way; the unused
+# web-login --password is gone (upstream constraint documented in lumirss).
+assert_contains "create-user receives the api password" "--api-password" "$(cat "$init_log")"
+assert_not_contains "unused web-login --password argv is gone" " --password " "$(cat "$init_log")"
+assert_eq "plaintext reaches argv exactly once (single copy; upstream-forced channel)" "1" \
+  "$(grep -o -F -- "$pw_val" "$init_log" | wc -l)"
+init2_out="$(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$init_log" ./lumirss freshrss-init 2>&1)"
 assert_not_contains "second freshrss-init is idempotent (no regen)" \
   "generated FRESHRSS_API_PASSWORD" "$init2_out"
-rm -rf "$sb" "$stub_dir"
+rm -rf "$sb" "$stub_dir" "$init_log"
 
 # ---------------------------------------------------------------------------
 echo "== 10. session auth mode: entrypoint + deploy persistence =="
@@ -492,15 +522,18 @@ cmd="$1"; [ $# -gt 0 ] && shift
 case "$cmd" in
   info) exit 0;;
   run) exit 0;;
-  inspect) exit 0;;
+  inspect)
+    case "$*" in
+      *"{{.Image}}"*) echo "sha256:stub-image-id";;
+      *) exit 0;;
+    esac;;
+  image) echo "sha256:stub-image-id";;
   ps) exit 0;;
   compose)
-    sub="$1"; shift
-    case "$sub" in
-      version) exit 0;;
-      config) echo '{"name": "lumirss-prod"}';;
-      pull) echo " Pulled";;
-      exec) exit 0;;   # wait_health probe
+    case "$*" in
+      *" config"*) echo '{"name": "lumirss-prod"}';;
+      *" pull"*) echo " Pulled";;
+      *" exec"*) echo '{"commit": "stub-commit", "version": "2.0.1"}';;   # wait_health probe + version verify
       *) exit 0;;
     esac;;
   *) exit 0;;
@@ -548,7 +581,7 @@ assert_eq "seeded user DB survived the upgrade byte-identical" "$seed_hash" \
 rm -rf "$sb" "$stub_dir" "$up_log"
 
 # ---------------------------------------------------------------------------
-echo "== 16. export-images / import-images: construction + checksum gate =="
+echo "== 16. export-images / import-images: construction + checksum gate + full pinned set (FIX-205) =="
 sb="$(new_sandbox)"
 stub_dir="$(mktemp -d)"
 ex_log="$(mktemp)"
@@ -564,6 +597,11 @@ case "$cmd" in
     [ -n "$out" ] && printf 'fake-image-tar\n' > "$out"
     exit 0;;
   load) exit 0;;
+  compose)
+    case "$*" in
+      *" config"*) echo '{"name": "lumirss-prod", "services": {"freshrss": {"image": "freshrss/freshrss:1.29.1@sha256:ab6b363102ccdbc39f6a62db926f567c61a5289bf25ba460f1c34423d8cc1a4d"}, "rsshub": {"image": "diygod/rsshub@sha256:387fd32ee2d8789154dcf6446a52365976e768d9ede1a7c1e610cf4da9d89fbc"}}}';;
+      *) exit 0;;
+    esac;;
   *) exit 0;;
 esac
 STUB
@@ -579,6 +617,12 @@ assert_eq "export-images exits 0" "0" "$rc"
 assert_contains "export saves BOTH pinned images in one tar (current registry path)" \
   "save -o $sb/offline/lumirss-images-abc123def456.tar ghcr.io/paidethon/lumirss/lumirss-web:abc123def456 ghcr.io/paidethon/lumirss/lumirss-bff:abc123def456" \
   "$(cat "$ex_log")"
+# FIX-205: a complete offline install set must also carry the digest-pinned
+# freshrss/rsshub images (resolved from compose, the single source of pins).
+assert_contains "export includes the digest-pinned freshrss image" \
+  "freshrss/freshrss:1.29.1@sha256:ab6b363102ccdbc39f6a62db926f567c61a5289bf25ba460f1c34423d8cc1a4d" "$(cat "$ex_log")"
+assert_contains "export includes the digest-pinned rsshub image" \
+  "diygod/rsshub@sha256:387fd32ee2d8789154dcf6446a52365976e768d9ede1a7c1e610cf4da9d89fbc" "$(cat "$ex_log")"
 assert_not_contains "export never references the retired registry path" \
   "ghcr.io/paidethon/lumirss-web" "$(cat "$ex_log")"
 assert_not_contains "export never references the retired bff path" \
@@ -609,6 +653,33 @@ if grep -q "docker load" "$bad_log"; then
 else
   ok "corrupted bundle never reached docker load"
 fi
+# FIX-205 degraded path: compose unanswerable → honest warning, web+bff
+# still exported (bundle explicitly flagged as NOT the complete install set).
+: > "$ex_log"
+minimal_stub="$(mktemp -d)"
+cat > "$minimal_stub/docker" <<'STUB'
+#!/bin/sh
+echo "docker $*" >> "${LUMIRSS_TEST_DOCKER_LOG:?}"
+cmd="$1"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  info) exit 0;;
+  save)
+    out=""; prev=""
+    for a in "$@"; do [ "$prev" = "-o" ] && out="$a"; prev="$a"; done
+    [ -n "$out" ] && printf 'fake-image-tar\n' > "$out"
+    exit 0;;
+  *) exit 0;;
+esac
+STUB
+chmod +x "$minimal_stub/docker"
+dg_out="$(cd "$sb" && env PATH="$minimal_stub:$PATH" LUMIRSS_TEST_DOCKER_LOG="$ex_log" \
+  LUMIRSS_IMAGE_TAG=abc123def456 ./lumirss export-images --out "$sb/offline2" 2>&1)"
+assert_contains "degraded export warns the bundle is incomplete" \
+  "NOT a complete offline install set" "$dg_out"
+assert_contains "degraded export still saves web+bff" \
+  "save -o $sb/offline2/lumirss-images-abc123def456.tar ghcr.io/paidethon/lumirss/lumirss-web:abc123def456 ghcr.io/paidethon/lumirss/lumirss-bff:abc123def456" \
+  "$(cat "$ex_log")"
+rm -rf "$minimal_stub"
 rm -rf "$sb" "$stub_dir" "$ex_log" "$im_log" "$bad_log"
 
 # ---------------------------------------------------------------------------
@@ -622,15 +693,18 @@ cmd="$1"; [ $# -gt 0 ] && shift
 case "$cmd" in
   info) exit 0;;
   run) exit 0;;
-  inspect) echo healthy;;
+  image) echo "sha256:stub-image-id";;
+  inspect)
+    case "$*" in
+      *"{{.Image}}"*) echo "sha256:stub-image-id";;
+      *) echo healthy;;
+    esac;;
   ps) exit 0;;
   compose)
-    sub="$1"; shift
-    case "$sub" in
-      version) exit 0;;
-      config) echo '{"name": "lumirss-prod"}';;
-      pull) echo " Pulled";;
-      exec) exit 0;;   # wait_health probe inside the bff container
+    case "$*" in
+      *" config"*) echo '{"name": "lumirss-prod"}';;
+      *" pull"*) echo " Pulled";;
+      *" exec"*) echo '{"commit": "stub-commit", "version": "2.0.1"}';;
       *) exit 0;;
     esac;;
   *) exit 0;;
@@ -966,7 +1040,7 @@ case "$cmd" in
 esac
 STUB
 chmod +x "$stub_dir/docker"
-cd "$sb" && cp -f .env.prod.example .env.prod
+(cd "$sb" && cp -f .env.prod.example .env.prod)
 (cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_BACKUP_DIR="$sb/backups" ./lumirss backup >/dev/null 2>&1)
 assert_eq "first rapid backup succeeds" "0" "$?"
 before="$(ls "$sb/backups" | grep -v '^LATEST$')"
@@ -1008,6 +1082,485 @@ assert_eq "prior backup content untouched on failure" "prior-backup-canary" \
 assert_eq "no partial backup dir or LATEST temp left behind" "$count_before" \
   "$(ls -A "$sb/backups" | wc -l)"
 rm -rf "$sb" "$stub_dir" "$fail_stub"
+
+# ---------------------------------------------------------------------------
+echo "== 20. FIX-203: hostile backup filename must not change the restore command (real docker) =="
+if docker info >/dev/null 2>&1; then
+  sb="$(new_sandbox)"
+  stub_dir="$(mktemp -d)"
+  real_docker="$(command -v docker)"
+  # Quote-safe forwarder (bash arrays, no eval): rewrites project volume
+  # mounts onto harness bind dirs and passes EVERY argv byte-for-byte to the
+  # real docker — the hostile filename below contains quotes, so the section
+  # 17 eval-joining stub would itself corrupt it (harness artifact, not code).
+  cat > "$stub_dir/docker" <<'STUB'
+#!/bin/bash
+args=("$@")
+if [[ "${args[0]}" == "compose" ]]; then
+  case "${args[*]}" in
+    # bff image answer keeps backup_image() on a locally-present image
+    # (python:3.12-slim, as in section 17) instead of the GHCR fallback.
+    *" config"*) echo '{"name": "lumirss-prod", "services": {"bff": {"image": "python:3.12-slim"}}}';;
+    *) exit 0;;   # stop/start/exec (restore health wait) succeed
+  esac
+  exit 0
+fi
+for i in "${!args[@]}"; do
+  case "${args[$i]}" in
+    lumirss-prod_lumi-data:*) args[$i]="$LUMITEST_LUMI_VOL${args[$i]#lumirss-prod_lumi-data}";;
+    lumirss-prod_freshrss-data:*) args[$i]="$LUMITEST_FRS_VOL${args[$i]#lumirss-prod_freshrss-data}";;
+  esac
+done
+exec "$LUMITEST_REAL_DOCKER" "${args[@]}"
+STUB
+  chmod +x "$stub_dir/docker"
+
+  # Hand-made new-format backup: snapshot tree + MANIFEST.txt + the files tar
+  # under a HOSTILE name (space ; closed backticks command-substitution glob
+  # single+double quotes &). With the pre-fix string-concatenated
+  # `sh -c "tar xzf /bkp/$(basename …)"` the ; quotes and substitutions
+  # change the command meaning (tar fails / runs other commands). The
+  # parameterized form must extract the exact name with identical content.
+  stamp="$sb/bk-stamp"
+  mkdir -p "$stamp/lumi-sqlite"
+  python3 -c 'import sqlite3
+c = sqlite3.connect("'"$stamp"'/lumi-sqlite/lumi.sqlite")
+c.execute("CREATE TABLE t (v TEXT)")
+c.execute("INSERT INTO t VALUES (?)", ("fix203-snapshot",))
+c.commit()'
+  printf 'restore-canary\n' > "$stamp/canary.txt"
+  evil='lumi-data; sp ace;`id` $(date +%s)*'"'"'q"d&x.tar.gz'
+  tar -C "$stamp" -czf "$stamp/$evil" canary.txt
+  dig="$(sha256sum "$stamp/lumi-sqlite/lumi.sqlite" | cut -d' ' -f1)"
+  size="$(stat -c %s "$stamp/lumi-sqlite/lumi.sqlite")"
+  printf '# LumiRSS backup manifest (FIX-192)\n%s  %s  lumi-sqlite/lumi.sqlite\n' "$dig" "$size" > "$stamp/MANIFEST.txt"
+
+  vol="$sb/restore-vol"; mkdir -p "$vol"
+  rs_rc=0
+  rs_out="$(cd "$sb" && cp -f .env.prod.example .env.prod \
+    && env PATH="$stub_dir:$PATH" LUMITEST_LUMI_VOL="$vol" \
+    LUMITEST_FRS_VOL="$sb/unused-frs" LUMITEST_REAL_DOCKER="$real_docker" \
+    ./lumirss restore "$stamp/$evil" --yes 2>&1)" || rs_rc=$?
+  assert_eq "restore with hostile filename exits 0" "0" "$rs_rc"
+  assert_contains "restore verified the manifest checksums" "verifying MANIFEST.txt checksums" "$rs_out"
+  assert_eq "hostile-named tar extracted under its EXACT name (command meaning unchanged)" \
+    "restore-canary" "$(cat "$vol/canary.txt" 2>/dev/null || echo MISSING)"
+  assert_contains "snapshot overlay applied on top" "fix203-snapshot" \
+    "$(python3 -c 'import sqlite3; print(sqlite3.connect("'"$vol"'/lumi.sqlite").execute("SELECT v FROM t").fetchone()[0])' 2>/dev/null || echo BROKEN)"
+  if find "$vol" -name 'PWNED' -o -name '*hacked*' 2>/dev/null | grep -q .; then
+    bad "injection side effect appeared in the restored volume"
+  else
+    ok "no injection side effect in the restored volume"
+  fi
+  rm -rf "$sb" "$stub_dir"
+else
+  bad "docker daemon unavailable — FIX-203 hostile-filename tests NOT executed"
+fi
+
+# ---------------------------------------------------------------------------
+echo "== 21. FIX-195: concurrent update is refused fast; crash-leftover lock is takeable =="
+sb="$(new_sandbox)"
+stub_dir="$(mktemp -d)"
+lock1_log="$(mktemp)"; lock2_log="$(mktemp)"
+lock_mark="$(mktemp)"
+cat > "$stub_dir/docker" <<'STUB'
+#!/bin/sh
+cmd="$1"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  info) exit 0;;
+  run) exit 0;;
+  image) echo "sha256:stub-image-id";;
+  inspect)
+    case "$*" in
+      *"{{.Image}}"*) echo "sha256:stub-image-id";;
+      *) echo healthy;;
+    esac;;
+  ps) exit 0;;
+  compose)
+    # COMPOSE_ARGS precede the subcommand, so match on the whole arg string.
+    case "$*" in
+      *" config"*) echo '{"name": "lumirss-prod", "services": {"bff": {"image": "python:3.12-slim"}}}';;
+      *" pull"*)
+        # widen the window: run #1 holds the update lock inside this pull
+        [ -n "${LUMIRSS_TEST_LOCK_MARK:-}" ] && printf 'pull-started\n' > "$LUMIRSS_TEST_LOCK_MARK"
+        sleep 6
+        echo " Pulled";;
+      *" exec"*) echo '{"commit": "stub-commit", "version": "2.0.1"}';;
+      *) exit 0;;
+    esac;;
+  *) exit 0;;
+esac
+STUB
+chmod +x "$stub_dir/docker"
+(cd "$sb" && cp -f .env.prod.example .env.prod \
+  && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_LOCK_MARK="$lock_mark" \
+     LUMIRSS_BACKUP_DIR="$sb/backups1" ./lumirss update > "$lock1_log" 2>&1) &
+upd1_pid=$!
+for _ in $(seq 1 100); do [[ -s "$lock_mark" ]] && break; sleep 0.1; done
+if [[ -s "$lock_mark" ]]; then
+  ok "run #1 reached the pull stage (lock held)"
+else
+  bad "run #1 never reached the pull stage (test harness broken)"
+fi
+lock2_rc=0
+t0="$(date +%s%N)"
+(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_BACKUP_DIR="$sb/backups2" \
+   ./lumirss update > "$lock2_log" 2>&1) || lock2_rc=$?
+t1="$(date +%s%N)"
+lock2_ms=$(( (t1 - t0) / 1000000 ))
+assert_eq "run #2 refuses while run #1 holds the lock (non-zero exit)" "1" "$lock2_rc"
+assert_contains "refusal is explicit about the concurrent holder" "already running" "$(cat "$lock2_log")"
+assert_contains "refusal names the lock file" ".update.lock" "$(cat "$lock2_log")"
+if [[ "$lock2_ms" -lt 4000 ]]; then
+  ok "run #2 failed fast (${lock2_ms} ms, no backup/pull executed)"
+else
+  bad "run #2 did not fail fast (${lock2_ms} ms)"
+fi
+if grep -qE "docker compose .*(pull|up)" "$lock2_log"; then
+  bad "run #2 got past the lock"
+else
+  ok "run #2 never reached backup/pull/migration (no compose calls in its log)"
+fi
+[[ ! -e "$sb/backups2" ]] \
+  && ok "run #2 produced no backup (refused before the backup stage)" \
+  || bad "run #2 performed work before hitting the lock"
+upd1_rc=0
+wait "$upd1_pid" 2>/dev/null || upd1_rc=$?
+assert_eq "run #1 completes normally after run #2 was refused" "0" "$upd1_rc"
+assert_contains "run #1 reports completion" "update complete" "$(cat "$lock1_log")"
+
+# Crash-leftover: the lock FILE may survive a killed run (SIGKILL cannot run
+# cleanup), but flock(2) releases with the process — a bare leftover file
+# must be takeable, not sticky.
+printf '999999\n' > "$sb/.update.lock"
+stale_rc=0
+(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_BACKUP_DIR="$sb/backups3" \
+   ./lumirss update > "$lock1_log" 2>&1) || stale_rc=$?
+assert_eq "update succeeds with a leftover lock file from a dead run" "0" "$stale_rc"
+rm -rf "$sb" "$stub_dir" "$lock1_log" "$lock2_log" "$lock_mark"
+
+# ---------------------------------------------------------------------------
+echo "== 22. FIX-208: each update run gets its own run_id; retries never mix two runs' progress =="
+sb="$(new_sandbox)"
+stub_dir="$(mktemp -d)"
+cat > "$stub_dir/docker" <<'STUB'
+#!/bin/sh
+cmd="$1"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  info) exit 0;;
+  run) exit 0;;
+  image) echo "sha256:stub-image-id";;
+  inspect)
+    case "$*" in
+      *"{{.Image}}"*) echo "sha256:stub-image-id";;
+      *) echo healthy;;
+    esac;;
+  ps) exit 0;;
+  compose)
+    case "$*" in
+      *" config"*) echo '{"name": "lumirss-prod"}';;
+      *" pull"*) echo " Pulled";;
+      *" exec"*) echo '{"commit": "stub-commit", "version": "2.0.1"}';;
+      *) exit 0;;
+    esac;;
+  *) exit 0;;
+esac
+STUB
+chmod +x "$stub_dir/docker"
+status_dir="$(mktemp -d)"
+status_file="$status_dir/retry-status.json"
+# Residue of a PREVIOUS failed run: old startedAt, a stale failed stage, a
+# ghost stage that never existed in this run, and a failed result.
+cat > "$status_file" <<'JSON'
+{"command": "update", "imageTag": "oldtag",
+ "result": {"finishedAt": "2020-01-01T00:00:01Z", "status": "failed"},
+ "runId": "previous-run-20200101",
+ "schema": "lumirss-deploy-status/v1",
+ "stages": {
+   "ghost": {"startedAt": "2020-01-01T00:00:00Z", "status": "running"},
+   "health": {"finishedAt": "2020-01-01T00:00:01Z", "startedAt": "2020-01-01T00:00:00Z", "status": "failed"}
+ },
+ "startedAt": "2020-01-01T00:00:00Z", "updatedAt": "2020-01-01T00:00:01Z"}
+JSON
+retry_out="$(cd "$sb" && cp -f .env.prod.example .env.prod \
+  && env PATH="$stub_dir:$PATH" LUMIRSS_DEPLOY_STATUS_FILE="$status_file" \
+     LUMIRSS_IMAGE_TAG=retry208tag ./lumirss update 2>&1)"
+rc=$?
+assert_eq "update over a previous run's failed status file completes" "0" "$rc"
+assert_contains "retry assigns a NEW run_id (not the previous run's)" "RUN-ID-OK" \
+  "$(python3 - "$status_file" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+rid = d.get("runId", "")
+print("RUN-ID-OK" if rid and rid != "previous-run-20200101" else "RUN-ID-BAD")
+PY
+)"
+assert_contains "retry restarts startedAt (does not inherit the failed run's)" "STARTED-AT-OK" \
+  "$(python3 - "$status_file" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+print("STARTED-AT-OK" if d.get("startedAt", "").startswith("20") and not d["startedAt"].startswith("2020-01-01") else "STARTED-AT-BAD")
+PY
+)"
+assert_contains "ghost stage from the previous run is gone" "GHOST-GONE" \
+  "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("GHOST-GONE" if "ghost" not in d["stages"] else "GHOST-STILL-THERE")' "$status_file")"
+assert_contains "previous failed health stage replaced by this run's ok stage" "HEALTH-OK" \
+  "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("HEALTH-OK" if d["stages"].get("health",{}).get("status")=="ok" else "HEALTH-BAD")' "$status_file")"
+assert_contains "result reflects only this run" "success" \
+  "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["result"]["status"])' "$status_file")"
+run1_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("runId"))' "$status_file")"
+# A second consecutive run must also get a DIFFERENT run id (per-run identity).
+(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_DEPLOY_STATUS_FILE="$status_file" \
+   LUMIRSS_IMAGE_TAG=retry208tag ./lumirss update >/dev/null 2>&1)
+run2_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("runId"))' "$status_file")"
+if [[ -n "$run1_id" && -n "$run2_id" && "$run1_id" != "$run2_id" ]]; then
+  ok "two consecutive updates get distinct run ids ($run1_id vs $run2_id)"
+else
+  bad "run ids not distinct/absent (run1=$run1_id run2=$run2_id)"
+fi
+rm -rf "$sb" "$stub_dir" "$status_dir"
+
+# ---------------------------------------------------------------------------
+echo "== 23. FIX-207: doctor judges health by ENABLED compose services (no hardcoded 4/4) =="
+sb="$(new_sandbox)"
+stub_dir="$(mktemp -d)"
+cat > "$stub_dir/docker" <<'STUB'
+#!/bin/sh
+# config lists the ENABLED services (LUMITEST_NO_RSSHUB=1 simulates an
+# operator override that removed rsshub); inspect fails only for
+# $LUMITEST_ABSENT (container missing/stopped), else healthy.
+cmd="$1"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  info) exit 0;;
+  compose)
+    case "$*" in
+      *" config"*)
+        if [ "${LUMITEST_NO_RSSHUB:-0}" = "1" ]; then
+          printf '{"name": "lumirss-prod", "services": {"web": {}, "bff": {}, "freshrss": {}}}'
+        else
+          printf '{"name": "lumirss-prod", "services": {"web": {}, "bff": {}, "freshrss": {}, "rsshub": {}}}'
+        fi;;
+      *) exit 0;;
+    esac;;
+  inspect)
+    name=""; prev=""
+    for a in "$@"; do
+      case "$a" in lumirss-*) name="$a";; esac
+      prev="$a"
+    done
+    [ -n "${LUMITEST_ABSENT:-}" ] && [ "$name" = "$LUMITEST_ABSENT" ] && exit 1
+    case "$*" in
+      *OOMKilled*) echo false;;
+      *RestartCount*) echo 0;;
+      *"State.Health"*) echo none;;
+      *) echo running;;
+    esac;;
+  ps) exit 0;;
+  *) exit 0;;
+esac
+STUB
+chmod +x "$stub_dir/docker"
+run_doctor207() { # run_doctor207 [env assignments…] -> doctor output
+  (cd "$sb" && cp -f .env.prod.example .env.prod \
+    && env PATH="$stub_dir:$PATH" "$@" ./lumirss doctor 2>&1)
+}
+d_out="$(run_doctor207)"
+assert_eq "all four services up -> doctor exits 0" "0" "$?"
+assert_contains "each enabled service checked individually" "rsshub running" "$d_out"
+assert_not_contains "healthy stack has no FAIL" "FAIL " "$d_out"
+d_out="$(run_doctor207 LUMITEST_ABSENT=lumirss-rsshub)"
+assert_eq "optional rsshub down -> doctor still exits 0 (no false missing alarm)" "0" "$?"
+assert_contains "optional absence is reported as INFO, not a failure" \
+  "rsshub not running (optional service" "$d_out"
+assert_not_contains "optional absence is never a FAIL" "FAIL " "$d_out"
+d_out="$(run_doctor207 LUMITEST_NO_RSSHUB=1)"
+assert_eq "service removed from compose -> doctor exits 0" "0" "$?"
+assert_not_contains "disabled service is not reported missing at all" "rsshub not running" "$d_out"
+d_out="$(run_doctor207 LUMITEST_ABSENT=lumirss-bff)"
+assert_eq "critical bff missing -> doctor exits 1 (no missed alarm)" "1" "$?"
+assert_contains "critical absence is a FAIL naming the service" \
+  "bff not running (state: absent) — core dependency" "$d_out"
+d_out="$(run_doctor207 LUMITEST_ABSENT=lumirss-web)"
+assert_eq "critical web missing -> doctor exits 1" "1" "$?"
+assert_contains "web absence is a FAIL" "web not running" "$d_out"
+rm -rf "$sb" "$stub_dir"
+
+# ---------------------------------------------------------------------------
+echo "== 24. FIX-198: doctor reports live and ready separately (live != ready) =="
+sb="$(new_sandbox)"
+stub_dir="$(mktemp -d)"
+cat > "$stub_dir/docker" <<'STUB'
+#!/bin/sh
+cmd="$1"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  info) exit 0;;
+  compose)
+    case "$*" in
+      *" config"*) printf '{"name": "lumirss-prod", "services": {"web": {}, "bff": {}, "freshrss": {}, "rsshub": {}}}';;
+      *" exec"*)
+        # LUMITEST_BFF_DOWN=1 -> the bff process answers nothing (both
+        # health probes fail); else exec succeeds like a healthy bff.
+        [ -n "${LUMITEST_BFF_DOWN:-}" ] && exit 1
+        exit 0;;
+      *) exit 0;;
+    esac;;
+  inspect)
+    name=""
+    for a in "$@"; do case "$a" in lumirss-*) name="$a";; esac; done
+    [ -n "${LUMITEST_ABSENT:-}" ] && [ "$name" = "$LUMITEST_ABSENT" ] && exit 1
+    case "$*" in
+      *OOMKilled*) echo false;;
+      *RestartCount*) echo 0;;
+      *"State.Health"*) echo none;;
+      *) echo running;;
+    esac;;
+  ps) exit 0;;
+  *) exit 0;;
+esac
+STUB
+chmod +x "$stub_dir/docker"
+d_out="$(cd "$sb" && cp -f .env.prod.example .env.prod \
+  && env PATH="$stub_dir:$PATH" ./lumirss doctor 2>&1)"
+assert_eq "healthy bff -> doctor exits 0" "0" "$?"
+assert_contains "live checked separately (PASS when process answers)" "bff live (process up)" "$d_out"
+assert_contains "ready checked separately with its real meaning (sqlite usable)" "bff ready (lumi.sqlite usable)" "$d_out"
+d_out="$(cd "$sb" && env PATH="$stub_dir:$PATH" LUMITEST_BFF_DOWN=1 ./lumirss doctor 2>&1)"
+assert_eq "dead bff probes are WARN-only (doctor still exits 0)" "0" "$?"
+assert_contains "live failure reported honestly" "bff live not OK" "$d_out"
+assert_contains "ready failure distinguishes itself from live" \
+  "live above may still be true" "$d_out"
+assert_not_contains "no FAIL on a dead bff (WARN semantics unchanged)" "FAIL " "$d_out"
+rm -rf "$sb" "$stub_dir"
+
+# ---------------------------------------------------------------------------
+echo "== 25. FIX-199: update completion is VERIFIED (version endpoint + image digests) =="
+mk_verify_stub() { # mk_verify_stub DIR COMMIT_MODE DIGEST_MODE
+  # COMMIT_MODE: ok | mismatch | empty ; DIGEST_MODE: ok | mismatch
+  local dir="$1" cmode="$2" dmode="$3"
+  mkdir -p "$dir"
+  cat > "$dir/docker" <<STUB
+#!/bin/sh
+cmd="\$1"; [ \$# -gt 0 ] && shift
+case "\$cmd" in
+  info) exit 0;;
+  run) exit 0;;
+  image)
+    case "\$*" in
+      *inspect*) echo "sha256:pulled-image-id";;
+      *) exit 0;;
+    esac;;
+  inspect)
+    case "\$*" in
+      *"{{.Image}}"*) echo "sha256:$([ "$dmode" = "mismatch" ] && echo running-image-id || echo pulled-image-id)";;
+      *) echo healthy;;
+    esac;;
+  ps) exit 0;;
+  compose)
+    case "\$*" in
+      *" config"*) echo '{"name": "lumirss-prod"}';;
+      *" pull"*) echo " Pulled";;
+      *" exec"*)
+        case "$cmode" in
+          mismatch) echo '{"commit": "other-commit", "version": "2.0.1"}';;
+          empty)    exit 0;;
+          *)        echo '{"commit": "rel208sha", "version": "2.0.1"}';;
+        esac;;
+      *) exit 0;;
+    esac;;
+  *) exit 0;;
+esac
+STUB
+  chmod +x "$dir/docker"
+}
+run_verify_update() { # run_verify_update STUBDIR STATUSFILE OUTFILE
+  (cd "$sb" && cp -f .env.prod.example .env.prod \
+    && env PATH="$1:$PATH" LUMIRSS_DEPLOY_STATUS_FILE="$2" \
+       LUMIRSS_EXPECTED_COMMIT=rel208sha ./lumirss update > "$3" 2>&1)
+}
+
+sb="$(new_sandbox)"
+mk_verify_stub "$sb/stub-ok" ok ok
+v_status="$(mktemp -d)/v-ok.json"
+run_verify_update "$sb/stub-ok" "$v_status" "$sb/out-ok.txt"
+assert_eq "verified update exits 0" "0" "$?"
+assert_contains "completion message states verification" "update complete (verified" "$(cat "$sb/out-ok.txt")"
+assert_contains "status records verify ok + result success" "ok success" \
+  "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["stages"]["verify"]["status"], d["result"]["status"])' "$v_status" 2>/dev/null || echo broken)"
+
+mk_verify_stub "$sb/stub-commit" mismatch ok
+v_status="$(mktemp -d)/v-commit.json"
+rc=0; run_verify_update "$sb/stub-commit" "$v_status" "$sb/out-commit.txt" || rc=$?
+assert_eq "commit mismatch -> update exits 1" "1" "$rc"
+assert_contains "failure names the commit mismatch" "version/commit mismatch" "$(cat "$sb/out-commit.txt")"
+assert_contains "status records verify failed + result failed" "failed failed" \
+  "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["stages"]["verify"]["status"], d["result"]["status"])' "$v_status" 2>/dev/null || echo broken)"
+assert_contains "failure points at manual rollback" "'./lumirss rollback'" "$(cat "$sb/out-commit.txt")"
+
+mk_verify_stub "$sb/stub-digest" ok mismatch
+v_status="$(mktemp -d)/v-digest.json"
+rc=0; run_verify_update "$sb/stub-digest" "$v_status" "$sb/out-digest.txt" || rc=$?
+assert_eq "image-digest mismatch -> update exits 1" "1" "$rc"
+assert_contains "failure names the digest mismatch and the container" \
+  "NOT running the pinned image" "$(cat "$sb/out-digest.txt")"
+
+mk_verify_stub "$sb/stub-unreach" empty ok
+v_status="$(mktemp -d)/v-unreach.json"
+rc=0; run_verify_update "$sb/stub-unreach" "$v_status" "$sb/out-unreach.txt" || rc=$?
+assert_eq "version endpoint unreachable -> update exits 1" "1" "$rc"
+assert_contains "failure names the unreachable version endpoint" \
+  "unreachable through the compose network" "$(cat "$sb/out-unreach.txt")"
+rm -rf "$sb"
+
+# ---------------------------------------------------------------------------
+echo "== 26. FIX-202: restore stops ALL writers of the volume it overwrites =="
+sb="$(new_sandbox)"
+stub_dir="$(mktemp -d)"
+r202_log="$(mktemp)"
+cat > "$stub_dir/docker" <<'STUB'
+#!/bin/sh
+# logging stub: compose stop/start are recorded; containers are never real
+echo "docker $*" >> "${LUMIRSS_TEST_DOCKER_LOG:?}"
+cmd="$1"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  info) exit 0;;
+  run) exit 0;;
+  compose)
+    case "$*" in
+      *" config"*) echo '{"name": "lumirss-prod"}';;
+      *) exit 0;;   # stop/start/exec succeed
+    esac;;
+  *) exit 0;;
+esac
+STUB
+chmod +x "$stub_dir/docker"
+mkdir -p "$sb/bk-frs" "$sb/bk-lumi"
+printf 'frs-canary\n' > "$sb/bk-frs/frs.txt"
+printf 'lumi-canary\n' > "$sb/bk-lumi/lumi.txt"
+tar -C "$sb/bk-frs" -czf "$sb/bk-frs/freshrss-data.files.tar.gz" frs.txt
+tar -C "$sb/bk-lumi" -czf "$sb/bk-lumi/lumi-data.files.tar.gz" lumi.txt
+(cd "$sb" && cp -f .env.prod.example .env.prod)
+frs_rc=0
+(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$r202_log" \
+  ./lumirss restore "$sb/bk-frs/freshrss-data.files.tar.gz" --yes >/dev/null 2>&1) || frs_rc=$?
+assert_eq "freshrss-data restore exits 0" "0" "$frs_rc"
+assert_contains "freshrss cron writer is stopped before overwrite" "stop bff freshrss" "$(cat "$r202_log")"
+assert_contains "both writers restarted afterwards" "start bff freshrss" "$(cat "$r202_log")"
+stop_line="$(grep -n "stop bff freshrss" "$r202_log" | head -1 | cut -d: -f1)"
+run_line="$(grep -nE "docker run .*freshrss-data" "$r202_log" | head -1 | cut -d: -f1)"
+if [[ -n "$stop_line" && -n "$run_line" && "$stop_line" -lt "$run_line" ]]; then
+  ok "stop happens before the volume-mutating container runs"
+else
+  bad "restore container may run before writers stopped (stop=$stop_line run=$run_line)"
+fi
+: > "$r202_log"
+lumi_rc=0
+(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$r202_log" \
+  ./lumirss restore "$sb/bk-lumi/lumi-data.files.tar.gz" --yes >/dev/null 2>&1) || lumi_rc=$?
+assert_eq "lumi-data restore exits 0" "0" "$lumi_rc"
+assert_contains "lumi-data restore stops its writer (bff)" "stop bff" "$(cat "$r202_log")"
+assert_not_contains "lumi-data restore does not stop freshrss (not a writer of that volume)" \
+  "stop bff freshrss" "$(cat "$r202_log")"
+rm -rf "$sb" "$stub_dir" "$r202_log"
 
 # ---------------------------------------------------------------------------
 echo
