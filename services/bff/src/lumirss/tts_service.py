@@ -19,6 +19,7 @@ import uuid as _uuid
 from dataclasses import dataclass
 from typing import Any
 
+from lumirss.ai_artifacts import GenerationLockPool
 from lumirss.storage import Database
 from lumirss.util import utc_now
 
@@ -160,6 +161,9 @@ class TtsCacheStore:
         return int(row["n"]) if row is not None else 0
 
 
+_TTS_LOCKS = GenerationLockPool()
+
+
 async def synthesize(
     db: Database,
     http: Any,
@@ -171,6 +175,10 @@ async def synthesize(
     """合成一段语音（≤2000 字符），缓存优先。返回 (audio, cache_hit)。
 
     缓存命中 → 零外部请求；未命中 → 恰好一次 provider 调用并落缓存。
+    FIX-150：同键（text_hash+voice+model）并发生成经 lock-pool 串行化
+    ——并发重复只产生一次计费调用（第二个等待者拿到缓存命中），也
+    杜绝双重 INSERT 撞 tts_cache UNIQUE；失败路径锁释放后重试 = 恰多
+    一次真实调用（次数=账面）。
     """
     clean = str(text or "").strip()
     if not clean:
@@ -185,15 +193,16 @@ async def synthesize(
 
     store = TtsCacheStore(db)
     digest = text_hash_of(clean)
-    cached = await store.get(text_hash=digest, voice=clean_voice, model=config.model)
-    if cached is not None:
-        return cached, True
+    async with _TTS_LOCKS.lock_for((digest, clean_voice, config.model)):
+        cached = await store.get(text_hash=digest, voice=clean_voice, model=config.model)
+        if cached is not None:
+            return cached, True
 
-    audio = await _call_provider(http, config, text=clean, voice=clean_voice)
-    if len(audio) > MAX_AUDIO_BYTES:
-        raise TtsUpstreamError("provider 返回的音频超过 5MB 单条上限，未缓存。")
-    await store.put(text_hash=digest, voice=clean_voice, model=config.model, audio=audio)
-    return audio, False
+        audio = await _call_provider(http, config, text=clean, voice=clean_voice)
+        if len(audio) > MAX_AUDIO_BYTES:
+            raise TtsUpstreamError("provider 返回的音频超过 5MB 单条上限，未缓存。")
+        await store.put(text_hash=digest, voice=clean_voice, model=config.model, audio=audio)
+        return audio, False
 
 
 async def _call_provider(
