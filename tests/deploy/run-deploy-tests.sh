@@ -523,10 +523,12 @@ upd_out="$(cd "$sb" && cp -f .env.prod.example .env.prod \
 rc=$?
 assert_eq "update completes against the stub" "0" "$rc"
 assert_contains "update reports completion" "update complete" "$upd_out"
+# FIX-192: the snapshot pass mounts BOTH live volumes READ-ONLY (structural
+# shape under a stubbed daemon; real execution is proven in section 17).
 assert_contains "backup mounted the lumi-data volume read-only" \
-  "lumirss-prod_lumi-data:/src:ro" "$(cat "$up_log")"
+  "lumirss-prod_lumi-data:/src/lumi-data:ro" "$(cat "$up_log")"
 assert_contains "backup mounted the freshrss-data volume read-only" \
-  "lumirss-prod_freshrss-data:/src:ro" "$(cat "$up_log")"
+  "lumirss-prod_freshrss-data:/src/freshrss-data:ro" "$(cat "$up_log")"
 [[ -s "$sb/backups/LATEST" ]] && ok "backup step ran (backups/LATEST written)" \
   || bad "backup step did not run"
 if grep -qE "docker compose .*down" "$up_log"; then
@@ -571,9 +573,16 @@ ex_out="$(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$ex_lo
   LUMIRSS_IMAGE_TAG=abc123def456 ./lumirss export-images --out "$sb/offline" 2>&1)"
 rc=$?
 assert_eq "export-images exits 0" "0" "$rc"
-assert_contains "export saves BOTH pinned images in one tar" \
-  "save -o $sb/offline/lumirss-images-abc123def456.tar ghcr.io/paidethon/lumirss-web:abc123def456 ghcr.io/paidethon/lumirss-bff:abc123def456" \
+# D-01: image references must match docker-compose.prod.yml (the registry
+# path gained the repository segment; the old ghcr.io/paidethon/lumirss-web
+# names no longer exist and broke the offline release chain).
+assert_contains "export saves BOTH pinned images in one tar (current registry path)" \
+  "save -o $sb/offline/lumirss-images-abc123def456.tar ghcr.io/paidethon/lumirss/lumirss-web:abc123def456 ghcr.io/paidethon/lumirss/lumirss-bff:abc123def456" \
   "$(cat "$ex_log")"
+assert_not_contains "export never references the retired registry path" \
+  "ghcr.io/paidethon/lumirss-web" "$(cat "$ex_log")"
+assert_not_contains "export never references the retired bff path" \
+  "ghcr.io/paidethon/lumirss-bff" "$(cat "$ex_log")"
 [[ -s "$sb/offline/lumirss-images-abc123def456.tar" ]] \
   && ok "export wrote the image tar" || bad "export tar missing"
 [[ "$(wc -l < "$sb/offline/SHA256SUMS")" -eq 2 ]] \
@@ -684,6 +693,321 @@ assert_eq "failed pull exits 1" "1" "$rc"
 assert_contains "failed update records pull failed + result failed" "failed failed" \
   "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["stages"]["pull"]["status"], d["result"]["status"])' "$fail_file" 2>/dev/null || echo broken)"
 rm -rf "$sb" "$stub_dir" "$status_dir" "$fail_dir"
+
+# ---------------------------------------------------------------------------
+echo "== 18. FIX-201: backup failure aborts update BEFORE pull/switch/migration =="
+sb="$(new_sandbox)"
+stub_dir="$(mktemp -d)"
+fail_log="$(mktemp)"
+cat > "$stub_dir/docker" <<'STUB'
+#!/bin/sh
+# stub docker: every backup container fails; pull/up would succeed if reached
+echo "docker $*" >> "${LUMIRSS_TEST_DOCKER_LOG:?}"
+cmd="$1"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  info) exit 0;;
+  run) echo "simulated backup failure" >&2; exit 1;;
+  ps) exit 0;;
+  compose)
+    sub="$1"; shift
+    case "$sub" in
+      version) exit 0;;
+      config) echo '{"name": "lumirss-prod"}';;
+      pull) echo " Pulled";;
+      exec) exit 0;;
+      *) exit 0;;
+    esac;;
+  *) exit 0;;
+esac
+STUB
+chmod +x "$stub_dir/docker"
+status_dir="$(mktemp -d)"
+status_file="$status_dir/backup-fail-status.json"
+ab_out="$(cd "$sb" && cp -f .env.prod.example .env.prod \
+  && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$fail_log" \
+     LUMIRSS_DEPLOY_STATUS_FILE="$status_file" ./lumirss update 2>&1)"
+rc=$?
+assert_eq "backup failure aborts the update (non-zero exit)" "1" "$rc"
+assert_contains "abort names the backup as the cause" "update aborted" "$ab_out"
+assert_contains "abort states the old services keep running" "old services keep running" "$ab_out"
+assert_contains "deploy status records backup failed + result failed" "failed failed" \
+  "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["stages"]["backup"]["status"], d["result"]["status"])' "$status_file" 2>/dev/null || echo broken)"
+if grep -qE "docker compose .*(pull|up)" "$fail_log"; then
+  bad "update proceeded to pull/up after the backup failure"
+else
+  ok "no pull/up after backup failure (old stack untouched, no migration)"
+fi
+rm -rf "$sb" "$stub_dir" "$fail_log" "$status_dir"
+
+# ---------------------------------------------------------------------------
+echo "== 17. FIX-192: consistent backup under a concurrent writer + isolated recovery (real docker) =="
+if docker info >/dev/null 2>&1; then
+  sb="$(new_sandbox)"
+  cp "$REPO_ROOT/VERSION" "$sb/VERSION"
+  stub_dir="$(mktemp -d)"
+  live_log="$(mktemp)"
+  real_docker="$(command -v docker)"
+  vol="$sb/volumes"
+  mkdir -p "$vol/lumi-data/users/u_fix192" "$vol/freshrss-data"
+  printf 'control-secret\n' > "$vol/lumi-data/control-secrets.json"
+  printf 'user-secret\n' > "$vol/lumi-data/users/u_fix192/secrets.json"
+  printf '<?php // freshrss config\n' > "$vol/freshrss-data/config.php"
+
+  # Source DBs carry the BFF's REAL schema (its own migration runner) and run
+  # in WAL mode, exactly like the deployed stack (control lumi.sqlite +
+  # per-user users/<uid>/lumi.sqlite + FreshRSS db.sqlite).
+  seed_out="$(PYTHONPATH="$REPO_ROOT/services/bff/src" python3 - "$vol" <<'PY'
+import sqlite3, sys
+from pathlib import Path
+from lumirss.storage import Database
+from lumirss.migrations import apply_migrations, schema_version
+vol = Path(sys.argv[1])
+ctl = Database(vol / "lumi-data" / "lumi.sqlite")
+apply_migrations(ctl)
+c = sqlite3.connect(vol / "lumi-data" / "lumi.sqlite")
+c.execute("PRAGMA journal_mode=WAL")
+c.execute("CREATE TABLE IF NOT EXISTS fix192_probe (id INTEGER PRIMARY KEY, payload TEXT)")
+c.executemany("INSERT INTO fix192_probe(payload) VALUES (?)", [("seed-%d" % i,) for i in range(5)])
+c.commit(); c.close()
+u = Database(vol / "lumi-data" / "users" / "u_fix192" / "lumi.sqlite")
+apply_migrations(u)
+f = sqlite3.connect(vol / "freshrss-data" / "db.sqlite")
+f.execute("PRAGMA journal_mode=WAL")
+f.execute("CREATE TABLE fix192_frs (id INTEGER PRIMARY KEY, v TEXT)")
+f.executemany("INSERT INTO fix192_frs(v) VALUES (?)", [("frs-%d" % i,) for i in range(7)])
+f.commit(); f.close()
+print(schema_version(ctl))
+PY
+)"
+  src_ver="$(printf '%s\n' "$seed_out" | tail -1)"
+
+  # Concurrent writer, like a live BFF: phase 1 commits 120 rows BEFORE the
+  # backup starts (every one of them MUST appear in the recovery); phase 2
+  # keeps writing while the snapshot runs. wal_autocheckpoint=0 keeps every
+  # commit in the -wal, so a bare tar of the main file would lose rows —
+  # only the online backup API reads through WAL.
+  cat > "$sb/writer.py" <<'PY'
+import sqlite3, sys, time
+db = sqlite3.connect(sys.argv[1], timeout=30.0)
+db.execute("PRAGMA journal_mode=WAL")
+db.execute("PRAGMA wal_autocheckpoint=0")
+for i in range(120):
+    db.execute("INSERT INTO fix192_probe(payload) VALUES (?)", ("writer-%d" % i,))
+    db.commit()
+open(sys.argv[2], "w").write("phase1")
+for i in range(120, 400):
+    db.execute("INSERT INTO fix192_probe(payload) VALUES (?)", ("writer-%d" % i,))
+    db.commit()
+    time.sleep(0.01)
+open(sys.argv[2], "w").write("done")
+time.sleep(180)   # stay alive: hold -wal/-shm open like a running BFF
+PY
+  rm -f "$sb/writer.state"
+  python3 "$sb/writer.py" "$vol/lumi-data/lumi.sqlite" "$sb/writer.state" &
+  writer_pid=$!
+  for _ in $(seq 1 100); do [[ -s "$sb/writer.state" ]] && break; sleep 0.1; done
+  if [[ "$(cat "$sb/writer.state" 2>/dev/null || true)" == *phase1* ]]; then
+    ok "writer committed 120 rows before the backup started"
+  else
+    bad "writer did not reach phase 1 (test harness broken)"
+  fi
+
+  # Smart stub: only `compose config` is answered (project name + bff image);
+  # `docker run` is rewritten from project volumes to test bind dirs and
+  # delegated to the REAL docker — the CLI's own snapshot program, mounts,
+  # exclusion tars, MANIFEST and restore/overlay/verify logic all execute for
+  # real. Harness paths never contain spaces/quotes, so plain token joining
+  # is safe; --user keeps container-written files owned by the test user.
+  cat > "$stub_dir/docker" <<'STUB'
+#!/bin/sh
+echo "docker $*" >> "${LUMIRSS_TEST_DOCKER_LOG:?}"
+cmd="$1"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  info) exit 0;;
+  run)
+    fwd="--user $(id -u):$(id -g)"
+    for a in "$@"; do
+      case "$a" in
+        lumirss-prod_lumi-data:*) a="$LUMITEST_LUMI_VOL${a#lumirss-prod_lumi-data}";;
+        lumirss-prod_freshrss-data:*) a="$LUMITEST_FRS_VOL${a#lumirss-prod_freshrss-data}";;
+      esac
+      fwd="$fwd '$a'"
+    done
+    eval "exec '$LUMITEST_REAL_DOCKER' run $fwd"
+    ;;
+  ps) exit 0;;
+  compose)
+    case "$*" in
+      *" config"*) echo '{"name": "lumirss-prod", "services": {"bff": {"image": "python:3.12-slim"}}}';;
+      *) exit 0;;
+    esac;;
+  *) exit 0;;
+esac
+STUB
+  chmod +x "$stub_dir/docker"
+
+  bk_rc=0
+  bk_out="$(cd "$sb" && cp -f .env.prod.example .env.prod \
+    && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$live_log" \
+    LUMIRSS_BACKUP_DIR="$sb/backups" LUMITEST_LUMI_VOL="$vol/lumi-data" \
+    LUMITEST_FRS_VOL="$vol/freshrss-data" LUMITEST_REAL_DOCKER="$real_docker" \
+    ./lumirss backup 2>&1)" || bk_rc=$?
+  for _ in $(seq 1 600); do [[ "$(cat "$sb/writer.state" 2>/dev/null || true)" == *done* ]] && break; sleep 0.1; done
+  kill "$writer_pid" 2>/dev/null || true
+  wait "$writer_pid" 2>/dev/null || true
+  assert_eq "backup with a live concurrent writer exits 0" "0" "$bk_rc"
+  assert_contains "snapshot pass ran the online backup API" "online backup API" "$bk_out"
+  stamp_dir="$sb/backups/$(cat "$sb/backups/LATEST" 2>/dev/null || echo MISSING)"
+  for artifact in MANIFEST.txt lumi-sqlite lumi-data.files.tar.gz freshrss-data.files.tar.gz config.tar.gz; do
+    [[ -e "$stamp_dir/$artifact" ]] && ok "backup contains $artifact" || bad "backup missing $artifact"
+  done
+  manifest="$(cat "$stamp_dir/MANIFEST.txt" 2>/dev/null || true)"
+  assert_contains "manifest records the CLI version" "cli_version: 2.0.1" "$manifest"
+  assert_contains "manifest lists the control DB" "lumi-sqlite/lumi.sqlite" "$manifest"
+  assert_contains "manifest lists the per-user DB" "lumi-sqlite/users/u_fix192/lumi.sqlite" "$manifest"
+  assert_contains "manifest lists the FreshRSS DB" "freshrss-sqlite/db.sqlite" "$manifest"
+  if tar -tzf "$stamp_dir/lumi-data.files.tar.gz" > "$sb/lumi-tar.list" 2>/dev/null && [[ -s "$sb/lumi-tar.list" ]]; then
+    if grep -q "sqlite" "$sb/lumi-tar.list"; then
+      bad "file-level tar still contains a live SQLite file (bare-tar regression)"
+    else
+      ok "file-level tar excludes every SQLite DB and sidecar"
+    fi
+    assert_contains "file-level tar keeps non-DB state (secrets.json)" \
+      "secrets.json" "$(cat "$sb/lumi-tar.list")"
+  else
+    bad "lumi-data.files.tar.gz missing or unreadable"
+    bad "file-level tar keeps non-DB state (secrets.json) — tar missing"
+  fi
+
+  # Isolated application recovery: restore BOTH volumes into a scratch
+  # layout through the CLI itself (untar + snapshot overlay + MANIFEST
+  # checksum verification run for real inside containers).
+  mkdir -p "$sb/restored/lumi-data" "$sb/restored/freshrss-data"
+  rs_rc=0
+  rs_out="$(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$live_log" \
+    LUMIRSS_BACKUP_DIR="$sb/backups" LUMITEST_LUMI_VOL="$sb/restored/lumi-data" \
+    LUMITEST_FRS_VOL="$sb/restored/freshrss-data" LUMITEST_REAL_DOCKER="$real_docker" \
+    ./lumirss restore "$stamp_dir/lumi-data.files.tar.gz" --yes 2>&1)" || rs_rc=$?
+  assert_eq "lumi restore (untar + overlay + MANIFEST verify) exits 0" "0" "$rs_rc"
+  assert_contains "restore verified the manifest checksums" "verifying MANIFEST.txt checksums" "$rs_out"
+  rs2_rc=0
+  (cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$live_log" \
+    LUMIRSS_BACKUP_DIR="$sb/backups" LUMITEST_LUMI_VOL="$sb/restored/lumi-data" \
+    LUMITEST_FRS_VOL="$sb/restored/freshrss-data" LUMITEST_REAL_DOCKER="$real_docker" \
+    ./lumirss restore "$stamp_dir/freshrss-data.files.tar.gz" --yes >/dev/null 2>&1) || rs2_rc=$?
+  assert_eq "freshrss restore exits 0" "0" "$rs2_rc"
+
+  # Verify the recovered DBs with the BFF's OWN logic — not just
+  # integrity_check: apply its migration runner, compare schema versions,
+  # and prove the recovered rows are a tear-free prefix of the writer's
+  # commit stream (all 125 pre-backup commits present, no gaps, no torn
+  # payloads; rows committed during the snapshot may legitimately be absent).
+  rec_out="$(PYTHONPATH="$REPO_ROOT/services/bff/src" python3 - "$sb" "$src_ver" <<'PY'
+import sqlite3, sys
+from pathlib import Path
+from lumirss.storage import Database
+from lumirss.migrations import apply_migrations, schema_version
+sb = Path(sys.argv[1]); src_ver = int(sys.argv[2])
+ctl_path = sb / "restored" / "lumi-data" / "lumi.sqlite"
+db = Database(ctl_path)
+applied = apply_migrations(db)
+ver = schema_version(db)
+c = sqlite3.connect(ctl_path)
+integrity = c.execute("PRAGMA integrity_check").fetchone()[0]
+ids = [r[0] for r in c.execute("SELECT id FROM fix192_probe ORDER BY id")]
+n = len(ids)
+contiguous = ids == list(range(1, n + 1))
+seeds = c.execute("SELECT COUNT(*) FROM fix192_probe WHERE payload LIKE 'seed-%'").fetchone()[0]
+payload_ok = c.execute(
+    "SELECT COUNT(*) FROM fix192_probe WHERE id > 5 AND payload = 'writer-' || (id - 6)"
+).fetchone()[0]
+uver = schema_version(Database(sb / "restored" / "lumi-data" / "users" / "u_fix192" / "lumi.sqlite"))
+uinteg = sqlite3.connect(
+    sb / "restored" / "lumi-data" / "users" / "u_fix192" / "lumi.sqlite"
+).execute("PRAGMA integrity_check").fetchone()[0]
+frs = sqlite3.connect(sb / "restored" / "freshrss-data" / "db.sqlite")
+finteg = frs.execute("PRAGMA integrity_check").fetchone()[0]
+frows = frs.execute("SELECT COUNT(*) FROM fix192_frs").fetchone()[0]
+good = (ver == src_ver and not applied and integrity == "ok" and contiguous and n >= 125
+        and seeds == 5 and payload_ok == n - 5 and uver == src_ver and uinteg == "ok"
+        and finteg == "ok" and frows == 7)
+print("%s recovered_rows=%d schema=%d integrity=%s" % (
+    "RECOVERY-OK" if good else "RECOVERY-BAD", n, ver, integrity))
+PY
+)"
+  assert_contains "recovered DBs pass the BFF's own migration + integrity + prefix checks" "RECOVERY-OK" "$rec_out"
+  recovered_rows="$(printf '%s' "$rec_out" | sed -n 's/.*recovered_rows=\([0-9]*\).*/\1/p')"
+  if [[ -n "$recovered_rows" && "$recovered_rows" -ge 125 ]]; then
+    ok "all pre-backup commits recovered ($recovered_rows rows, WAL-only rows included)"
+  else
+    bad "pre-backup commits missing from the recovered DB ($rec_out)"
+  fi
+  rm -rf "$sb" "$stub_dir" "$live_log"
+else
+  bad "docker daemon unavailable — FIX-192 concurrency/recovery tests NOT executed"
+fi
+
+echo "== 19. FIX-209: unique backup dirs on rapid runs; LATEST atomic + success-only =="
+sb="$(new_sandbox)"
+stub_dir="$(mktemp -d)"
+cat > "$stub_dir/docker" <<'STUB'
+#!/bin/sh
+cmd="$1"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  info) exit 0;;
+  run) exit 0;;
+  ps) exit 0;;
+  compose)
+    case "$*" in
+      *" config"*) echo '{"name": "lumirss-prod"}';;
+      *) exit 0;;
+    esac;;
+  *) exit 0;;
+esac
+STUB
+chmod +x "$stub_dir/docker"
+cd "$sb" && cp -f .env.prod.example .env.prod
+(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_BACKUP_DIR="$sb/backups" ./lumirss backup >/dev/null 2>&1)
+assert_eq "first rapid backup succeeds" "0" "$?"
+before="$(ls "$sb/backups" | grep -v '^LATEST$')"
+(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_BACKUP_DIR="$sb/backups" ./lumirss backup >/dev/null 2>&1)
+assert_eq "second rapid backup (same second) succeeds" "0" "$?"
+after="$(ls "$sb/backups" | grep -v '^LATEST$')"
+new_dir="$(comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$after") | head -1)"
+assert_eq "rapid consecutive backups land in UNIQUE directories (2 runs → 2 dirs)" "2" \
+  "$(printf '%s\n' "$after" | wc -l)"
+assert_eq "LATEST points at the newest backup dir" "$new_dir" "$(cat "$sb/backups/LATEST")"
+assert_contains "both backups survive (no clobbering)" "$before" "$(printf '%s\n' "$after")"
+
+# A failed backup must not touch LATEST or any prior backup.
+fail_stub="$(mktemp -d)"
+cat > "$fail_stub/docker" <<'STUB'
+#!/bin/sh
+cmd="$1"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  info) exit 0;;
+  run) exit 1;;          # backup containers fail
+  compose)
+    case "$*" in
+      *" config"*) echo '{"name": "lumirss-prod"}';;
+      *) exit 0;;
+    esac;;
+  *) exit 0;;
+esac
+STUB
+chmod +x "$fail_stub/docker"
+printf '20200101-000000\n' > "$sb/backups/LATEST"
+mkdir -p "$sb/backups/20200101-000000"
+printf 'prior-backup-canary\n' > "$sb/backups/20200101-000000/keep.txt"
+count_before="$(ls -A "$sb/backups" | wc -l)"
+(cd "$sb" && env PATH="$fail_stub:$PATH" LUMIRSS_BACKUP_DIR="$sb/backups" ./lumirss backup >/dev/null 2>&1)
+assert_eq "failing backup exits non-zero" "1" "$?"
+assert_eq "existing LATEST preserved on failure" "20200101-000000" "$(cat "$sb/backups/LATEST")"
+assert_eq "prior backup content untouched on failure" "prior-backup-canary" \
+  "$(cat "$sb/backups/20200101-000000/keep.txt")"
+assert_eq "no partial backup dir or LATEST temp left behind" "$count_before" \
+  "$(ls -A "$sb/backups" | wc -l)"
+rm -rf "$sb" "$stub_dir" "$fail_stub"
 
 # ---------------------------------------------------------------------------
 echo
