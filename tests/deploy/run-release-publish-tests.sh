@@ -309,6 +309,44 @@ fi
 rm -rf "$astage"
 
 # ---------------------------------------------------------------------------
+echo "== 5. FIX-390: pipes into tail/head never swallow a failure =="
+# `cmd | tail -1` returns TAIL's exit status; a failed cmd is invisible.
+# The repo invariant: every tail/head pipe sits in a pipefail-declared scope.
+guard="$REPO_ROOT/scripts/check-pipefail.py"
+[[ -f "$guard" ]] && ok "scripts/check-pipefail.py exists" \
+  || bad "scripts/check-pipefail.py missing"
+if out="$(python3 "$guard" 2>&1)"; then
+  ok "real tree passes the pipe-hygiene guard ($out)"
+else
+  bad "pipe-hygiene guard failed on the real tree: $out"
+fi
+
+# Mutations on a scratch root: the guard must bite exactly on unguarded pipes.
+mroot="$(mktemp -d "${TMPDIR:-/tmp}/lumirss-pipe.XXXXXX")"
+mkdir -p "$mroot/.github/workflows" "$mroot/scripts"
+run_mutation() { # desc expected_exit fixture-fn args...
+  local desc="$1" want="$2"; shift 2
+  "$@"
+  python3 "$guard" --root "$mroot" >/dev/null 2>&1
+  local got=$?
+  assert_eq "$desc" "$want" "$got"
+}
+mk_wf()  { printf 'name: X\non: [push]\njobs:\n  j:\n    steps:\n      - name: s\n        run: |\n%s\n' "$1" > "$mroot/.github/workflows/w.yml"; }
+mk_sh()  { printf '%s\n' "$1" > "$mroot/scripts/s.sh"; }
+
+run_mutation "workflow: unguarded 'foo | tail -1' is caught" 1 \
+  mk_wf $'          foo | tail -1'
+run_mutation "workflow: pipefail-declared step passes" 0 \
+  mk_wf $'          set -euo pipefail\n          foo | tail -1'
+run_mutation "script: tail pipe without pipefail is caught" 1 \
+  mk_sh $'#!/usr/bin/env bash\nfoo | tail -1'
+run_mutation "script: pipefail-declared script passes" 0 \
+  mk_sh $'#!/usr/bin/env bash\nset -uo pipefail\nfoo | tail -1'
+run_mutation "workflow: 'logs --tail' flag is not a pipe" 0 \
+  mk_wf '          docker compose logs --tail 40'
+rm -rf "$mroot"
+
+# ---------------------------------------------------------------------------
 echo
 echo "release-publish tests: $PASS passed, $FAIL failed"
 if [[ "$FAIL" -gt 0 ]]; then exit 1; fi

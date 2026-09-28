@@ -106,3 +106,8 @@ jobs:
       # half-finished release cannot end green.
       - name: Run release publishing tests
         run: tests/deploy/run-release-publish-tests.sh
+
+      # FIX-390: a command piped into tail/head must never return success
+      # after the real command failed.
+      - name: Check pipe error propagation (FIX-390)
+        run: python3 scripts/check-pipefail.py
