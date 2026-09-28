@@ -622,6 +622,19 @@ function EntriesList() {
   const overLimit = selectedRefs.size > BATCH_LIMIT
   const batchRunning = batch?.running === true
 
+  // FIX-160：视图/范围切换后旧选中集合不属于新列表——选择立即清空
+  //（与 reader-ui「切 scope 清空 selection：旧选择可能已不属于新列表」
+  // 同一语义）。多选模式保留（可重新勾选）；批量条如实显示 已选 0 条
+  // 且动作禁用——批量动作绝不作用于当前列表不可见的集合。
+  const selectionListKey = `${view}\u0000${section}\u0000${String(JSON.stringify(scopeKey(scope)))}`
+  const prevSelectionListKey = useRef(selectionListKey)
+  useEffect(() => {
+    if (prevSelectionListKey.current !== selectionListKey) {
+      prevSelectionListKey.current = selectionListKey
+      setSelectedRefs(new Set())
+    }
+  }, [selectionListKey])
+
   const toggleSelect = useCallback((ref: string) => {
     setSelectedRefs((prev) => {
       const next = new Set(prev)

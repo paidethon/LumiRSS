@@ -32,6 +32,9 @@ export function LibraryTrashPanel({ onDone }: { onDone?: () => void }) {
       await queryClient.invalidateQueries({ queryKey: ['library-trash'] })
       await queryClient.invalidateQueries({ queryKey: ['bookmarks'] })
       await queryClient.invalidateQueries({ queryKey: ['clips'] })
+      // FIX-154：恢复重新入搜索索引——搜索结果缓存一并失效（服务端
+      // 直读无推送；否则恢复后的内容在缓存结果里缺失）。
+      await queryClient.invalidateQueries({ queryKey: ['search', 'results'] })
       setFeedback('已恢复')
       setConfirming((current) => (current === uuid ? null : current))
       onDone?.()
@@ -42,6 +45,8 @@ export function LibraryTrashPanel({ onDone }: { onDone?: () => void }) {
     mutationFn: (uuid: string) => purgeTrashItem(uuid),
     onSuccess: async (_data, uuid) => {
       await queryClient.invalidateQueries({ queryKey: ['library-trash'] })
+      // FIX-154：永久删除移出搜索索引——搜索结果缓存一并失效（同上）。
+      await queryClient.invalidateQueries({ queryKey: ['search', 'results'] })
       setFeedback('已永久删除')
       setConfirming((current) => (current === uuid ? null : current))
     },
