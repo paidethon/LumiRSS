@@ -570,7 +570,11 @@ else
   ok "update never invoked compose down (no -v destruction possible)"
 fi
 up_line="$(grep -nE "docker compose .* up " "$up_log" | head -1 | cut -d: -f1)"
-exec_line="$(grep -nE "docker compose .* exec " "$up_log" | head -1 | cut -d: -f1)"
+# FIX-196: the schema probe (compose exec during snapshot_for_rollback) now
+# legitimately runs BEFORE the pull/up, so the health check is the first exec
+# AFTER the up line — not the first exec in the whole log.
+exec_line="$(tail -n "+${up_line:-1}" "$up_log" | grep -nE "docker compose .* exec " | head -1 | cut -d: -f1)"
+exec_line=$(( ${up_line:-0} + ${exec_line:-0} - 1 ))
 if [[ -n "$up_line" && -n "$exec_line" && "$exec_line" -gt "$up_line" ]]; then
   ok "post-up health check ran (exec bff after up -d)"
 else
@@ -1561,6 +1565,229 @@ assert_contains "lumi-data restore stops its writer (bff)" "stop bff" "$(cat "$r
 assert_not_contains "lumi-data restore does not stop freshrss (not a writer of that volume)" \
   "stop bff freshrss" "$(cat "$r202_log")"
 rm -rf "$sb" "$stub_dir" "$r202_log"
+
+# ---------------------------------------------------------------------------
+# FIX-196 / FIX-204: rollback manifest pinning + schema gate.
+#
+# One parameterized stub serves every phase; the scenario lives entirely in
+# env vars the stub reads at runtime:
+#   LUMITEST_RUNNING_BFF_ID / _WEB_ID  what `inspect --format {{.Image}}`
+#                                      answers (the containers' ground truth)
+#   LUMITEST_TAG_ID_BFF / _WEB_ID      what `image inspect <tag-ref>` answers
+#                                      (pinned id = tag still honest; any
+#                                      other id = the mutable tag drifted)
+#   LUMITEST_PINNED_ID                 what `image inspect <sha256:…>` answers
+#                                      (success marker: the pinned image exists)
+#   LUMITEST_SCHEMA                    what the control-DB schema probe answers
+mk_gate_stub() { # mk_gate_stub DIR
+  mkdir -p "$1"
+  cat > "$1/docker" <<'STUB'
+#!/bin/sh
+echo "docker $*" >> "${LUMIRSS_TEST_DOCKER_LOG:?}"
+cmd="$1"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  info) exit 0;;
+  run) exit 0;;
+  tag) exit 0;;
+  image)
+    case "$*" in
+      *lumirss-bff*) echo "$LUMITEST_TAG_ID_BFF";;
+      *lumirss-web*) echo "$LUMITEST_TAG_ID_WEB";;
+      *"sha256:"*) echo "$LUMITEST_PINNED_ID";;
+      *) exit 0;;
+    esac;;
+  inspect)
+    case "$*" in
+      *"{{.Image}}"*lumirss-bff*) echo "$LUMITEST_RUNNING_BFF_ID";;
+      *"{{.Image}}"*lumirss-web*) echo "$LUMITEST_RUNNING_WEB_ID";;
+      *) exit 0;;
+    esac;;
+  ps) exit 0;;
+  compose)
+    case "$*" in
+      *" config"*) echo '{"name": "lumirss-prod"}';;
+      *" pull"*) echo " Pulled";;
+      *" exec"*)
+        case "$*" in
+          *schema_migrations*) echo "$LUMITEST_SCHEMA";;
+          *api/v1/version*) echo '{"commit": "stub-commit", "version": "2.0.1"}';;
+          *) exit 0;;
+        esac;;
+      *) exit 0;;
+    esac;;
+  *) exit 0;;
+esac
+STUB
+  chmod +x "$1/docker"
+}
+# Distinct full-length image IDs per service (hex, like real docker IDs).
+OLD_BFF="sha256:$(printf 'a%.0s' $(seq 64))"
+OLD_WEB="sha256:$(printf 'b%.0s' $(seq 64))"
+NEW_BFF="sha256:$(printf 'c%.0s' $(seq 64))"
+NEW_WEB="sha256:$(printf 'd%.0s' $(seq 64))"
+DRIFT_BFF="sha256:$(printf 'e%.0s' $(seq 64))"
+DRIFT_WEB="sha256:$(printf 'f%.0s' $(seq 64))"
+rollback_manifest_field() { # read one field from a rollback manifest JSON
+  python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(json.dumps(d.get(sys.argv[2])))' "$1" "$2" 2>/dev/null
+}
+
+echo "== 27. FIX-204: update writes a rollback manifest pinned to the RUNNING image IDs + pre-update schema =="
+sb="$(new_sandbox)"
+stub_dir="$(mktemp -d)"
+mk_gate_stub "$stub_dir"
+bff_log="$(mktemp)"
+upd_out="$(cd "$sb" && cp -f .env.prod.example .env.prod \
+  && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$bff_log" \
+     LUMIRSS_BACKUP_DIR="$sb/backups" LUMIRSS_IMAGE_TAG=fix204tag \
+     LUMIRSS_ROLLBACK_MANIFEST_FILE="$sb/bff-rollback-manifest.json" \
+     LUMITEST_RUNNING_BFF_ID="$OLD_BFF" LUMITEST_RUNNING_WEB_ID="$OLD_WEB" \
+     LUMITEST_TAG_ID_BFF="$OLD_BFF" LUMITEST_TAG_ID_WEB="$OLD_WEB" \
+     LUMITEST_PINNED_ID="$OLD_BFF" LUMITEST_SCHEMA=137 \
+     ./lumirss update 2>&1)"
+assert_eq "update completes and writes the manifest" "0" "$?"
+[[ -s "$sb/backups/.rollback-manifest.json" ]] \
+  && ok "rollback manifest written next to the legacy files" \
+  || bad "rollback manifest missing"
+assert_contains "manifest pins the RUNNING bff image ID (not a tag)" "\"$OLD_BFF\"" \
+  "$(rollback_manifest_field "$sb/backups/.rollback-manifest.json" previousImageIdBff)"
+assert_contains "manifest pins the RUNNING web image ID" "\"$OLD_WEB\"" \
+  "$(rollback_manifest_field "$sb/backups/.rollback-manifest.json" previousImageIdWeb)"
+assert_eq "manifest records the pre-update schema version" "137" \
+  "$(rollback_manifest_field "$sb/backups/.rollback-manifest.json" preUpdateSchemaVersion)"
+assert_eq "manifest records the previous tag (legacy field kept)" '"fix204tag"' \
+  "$(rollback_manifest_field "$sb/backups/.rollback-manifest.json" previousImageTag)"
+assert_eq "manifest schema stays lumirss-rollback-manifest/v1 (BFF-compatible)" \
+  '"lumirss-rollback-manifest/v1"' \
+  "$(rollback_manifest_field "$sb/backups/.rollback-manifest.json" schema)"
+assert_contains "manifest records a writtenAt timestamp" "20" \
+  "$(rollback_manifest_field "$sb/backups/.rollback-manifest.json" writtenAt)"
+assert_eq "runId is null when no deploy-status file is configured" "null" \
+  "$(rollback_manifest_field "$sb/backups/.rollback-manifest.json" runId)"
+assert_eq "legacy .image-tag.previous still written" "fix204tag" \
+  "$(cat "$sb/backups/.image-tag.previous" 2>/dev/null || echo MISSING)"
+[[ -s "$sb/backups/.env.prod.previous" ]] \
+  && ok "legacy .env.prod.previous still written" || bad ".env.prod.previous missing"
+manifest_facts() { # manifest_facts FILE -> every field except writtenAt (two writes are seconds apart)
+  python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d.pop("writtenAt",None); print(json.dumps(d,sort_keys=True))' "$1" 2>/dev/null
+}
+assert_eq "BFF passthrough manifest carries the same pinned facts" \
+  "$(manifest_facts "$sb/backups/.rollback-manifest.json")" \
+  "$(manifest_facts "$sb/bff-rollback-manifest.json" 2>/dev/null || echo MISSING)"
+assert_not_contains "manifest carries no secrets" "LUMIRSS_INTERNAL_TOKEN" \
+  "$(cat "$sb/backups/.rollback-manifest.json")"
+
+echo "== 28. FIX-204: tag drift — rollback retags the PINNED image, not whatever the tag now says =="
+drift_log="$(mktemp)"
+rb_out="$(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$drift_log" \
+   LUMIRSS_BACKUP_DIR="$sb/backups" \
+   LUMITEST_RUNNING_BFF_ID="$NEW_BFF" LUMITEST_RUNNING_WEB_ID="$NEW_WEB" \
+   LUMITEST_TAG_ID_BFF="$DRIFT_BFF" LUMITEST_TAG_ID_WEB="$DRIFT_WEB" \
+   LUMITEST_PINNED_ID="$OLD_BFF" LUMITEST_SCHEMA=137 \
+   ./lumirss rollback --yes 2>&1)"
+rc=$?
+assert_eq "rollback with a drifted tag exits 0" "0" "$rc"
+assert_contains "rollback detects the drift" "tag drift" "$rb_out"
+assert_contains "rollback retags the pinned bff image over the expected ref" \
+  "tag $OLD_BFF ghcr.io/paidethon/lumirss/lumirss-bff:fix204tag" "$(cat "$drift_log")"
+assert_contains "rollback retags the pinned web image too" \
+  "tag $OLD_WEB ghcr.io/paidethon/lumirss/lumirss-web:fix204tag" "$(cat "$drift_log")"
+tag_line="$(grep -nE "docker tag .*lumirss-bff:fix204tag" "$drift_log" | head -1 | cut -d: -f1)"
+up_line="$(grep -nE "docker compose .* up " "$drift_log" | head -1 | cut -d: -f1)"
+if [[ -n "$tag_line" && -n "$up_line" && "$tag_line" -lt "$up_line" ]]; then
+  ok "retag happens BEFORE compose up (up consumes the pinned bytes)"
+else
+  bad "retag/up ordering wrong (tag=$tag_line up=$up_line)"
+fi
+assert_contains "schema gate passed cleanly (unchanged schema)" \
+  "schema unchanged since the snapshot (137)" "$rb_out"
+assert_contains "rollback states the target tag" \
+  "rolling back to image tag: fix204tag" "$rb_out"
+
+echo "== 29. FIX-196: schema moved FORWARD — rollback warns and requires --yes =="
+fwd_log="$(mktemp)"
+rb_out="$(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$fwd_log" \
+   LUMIRSS_BACKUP_DIR="$sb/backups" \
+   LUMITEST_RUNNING_BFF_ID="$NEW_BFF" LUMITEST_RUNNING_WEB_ID="$NEW_WEB" \
+   LUMITEST_TAG_ID_BFF="$OLD_BFF" LUMITEST_TAG_ID_WEB="$OLD_WEB" \
+   LUMITEST_PINNED_ID="$OLD_BFF" LUMITEST_SCHEMA=139 \
+   ./lumirss rollback 2>&1)"
+rc=$?
+assert_eq "schema-forward rollback without --yes refuses (non-zero exit)" "1" "$rc"
+assert_contains "refusal discloses the forward migration with versions" \
+  "schema 137 → 139" "$rb_out"
+assert_contains "refusal is honest about forward-only migrations" \
+  "forward-only" "$rb_out"
+assert_contains "refusal points at the restore alternative" \
+  "./lumirss restore" "$rb_out"
+if grep -qE "docker compose .* up " "$fwd_log"; then
+  bad "refused rollback still switched images (compose up ran)"
+else
+  ok "refused rollback never ran compose up (nothing was switched)"
+fi
+fwd2_log="$(mktemp)"
+rb_out="$(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$fwd2_log" \
+   LUMIRSS_BACKUP_DIR="$sb/backups" \
+   LUMITEST_RUNNING_BFF_ID="$NEW_BFF" LUMITEST_RUNNING_WEB_ID="$NEW_WEB" \
+   LUMITEST_TAG_ID_BFF="$OLD_BFF" LUMITEST_TAG_ID_WEB="$OLD_WEB" \
+   LUMITEST_PINNED_ID="$OLD_BFF" LUMITEST_SCHEMA=139 \
+   ./lumirss rollback --yes 2>&1)"
+rc=$?
+assert_eq "schema-forward rollback WITH --yes proceeds" "0" "$rc"
+assert_contains "explicit confirmation still shows the data warning" \
+  "DATA COMPATIBILITY" "$rb_out"
+grep -qE "docker compose .* up " "$fwd2_log" \
+  && ok "confirmed rollback performed the switch (compose up ran)" \
+  || bad "confirmed rollback did not run compose up"
+
+echo "== 30. FIX-196: unknown schema refuses; pre-pinning deployments keep the tag fallback =="
+unk_log="$(mktemp)"
+# Phase A: the schema probe cannot answer (LUMITEST_SCHEMA empty) → the
+# update stays best-effort and the manifest records a null schema version.
+(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$bff_log" \
+   LUMIRSS_BACKUP_DIR="$sb/backups" LUMIRSS_IMAGE_TAG=fix204tag \
+   LUMITEST_RUNNING_BFF_ID="$OLD_BFF" LUMITEST_RUNNING_WEB_ID="$OLD_WEB" \
+   LUMITEST_TAG_ID_BFF="$OLD_BFF" LUMITEST_TAG_ID_WEB="$OLD_WEB" \
+   LUMITEST_PINNED_ID="$OLD_BFF" LUMITEST_SCHEMA= \
+   ./lumirss update >/dev/null 2>&1)
+assert_eq "update tolerates an unreadable schema (best-effort capture)" "0" "$?"
+assert_eq "manifest honestly records the unknown schema as null" "null" \
+  "$(rollback_manifest_field "$sb/backups/.rollback-manifest.json" preUpdateSchemaVersion)"
+rb_out="$(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$unk_log" \
+   LUMIRSS_BACKUP_DIR="$sb/backups" \
+   LUMITEST_RUNNING_BFF_ID="$NEW_BFF" LUMITEST_RUNNING_WEB_ID="$NEW_WEB" \
+   LUMITEST_TAG_ID_BFF="$OLD_BFF" LUMITEST_TAG_ID_WEB="$OLD_WEB" \
+   LUMITEST_PINNED_ID="$OLD_BFF" LUMITEST_SCHEMA= \
+   ./lumirss rollback --yes 2>&1)"
+rc=$?
+assert_eq "rollback over an UNKNOWABLE schema refuses even with --yes" "1" "$rc"
+assert_contains "refusal explains that compatibility cannot be verified" \
+  "cannot be verified" "$rb_out"
+assert_contains "refusal points at restore" "./lumirss restore" "$rb_out"
+if grep -qE "docker compose .* up " "$unk_log"; then
+  bad "unknown-schema rollback still switched images"
+else
+  ok "unknown-schema rollback never ran compose up"
+fi
+# Legacy deployment: no manifest at all (pre-FIX-204) — rollback must keep
+# working off .image-tag.previous, with an honest unverified warning.
+rm -f "$sb/backups/.rollback-manifest.json"
+leg_log="$(mktemp)"
+rb_out="$(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$leg_log" \
+   LUMIRSS_BACKUP_DIR="$sb/backups" \
+   LUMITEST_RUNNING_BFF_ID="$NEW_BFF" LUMITEST_RUNNING_WEB_ID="$NEW_WEB" \
+   LUMITEST_TAG_ID_BFF="$OLD_BFF" LUMITEST_TAG_ID_WEB="$OLD_WEB" \
+   LUMITEST_PINNED_ID="$OLD_BFF" LUMITEST_SCHEMA=137 \
+   ./lumirss rollback 2>&1)"
+rc=$?
+assert_eq "legacy (manifest-less) rollback still works" "0" "$rc"
+assert_contains "legacy rollback warns that the schema cannot be verified" \
+  "predates rollback pinning" "$rb_out"
+assert_contains "legacy rollback uses the tag file" \
+  "rolling back to image tag: fix204tag" "$rb_out"
+grep -qE "docker compose .* up " "$leg_log" \
+  && ok "legacy rollback performed the switch" \
+  || bad "legacy rollback did not run compose up"
+rm -rf "$sb" "$stub_dir" "$bff_log" "$drift_log" "$fwd_log" "$fwd2_log" "$unk_log" "$leg_log"
 
 # ---------------------------------------------------------------------------
 echo

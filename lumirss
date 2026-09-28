@@ -89,7 +89,11 @@ LumiRSS — self-hosted reader lifecycle
                                   file-level tars + MANIFEST.txt
   ./lumirss restore <backup.tar.gz> [--yes]     stop → restore → start → health
   ./lumirss doctor                              PASS/WARN/FAIL diagnostics
-  ./lumirss rollback                            previous images + config
+  ./lumirss rollback [--yes]                     previous images + config,
+                                  schema-gated (FIX-196: refuses/warns before
+                                  switching over a forward-migrated DB) and
+                                  pinned to the image IDs that actually ran
+                                  (FIX-204), not just mutable tags
   ./lumirss export-images [--out DIR]           docker save the pinned images
                                   to a tar + SHA256SUMS (+ release manifest
                                   when present) for air-gapped hosts
@@ -453,18 +457,56 @@ snapshot_for_rollback() {
   # LUMIRSS_ROLLBACK_MANIFEST_FILE 时把前一镜像标签写成 JSON 清单，
   # 供 BFF GET /admin/rollback-readiness 只读透传（无秘密；写失败仅
   # 告警，绝不影响部署/回滚本身）。
+  #
+  # FIX-204: a mutable TAG is not what ran — a registry tag can be re-pushed,
+  # so at rollback time it may resolve to a different image. The RUNNING
+  # containers' image IDs are ground truth (the same probe verify_deployment
+  # trusts), captured here BEFORE `up` replaces the containers. FIX-196: the
+  # control-DB schema version at snapshot time is recorded next to them so
+  # cmd_rollback can compare it against the CURRENT schema BEFORE switching
+  # back. Every capture is best-effort: a failed probe records null and the
+  # rollback gate degrades honestly — manifest writes never affect the
+  # update/deploy itself.
+  local id_bff id_web schema_versions
+  id_bff="$(docker_cmd inspect --format '{{.Image}}' lumirss-bff 2>/dev/null || true)"
+  id_web="$(docker_cmd inspect --format '{{.Image}}' lumirss-web 2>/dev/null || true)"
+  printf '%s' "$id_bff" | grep -qE '^sha256:[0-9a-f]{6,64}$' || id_bff=""
+  printf '%s' "$id_web" | grep -qE '^sha256:[0-9a-f]{6,64}$' || id_web=""
+  schema_versions="$(control_schema_versions 2>/dev/null || true)"
+  write_rollback_manifest "$BACKUP_DIR/.rollback-manifest.json"
   if [[ -n "${LUMIRSS_ROLLBACK_MANIFEST_FILE:-}" ]]; then
-    ROLLBACK_MANIFEST_PATH="$LUMIRSS_ROLLBACK_MANIFEST_FILE" \
-    ROLLBACK_MANIFEST_TAG="${IMAGE_TAG:-latest}" \
-    python3 - <<-'PY' || warn "could not write rollback manifest (readiness check will report absent)"
-import json, os, tempfile
+    write_rollback_manifest "$LUMIRSS_ROLLBACK_MANIFEST_FILE"
+  fi
+}
+
+write_rollback_manifest() { # write_rollback_manifest DEST (values from caller scope)
+  ROLLBACK_MANIFEST_PATH="$1" \
+  ROLLBACK_MANIFEST_TAG="${IMAGE_TAG:-latest}" \
+  ROLLBACK_MANIFEST_ID_BFF="${id_bff:-}" ROLLBACK_MANIFEST_ID_WEB="${id_web:-}" \
+  ROLLBACK_MANIFEST_SCHEMA_VERSIONS="${schema_versions:-}" \
+  ROLLBACK_MANIFEST_RUN_ID="${LUMIRSS_DEPLOY_RUN_ID:-}" \
+  python3 - <<-'PY' || warn "could not write rollback manifest (rollback falls back to tags; readiness check reports absent)"
+import datetime, json, os, tempfile
+
 path = os.environ["ROLLBACK_MANIFEST_PATH"]
+versions = [
+    v for v in os.environ.get("ROLLBACK_MANIFEST_SCHEMA_VERSIONS", "").split(";")
+    if v.strip().isdigit()
+]
 document = {
     "schema": "lumirss-rollback-manifest/v1",
+    # Legacy field: the BFF readiness endpoint and operator scripts read it.
     "previousImageTag": os.environ["ROLLBACK_MANIFEST_TAG"],
-    "writtenAt": __import__("datetime").datetime.now(
-        __import__("datetime").timezone.utc
-    ).isoformat(timespec="seconds"),
+    # FIX-204: image IDs of the containers RUNNING at snapshot time — the
+    # pinned ground truth that survives mutable-tag drift. Null = unknown.
+    "previousImageIdBff": os.environ.get("ROLLBACK_MANIFEST_ID_BFF") or None,
+    "previousImageIdWeb": os.environ.get("ROLLBACK_MANIFEST_ID_WEB") or None,
+    # FIX-196: control-DB schema version BEFORE this run switched images.
+    "preUpdateSchemaVersion": int(versions[-1]) if versions else None,
+    "runId": os.environ.get("ROLLBACK_MANIFEST_RUN_ID") or None,
+    "writtenAt": datetime.datetime.now(datetime.timezone.utc).isoformat(
+        timespec="seconds"
+    ),
 }
 parent = os.path.dirname(path) or "."
 os.makedirs(parent, exist_ok=True)
@@ -478,7 +520,52 @@ finally:
     if os.path.exists(tmp):
         os.unlink(tmp)
 PY
+}
+
+# FIX-196: the control DB's applied migration versions, ascending "1;2;3"
+# (max = current schema version). The BFF container is asked first (the same
+# channel doctor uses); when it cannot answer — stack down or crash-looping,
+# the exact situations a rollback faces — the control DB is read straight off
+# the lumi-data volume through a one-off READ-ONLY container (the same
+# pattern as the FIX-192 snapshot pass). Both channels are read-only.
+# Failing is honest: callers record "unknown" and the rollback gate refuses
+# rather than guesses.
+LUMI_SCHEMA_PROBE='
+import os, sqlite3
+
+db = sqlite3.connect(
+    "file:" + os.environ["LUMI_SCHEMA_DB_PATH"] + "?mode=ro", uri=True, timeout=10.0
+)
+try:
+    rows = db.execute(
+        "SELECT version FROM schema_migrations ORDER BY version"
+    ).fetchall()
+finally:
+    db.close()
+print(";".join(str(r[0]) for r in rows))
+'
+
+control_schema_versions() { # prints "1;2;3" ascending; rc!=0 = unknowable
+  local out
+  if out="$(DC_D exec -e LUMI_SCHEMA_DB_PATH=/data/lumi.sqlite \
+      bff python3 -c "$LUMI_SCHEMA_PROBE" 2>/dev/null)" \
+      && [[ "$out" =~ ^[0-9]+(;[0-9]+)*$ ]]; then
+    printf '%s\n' "$out"
+    return 0
   fi
+  local proj img
+  proj="$(DC_D config --format json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("name",""))' 2>/dev/null || true)"
+  img="$(backup_image)"
+  if [[ -n "$proj" && -n "$img" ]] \
+      && out="$(printf '%s' "$LUMI_SCHEMA_PROBE" | docker_cmd run --rm -i \
+            -e LUMI_SCHEMA_DB_PATH=/src/lumi.sqlite \
+            -v "${proj}_lumi-data:/src:ro" \
+            --entrypoint python3 "$img" - 2>/dev/null)" \
+      && [[ "$out" =~ ^[0-9]+(;[0-9]+)*$ ]]; then
+    printf '%s\n' "$out"
+    return 0
+  fi
+  return 1
 }
 
 # ---------------------------------------------------------------------------
@@ -1104,12 +1191,118 @@ print(n)" 2>/dev/null || echo 0)"
   [[ $fail -eq 0 ]] && log "doctor: no failures." || { err "doctor found failures."; exit 1; }
 }
 
-cmd_rollback() {
+rollback_manifest_field() { # rollback_manifest_field FILE KEY -> string/int value or ""
+  python3 - "$1" "$2" <<-'PY' 2>/dev/null || true
+import json, sys
+
+try:
+    data = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    raise SystemExit(1)
+value = data.get(sys.argv[2])
+if isinstance(value, str):
+    print(value.strip())
+elif isinstance(value, int) and not isinstance(value, bool):
+    print(value)
+PY
+}
+
+cmd_rollback() { # cmd_rollback [--yes]
   require_env_file
-  local prev_tag prev_env
+  local yes=""; [[ "${1:-}" == "--yes" ]] && yes=1
+  local manifest="$BACKUP_DIR/.rollback-manifest.json"
+  local prev_tag pre_schema="" id_bff="" id_web="" value
   prev_tag="$(cat "$BACKUP_DIR/.image-tag.previous" 2>/dev/null || echo latest)"
-  prev_env="$BACKUP_DIR/.env.prod.previous"
+  if [[ -f "$manifest" ]]; then
+    value="$(rollback_manifest_field "$manifest" previousImageTag)"
+    [[ -n "$value" ]] && prev_tag="$value"
+    value="$(rollback_manifest_field "$manifest" previousImageIdBff)"
+    printf '%s' "$value" | grep -qE '^sha256:[0-9a-f]{6,64}$' && id_bff="$value"
+    value="$(rollback_manifest_field "$manifest" previousImageIdWeb)"
+    printf '%s' "$value" | grep -qE '^sha256:[0-9a-f]{6,64}$' && id_web="$value"
+    value="$(rollback_manifest_field "$manifest" preUpdateSchemaVersion)"
+    printf '%s' "$value" | grep -qE '^[0-9]+$' && pre_schema="$value"
+  fi
+  local prev_env="$BACKUP_DIR/.env.prod.previous"
   if [[ -f "$prev_env" ]]; then cp -f "$prev_env" "$ENV_FILE"; fi
+
+  # FIX-196 schema gate — decided BEFORE anything is switched. Rolling an
+  # OLD image over a database that a NEWER image forward-migrated fails only
+  # at wait_health AFTER the switch (old code + newer schema). The repo's
+  # migrations are forward-only and several rewrite tables, so there is no
+  # machine-readable "additive only" marker to trust: a moved-forward schema
+  # is disclosed in full (exact versions) and requires explicit --yes, and
+  # an UNKNOWABLE schema refuses instead of guessing.
+  if [[ -f "$manifest" ]]; then
+    if [[ -z "$pre_schema" ]]; then
+      if [[ -z "$id_bff" && -z "$id_web" ]]; then
+        # A manifest with no recorded facts at all is a first-deploy
+        # snapshot (nothing ran when it was written) — nothing to verify.
+        warn "rollback manifest carries no pinned images or schema version (first-deploy snapshot) — rolling back by tag, compatibility unverified."
+      else
+        err "rollback refused: the rollback manifest records a running stack but NO pre-update schema version, so schema compatibility cannot be verified."
+        err "Restore a pre-update backup instead: ./lumirss restore <backup.tar.gz> --yes  (backups in $BACKUP_DIR)."
+        exit 1
+      fi
+    else
+      local versions cur=""
+      if versions="$(control_schema_versions)"; then
+        cur="${versions##*;}"
+        if ((cur > pre_schema)); then
+          local gap="" v
+          for v in ${versions//;/ }; do
+            ((v > pre_schema)) && gap="${gap:+$gap }$v"
+          done
+          warn "DATA COMPATIBILITY: the control DB was forward-migrated after this rollback snapshot (schema $pre_schema → $cur; migrations applied since: ${gap:-unknown})."
+          warn "LumiRSS migrations are forward-only and some rewrite tables — the OLD image cannot undo them, may not understand newer data, and rows written since the update may be invisible to it."
+          if [[ -z "$yes" ]]; then
+            if [[ -t 0 ]]; then
+              read -r -p "Roll back onto this newer schema anyway? Type ROLLBACK to continue: " ans
+              [[ "$ans" == "ROLLBACK" ]] || { log "aborted — the stack was not touched."; return 0; }
+            else
+              err "refusing schema-forward rollback without --yes (non-interactive)."
+              err "Safer alternative: ./lumirss restore <backup.tar.gz> --yes  (backups in $BACKUP_DIR)."
+              exit 1
+            fi
+          fi
+        elif ((cur < pre_schema)); then
+          warn "control DB schema ($cur) is OLDER than the snapshot's pre-update schema ($pre_schema) — a restore ran since the update; the previous image will re-apply its own migrations at startup."
+        else
+          log "schema gate: control DB schema unchanged since the snapshot ($cur) — clean rollback allowed."
+        fi
+      else
+        err "rollback refused: the current control-DB schema version could not be read (BFF unreachable and the volume probe failed) — refusing to switch over an unknown schema."
+        err "Restore a pre-update backup instead: ./lumirss restore <backup.tar.gz> --yes"
+        exit 1
+      fi
+    fi
+  else
+    warn "no rollback manifest ($manifest) — this deployment predates rollback pinning; rolling back by tag only, schema compatibility CANNOT be verified."
+    warn "If the newer version migrated the database, prefer ./lumirss restore of a pre-update backup."
+  fi
+
+  # FIX-204 pinned rollback: prefer the exact image IDs recorded at update
+  # time (what actually ran). When the tag has drifted (re-pushed registry
+  # tag / stale local tag), retag the pinned image over the expected refs so
+  # `compose up` recreates with the pinned bytes, not whatever the tag now
+  # resolves to. A missing/pruned pinned image degrades honestly to the tag.
+  local svc pinned_id ref local_id
+  for svc in bff web; do
+    pinned_id="$id_bff"; [[ "$svc" == "web" ]] && pinned_id="$id_web"
+    [[ -n "$pinned_id" ]] || continue
+    ref="ghcr.io/paidethon/lumirss/lumirss-$svc:$prev_tag"
+    local_id="$(docker_cmd image inspect --format '{{.Id}}' "$ref" 2>/dev/null || true)"
+    if [[ "$local_id" == "$pinned_id" ]]; then
+      log "rollback image check: $ref resolves to the pinned image."
+    elif docker_cmd image inspect --format '{{.Id}}' "$pinned_id" >/dev/null 2>&1; then
+      [[ -n "$local_id" ]] \
+        && warn "tag drift: $ref resolves to $local_id, not the pinned image — retagging the pinned image (what actually ran)."
+      docker_cmd tag "$pinned_id" "$ref" \
+        || warn "could not retag the pinned image for $svc — falling back to whatever '$ref' resolves to."
+    else
+      warn "pinned image $pinned_id ($svc) no longer exists locally — falling back to tag $ref."
+    fi
+  done
   log "rolling back to image tag: $prev_tag (config restored from previous snapshot)"
   LUMIRSS_IMAGE_TAG="$prev_tag" DC_D up -d --remove-orphans
   wait_health 180 && log "rollback complete (tag: $prev_tag)." || { err "rollback health check failed."; exit 1; }
@@ -1425,7 +1618,7 @@ main() {
     backup)   cmd_backup;;
     restore)  cmd_restore "${extra[@]}";;
     doctor)   cmd_doctor;;
-    rollback) cmd_rollback;;
+    rollback) cmd_rollback "${extra[@]}";;
     caddy-config) cmd_caddy_config;;
     freshrss-init) cmd_freshrss_init;;
     set-password) cmd_set_password;;
