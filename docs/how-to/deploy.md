@@ -60,7 +60,10 @@ LUMIRSS_BUILD_COMMIT="$(git rev-parse HEAD)" \
 CI 每次发布把 image digest 写进 `release-manifest.json`（version、git
 SHA、双镜像 digest、生成时间）+ `SHA256SUMS`：始终上传为 workflow
 artifact，tag 构建时若对应 GitHub Release 已存在则附加到 Release
-（工作流本身不创建 Release）。
+（工作流本身不创建 Release）。附加前工作流会先核验推广身份
+（tag commit == 构建 SHA == 镜像 digest），并把 `SHA256SUMS` 按
+Release 实际附件全集重建——离线镜像归档也在校验项内
+（FIX-377/378）。
 
 ### 离线（air-gapped）升级
 

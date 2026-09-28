@@ -165,6 +165,9 @@ jobs:
             "note": "Unsigned advisory manifest (plain checksums, no signing infra). Verify with SHA256SUMS; pin LUMIRSS_IMAGE_TAG=$version in .env.prod."
           }
           JSON
+          # Artifact-scope sums: covers exactly this artifact's own files.
+          # The tag-release SHA256SUMS is rebuilt over the FULL asset set in
+          # the attach step below (FIX-377).
           sha256sum release-manifest.json > SHA256SUMS
           cat release-manifest.json
 
@@ -177,9 +180,34 @@ jobs:
             SHA256SUMS
           if-no-files-found: error
 
+      # FIX-378: promotion identity — the manifest attached to the tag's
+      # release must describe images built from THE TAG'S commit with the
+      # exact digests THIS run pushed. A rebuilt candidate is never silently
+      # promoted as the same package: tag commit == tested SHA == manifest
+      # git_sha, and both image references are digest-pinned to this run.
+      - name: Verify promotion identity (tag commit == build SHA == digests)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          tag_commit="$(git rev-parse HEAD)"
+          python3 scripts/verify-release-promotion.py \
+            --manifest release-manifest.json \
+            --tag-commit "$tag_commit" \
+            --expected-sha "${{ steps.tested.outputs.sha }}" \
+            --expected-version "${{ steps.tags.outputs.version }}" \
+            --bff-digest "${{ steps.bff.outputs.digest }}" \
+            --web-digest "${{ steps.web.outputs.digest }}"
+
       # Attach the manifest to the GitHub Release matching the tag, but
       # only when a release already exists (e.g. cut by the maintainer):
       # this workflow deliberately never creates releases.
+      # FIX-377: a release can carry more than the manifest — notably the
+      # offline image archive ('./lumirss export-images' tar) the maintainer
+      # attached. The old flow clobbered SHA256SUMS with a manifest-only
+      # file, silently stripping the archive's checksum entry. Now: download
+      # the release's existing assets into the checksum set, then REBUILD
+      # SHA256SUMS over the actual final asset set (scripts/release-sums.sh)
+      # and clobber-upload only the two regenerated files.
       - name: Attach manifest to the tag's GitHub Release (when one exists)
         if: startsWith(github.ref, 'refs/tags/v')
         env:
@@ -191,6 +219,32 @@ jobs:
             echo "no existing release for $tag — manifest stays a workflow artifact"
             exit 0
           fi
-          gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber \
-            release-manifest.json SHA256SUMS
-          echo "manifest attached to release $tag"
+          rm -rf release-assets && mkdir release-assets
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir release-assets
+          rm -f release-assets/release-manifest.json release-assets/SHA256SUMS
+          cp release-manifest.json release-assets/
+          scripts/release-sums.sh release-assets
+          ( cd release-assets && gh release upload "$tag" --repo "$GITHUB_REPOSITORY" \
+              --clobber release-manifest.json SHA256SUMS )
+          echo "manifest attached to release $tag; SHA256SUMS covers every release asset"
+
+      # FIX-379: a half-finished release must not end green. Before the
+      # workflow concludes, assert against SERVER truth that every REQUIRED
+      # asset exists with content, and that SHA256SUMS names exactly the
+      # asset set (every official attachment has a checksum entry).
+      - name: Assert required release assets exist
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF#refs/tags/}"
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "no release for $tag — artifact path (guarded by if-no-files-found: error)"
+            exit 0
+          fi
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets > release-assets.json
+          python3 scripts/check-release-assets.py \
+            --assets-json release-assets.json \
+            --sums release-assets/SHA256SUMS \
+            --required release-manifest.json SHA256SUMS
