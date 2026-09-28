@@ -84,7 +84,7 @@ def _closest_candidate(candidates: list[tuple[str, str]], from_rel: str) -> str:
 
     def sort_key(item: tuple[str, str]) -> tuple[int, str]:
         shared = 0
-        for mine, theirs in zip(from_parts, _dir_depth(item[0])):
+        for mine, theirs in zip(from_parts, _dir_depth(item[0]), strict=False):
             if mine != theirs:
                 break
             shared += 1

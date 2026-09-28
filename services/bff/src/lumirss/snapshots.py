@@ -134,11 +134,9 @@ def _filter_snapshot_attr(
         return None  # 事件处理器无条件拒绝
     if lowered not in _FIX328_URL_ATTRS:
         return value if value is not None else ""
-    # <link> 的样式表内联（data:text/css，N124 资源模型合法成分）按
-    # src 族处理；data: 无脚本执行语义，外链由读出端 CSP 阻断。
-    if tag == "link":
-        allowed = _FIX328_SRC_ALLOWED_SCHEMES
-    elif lowered in _FIX328_SRC_LIKE_ATTRS:
+    # <link> 的样式表内联（data:text/css，N124 资源模型合法成分）与
+    # src 族同规则；data: 无脚本执行语义，外链由读出端 CSP 阻断。
+    if tag == "link" or lowered in _FIX328_SRC_LIKE_ATTRS:
         allowed = _FIX328_SRC_ALLOWED_SCHEMES
     else:
         allowed = _FIX328_ALLOWED_SCHEMES
