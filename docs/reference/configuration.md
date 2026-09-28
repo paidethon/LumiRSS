@@ -67,8 +67,8 @@
 | `LUMIRSS_RSSHUB_MEM_LIMIT` / `_RESERVATION` | `1g` / `256m` | RSSHub 容器（low-memory 预设 448m/192m） |
 | `LUMIRSS_RSSHUB_MEMORY_MAX` | `256`（MB） | RSSHub 进程内 memory cache 上限（与固定镜像默认一致；low-memory 预设 64——小规模自托管足够） |
 | `LUMIRSS_RSSHUB_NODE_OPTIONS` | （空 = V8 默认） | RSSHub Node 堆上限（如 `--max-old-space-size=256`）。**容器 limit 必须明显高于 V8 堆**，给 native memory 留余量（low-memory 预设 = 256 堆 + 448 容器） |
-| `LUMIRSS_BACKUP_DIR` | `./backups` | `./lumirss backup` 输出目录 |
-| `LUMIRSS_BACKUP_IMAGE` | `alpine:3.20` | 卷备份用的临时容器镜像 |
+| `LUMIRSS_BACKUP_DIR` | `./backups` | `./lumirss backup` 输出目录（每次备份一个 `<stamp>/` 子目录 + `LATEST` 指针，见 [../how-to/backup-restore.md](../how-to/backup-restore.md)） |
+| `LUMIRSS_BACKUP_IMAGE` | （空 = 栈自身的 BFF 镜像） | `./lumirss backup` / `restore` 临时容器镜像的覆盖项。默认解析 compose 里的 BFF 镜像（python3 + tar 内置，离线主机零额外拉取；解析失败回退 `ghcr.io/paidethon/lumirss/lumirss-bff:$LUMIRSS_IMAGE_TAG`）；覆盖镜像**必须提供 python3 + tar**，缺失时备份如实失败——活库绝不裸 tar |
 | `LUMIRSS_DOMAIN` / `LUMIRSS_AUTH_USER` / `LUMIRSS_AUTH_HASH` / `LUMIRSS_AUTH_PASSWORD` / `LUMIRSS_UPSTREAM_PORT` | — | 仅 `./lumirss deploy` 的非交互覆盖（环境变量，非文件键） |
 
 ## 开发栈（services/bff/.env）
