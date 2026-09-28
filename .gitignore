@@ -50,6 +50,10 @@ coverage/
 
 # IDE agent session state (Qoder/Mimosa)
 .mimosa/
+.serena/
+
+# Local task working files (tool prep, sanitized outputs) — never committed
+.work/
 
 # VitePress docs site build/cache (package.json at root is docs tooling only)
 docs/.vitepress/dist/
