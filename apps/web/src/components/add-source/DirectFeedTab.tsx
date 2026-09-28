@@ -5,9 +5,15 @@
  * 选择真实分类 → 确认 → FreshRSS subscribe → invalidate → 列表出现新 feed。
  *
  * 边界：只接受直接 RSS/Atom 地址；普通网页地址本地诚实提示「切换到
- * 网站标签页」（0014 起不再属于后续 milestone——发现能力就在隔壁 tab）。 */
+ * 网站标签页」（0014 起不再属于后续 milestone——发现能力就在隔壁 tab）。
+ *
+ * FIX-283：预览结果绑定发起时的输入版本——用户在请求在途改了 URL，
+ * 晚到的旧结果直接丢弃，不覆盖新输入的状态（也不会对着 B 的输入订阅
+ * A 的源）。
+ * FIX-290：单条 URL 框粘贴多行内容时浏览器会静默吞掉换行——这里拦截
+ * 粘贴，保留第一行并诚实报出格式问题（多行地址走批量导入入口）。 */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AlertCircle, Loader2 } from 'lucide-react'
 import { useFeedPreviewMutation, useSubscribeMutation } from '../../api/queries'
 import type { FeedPreviewMetadata } from '../../api/types'
@@ -27,6 +33,10 @@ export interface AddSourceTabProps {
 
 export function DirectFeedTab({ onClose, registerGuard }: AddSourceTabProps) {
   const [url, setUrl] = useState('')
+  // FIX-283：输入的实时镜像（mutation onSuccess 闭包里读不到新 state）
+  const urlRef = useRef('')
+  // FIX-290：多行粘贴的格式提示（单行粘贴不出现）
+  const [pasteHint, setPasteHint] = useState<string | null>(null)
   const [localHint, setLocalHint] = useState<string | null>(null)
   const [preview, setPreview] = useState<FeedPreviewMetadata | null>(null)
   const [subscribed, setSubscribed] = useState(false)
@@ -45,6 +55,29 @@ export function DirectFeedTab({ onClose, registerGuard }: AddSourceTabProps) {
     return () => registerGuard(null)
   }, [pending, registerGuard])
 
+  /** FIX-290：粘贴多行 → 只保留第一个非空行 + 诚实提示；单行走默认行为。 */
+  function handleUrlPaste(event: React.ClipboardEvent<HTMLInputElement>) {
+    const raw = event.clipboardData.getData('text')
+    const lines = raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line !== '')
+    if (lines.length <= 1) return
+    event.preventDefault()
+    const first = lines[0] ?? ''
+    urlRef.current = first
+    setUrl(first)
+    setPasteHint(
+      `粘贴了 ${lines.length} 行内容：单条订阅只保留第一行；多个地址请使用批量导入。`,
+    )
+  }
+
+  function handleUrlChange(next: string) {
+    urlRef.current = next
+    setUrl(next)
+    if (pasteHint !== null) setPasteHint(null)
+  }
+
   function startPreview() {
     const value = url.trim()
     if (!value) return
@@ -56,7 +89,10 @@ export function DirectFeedTab({ onClose, registerGuard }: AddSourceTabProps) {
     setLocalHint(null)
     setPreview(null)
     previewMutation.mutate(value, {
-      onSuccess: (metadata) => setPreview(metadata),
+      onSuccess: (metadata) => {
+        // FIX-283：结果只作用于发起时的输入版本——晚到的旧结果不覆盖新输入。
+        if (urlRef.current.trim() === value) setPreview(metadata)
+      },
     })
   }
 
@@ -80,9 +116,14 @@ export function DirectFeedTab({ onClose, registerGuard }: AddSourceTabProps) {
           spellCheck={false}
           value={url}
           readOnly={preview !== null || subscribed}
-          onChange={(e) => setUrl(e.target.value)}
+          onChange={(e) => handleUrlChange(e.target.value)}
+          onPaste={handleUrlPaste}
           placeholder="https://example.com/feed.xml"
-          aria-describedby={localHint !== null ? 'add-subscription-hint' : undefined}
+          aria-describedby={
+            [pasteHint !== null ? 'add-subscription-paste-hint' : null, localHint !== null ? 'add-subscription-hint' : null]
+              .filter(Boolean)
+              .join(' ') || undefined
+          }
           className={cx(
             'min-h-11 w-full rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)]',
             'bg-[var(--lumi-surface)] px-3 py-2.5 text-sm text-[var(--lumi-text-primary)]',
@@ -91,6 +132,15 @@ export function DirectFeedTab({ onClose, registerGuard }: AddSourceTabProps) {
             'read-only:opacity-80',
           )}
         />
+        {pasteHint !== null && (
+          <p
+            id="add-subscription-paste-hint"
+            role="status"
+            className="text-xs text-[var(--lumi-text-secondary)]"
+          >
+            {pasteHint}
+          </p>
+        )}
         {localHint !== null && (
           <p
             id="add-subscription-hint"
