@@ -81,6 +81,14 @@ async def entries(
     降序重排（服务端执行，query param 真实生效）；上游 continuation
     分页语义不变（页边界仍由 FreshRSS 决定，诚实边界）。同时为页内
     条目附带 timeCredibility（投影摄取时分类的发布时间异常）。
+
+    FIX-239 显式排序规则（timeline ordering contract）：默认时间线按
+    **上游发表时间**排序（FreshRSS 域内事实，Lumi 不改写）；声明为远
+    未来的条目因此可能停留在时间线顶部——这类条目由投影摄取时标记
+    （timeCredibility=future，N034），且 ``sort=received`` 提供按接收
+    时间排序的显式逃生通道（接收序与声明日期无关，未来日期不能霸占
+    排序）。转换型来源（API Sources）在生成 Atom 时直接封顶远未来声
+    明日期（api_sources._entry_timing），不让未来条目进入上游时间线。
     """
     if sourceType is not None and sourceType != "rss":
         raise InvalidEntryReference("sourceType must be 'rss' (only source type today).")

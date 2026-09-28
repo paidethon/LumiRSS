@@ -196,6 +196,24 @@ class SourceRefreshLogStore:
                     break
         return refs[:_RECOVERY_REFS_LIMIT]
 
+    # -- generation cleanup (FIX-237) ----------------------------------------
+
+    async def forget_feed(self, feed_url: str) -> None:
+        """删除该来源的整个检查代次：source_refresh_log 全部历史 +
+        feed_recovery 全部窗口（含已消费）。
+
+        只在退订成功后调用（subscriptions 路由的级联，与备注级联同一
+        先例）：同 URL 重新订阅是**新代次**，绝不继承上一代的失败史/
+        断更恢复窗（否则状态页会呈现从未发生过的 pending）。这是删除，
+        不是新的检查记录——负向契约不变：本模块仍没有任何调度器。"""
+        await self._db.migrate()
+        await self._db.execute(
+            "DELETE FROM source_refresh_log WHERE feed_url = ?", (feed_url,)
+        )
+        await self._db.execute(
+            "DELETE FROM feed_recovery WHERE feed_url = ?", (feed_url,)
+        )
+
     # -- reads ---------------------------------------------------------------
 
     async def status_snapshot(self, *, now: str | None = None) -> dict[str, Any]:

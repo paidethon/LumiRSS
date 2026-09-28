@@ -192,18 +192,43 @@ class ApiSourceStore:
 
     async def mark_success(
         self, source_uuid: str, etag: str, atom_body: str, feed_updated: str
-    ) -> None:
-        """Persist the last-known-good Atom atomically with its status."""
+    ) -> str:
+        """Persist the last-known-good Atom atomically with its status.
+
+        Returns the persisted ``last_success_at`` stamp — the run's own
+        generation witness, so post-success flags in the same run (N130
+        fallback_used) can pass :meth:`mark_error`'s generation guard."""
+        stamp = utc_now()
         await self._db.execute(
             "UPDATE api_sources SET last_status = 'ok', etag = ?, atom_body = ?, feed_updated = ?, last_success_at = ?, last_error = NULL WHERE uuid = ?",
-            (etag, atom_body, feed_updated, utc_now(), source_uuid),
+            (etag, atom_body, feed_updated, stamp, source_uuid),
         )
+        return stamp
 
-    async def mark_error(self, source_uuid: str, status: str, error: str) -> None:
-        await self._db.execute(
-            "UPDATE api_sources SET last_status = ?, last_error = ? WHERE uuid = ?",
-            (status, error[:500], source_uuid),
+    async def mark_error(
+        self,
+        source_uuid: str,
+        status: str,
+        error: str,
+        *,
+        success_witness: str | None,
+    ) -> bool:
+        """Record a run failure unless a NEWER success already landed
+        (FIX-246).
+
+        ``success_witness`` is the ``last_success_at`` the run observed at
+        start (for post-success flags: the stamp :meth:`mark_success` just
+        returned). The conditional UPDATE fires only while the column
+        still holds that exact value — a slow failing run that finishes
+        after a fresher success must not flip the source's latest honest
+        status back to error. Returns True when the failure was recorded.
+        ``last_success_at`` itself never regresses (only mark_success
+        writes it, forward)."""
+        cursor = await self._db.execute(
+            "UPDATE api_sources SET last_status = ?, last_error = ? WHERE uuid = ? AND last_success_at IS ?",
+            (status, error[:500], source_uuid, success_witness),
         )
+        return cursor == 1
 
     async def _count(self) -> int:
         row = await self._db.fetch_one("SELECT COUNT(*) AS n FROM api_sources")
