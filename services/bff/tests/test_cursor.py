@@ -41,17 +41,21 @@ def test_cursor_is_deterministic_and_url_safe():
 
 
 def test_payload_is_compact_json_with_expected_fields():
-    cursor = encode_cursor("12345", "unread", "https://example.com/feed.xml")
+    cursor = encode_cursor(
+        "12345", "unread", "https://example.com/feed.xml", account="u-test"
+    )
     raw = cursor[len("c1."):]
     padded = raw + "=" * (-len(raw) % 4)
     payload = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
-    # 0011：新增 st/cat scope 字段（None 时显式携带，保证形状稳定）
+    # 0011：新增 st/cat scope 字段；FIX-363：a = 发放账户绑定（None 时
+    # 显式携带，保证形状稳定）
     assert payload == {
         "c": "12345",
         "v": "unread",
         "f": "https://example.com/feed.xml",
         "st": None,
         "cat": None,
+        "a": "u-test",
     }
 
 

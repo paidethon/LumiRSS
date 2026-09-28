@@ -38,6 +38,7 @@ from lumirss.annotation_store import (
     AnnotationInvalid,
     AnnotationStore,
 )
+from lumirss.cursor import scope_fingerprint
 from lumirss.models import (
     AnnotationColorLabelList,
     AnnotationColorLabelPut,
@@ -54,6 +55,7 @@ from lumirss.models import (
     AnnotationRepairResult,
     AnnotationView,
 )
+from lumirss.user_scope import current_user_id
 
 router = APIRouter()
 
@@ -122,13 +124,19 @@ async def list_annotations(
     if entryRef is not None:
         items = await store.list_for_entry(entryRef, color=color)
         return JSONResponse({"items": items, "nextCursor": None})
+    # FIX-363: 续页 token 绑定（账户 + color + q 过滤）指纹——换个筛选
+    # 重放直接 422，不把另一份结果集静默拼接进当前列表（旧的两段式
+    # token 无绑定 → 一并拒绝，失效即重翻第一页）。
+    cursor_scope = scope_fingerprint(current_user_id(), color, q)
     after = None
     if cursor:
-        parts = cursor.split("|", 1)
-        if len(parts) != 2:
+        parts = cursor.split("|", 2)
+        if len(parts) != 3 or parts[0] != cursor_scope:
             return _invalid_response("cursor 无效。")
-        after = (parts[0], parts[1])
+        after = (parts[1], parts[2])
     items, next_cursor = await store.search(q, after, color=color)
+    if next_cursor is not None:
+        next_cursor = f"{cursor_scope}|{next_cursor}"
     return JSONResponse({"items": items, "nextCursor": next_cursor})
 
 

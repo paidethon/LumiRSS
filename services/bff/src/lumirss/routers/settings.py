@@ -10,7 +10,7 @@ from lumirss.app_settings import (
     InvalidAppSettings,
     PortableSettingsPatch,
 )
-from lumirss.deps import _get_app_settings_store
+from lumirss.deps import StrictId, _get_app_settings_store
 from lumirss.models import (
     AppSettingsView,
     SettingsHistoryEntry,
@@ -150,7 +150,7 @@ async def get_settings_history(request: Request, limit: int = 10) -> SettingsHis
 
 @router.post("/api/v1/settings/history/{history_id}/revert", response_model=SettingsRevertResult)
 async def revert_settings_history(
-    history_id: int, request: Request
+    history_id: StrictId, request: Request
 ) -> SettingsRevertResult:
     """F33：回退一次历史变更。
 

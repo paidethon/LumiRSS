@@ -27,6 +27,7 @@ from fastapi.responses import JSONResponse
 
 from lumirss.api_sources import atom_base
 from lumirss.atom_render import AtomEntry, newest_rfc3339, render_feed
+from lumirss.deps import StrictId
 from lumirss.mail_bridge import (
     MailBridgeInvalid,
     MailBridgeNotFound,
@@ -878,7 +879,7 @@ async def create_mail_rule(list_uuid: str, request: Request) -> Response:
 
 
 @router.patch("/api/v1/mail/rules/{rule_id}")
-async def patch_mail_rule(rule_id: int, request: Request) -> Response:
+async def patch_mail_rule(rule_id: StrictId, request: Request) -> Response:
     import json as _json
 
     try:
@@ -909,7 +910,7 @@ async def patch_mail_rule(rule_id: int, request: Request) -> Response:
 
 
 @router.post("/api/v1/mail/rules/{rule_id}/move")
-async def move_mail_rule(rule_id: int, request: Request, direction: str = "up") -> Response:
+async def move_mail_rule(rule_id: StrictId, request: Request, direction: str = "up") -> Response:
     if direction not in ("up", "down"):
         return JSONResponse(
             status_code=422,
@@ -925,7 +926,7 @@ async def move_mail_rule(rule_id: int, request: Request, direction: str = "up") 
 
 
 @router.delete("/api/v1/mail/rules/{rule_id}", status_code=204)
-async def delete_mail_rule(rule_id: int, request: Request) -> Response:
+async def delete_mail_rule(rule_id: StrictId, request: Request) -> Response:
     deleted = await _rule_store(request).delete_rule(rule_id)
     if not deleted:
         return JSONResponse(

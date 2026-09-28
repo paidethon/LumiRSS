@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 
 from lumirss.api_sources import atom_base
 from lumirss.atom_render import AtomEntry, render_feed
+from lumirss.deps import StrictId
 from lumirss.gpt_digest import (
     DigestMaterialEmpty,
     DigestOutputInvalid,
@@ -107,7 +108,7 @@ async def create_gpt_digest_config(
 
 @router.put("/api/v1/gpt-digest/configs/{config_id}", response_model=GptDigestConfig)
 async def update_gpt_digest_config(
-    config_id: int, payload: GptDigestConfigUpdate, request: Request
+    config_id: StrictId, payload: GptDigestConfigUpdate, request: Request
 ) -> GptDigestConfig:
     config = await _config_store(request).update_config(
         config_id, payload.model_dump(exclude_none=True)
@@ -121,7 +122,7 @@ async def update_gpt_digest_config(
 
 
 @router.delete("/api/v1/gpt-digest/configs/{config_id}", status_code=204)
-async def delete_gpt_digest_config(config_id: int, request: Request) -> Response:
+async def delete_gpt_digest_config(config_id: StrictId, request: Request) -> Response:
     deleted = await _config_store(request).delete_config(config_id)
     if not deleted:
         return JSONResponse(
@@ -137,7 +138,7 @@ async def delete_gpt_digest_config(config_id: int, request: Request) -> Response
 
 
 @router.get("/api/v1/gpt-digest/configs/{config_id}/feed", response_model=GptDigestFeedInfo)
-async def get_config_feed(config_id: int, request: Request) -> GptDigestFeedInfo:
+async def get_config_feed(config_id: StrictId, request: Request) -> GptDigestFeedInfo:
     config = await _config_store(request).get_config(config_id)
     if config is None:
         return JSONResponse(
@@ -157,7 +158,7 @@ async def get_config_feed(config_id: int, request: Request) -> GptDigestFeedInfo
     "/api/v1/gpt-digest/configs/{config_id}/preview", response_model=GptDigestPreview
 )
 async def preview_config_digest(
-    config_id: int,
+    config_id: StrictId,
     request: Request,
     put_back: Annotated[list[str] | None, Query(alias="putBack")] = None,
 ) -> GptDigestPreview:
@@ -185,7 +186,7 @@ async def preview_config_digest(
 
 @router.get("/api/v1/gpt-digest/configs/{config_id}/missing-dates")
 async def missing_digest_dates(
-    config_id: int, request: Request, days: int = 30
+    config_id: StrictId, request: Request, days: int = 30
 ) -> Response:
     """F032：按配置计划（时区）列出最近 `days` 天内缺失期号的日期。
 
@@ -231,7 +232,7 @@ class DigestTargetDateBody(BaseModel):
 
 @router.post("/api/v1/gpt-digest/configs/{config_id}/generate")
 async def generate_config_digest(
-    config_id: int, request: Request, body: DigestTargetDateBody | None = None
+    config_id: StrictId, request: Request, body: DigestTargetDateBody | None = None
 ) -> Response:
     target = body.targetDate if body is not None else None
     put_back = body.putBack if body is not None else None
@@ -246,7 +247,7 @@ async def generate_config_digest(
 
 async def _generate_for_missing_date(
     request: Request,
-    config_id: int,
+    config_id: StrictId,
     target: str,
     put_back: list[str] | None = None,
 ) -> Response:
@@ -340,7 +341,7 @@ async def _generate_for_missing_date(
     "/api/v1/gpt-digest/configs/{config_id}/issues", response_model=GptDigestIssueList
 )
 async def list_config_issues(
-    config_id: int, request: Request, limit: int = 14
+    config_id: StrictId, request: Request, limit: int = 14
 ) -> GptDigestIssueList:
     rows = await _issues(request).recent_issues(config_id, limit, include_drafts=True)
     return GptDigestIssueList(items=[_issues(request).issue_to_dto(row) for row in rows])
@@ -432,7 +433,7 @@ async def generate_gpt_digest(request: Request) -> Response:
     response_model=GptDigestIssueList,
 )
 async def revise_gpt_digest_issue(
-    config_id: int,
+    config_id: StrictId,
     issue_key: str,
     payload: GptDigestIssueRevise,
     request: Request,
@@ -582,7 +583,7 @@ def _apply_sentence_ops(
 
 @router.post("/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/publish")
 async def publish_gpt_digest_issue(
-    config_id: int, issue_key: str, request: Request
+    config_id: StrictId, issue_key: str, request: Request
 ) -> Response:
     """F031：草稿审阅后显式发布（幂等：已 published 再发布 200 不变）。
 
@@ -634,7 +635,7 @@ async def publish_gpt_digest_issue(
 
 @router.post("/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/explain")
 async def explain_gpt_digest_issue(
-    config_id: int, issue_key: str, request: Request
+    config_id: StrictId, issue_key: str, request: Request
 ) -> Response:
     """F05：为某期生成初学者解释版（独立条目 key = {key}-x）。
 
@@ -698,7 +699,7 @@ async def explain_gpt_digest_issue(
     response_model=GptDigestTrimPreview,
 )
 async def trim_preview_gpt_digest_issue(
-    config_id: int, issue_key: str, request: Request
+    config_id: StrictId, issue_key: str, request: Request
 ) -> GptDigestTrimPreview:
     """N175：阅读时长裁剪预览——展示 before/after 与将移入素材篮的条目。
 
@@ -747,7 +748,7 @@ async def trim_preview_gpt_digest_issue(
 
 @router.post("/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/retry-polish")
 async def retry_polish_gpt_digest_issue(
-    config_id: int, issue_key: str, request: Request
+    config_id: StrictId, issue_key: str, request: Request
 ) -> Response:
     """N172：仅重跑润色阶段（选材/总结成果保留不动）。
 
@@ -804,7 +805,7 @@ async def retry_polish_gpt_digest_issue(
 
 
 @router.post("/api/v1/gpt-digest/configs/{config_id}/weekly")
-async def generate_weekly_digest(config_id: int, request: Request) -> Response:
+async def generate_weekly_digest(config_id: StrictId, request: Request) -> Response:
     """F03：周报——聚合该配置最近 7 天日刊（≤7 期）为一周回顾。
 
     期号 = 配置时区 ISO 周（2026-W38）；输入只含已发布日刊总结与引用
@@ -880,7 +881,7 @@ async def generate_weekly_digest(config_id: int, request: Request) -> Response:
 
 @router.post("/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/compare")
 async def compare_gpt_digest_issue(
-    config_id: int, issue_key: str, request: Request
+    config_id: StrictId, issue_key: str, request: Request
 ) -> Response:
     """F07：相邻日报变化对照（对照上一期；独立条目 key = {key}-d）。"""
     from lumirss.gpt_digest import (
@@ -936,7 +937,7 @@ async def compare_gpt_digest_issue(
 
 @router.post("/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/compare-facts")
 async def compare_facts_gpt_digest_issue(
-    config_id: int, issue_key: str, request: Request
+    config_id: StrictId, issue_key: str, request: Request
 ) -> Response:
     """F28：事实对照——对某期内的条目按时间/主张/分歧生成对照表。
 
@@ -1022,7 +1023,7 @@ class PoolReorderBody(BaseModel):
 
 
 @router.get("/api/v1/gpt-digest/configs/{config_id}/pool")
-async def list_digest_pool(config_id: int, request: Request) -> dict:
+async def list_digest_pool(config_id: StrictId, request: Request) -> dict:
     if await _config_store(request).get_config(config_id) is None:
         return JSONResponse(
             status_code=404,
@@ -1036,7 +1037,7 @@ async def list_digest_pool(config_id: int, request: Request) -> dict:
 
 @router.post("/api/v1/gpt-digest/configs/{config_id}/pool", status_code=201)
 async def add_digest_pool_entry(
-    config_id: int, payload: PoolAddBody, request: Request
+    config_id: StrictId, payload: PoolAddBody, request: Request
 ) -> dict:
     """加入素材池。重复 → 409；AI 禁用来源的条目 → 422（F066 负向语义：
     服务端拒绝，不只靠 UI 隐藏）。"""
@@ -1080,7 +1081,7 @@ async def add_digest_pool_entry(
 
 @router.delete("/api/v1/gpt-digest/configs/{config_id}/pool/{entry_id}", status_code=204)
 async def remove_digest_pool_entry(
-    config_id: int, entry_id: int, request: Request
+    config_id: StrictId, entry_id: StrictId, request: Request
 ) -> Response:
     removed = await _pool_store(request).remove_entry(config_id, entry_id)
     if not removed:
@@ -1093,7 +1094,7 @@ async def remove_digest_pool_entry(
 
 @router.patch("/api/v1/gpt-digest/configs/{config_id}/pool")
 async def reorder_digest_pool(
-    config_id: int, payload: PoolReorderBody, request: Request
+    config_id: StrictId, payload: PoolReorderBody, request: Request
 ) -> dict:
     await _pool_store(request).reorder(config_id, payload.orderedIds)
     entries = await _pool_store(request).list_entries(config_id)

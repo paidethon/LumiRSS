@@ -6,6 +6,7 @@ rules, invalid cursor → 400 before touching FreshRSS).
 """
 
 import secrets as _secrets
+from contextlib import contextmanager
 
 import httpx
 import pytest
@@ -164,6 +165,18 @@ def run_client(fake, method, url):
         app.state.freshrss_adapter = None
 
 
+@contextmanager
+def running_client(fake):
+    """FIX-363: cursor 绑定发放账户——先起 app 拿到 owner id，再铸造
+    本账户的测试 token。"""
+    try:
+        with TestClient(app) as client:
+            app.state.freshrss_adapter = fake
+            yield client
+    finally:
+        app.state.freshrss_adapter = None
+
+
 def test_route_page1_produces_next_cursor():
     fake = FakePageAdapter()
     response = run_client(fake, "get", "/api/v1/entries")
@@ -176,9 +189,11 @@ def test_route_page1_produces_next_cursor():
 
 def test_route_cursor_alone_requests_next_page_with_cursor_scope():
     fake = FakePageAdapter()
-    cursor = encode_cursor("12345", "unread", FEED_URL)
-
-    response = run_client(fake, "get", f"/api/v1/entries?cursor={cursor}")
+    with running_client(fake) as client:
+        cursor = encode_cursor(
+            "12345", "unread", FEED_URL, account=app.state.owner_id
+        )
+        response = client.get(f"/api/v1/entries?cursor={cursor}")
 
     assert response.status_code == 200
     body = response.json()
@@ -189,11 +204,13 @@ def test_route_cursor_alone_requests_next_page_with_cursor_scope():
 
 def test_route_cursor_with_matching_explicit_scope_is_accepted():
     fake = FakePageAdapter()
-    cursor = encode_cursor("12345", "unread", FEED_URL)
-
-    response = run_client(
-        fake, "get", f"/api/v1/entries?view=unread&feedUrl={FEED_URL}&cursor={cursor}"
-    )
+    with running_client(fake) as client:
+        cursor = encode_cursor(
+            "12345", "unread", FEED_URL, account=app.state.owner_id
+        )
+        response = client.get(
+            f"/api/v1/entries?view=unread&feedUrl={FEED_URL}&cursor={cursor}"
+        )
 
     assert response.status_code == 200
     assert fake.calls == [("unread", FEED_URL, "12345")]
@@ -229,9 +246,11 @@ def test_route_cursor_feed_mismatch_is_400_without_adapter_call():
 def test_route_cursor_feed_scope_against_no_feed_request_is_allowed():
     """Explicit feedUrl absent → cursor's feed scope is adopted, not a mismatch."""
     fake = FakePageAdapter()
-    cursor = encode_cursor("12345", "all", FEED_URL)
-
-    response = run_client(fake, "get", f"/api/v1/entries?cursor={cursor}")
+    with running_client(fake) as client:
+        cursor = encode_cursor(
+            "12345", "all", FEED_URL, account=app.state.owner_id
+        )
+        response = client.get(f"/api/v1/entries?cursor={cursor}")
 
     assert response.status_code == 200
     assert fake.calls == [("all", FEED_URL, "12345")]

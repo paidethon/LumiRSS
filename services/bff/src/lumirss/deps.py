@@ -5,10 +5,12 @@ request handler never constructs upstream clients directly.
 """
 
 import logging
+import re
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import Request
-from pydantic import SecretStr, ValidationError
+from pydantic import BeforeValidator, SecretStr, ValidationError
 
 from lumirss.adapters.freshrss import (
     ConfigError,
@@ -76,6 +78,27 @@ from lumirss.source_discovery import (
 )
 from lumirss.tags import TagStore
 from lumirss.workspaces import WorkspaceStore
+
+# ---------------------------------------------------------------------------
+# FIX-367: canonical integer resource ids.
+#
+# Path/query ids arrive as strings; pydantic v2 lax ``int`` happily
+# coerces "01" / " 1" / "1.0" / "+1" / "-1" into a valid rowid, so a
+# non-canonical id text can reach (and mutate) a real record. StrictId
+# accepts ONLY the canonical non-negative integer spelling; anything
+# else fails validation → stable 422 invalid_request.
+# ---------------------------------------------------------------------------
+
+_CANONICAL_INT_RE = re.compile(r"^(?:0|[1-9][0-9]*)$")
+
+
+def _parse_canonical_int(value: object) -> object:
+    if isinstance(value, str) and not _CANONICAL_INT_RE.match(value):
+        raise ValueError("resource id must be a canonical non-negative integer")
+    return value
+
+
+StrictId = Annotated[int, BeforeValidator(_parse_canonical_int)]
 
 
 def _cached_on_app_state(request: Request, attr: str, build):

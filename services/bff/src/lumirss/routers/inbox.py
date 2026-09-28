@@ -30,7 +30,8 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 
 from lumirss.credential_rotation import CredentialTestFailed, match_fallback
-from lumirss.cursor import InvalidCursor
+from lumirss.cursor import InvalidCursor, scope_fingerprint
+from lumirss.deps import StrictId
 from lumirss.errors import InvalidInboxPayload
 from lumirss.inbox_rules import (
     InboxRuleNotFound,
@@ -59,6 +60,7 @@ from lumirss.models import (
     InboxSourceCreate,
     InboxSourceCreated,
 )
+from lumirss.user_scope import current_user_id
 
 from ..deps import (
     _get_inbox_store,
@@ -170,17 +172,23 @@ def _clean_categories(categories: list[str]) -> list[str]:
     return cleaned
 
 
-def _encode_cursor(created_at: str, item_uuid: str) -> str:
-    payload = json.dumps({"k": created_at, "u": item_uuid}).encode()
+def _encode_cursor(created_at: str, item_uuid: str, scope_key: str) -> str:
+    """FIX-363: cursor 绑定（账户 + sourceUuid 过滤）指纹——换个列表或
+    账户重放直接 400，不把别的列表续页拼进当前结果。"""
+    payload = json.dumps({"k": created_at, "u": item_uuid, "s": scope_key}).encode()
     return _CURSOR_PREFIX + base64.urlsafe_b64encode(payload).decode().rstrip("=")
 
 
-def _decode_cursor(cursor: str) -> tuple[str, str]:
+def _decode_cursor(cursor: str, scope_key: str) -> tuple[str, str]:
     try:
         raw = cursor.removeprefix(_CURSOR_PREFIX)
         padded = raw + "=" * (-len(raw) % 4)
         data = json.loads(base64.urlsafe_b64decode(padded.encode()))
+        if data.get("s") != scope_key:
+            raise InvalidCursor("Inbox cursor belongs to a different list or account.")
         return str(data["k"]), str(data["u"])
+    except InvalidCursor:
+        raise
     except Exception as exc:
         raise InvalidCursor("Invalid inbox cursor.") from exc
 
@@ -533,7 +541,7 @@ async def list_inbox_events(
 
 
 @router.post("/api/v1/inbox/events/{event_id}/replay")
-async def replay_inbox_event(event_id: int, request: Request) -> Response:
+async def replay_inbox_event(event_id: StrictId, request: Request) -> Response:
     """F107：失败事件重放（复用原载荷 + 既有 (source, guid) 幂等）。
 
     delivered/duplicate → 409 not_replayable；来源已删除 → 404；
@@ -635,14 +643,17 @@ async def list_inbox_items(
     if limit < 1 or limit > 50:
         raise InvalidInboxPayload("limit must be between 1 and 50.")
     store = _get_inbox_store(request)
-    keyset = _decode_cursor(cursor) if cursor is not None else None
+    scope_key = scope_fingerprint(current_user_id(), sourceUuid)
+    keyset = _decode_cursor(cursor, scope_key) if cursor is not None else None
     rows, has_more = await store.list_items(
         source_uuid=sourceUuid, keyset=keyset, limit=limit
     )
     next_cursor = None
     if has_more and rows:
         last = rows[-1]
-        next_cursor = _encode_cursor(last["createdAt"], _uuid_of(last["ref"]))
+        next_cursor = _encode_cursor(
+            last["createdAt"], _uuid_of(last["ref"]), scope_key
+        )
     return InboxItemList(
         items=[
             InboxItemRow(
@@ -762,11 +773,15 @@ async def dry_run_inbox_rule(
 
 @router.patch("/api/v1/inbox/rules/{rule_id}", response_model=InboxRule)
 async def patch_inbox_rule(
-    rule_id: int, payload: InboxRuleUpdate, request: Request
+    rule_id: StrictId, payload: InboxRuleUpdate, request: Request
 ) -> InboxRule:
-    rule = await _rule_store(request).update_rule(
-        rule_id, payload.model_dump(exclude_none=False)
-    )
+    # FIX-361: model_dump 产出对外契约键（targetWorkspaceId），而 store
+    # 合同键是 target_workspace_id —— 键名不匹配曾让该字段被静默丢弃
+    # （200 但值不变）。这里显式换名；其余字段由 store 按 None=未提供
+    # 合并，局部编辑不会擦除未提供字段。
+    patch = payload.model_dump(exclude_none=False)
+    patch["target_workspace_id"] = patch.pop("targetWorkspaceId")
+    rule = await _rule_store(request).update_rule(rule_id, patch)
     if rule is None:
         raise InboxRuleNotFound(str(rule_id))
     return _rule_model(rule)
@@ -774,7 +789,7 @@ async def patch_inbox_rule(
 
 @router.post("/api/v1/inbox/rules/{rule_id}/move", response_model=InboxRule)
 async def move_inbox_rule(
-    rule_id: int, request: Request, direction: str = "up"
+    rule_id: StrictId, request: Request, direction: str = "up"
 ) -> InboxRule:
     """priority 上下移（应用顺序 = 列表顺序）。"""
     if direction not in ("up", "down"):
@@ -786,7 +801,7 @@ async def move_inbox_rule(
 
 
 @router.delete("/api/v1/inbox/rules/{rule_id}", status_code=204)
-async def delete_inbox_rule(rule_id: int, request: Request) -> Response:
+async def delete_inbox_rule(rule_id: StrictId, request: Request) -> Response:
     deleted = await _rule_store(request).delete_rule(rule_id)
     if not deleted:
         raise InboxRuleNotFound(str(rule_id))

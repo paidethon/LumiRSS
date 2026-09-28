@@ -90,9 +90,10 @@ async def list_author_aliases(request: Request) -> AuthorAliasList:
 
 @router.delete("/api/v1/authors/aliases/{alias}", status_code=204)
 async def delete_author_alias(alias: str, request: Request) -> Response:
-    from urllib.parse import unquote
-
-    deleted = await _store(request).delete_alias(unquote(alias))
+    # FIX-366: ASGI 交付的 scope["path"] 已解码一次——这里绝不能再
+    # unquote，否则别名里字面携带 "%25" 形状的百分号会被二次解码成
+    # 另一个名字（404，或命中同形别名记录）。按存储原样匹配。
+    deleted = await _store(request).delete_alias(alias)
     if not deleted:
         raise AuthorAliasNotFound(alias)
     return Response(status_code=204)

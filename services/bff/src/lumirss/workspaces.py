@@ -539,6 +539,11 @@ class WorkspaceStore:
             raise WorkspaceInvalid(
                 "timeline cursor belongs to a different sort order."
             )
+        # FIX-363: cursor 绑定发放工作区（旧 token 无绑定 → 拒绝，失效即重翻）。
+        if key is not None and key[3] != workspace_id:
+            raise WorkspaceInvalid(
+                "timeline cursor belongs to a different workspace."
+            )
         key_added = key[0] if key else None
         key_ref = key[1] if key else None
         # F19：延后（snoozed_until > now）的行不进入时间线；到期自动回。
@@ -556,7 +561,9 @@ class WorkspaceStore:
         next_cursor = None
         if has_more and items:
             last = items[-1]
-            next_cursor = _encode_timeline_cursor(last.added_at, last.item_ref, order)
+            next_cursor = _encode_timeline_cursor(
+                last.added_at, last.item_ref, order, workspace_id
+            )
         return items, next_cursor
 
     async def snooze_item(
@@ -905,14 +912,21 @@ _DESC_CURSOR_PREFIX = "c1ws."
 _MAX_DESC_CURSOR_LENGTH = 1024
 
 
-def _encode_timeline_cursor(added_at: str, item_ref: str, order: str) -> str:
-    payload = json.dumps([added_at, item_ref, order], separators=(",", ":"))
+def _encode_timeline_cursor(
+    added_at: str, item_ref: str, order: str, workspace_id: str
+) -> str:
+    """FIX-363: token 绑定发放工作区——A 时间线的 cursor 拿去续 B 的
+    时间线 → WorkspaceInvalid（400），不再拼接别的列表。"""
+    payload = json.dumps(
+        [added_at, item_ref, order, workspace_id], separators=(",", ":")
+    )
     return encode_opaque_ref(_DESC_CURSOR_PREFIX, payload)
 
 
-def _decode_timeline_cursor(cursor: str) -> tuple[str, str, str]:
-    """Returns (added_at, item_ref, order); legacy two-field payloads are
-    the historical ``newest`` order."""
+def _decode_timeline_cursor(cursor: str) -> tuple[str, str, str, str | None]:
+    """Returns (added_at, item_ref, order, workspace_id); legacy two/three
+    -field payloads carry ``workspace_id=None`` (fail closed at the caller
+    under FIX-363 — replaying them against any workspace is rejected)."""
     payload = decode_opaque_ref(
         cursor,
         prefix=_DESC_CURSOR_PREFIX,
@@ -926,19 +940,25 @@ def _decode_timeline_cursor(cursor: str) -> tuple[str, str, str]:
         raise WorkspaceInvalid("timeline cursor payload is not valid JSON.") from exc
     if (
         isinstance(parsed, list)
+        and len(parsed) == 4
+        and all(isinstance(v, str) for v in parsed)
+    ):
+        added_at, item_ref, order, workspace_id = parsed
+        if order not in ("newest", "oldest"):
+            raise WorkspaceInvalid("timeline cursor order is not recognized.")
+        return added_at, item_ref, order, workspace_id
+    if (
+        isinstance(parsed, list)
         and len(parsed) == 3
         and all(isinstance(v, str) for v in parsed)
     ):
-        added_at, item_ref, order = parsed
-        if order not in ("newest", "oldest"):
-            raise WorkspaceInvalid("timeline cursor order is not recognized.")
-        return added_at, item_ref, order
+        return parsed[0], parsed[1], parsed[2], None
     if (
         isinstance(parsed, list)
         and len(parsed) == 2
         and all(isinstance(v, str) for v in parsed)
     ):
-        return parsed[0], parsed[1], "newest"
+        return parsed[0], parsed[1], "newest", None
     raise WorkspaceInvalid("timeline cursor payload is not a key pair.")
 
 

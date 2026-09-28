@@ -30,6 +30,7 @@ from lumirss.models import (
     ClipListResponse,
     ClipRevisionRequest,
 )
+from lumirss.user_scope import current_user_id
 
 from ..deps import _get_clip_store
 
@@ -107,7 +108,10 @@ async def list_clips(
     if limit < 1 or limit > _MAX_LIMIT:
         raise ClipInvalid(f"limit must be between 1 and {_MAX_LIMIT}.")
     store: ClipStore = _get_clip_store(request)
-    items, next_cursor = await store.list_clips(cursor=cursor, limit=limit)
+    # FIX-363: 续页 token 绑定发放账户指纹。
+    items, next_cursor = await store.list_clips(
+        cursor=cursor, limit=limit, scope_account=current_user_id()
+    )
     return ClipListResponse(
         items=[_clip_model(view) for view in items],
         nextCursor=next_cursor,
