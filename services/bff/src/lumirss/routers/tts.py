@@ -12,6 +12,9 @@ synthesize 返回 409 tts_not_configured —— UI 必须如实说明「只在�
 TTS provider 后可用」，绝不假装能合成。
 """
 
+import asyncio
+import contextlib
+
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
@@ -70,18 +73,51 @@ async def _tts_provider_config(request: Request):
     )
 
 
+async def _await_client_disconnect(request: Request) -> bool:
+    """FIX-147：轮询客户端断开。POST body 已被 FastAPI 消费，此后
+    receive 只会再给 http.disconnect；Starlette 的 is_disconnected 是
+    非阻塞即时检查（anyio 即时取消域），轮询即安全。"""
+    while True:
+        if await request.is_disconnected():
+            return True
+        await asyncio.sleep(0.2)
+
+
 @router.post("/api/v1/tts/synthesize")
 async def tts_synthesize(payload: TtsSynthesizeRequest, request: Request) -> Response:
-    """合成语音（缓存优先）。X-Cache: hit | miss 诚实区分来源。"""
+    """合成语音（缓存优先）。X-Cache: hit | miss 诚实区分来源。
+
+    FIX-147：客户端中途弃合成（切文/退出页面 → 连接断开）即取消服务端
+    合成任务——上游 provider 计费调用与 BFF 任务不因断开空转到
+    TTS_TIMEOUT_S；弃合成不落缓存行（合成从未完整发生，无半途结果可
+    缓存）。上游失败路径零缓存行 + 响应流必关（FIX-249 finally 边界）。
+    """
     config = await _tts_provider_config(request)
-    try:
-        audio, cache_hit = await synthesize(
+    work = asyncio.ensure_future(
+        synthesize(
             request.app.state.db,
             request.app.state.http_client,
             config,
             text=payload.text,
             voice=payload.voice,
         )
+    )
+    abandoned = asyncio.ensure_future(_await_client_disconnect(request))
+    try:
+        done, _pending = await asyncio.wait(
+            {work, abandoned}, return_when=asyncio.FIRST_COMPLETED
+        )
+    finally:
+        abandoned.cancel()
+    if work not in done:
+        # 断开先到：取消合成（_call_provider 的 finally 关闭上游流），
+        # 不写缓存行；应答无人接收，最小收尾即可。
+        work.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await work
+        return Response(status_code=204)
+    try:
+        audio, cache_hit = work.result()
     except TtsNotConfigured as exc:
         return _error(409, "tts_not_configured", str(exc))
     except TtsTextInvalid as exc:
