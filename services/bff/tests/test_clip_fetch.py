@@ -11,6 +11,7 @@ import asyncio
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import httpx
 import pytest
 
 import lumirss.clip_fetch as clip_fetch
@@ -184,3 +185,98 @@ def test_full_pipeline_fails_honestly_on_bodyless_page(origin_port):
             )
         )
     assert excinfo.value.reason == "extract_failed"
+
+
+# --- FIX-250 基线核验：重定向每一跳都重过 URL/DNS/IP 安检 -------------------
+#
+# 审计场景：首跳公网、重定向落向 169.254.169.254（云元数据地址）必须被
+# 拒；逐跳放行链必须照常工作。全部走 MockTransport 委托的 pinned 传输，
+# 绝无真实网络。feed_preview 侧已有 private/localhost 重定向拒绝测试
+# （test_feed_preview.py），此处补页面抓取路径。
+
+_METADADATA_HOST = "169.254.169.254"
+
+
+def _mock_resolver_map():
+    return {
+        "public.example": ["93.184.216.34"],
+        "other.example": ["93.184.216.35"],
+        _METADADATA_HOST: [_METADADATA_HOST],
+    }
+
+
+def _pinned_mock_factory(handler):
+    """pin_factory：真实 pinned 逻辑 + MockTransport 委托（不拨真实网）。"""
+
+    def make(*, resolver, ensure_public):
+        return PinnedAddressTransport(
+            resolver=resolver,
+            ensure_public=ensure_public,
+            delegate=httpx.MockTransport(handler),
+        )
+
+    return make
+
+
+def test_redirect_chain_into_metadata_address_is_blocked():
+    """重定向落向云元数据地址：在 validate_hop 处被拒，且该地址从未被
+    拨号（pinned 传输里也无人替它发起请求）。"""
+    dialed: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        dialed.append(str(request.url))
+        return httpx.Response(
+            200, headers={"content-type": "text/html"}, content=ARTICLE_HTML
+        )
+
+    async def resolver(host, port):
+        return _mock_resolver_map()[host]
+
+    def redirector(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "93.184.216.34" and request.url.path == "/redirect":
+            return httpx.Response(
+                302,
+                headers={"Location": f"http://{_METADADATA_HOST}/latest/meta-data/"},
+            )
+        return handler(request)
+
+    with pytest.raises(ClipForbidden) as excinfo:
+        _run(
+            fetch_page(
+                "http://public.example/redirect",
+                resolver=resolver,
+                pin_factory=_pinned_mock_factory(redirector),
+            )
+        )
+    assert excinfo.value.reason == "unsafe_address"
+    # 元数据地址一跳都没有真正发出（连接层零请求）。
+    assert all(_METADADATA_HOST not in url for url in dialed)
+
+
+def test_redirect_chain_through_public_hops_is_allowed():
+    """逐跳放行链：公网 → 公网重定向 → 200 HTML 照常工作，final_url
+    记录最终落点。"""
+
+    async def resolver(host, port):
+        return _mock_resolver_map()[host]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "93.184.216.34" and request.url.path == "/redirect":
+            return httpx.Response(
+                302, headers={"Location": "http://other.example/final"}
+            )
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/html; charset=utf-8"},
+            content=ARTICLE_HTML,
+        )
+
+    page = _run(
+        fetch_page(
+            "http://public.example/redirect",
+            resolver=resolver,
+            pin_factory=_pinned_mock_factory(handler),
+        )
+    )
+    assert page.final_url == "http://other.example/final"
+    assert "测试文章标题" in page.html
