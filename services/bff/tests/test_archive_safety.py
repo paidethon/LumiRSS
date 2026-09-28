@@ -180,3 +180,20 @@ def test_secrets_file_written_with_0600(tmp_path):
     assert path.is_file()
     mode = path.stat().st_mode & 0o777
     assert mode == 0o600, f"secrets.json mode is {oct(mode)}, expected 0o600"
+
+
+def test_multi_segment_traversal_member_rejected_and_contained(tmp_path):
+    """FIX-321：`../../evil.txt` 形态的多段越界路径在解析后被拒绝，
+    归档里任何条目都不得落在隔离目录之外（BASELINE_OK：既有
+    _reject_unsafe_member 的 normpath 前缀检查 + extract 后 resolve
+    包含检查双层防护）。"""
+    zip_path, out_dir, manifest, _ = _valid_archive(tmp_path)
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("manifest.json", json.dumps(manifest))
+        archive.writestr("../../evil.txt", b"hostile")
+    with zipfile.ZipFile(zip_path) as archive:
+        with pytest.raises(BackupInvalid):
+            safe_extract(archive, out_dir, manifest)
+    # 隔离目录（及其外层）都没有任何敌意落盘。
+    assert not list(tmp_path.rglob("evil.txt"))
+    assert not (tmp_path / "evil.txt").exists()
