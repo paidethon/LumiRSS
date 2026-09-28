@@ -511,6 +511,13 @@ async def delete_subscription(
     F005：Lumi 侧备注/维护记录同步级联删除（见 0037 迁移注释）——
     FreshRSS RSS 域数据不在此路径触碰。
 
+    FIX-237 代次语义：feed_url 在**退订之前**解析（退订后上游清单已无
+    此订阅，事后解析恒空）；退订成功即 generation-clean 该 feed 的检查
+    侧私有状态（source_refresh_log 历史 + feed_recovery 窗口）——同 URL
+    重新订阅是新代次，不继承上一代的失败史/恢复窗。用户手工配置的
+    显示覆盖/屏蔽规则按 URL 有意保留（跨代用户偏好，不属于对象私有
+    状态）。
+
     N012 keep_artifacts（可选；缺席 = 既有行为原样保留）：
     - true：退订后保留工作区引用 / 看板状态 / 批注（引用冻结 ref，
       解析层已把缺失条目降级为 stale 卡片，不丢用户整理结构）；
@@ -519,10 +526,24 @@ async def delete_subscription(
     确认责任在客户端（预览 + 二次确认），服务端只执行声明过的语义。"""
     stream_id = decode_subscription_ref(subscription_ref)  # raises → 400
     control = _get_control_adapter(request)
+    # FIX-237：解析先于破坏性写——退订后 list 里不再有这条订阅。
+    feed_url: str | None = None
+    with contextlib.suppress(Exception):  # 上游退化不阻断退订本身
+        subscription = next(
+            (sub for sub in await control.list_subscriptions() if sub.stream_id == stream_id),
+            None,
+        )
+        feed_url = subscription.feed_url if subscription is not None else None
     await control.unsubscribe(stream_id)
     from lumirss.source_notes import SourceNotesStore
 
     await SourceNotesStore(request.app.state.db).delete_notes(subscription_ref)
+    if feed_url is not None:
+        # FIX-237：检查代次级联（best-effort：日志故障绝不吞掉退订结果）。
+        with contextlib.suppress(Exception):
+            from lumirss.refresh_log import SourceRefreshLogStore
+
+            await SourceRefreshLogStore(request.app.state.db).forget_feed(feed_url)
     if keep_artifacts is not False:
         # 缺席（legacy，逐字节既有行为）与显式 true：保留工作区引用 /
         # 看板状态 / 批注——它们引用冻结 ref，解析层已把缺失条目降级为
@@ -533,15 +554,6 @@ async def delete_subscription(
 
     from lumirss.unsubscribe_preview import purge_feed_artifacts
 
-    feed_url: str | None = None
-    try:
-        subscription = next(
-            (sub for sub in await control.list_subscriptions() if sub.stream_id == stream_id),
-            None,
-        )
-    except Exception:  # noqa: BLE001 — 退订已成功；清理尽力而为
-        subscription = None
-    feed_url = subscription.feed_url if subscription is not None else None
     purged = await purge_feed_artifacts(request.app.state.db, feed_url or "")
     return JSONResponse(
         status_code=200,
