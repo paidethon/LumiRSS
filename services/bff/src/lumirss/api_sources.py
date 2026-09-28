@@ -274,21 +274,35 @@ def _pinned_client() -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=PinnedAddressTransport(), trust_env=False)
 
 
-def parse_retry_after(value: str | None) -> int | None:
-    """N129: Retry-After header → bounded whole seconds (None = absent or
-    unparseable). HTTP-date form is intentionally not decoded into a
-    duration here — only delta-seconds is honored, bounded to one hour so
-    a hostile upstream cannot pin ``next_allowed_run`` arbitrarily far."""
+def parse_retry_after(value: str | None, *, now: Any = None) -> int | None:
+    """N129/FIX-244: Retry-After header → bounded whole seconds (None =
+    absent or unparseable). BOTH RFC 7231 forms are honored: delta-seconds
+    and HTTP-date (the delta is computed against ``now`` — UTC wall clock
+    when omitted — and can be injected for tests). Everything clamps to
+    [0, 3600] so a hostile upstream can neither pin ``next_allowed_run``
+    arbitrarily far nor produce a negative backoff."""
     if value is None:
         return None
     text = value.strip()
-    if not text.isdigit():
+    if not text:
         return None
+    if text.isdigit():
+        return min(int(text), 3600)
+    from datetime import UTC, datetime
+
     try:
-        seconds = int(text)
-    except ValueError:
+        from email.utils import parsedate_to_datetime
+
+        moment = parsedate_to_datetime(text)
+    except (TypeError, ValueError, OverflowError):
         return None
-    return min(seconds, 3600)
+    if moment is None:  # pragma: no cover — defensive for odd date libs
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    reference = now if now is not None else datetime.now(UTC)
+    delta = int((moment - reference).total_seconds())
+    return min(max(delta, 0), 3600)
 
 
 async def fetch_json(
