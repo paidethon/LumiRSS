@@ -107,7 +107,7 @@ export function AiTaskCenterPanel() {
                 className={
                   task.status === 'done'
                     ? 'rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-1.5 py-0.5 text-[var(--lumi-text-secondary)]'
-                    : 'rounded-[var(--lumi-radius-full)] bg-[var(--lumi-danger-soft, var(--lumi-surface-selected))] px-1.5 py-0.5 text-[var(--lumi-danger)]'
+                    : 'rounded-[var(--lumi-radius-full)] bg-[var(--lumi-danger-soft)] px-1.5 py-0.5 text-[var(--lumi-danger)]'
                 }
               >
                 {task.status === 'done' ? '完成' : '失败'}

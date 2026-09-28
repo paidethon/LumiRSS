@@ -53,7 +53,7 @@ export function RecentLoginsPanel() {
               </span>
             </span>
             {event.kind === 'new_device' && !event.seen && (
-              <span className="rounded-[var(--lumi-radius-full)] bg-[var(--lumi-danger)] px-2 py-0.5 text-[11px] text-white">
+              <span className="rounded-[var(--lumi-radius-full)] bg-[var(--lumi-danger)] px-2 py-0.5 text-[11px] text-[var(--lumi-danger-contrast)]">
                 新设备
               </span>
             )}

@@ -142,7 +142,7 @@ export default function SettingsConflictDialog() {
             取消（采用服务端）
           </Button>
           {status === 'error' ? (
-            <span role="alert" className="text-xs text-[var(--lumi-danger-text, #b3261e)]">
+            <span role="alert" className="text-xs text-[var(--lumi-danger)]">
               提交失败（网络）；对话框已保留，稍后可重试。
             </span>
           ) : null}

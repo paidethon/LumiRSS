@@ -614,7 +614,7 @@ function QuestionsPanel({
               <Button
                 size="sm"
                 variant="ghost"
-                className="text-[var(--lumi-danger, #dc2626)]"
+                className="text-[var(--lumi-danger)]"
                 disabled={deleteMutation.isPending}
                 onClick={() => deleteMutation.mutate(question.id)}
               >

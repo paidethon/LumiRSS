@@ -105,7 +105,7 @@ export function TtsCacheSection() {
               <Button
                 size="sm"
                 variant="ghost"
-                className="text-[var(--lumi-danger, #dc2626)]"
+                className="text-[var(--lumi-danger)]"
                 disabled={body.count === 0 || clearAll.isPending}
                 onClick={() => clearAll.mutate()}
               >

@@ -251,7 +251,7 @@ export default function TranslationRevisionPanel({
           {selected !== null && (
             <>
               {selected.revisionStale && (
-                <p className="inline-flex items-center gap-1 text-[var(--lumi-warning, var(--lumi-text-secondary))]">
+                <p className="inline-flex items-center gap-1 text-[var(--lumi-warning)]">
                   <AlertCircle aria-hidden className="size-3" />
                   原文已更新：该段修订对应的源文已变化。
                 </p>
@@ -283,7 +283,7 @@ export default function TranslationRevisionPanel({
                         </>
                       ) : (
                         <>
-                          <span className="text-[var(--lumi-warning, var(--lumi-text-secondary))]">⚠</span>{' '}
+                          <span className="text-[var(--lumi-warning)]">⚠</span>{' '}
                           「{p.term}」未保留：{p.reason === 'term not found in translation' ? '译文中未找到该词' : p.reason}
                         </>
                       )}

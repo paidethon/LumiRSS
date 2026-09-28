@@ -116,7 +116,7 @@ export function ClipRevisionDialog({ clipRef, onClose }: { clipRef: string; onCl
           />
         </label>
         {noneSelected && (
-          <p role="status" className="text-xs text-[var(--lumi-warning,--lumi-text-secondary)]">
+          <p role="status" className="text-xs text-[var(--lumi-warning)]">
             已移除全部块：保存需要显式确认（422 must_keep_one 保护仍在）。
           </p>
         )}

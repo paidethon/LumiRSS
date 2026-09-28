@@ -637,17 +637,17 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
         ) : null}
       </div>
       {weekly.isError && weekly.error instanceof ApiError ? (
-        <p className="text-xs text-[var(--lumi-danger-text, #b3261e)]" role="alert">
+        <p className="text-xs text-[var(--lumi-danger)]" role="alert">
           周报失败：{weekly.error.message}
         </p>
       ) : null}
       {generate.isError && generate.error instanceof ApiError ? (
-        <p className="text-xs text-[var(--lumi-danger-text, #b3261e)]" role="alert">
+        <p className="text-xs text-[var(--lumi-danger)]" role="alert">
           生成失败：{generate.error.message}
         </p>
       ) : null}
       {preview.isError && preview.error instanceof ApiError ? (
-        <p className="text-xs text-[var(--lumi-danger-text, #b3261e)]" role="alert">
+        <p className="text-xs text-[var(--lumi-danger)]" role="alert">
           预览失败：{preview.error.message}
         </p>
       ) : null}
@@ -1096,7 +1096,7 @@ function IssueRow({
         </div>
       ) : null}
       {retryPolish.isError && retryPolish.error instanceof ApiError ? (
-        <p className="text-xs text-[var(--lumi-danger-text, #b3261e)]" role="alert">
+        <p className="text-xs text-[var(--lumi-danger)]" role="alert">
           重试润色失败：{retryPolish.error.message}
         </p>
       ) : null}
@@ -1188,7 +1188,7 @@ function IssueRow({
             </div>
           ) : null}
           {revise.isError && revise.error instanceof ApiError ? (
-            <p className="text-xs text-[var(--lumi-danger-text, #b3261e)]" role="alert">
+            <p className="text-xs text-[var(--lumi-danger)]" role="alert">
               逐句操作失败：{revise.error.message}
             </p>
           ) : null}
@@ -1225,7 +1225,7 @@ function IssueRow({
           {trim.isPending ? (
             <Skeleton className="h-9 w-full" />
           ) : trim.isError ? (
-            <p className="text-xs text-[var(--lumi-danger-text, #b3261e)]" role="alert">
+            <p className="text-xs text-[var(--lumi-danger)]" role="alert">
               裁剪预览失败：{trim.error instanceof Error ? trim.error.message : '请稍后重试。'}
             </p>
           ) : trim.data ? (
@@ -1246,7 +1246,7 @@ function IssueRow({
         </div>
       ) : null}
       {compare.isError && compare.error instanceof ApiError && compare.variables?.issueKey === issue.issueKey ? (
-        <p className="text-xs text-[var(--lumi-danger-text, #b3261e)]" role="alert">
+        <p className="text-xs text-[var(--lumi-danger)]" role="alert">
           对照失败：{compare.error.message}
         </p>
       ) : null}
@@ -1258,7 +1258,7 @@ function IssueRow({
         />
       ) : null}
       {explain.isError && explain.error instanceof ApiError && explain.variables?.issueKey === issue.issueKey ? (
-        <p className="text-xs text-[var(--lumi-danger-text, #b3261e)]" role="alert">
+        <p className="text-xs text-[var(--lumi-danger)]" role="alert">
           解释版失败：{explain.error.message}
         </p>
       ) : null}
@@ -1307,7 +1307,7 @@ function IssueRow({
             </Button>
           </div>
           {revise.isError && revise.error instanceof ApiError ? (
-            <p className="text-xs text-[var(--lumi-danger-text, #b3261e)]" role="alert">
+            <p className="text-xs text-[var(--lumi-danger)]" role="alert">
               修订失败：{revise.error.message}
             </p>
           ) : null}
@@ -1463,7 +1463,7 @@ function MaterialPoolPanel({
         </Button>
       </div>
       {addError ? (
-        <p role="alert" className="mt-1 text-xs text-[var(--lumi-danger-text, #b3261e)]">
+        <p role="alert" className="mt-1 text-xs text-[var(--lumi-danger)]">
           {addError}
         </p>
       ) : null}
@@ -1471,7 +1471,7 @@ function MaterialPoolPanel({
       {pool.isPending ? (
         <Skeleton className="mt-2 h-16 w-full" />
       ) : pool.isError ? (
-        <p role="alert" className="mt-2 text-xs text-[var(--lumi-danger-text, #b3261e)]">
+        <p role="alert" className="mt-2 text-xs text-[var(--lumi-danger)]">
           素材池加载失败：{pool.error instanceof Error ? pool.error.message : '请稍后重试。'}
         </p>
       ) : pending.length === 0 ? (

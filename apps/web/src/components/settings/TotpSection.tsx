@@ -115,7 +115,7 @@ export function TotpSection() {
           className={
             enabled
               ? 'rounded-[var(--lumi-radius-full)] bg-[var(--lumi-accent-soft)] px-2 py-0.5 text-[11px] text-[var(--lumi-accent-text)]'
-              : 'rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-2)] px-2 py-0.5 text-[11px] text-[var(--lumi-text-tertiary)]'
+              : 'rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-2 py-0.5 text-[11px] text-[var(--lumi-text-tertiary)]'
           }
         >
           {enabled ? '已开启' : '未开启'}
@@ -171,7 +171,7 @@ export function TotpSection() {
           </p>
           <ul className="grid grid-cols-2 gap-1 sm:grid-cols-4">
             {recoveryCodes.map((recovery) => (
-              <li key={recovery} className="rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-2)] px-2 py-1 font-mono text-xs text-[var(--lumi-text-primary)]">
+              <li key={recovery} className="rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-selected)] px-2 py-1 font-mono text-xs text-[var(--lumi-text-primary)]">
                 {recovery}
               </li>
             ))}

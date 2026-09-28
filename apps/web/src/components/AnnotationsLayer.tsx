@@ -422,7 +422,7 @@ export function AnnotationsLayer({ entryRef, containerRef, contentVersion }: Ann
                       </p>
                     )}
                     {lost && (
-                      <p className="mt-1 text-xs text-[var(--lumi-danger, #dc2626)]" role="status">
+                      <p className="mt-1 text-xs text-[var(--lumi-danger)]" role="status">
                         锚点失效：正文已变化，未能定位该批注的原文位置。
                       </p>
                     )}
@@ -445,7 +445,7 @@ export function AnnotationsLayer({ entryRef, containerRef, contentVersion }: Ann
                           <p className="text-xs text-[var(--lumi-text-secondary)]">正在重检正文…</p>
                         )}
                         {repair.error !== null && (
-                          <p className="text-xs text-[var(--lumi-danger, #dc2626)]" role="alert">
+                          <p className="text-xs text-[var(--lumi-danger)]" role="alert">
                             {repair.error}
                           </p>
                         )}
@@ -493,7 +493,7 @@ export function AnnotationsLayer({ entryRef, containerRef, contentVersion }: Ann
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="min-h-11 text-[var(--lumi-danger, #dc2626)]"
+                        className="min-h-11 text-[var(--lumi-danger)]"
                         onClick={() => handleDelete(a.id)}
                       >
                         删除

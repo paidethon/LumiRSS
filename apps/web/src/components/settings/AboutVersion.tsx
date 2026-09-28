@@ -49,7 +49,7 @@ export function AboutVersion() {
           role="status"
           className={cx(
             'mt-3 flex items-start gap-2 rounded-[var(--lumi-radius-md)]',
-            'border border-[var(--lumi-warning-border,var(--lumi-border))]',
+            'border border-[var(--lumi-warning)]/30',
             'bg-[var(--lumi-surface)] px-3 py-2 text-xs leading-relaxed',
             'text-[var(--lumi-text-primary)]',
           )}

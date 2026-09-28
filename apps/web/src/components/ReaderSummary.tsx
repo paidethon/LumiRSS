@@ -278,7 +278,7 @@ function VersionsPanel({
                     key={index}
                     className={cx(
                       'block',
-                      row.kind === 'del' && 'bg-[var(--lumi-danger-soft,rgba(220,38,38,0.12))] text-[var(--lumi-danger)]',
+                      row.kind === 'del' && 'bg-[var(--lumi-danger-soft)] text-[var(--lumi-danger)]',
                     )}
                   >
                     {row.text}
@@ -296,7 +296,7 @@ function VersionsPanel({
                     key={index}
                     className={cx(
                       'block',
-                      row.kind === 'add' && 'bg-[var(--lumi-success-soft,rgba(22,163,74,0.12))] text-[var(--lumi-success)]',
+                      row.kind === 'add' && 'bg-[var(--lumi-success-soft)] text-[var(--lumi-success)]',
                     )}
                   >
                     {row.text}

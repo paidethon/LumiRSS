@@ -473,7 +473,7 @@ export function ReadingQueuePanel({
           </div>
 
           {actionError !== null && (
-            <p className="mt-2 text-xs text-[var(--lumi-danger-text)]" role="alert">
+            <p className="mt-2 text-xs text-[var(--lumi-danger)]" role="alert">
               {actionError}
             </p>
           )}

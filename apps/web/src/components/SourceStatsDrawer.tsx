@@ -316,7 +316,7 @@ function SourceMetadataEditor({
         <p
           role="status"
           data-testid="source-unread-alert"
-          className="text-xs text-[var(--lumi-warning,#b45309)]"
+          className="text-xs text-[var(--lumi-warning)]"
         >
           投影未读 {unreadProjected} 条，已超过警戒阈值 {current?.unreadAlertThreshold}。
         </p>
@@ -374,7 +374,7 @@ function SourceMetadataEditor({
         </Button>
       </div>
       {save.isError && (
-        <p role="alert" className="text-xs text-[var(--lumi-danger,#b91c1c)]">
+        <p role="alert" className="text-xs text-[var(--lumi-danger)]">
           保存失败，请稍后重试。
         </p>
       )}

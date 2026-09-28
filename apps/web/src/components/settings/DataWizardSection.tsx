@@ -196,7 +196,7 @@ export function DataWizardSection() {
                     <span className="shrink-0 text-[var(--lumi-text-primary)]">
                       {component.count} 项
                       {component.conflicts > 0 ? (
-                        <span className="ml-1 text-[var(--lumi-warning, #d97706)]">（{component.conflicts} 已存在，将跳过）</span>
+                        <span className="ml-1 text-[var(--lumi-warning)]">（{component.conflicts} 已存在，将跳过）</span>
                       ) : null}
                     </span>
                   </li>

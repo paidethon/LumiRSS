@@ -223,7 +223,7 @@ export function MigrateSubscriptionDialog({ open, onClose, subscriptionRef, feed
       )}
       {step === 2 && (
         <div className="flex flex-col gap-3">
-          <p className="flex items-center gap-1.5 text-xs text-[var(--lumi-success, var(--lumi-text-primary))]">
+          <p className="flex items-center gap-1.5 text-xs text-[var(--lumi-success)]">
             <CheckCircle2 aria-hidden className="size-3.5" /> 新地址可达且为有效 feed。
           </p>
           {successChain !== null && <RedirectChainView hops={successChain} variant="success" />}
@@ -638,7 +638,7 @@ function AccessCardEditor({ feedUrl }: { feedUrl: string }) {
         <p role="alert" className="text-xs text-[var(--lumi-danger)]">{errMsg(saveMutation.error)}</p>
       )}
       {saved && saveMutation.isSuccess && (
-        <p role="status" className="text-xs text-[var(--lumi-success, var(--lumi-text-primary))]" data-testid="access-card-saved">
+        <p role="status" className="text-xs text-[var(--lumi-success)]" data-testid="access-card-saved">
           接入说明卡已保存。
         </p>
       )}

@@ -259,7 +259,7 @@ export function AskBatchDialog({
                               'ms-1 rounded-[var(--lumi-radius-full)] px-1.5 py-0.5 text-[11px]',
                               e.verified
                                 ? 'bg-[var(--lumi-surface-selected)] text-[var(--lumi-text-secondary)]'
-                                : 'bg-[var(--lumi-danger-soft, var(--lumi-surface-selected))] text-[var(--lumi-danger)]',
+                                : 'bg-[var(--lumi-danger-soft)] text-[var(--lumi-danger)]',
                             )}
                           >
                             {e.verified ? '已核验' : '未验证'}
