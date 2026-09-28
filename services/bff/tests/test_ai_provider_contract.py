@@ -312,3 +312,255 @@ def test_unconfigured_provider_raises_before_any_http_call():
             ).__anext__()
         )
     assert called == []
+
+
+# ---------------------------------------------------------------------------
+# FIX-301: network-packet boundaries are NOT message boundaries.
+# The stream parser must byte-buffer across aiter_bytes() chunks and only
+# treat a newline as an event delimiter — a JSON event split across two
+# network chunks (including a split INSIDE a multibyte UTF-8 character)
+# must reassemble into the original event.
+# ---------------------------------------------------------------------------
+
+
+class _ChunkedResponse:
+    """Minimal streaming response stub with exact chunk control."""
+
+    def __init__(self, chunks: list[bytes], status_code: int = 200) -> None:
+        self.status_code = status_code
+        self._chunks = chunks
+
+    async def aiter_bytes(self):
+        for chunk in self._chunks:
+            yield chunk
+
+
+class _ChunkedClient:
+    """Minimal AsyncClient stub handing back the pre-built response."""
+
+    def __init__(self, response: _ChunkedResponse) -> None:
+        self._response = response
+        self.captured: dict = {}
+
+    async def post(self, url, json=None, headers=None, timeout=None):
+        self.captured = {"url": url, "json": json}
+        return self._response
+
+
+def make_chunked_provider(chunks: list[bytes]):
+    return OpenAICompatibleProvider(
+        _ChunkedClient(_ChunkedResponse(chunks)),
+        base_url="https://api.example.com/v1",
+        model="m",
+        api_key=TEST_KEY,
+    )
+
+
+def _stream_body(events: list[dict], *, trailing_newline: bool = True) -> bytes:
+    lines = ["data: " + json.dumps(event, ensure_ascii=False) for event in events]
+    body = "\n\n".join(lines)
+    if trailing_newline:
+        body += "\n\n"
+    return body.encode("utf-8")
+
+
+def _split_bytes(data: bytes, offsets: list[int]) -> list[bytes]:
+    """Split ``data`` at exact byte offsets (chunk-boundary control)."""
+    bounds = [0, *sorted(offsets), len(data)]
+    return [
+        data[start:end]
+        for start, end in zip(bounds, bounds[1:], strict=False)
+        if start < end
+    ]
+
+
+async def _collect_stream(provider):
+    events = []
+    async for event in provider.chat_completion_stream(
+        messages=[{"role": "user", "content": "问"}]
+    ):
+        events.append(event)
+    return events
+
+
+def test_stream_reassembles_json_event_split_across_chunks():
+    # One content event whose JSON is cut in the middle by a network
+    # chunk boundary, plus a tool-call event likewise split.
+    events = [
+        {"choices": [{"delta": {"content": "跨包的答案"}}]},
+        {
+            "choices": [
+                {
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "call_1",
+                                "function": {
+                                    "name": "search",
+                                    "arguments": '{"query": "分片"}',
+                                },
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+    ]
+    body = _stream_body(events)
+    first_line_end = body.index(b"\n")
+    # Cut inside each JSON payload, never on a newline.
+    chunks = _split_bytes(
+        body,
+        [
+            body.index(b'"content"') + 4,
+            first_line_end + len("\ndata: {\"cho"),
+            body.index(b'"arguments"') + 10,
+        ],
+    )
+    provider = make_chunked_provider(chunks)
+    message = aggregate_stream(run(_collect_stream(provider)))
+    assert message["content"] == "跨包的答案"
+    assert message["tool_calls"][0]["id"] == "call_1"
+    assert json.loads(message["tool_calls"][0]["function"]["arguments"]) == {
+        "query": "分片"
+    }
+
+
+def test_stream_reassembles_utf8_multibyte_split_across_chunks():
+    # The chunk boundary falls INSIDE the 3-byte UTF-8 encoding of "好".
+    text = "你好，世界"
+    events = [{"choices": [{"delta": {"content": text}}]}]
+    body = _stream_body(events)
+    hao = "好".encode()
+    split_at = body.index(hao) + 1  # mid-character
+    assert 0 < split_at < len(body)
+    provider = make_chunked_provider(_split_bytes(body, [split_at]))
+    message = aggregate_stream(run(_collect_stream(provider)))
+    assert message["content"] == text
+
+
+# ---------------------------------------------------------------------------
+# FIX-302: a stream may end with a COMPLETE event that has no trailing
+# newline — the buffered remainder must be dispatched exactly like a
+# newline-terminated line (content, tool calls AND usage), never dropped.
+# ---------------------------------------------------------------------------
+
+
+def test_stream_final_event_without_trailing_newline_content_dispatched():
+    body = _stream_body(
+        [{"choices": [{"delta": {"content": "末尾事件"}}]}],
+        trailing_newline=False,
+    )
+    provider = make_chunked_provider([body])
+    message = aggregate_stream(run(_collect_stream(provider)))
+    assert message["content"] == "末尾事件"
+
+
+def test_stream_final_event_without_trailing_newline_tool_call_and_usage():
+    events = [
+        {
+            "choices": [
+                {
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "call_9",
+                                "function": {
+                                    "name": "search",
+                                    "arguments": '{"query":',
+                                },
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+    ]
+    lines = ["data: " + json.dumps(event, ensure_ascii=False) for event in events]
+    # Final event: tool-call fragment + usage, NO trailing newline.
+    final = (
+        "data: "
+        + json.dumps(
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "function": {"arguments": ' "末"}'},
+                                }
+                            ]
+                        }
+                    }
+                ],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 5},
+            },
+            ensure_ascii=False,
+        )
+    )
+    body = ("\n\n".join(lines) + "\n\n" + final).encode("utf-8")
+    provider = make_chunked_provider([body])
+
+    async def collect():
+        got = []
+        async for event in provider.chat_completion_stream(
+            messages=[{"role": "user", "content": "问"}]
+        ):
+            got.append(event)
+        return got
+
+    events_out = run(collect())
+    message = aggregate_stream(events_out)
+    # The final buffered event must not be dropped: its tool-call
+    # fragment completes the call and its usage is recorded.
+    calls = message["tool_calls"]
+    assert calls[0]["id"] == "call_9"
+    assert json.loads(calls[0]["function"]["arguments"]) == {"query": "末"}
+    assert provider.last_usage == {"prompt_tokens": 3, "completion_tokens": 5}
+
+
+def test_stream_done_marker_without_trailing_newline_ends_cleanly():
+    body = (
+        _stream_body(
+            [{"choices": [{"delta": {"content": "收尾"}}]}],
+            trailing_newline=False,
+        )
+        + b"\n\ndata: [DONE]"
+    )
+    provider = make_chunked_provider([body])
+    message = aggregate_stream(run(_collect_stream(provider)))
+    assert message["content"] == "收尾"
+
+
+# ---------------------------------------------------------------------------
+# FIX-303 (baseline verification): an HTTP 200 response whose BODY is a
+# provider business-error object must raise the stable invalid-response
+# family — never be persisted as a successful artifact.
+# ---------------------------------------------------------------------------
+
+
+def test_complete_http_200_error_body_raises_invalid_response():
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"error": {"message": "insufficient quota", "type": "server_error"}},
+        )
+
+    provider = make_provider(handler)
+    with pytest.raises(AiInvalidResponse):
+        run(provider.complete(messages=[{"role": "user", "content": "x"}]))
+
+
+def test_chat_completion_http_200_error_body_raises_invalid_response():
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"error": {"message": "model overloaded", "code": "503"}},
+        )
+
+    provider = make_provider(handler)
+    with pytest.raises(AiInvalidResponse):
+        run(provider.chat_completion(messages=[{"role": "user", "content": "x"}]))
