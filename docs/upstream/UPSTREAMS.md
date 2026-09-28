@@ -15,8 +15,9 @@
 Reference repositories are:
 
 - read-only;
-- stored outside LumiRSS (`~/projects/LumiRSS-reference/`), never nested,
-  vendored or added as Git submodules;
+- stored outside LumiRSS (`../LumiRSS-reference/`, a sibling of the repo
+  checkout — the exact host location is the operator's choice), never
+  nested, vendored or added as Git submodules;
 - pinned by exact commit SHA;
 - used only after license/source review (see `LICENSE_AUDIT.md`);
 - never a source of private user screenshots or browser session data.
@@ -238,8 +239,10 @@ item model) + `tabs/` (13 category pages).
 
 The user supplied additional Folo reference screenshots (settings panel
   showing grouped rows/toggles/selects, reader+AI panel, overview, plus
-  color/micro-interaction references). They are stored **locally only** at
-  `~/projects/LumiRSS-reference/screenshots/user-provided/` because they
+  color/micro-interaction references). They are stored **locally only**
+  under the reference directory's `screenshots/user-provided/` (see the
+  §1 directory convention; the host path stays private and is never
+  mirrored into any public location) because they
   contain the user's private subscription names — they must not be
   committed to Git (see SOURCE_MAP §4). They inform the Gate 4 Settings
   shell design (grouped settings rows: label + description left, control
