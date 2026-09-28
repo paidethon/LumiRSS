@@ -2,16 +2,17 @@
 
 规则保守（只展示，无删除/合并副作用）：
 
-- 以 :mod:`lumirss.url_normalize` 的受控规范化为分组键（小写 host、
-  去尾斜杠、忽略 http/https、丢弃已知追踪参数；签名参数绝不丢弃、
-  路径不同绝不合并）；
+- 以 :func:`lumirss.url_normalize.normalize_feed_url` 的受控规范化为
+  分组键（小写 host、只折一个尾斜杠、忽略 http/https；FIX-235：查询
+  参数逐字符保留——feed 的任意 query 都可能有业务意义，丢参数会把
+  两个不同订阅错误归并）；
 - 仅当规范化 URL 完全相同时才归入同组；标题差异作为「差异字段」
   呈现，不参与合并判定（避免误合并同名异源）。
 """
 
 from dataclasses import dataclass, field
 
-from lumirss.url_normalize import normalize_content_url
+from lumirss.url_normalize import normalize_feed_url
 
 
 @dataclass
@@ -39,7 +40,7 @@ def find_duplicate_suspects(subscriptions: list[object]) -> list[DuplicateGroup]
     order: list[str] = []
     for subscription in subscriptions:
         feed_url = str(getattr(subscription, "feed_url", ""))
-        normalized = normalize_content_url(feed_url)
+        normalized = normalize_feed_url(feed_url)
         if normalized is None:
             continue  # 无法解析的 URL 保守跳过，不伪造分组
         group = groups.get(normalized)

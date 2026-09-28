@@ -146,11 +146,21 @@ def iter_stream_objects(
 
 
 def category_of_first(item: dict) -> tuple[str | None, str | None]:
-    """categories[0] = FreshRSS 单分类（greader 模型）；形状异常 → 无分类.
+    """categories[0] = FreshRSS 单分类（greader 模型）→ 稳定 (id, label)。
 
-    Shared by the entry adapter's subscription parsing and the control
-    adapter's subscription listing — same upstream shape, same lenient
-    degradation to "no category".
+    FIX-234 明确缺省映射（id 是稳定 key，``user/-/label/<名>``）：
+
+    - id 在、label 缺/空白 → label 回退为 id 的 label 段（与
+      tag/list 构造 label 的规则一致）——订阅关系往返保留；
+    - label 在、id 缺/形状异常 → id 按 label 段规则合成——同一条
+      稳定 key，绝不产生「没有 id 的分类」；
+    - label 段为空（``user/-/label/``）→ 不是可用分类 → (None, None)，
+      绝不让客户端把空名/缺失值渲染成「undefined」分类。
+
+    形状异常（categories 非 list / 元素非 dict / 两字段都不可用）降级为
+    无分类。Shared by the entry adapter's subscription parsing and the
+    control adapter's subscription listing — same upstream shape, same
+    lenient degradation to "no category".
     """
     categories = item.get("categories")
     if not isinstance(categories, list) or not categories:
@@ -160,9 +170,20 @@ def category_of_first(item: dict) -> tuple[str | None, str | None]:
         return None, None
     raw_id = first.get("id")
     raw_label = first.get("label")
-    category_id = raw_id if isinstance(raw_id, str) and raw_id else None
-    category_label = raw_label if isinstance(raw_label, str) and raw_label else None
-    return category_id, category_label
+    category_id = raw_id if isinstance(raw_id, str) and raw_id.strip() else None
+    category_label = (
+        raw_label if isinstance(raw_label, str) and raw_label.strip() else None
+    )
+    if category_id is not None:
+        label_part = category_id.removeprefix(CATEGORY_PREFIX)
+        if not label_part.strip():
+            return None, None  # 空 label 段：不是可用分类
+        if category_label is None:
+            category_label = label_part
+        return category_id, category_label
+    if category_label is not None:
+        return f"{CATEGORY_PREFIX}{category_label}", category_label
+    return None, None
 
 # Block-level tags that produce a line break in contentText.
 _BLOCK_TAGS = frozenset(
@@ -904,9 +925,15 @@ class FreshRSSAdapter(FreshRSSSession):
 
         Returns None when the item has no usable id (it cannot be
         referenced at all); every other missing field is tolerated.
+
+        FIX-232：条目 ID 全链路是无损字符串。上游把短形 ID 发成 JSON
+        number（int）时，Python 整数解析天然精确（无 JavaScript number
+        的 2^53 精度损失），转成十进制字符串保真；JSON float（JS double
+        形状，精度已损）绝不转换成数字串——那会臆造一个可能指向错误
+        条目的 ID，按形状异常跳过。
         """
-        item_id = item.get("id")
-        if not isinstance(item_id, str) or not item_id:
+        item_id = FreshRSSAdapter._entry_id_of(item)
+        if item_id is None:
             return None
         title = item.get("title")
         title = title if isinstance(title, str) else ""
@@ -923,7 +950,9 @@ class FreshRSSAdapter(FreshRSSSession):
         if isinstance(alternate, list) and alternate:
             first = alternate[0]
             if isinstance(first, dict) and isinstance(first.get("href"), str):
-                url = first["href"]
+                # FIX-233：相对 href 按 feed 来源基址解析（xml:base 语义），
+                # 绝不把相对路径透传给客户端（否则点击落到 LumiRSS 自身）。
+                url = FreshRSSAdapter._resolved_link_of(first["href"], item)
         published = item.get("published")
         published_at = None
         if isinstance(published, int) and not isinstance(published, bool) and published >= 0:
@@ -974,6 +1003,69 @@ class FreshRSSAdapter(FreshRSSSession):
             "content_html": FreshRSSAdapter._content_html_of(item),
             "enclosure": enclosure,
         }
+
+    @staticmethod
+    def _entry_id_of(item: dict) -> str | None:
+        """The upstream entry id as an exact, lossless string (FIX-232).
+
+        - str: kept verbatim (long-form ``tag:google.com,…item/<16-hex>``
+          and decimal short form both pass through untouched);
+        - int (JSON number): Python parses big integers exactly, so the
+          decimal rendering is lossless — no 2^53 float semantics anywhere;
+        - float / bool / anything else: the id shape is unusable. A float
+          may already have lost digits (JavaScript-number serialization);
+          converting it to a string would fabricate an id that can address
+          the WRONG entry, so the item is skipped instead.
+        """
+        raw = item.get("id")
+        if isinstance(raw, bool):
+            return None
+        if isinstance(raw, str):
+            return raw or None
+        if isinstance(raw, int):
+            return str(raw)
+        return None
+
+    @staticmethod
+    def _resolved_link_of(href: str, item: dict) -> str | None:
+        """One entry link, resolved to an absolute URL (FIX-233).
+
+        Absolute hrefs (https/http/mailto/…) pass through untouched. A
+        relative href is resolved against the feed-origin base:
+        ``origin.htmlUrl`` first, then the ``origin.streamId`` feed URL —
+        both only when absolute http(s). Without a usable base the link
+        degrades to None: emitting a Lumi-relative path would make the
+        click land on LumiRSS itself instead of the source.
+        """
+        if urllib.parse.urlsplit(href.strip()).scheme:
+            return href
+        base = FreshRSSAdapter._entry_base_url_of(item)
+        if base is None:
+            return None
+        return urllib.parse.urljoin(base, href.strip())
+
+    @staticmethod
+    def _entry_base_url_of(item: dict) -> str | None:
+        """The entry's feed-origin base URL (absolute http(s)) or None."""
+        origin = item.get("origin")
+        if not isinstance(origin, dict):
+            return None
+        html_url = origin.get("htmlUrl")
+        if isinstance(html_url, str) and FreshRSSAdapter._is_absolute_http_url(
+            html_url
+        ):
+            return html_url
+        stream_id = origin.get("streamId")
+        if isinstance(stream_id, str):
+            feed_url = stream_id.removeprefix("feed/")
+            if FreshRSSAdapter._is_absolute_http_url(feed_url):
+                return feed_url
+        return None
+
+    @staticmethod
+    def _is_absolute_http_url(url: str) -> bool:
+        parts = urllib.parse.urlsplit(url)
+        return parts.scheme in ("http", "https") and bool(parts.netloc)
 
     @staticmethod
     def _content_html_of(item: dict) -> str:
