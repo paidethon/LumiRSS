@@ -52,6 +52,15 @@ FROM python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4d
 # stale deployed BFF is diagnosable from the browser. Never a secret.
 ARG LUMIRSS_COMMIT=""
 
+# FIX-373: OCI labels share the runtime's exact sources — the product
+# version from the repo VERSION file (the O190 single source) and the
+# tested git SHA. Both args are declared in THIS (shipped) stage so the
+# labels can never silently fall back to an undefined value.
+ARG LUMIRSS_VERSION=""
+
+LABEL org.opencontainers.image.version="${LUMIRSS_VERSION}" \
+      org.opencontainers.image.revision="${LUMIRSS_COMMIT}"
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     LUMIRSS_DB_PATH=/data/lumi.sqlite \

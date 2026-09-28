@@ -100,6 +100,10 @@ jobs:
           else
             echo "version=${sha::12}" >> "$GITHUB_OUTPUT"
           fi
+          # FIX-373: OCI label version = the VERSION file of the TESTED tree
+          # (the checkout above is pinned to the tested SHA), so image tag,
+          # OCI labels and the O190 version single source can never diverge.
+          echo "version_file=$(cat VERSION)" >> "$GITHUB_OUTPUT"
 
       - name: Build and push BFF image
         id: bff
@@ -109,6 +113,7 @@ jobs:
           push: true
           build-args: |
             LUMIRSS_COMMIT=${{ steps.tested.outputs.sha }}
+            LUMIRSS_VERSION=${{ steps.tags.outputs.version_file }}
           tags: |
             ghcr.io/${{ steps.tags.outputs.repo }}/lumirss-bff:${{ steps.tags.outputs.version }}
             ${{ github.event_name == 'workflow_run' && format('ghcr.io/{0}/lumirss-bff:latest', steps.tags.outputs.repo) || '' }}
@@ -121,6 +126,7 @@ jobs:
           push: true
           build-args: |
             VITE_GIT_COMMIT=${{ steps.tested.outputs.sha }}
+            LUMIRSS_VERSION=${{ steps.tags.outputs.version_file }}
           tags: |
             ghcr.io/${{ steps.tags.outputs.repo }}/lumirss-web:${{ steps.tags.outputs.version }}
             ${{ github.event_name == 'workflow_run' && format('ghcr.io/{0}/lumirss-web:latest', steps.tags.outputs.repo) || '' }}
