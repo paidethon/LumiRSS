@@ -20,20 +20,29 @@ export function AiQuotaCard() {
     staleTime: 15_000,
   })
   const [window, setWindow] = useState<'' | 'day' | 'month'>('')
-  const [maxCalls, setMaxCalls] = useState<number>(0)
+  // FIX-281：编辑态（字符串草稿）与提交态（夹紧后的数字）分离——
+  // 暂态「-」/清空不被当场置 0；保存时才解析并夹紧到 0..10000。
+  const [maxCallsDraft, setMaxCallsDraft] = useState<string>('0')
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
     const usage = usageQuery.data
     if (usage !== undefined) {
       setWindow(usage.window)
-      setMaxCalls(usage.maxCalls)
+      setMaxCallsDraft(String(usage.maxCalls))
     }
   }, [usageQuery.data])
 
+  // 提交态：草稿 → 夹紧数字（空/非法 → 0 = 不限；负数 → 0；>10000 → 10000）。
+  const maxCallsCommitted = (() => {
+    const parsed = Number.parseInt(maxCallsDraft.trim(), 10)
+    if (Number.isNaN(parsed)) return 0
+    return Math.max(0, Math.min(10000, parsed))
+  })()
+
   const save = useMutation({
     mutationFn: () =>
-      updateAiSettings({ quotaWindow: window, quotaMaxCalls: maxCalls } as Parameters<
+      updateAiSettings({ quotaWindow: window, quotaMaxCalls: maxCallsCommitted } as Parameters<
         typeof updateAiSettings
       >[0]),
     onSuccess: async () => {
@@ -44,7 +53,7 @@ export function AiQuotaCard() {
   })
 
   const usage = usageQuery.data
-  const unlimited = window === '' || maxCalls === 0
+  const unlimited = window === '' || maxCallsCommitted === 0
 
   return (
     <section
@@ -81,11 +90,9 @@ export function AiQuotaCard() {
             type="number"
             min={0}
             max={10000}
-            value={maxCalls}
+            value={maxCallsDraft}
             disabled={window === ''}
-            onChange={(e) =>
-              setMaxCalls(e.target.value === '' ? 0 : Math.max(0, Math.min(10000, Number(e.target.value))))
-            }
+            onChange={(e) => setMaxCallsDraft(e.target.value)}
             className="w-28 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 py-1.5 text-sm disabled:opacity-60"
           />
         </label>
