@@ -37,7 +37,7 @@ afterEach(() => {
 
 describe('FIX-288 批注编辑弹层按目标重置', () => {
   it('编辑 A → 直接编辑 B：表单显示 B 的备注，不残留 A 的内容', async () => {
-    const container = makeArticle()
+    makeArticle()
     seed({
       id: 'a1',
       entryRef: 'e1',
