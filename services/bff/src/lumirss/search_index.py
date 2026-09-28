@@ -373,9 +373,12 @@ class SearchIndexService:
                 f"Search supports at most {_MAX_SEARCH_TERMS} terms."
             )
         # F078：同义词单层扩展（命中 term 并入 expansions；不递归；
-        # expand_synonyms=False 或无命中 → 原词原样）。
+        # expand_synonyms=False 或无命中 → 原词原样）。FIX-315：主查询
+        # 只跑原词条（注释契约「原词条走主查询」）——扩展词 AND 进主
+        # 查询会让原词条的字面命中被剔除（搜索越搜越少）。
         matched_synonyms: list[dict] = []
         added_expansions: list[str] = []
+        expanded_terms = terms
         if expand_synonyms:
             from lumirss.search_synonyms import expand_terms
             MAX_EFFECTIVE_TERMS = 100
@@ -386,9 +389,11 @@ class SearchIndexService:
                 if term_folded in lowered:
                     matched_synonyms.append({"term": term_folded, "expansions": expansions})
             if matched_synonyms:
-                original_terms = list(terms)
-                terms = expand_terms(terms, synonym_map)[:MAX_EFFECTIVE_TERMS]
-                added_expansions = [t for t in terms if t.casefold() not in {x.casefold() for x in original_terms}]
+                expanded_terms = expand_terms(terms, synonym_map)[:MAX_EFFECTIVE_TERMS]
+                original_folded = {t.casefold() for t in terms}
+                added_expansions = [
+                    t for t in expanded_terms if t.casefold() not in original_folded
+                ]
         intitle_terms = split_terms(intitle or "")
         if len(intitle_terms) > 2:
             raise SearchQueryError("intitle supports at most 2 terms.")
@@ -416,11 +421,14 @@ class SearchIndexService:
         has_more = len(rows) > limit
         primary_rows = rows[:limit]
         # F078：扩展词 OR 合并——原词条走主查询（分页契约不变），每个
-        # 扩展词单独一次有界查询，去重后并入首页（诚实：扩展命中标注
-        # cached 语义不变；主查询的 keyset/hasMore 不受影响）。
+        # 扩展词单独一次有界查询，去重后仅并入首页。FIX-315：翻页腿
+        # 不再重复并入扩展命中（旧实现每页重跑扩展查询 → 跨页重复），
+        # keyset 也只取主查询流的真实末位（旧实现取合并后 rows[-1]，
+        # 扩展行的 published_at 冒充分页边界 → 主查询未服务命中被跳过
+        # （丢失）或已服务命中重发（重复））。
         extra_rows: list = []
         seen_ids = {str(r["item_id"]) for r in primary_rows}
-        if added_expansions:
+        if added_expansions and keyset is None:
             expansions: list[str] = list(added_expansions)
             for expansion in expansions[: max(0, 100 - len(terms))]:
                 expansion_rows = await self._store.query(
@@ -441,7 +449,10 @@ class SearchIndexService:
                         seen_ids.add(item_id)
                         extra_rows.append(row)
         rows = primary_rows + extra_rows[: max(0, limit * 2 - len(primary_rows))]
-        terms_folded = [term.casefold() for term in terms]
+        # 命中标注口径含扩展词（「扩展命中」诚实标注；仅首页存在扩展行）。
+        terms_folded = [
+            term.casefold() for term in (expanded_terms if added_expansions else terms)
+        ]
         items = []
         for row in rows:
             items.append(
@@ -466,8 +477,8 @@ class SearchIndexService:
                 }
             )
         next_keyset = None
-        if has_more and rows:
-            last = rows[-1]
+        if has_more and primary_rows:
+            last = primary_rows[-1]
             next_keyset = (last["published_at"], last["item_id"])
         return {
             "rows": items,
