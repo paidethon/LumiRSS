@@ -99,8 +99,11 @@ const AdminScreen = lazy(() => import('./components/admin/AdminScreen'))
 function PageSkeleton() {
   return (
     <div className="flex flex-col gap-3 p-4" aria-label="页面加载中">
+      {/* FIX-116：行高对齐列表真实卡片行（canonical 88px，与
+        * .lumi-row-cv 的 contain-intrinsic-size 一致），懒加载页换入
+        * 时间线/列表时不再整体跳位 */}
       {Array.from({ length: 5 }, (_, i) => (
-        <Skeleton key={i} className="h-16 w-full" />
+        <Skeleton key={i} className="h-[5.5rem] w-full" />
       ))}
     </div>
   )
