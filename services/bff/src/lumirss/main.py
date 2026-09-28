@@ -108,7 +108,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     here too — cheap, no file I/O; migrations run lazily on the first
     storage use (0015). The derived search projection is synced by a
     background task (0022): rebuild when empty, then catch up each
-    interval. Its failures are logged, never fatal."""
+    interval. Its failures are logged, never fatal.
+
+    ARCH-08 ordering contract (pinned by tests/test_arch08_runtime.py):
+
+    1. http_client + control-db handle (no I/O);
+    2. migrations + legacy owner migration — ``ensure_owner_migration``
+       awaits the control ``migrate()`` BEFORE anything else runs;
+    3. token hash backfill (best-effort, never blocks startup);
+    4. ONLY THEN the background schedulers start, through the process
+       single-owner registry (a repeated startup re-uses live tasks);
+    5. the app becomes ready (``yield``) strictly after 1-4;
+    6. shutdown: background tasks cancel → bounded await → stragglers
+       reported, then agent drain (5s), RAG connections close, http
+       client closes — deterministic, no unbounded awaits.
+    """
     app.state.http_client = httpx.AsyncClient(
         timeout=httpx.Timeout(10.0, connect=5.0),
         trust_env=False,
@@ -214,22 +228,36 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # P0-06: digest scheduler + IMAP poll loop. Both factories return
     # self-disabling tasks (sleeping no-ops while unconfigured), so the
     # tasks exist unconditionally and settings drive actual behavior.
+    # ARCH-08: every slot goes through the process-level registry — a
+    # repeated startup in one process returns the ALREADY-RUNNING task
+    # instead of orphaning a duplicate loop behind the app.state slot.
     from lumirss.mail_digest import build_digest_scheduler_task
     from lumirss.mail_imap import build_mail_imap_task
+    from lumirss.runtime import SCHEDULERS
 
-    app.state.digest_scheduler_task = build_digest_scheduler_task(app.state)
-    app.state.mail_imap_task = build_mail_imap_task(app.state)
+    app.state.digest_scheduler_task = SCHEDULERS.start(
+        "digest_scheduler",
+        lambda: build_digest_scheduler_task(app.state),
+    )
+    app.state.mail_imap_task = SCHEDULERS.start(
+        "mail_imap",
+        lambda: build_mail_imap_task(app.state),
+    )
     # M4: GPT 日报调度（同一工厂接法；未配置时是睡眠 no-op）。
     from lumirss.gpt_digest import build_gpt_digest_scheduler_task
 
-    app.state.gpt_digest_scheduler_task = build_gpt_digest_scheduler_task(
-        app.state
+    app.state.gpt_digest_scheduler_task = SCHEDULERS.start(
+        "gpt_digest_scheduler",
+        lambda: build_gpt_digest_scheduler_task(app.state),
     )
     # P0-07d: the RAG idle-unload loop (no-op until the RAG service is
     # first built) keeps the low-memory budget honest in production.
     from lumirss.rag import build_rag_idle_task
 
-    app.state.rag_idle_task = build_rag_idle_task(app.state)
+    app.state.rag_idle_task = SCHEDULERS.start(
+        "rag_idle",
+        lambda: build_rag_idle_task(app.state),
+    )
 
     settings = LumiSettings()
     interval = settings.LUMIRSS_SEARCH_SYNC_INTERVAL
@@ -267,7 +295,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         # P0-13: the task exists only when sync is enabled; interval=0 must
         # not create a sleep(0) hot loop.
-        app.state.search_sync_task = asyncio.create_task(search_sync_loop())
+        app.state.search_sync_task = SCHEDULERS.start(
+            "search_sync", lambda: asyncio.create_task(search_sync_loop())
+        )
     obsidian_interval = settings.LUMIRSS_OBSIDIAN_SCAN_INTERVAL
     if obsidian_interval > 0:
 
@@ -288,7 +318,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 except Exception:  # noqa: BLE001 — scan must never kill the app
                     _logger.exception("obsidian scan failed; will retry")
 
-        app.state.obsidian_scan_task = asyncio.create_task(obsidian_scan_loop())
+        app.state.obsidian_scan_task = SCHEDULERS.start(
+            "obsidian_scan", lambda: asyncio.create_task(obsidian_scan_loop())
+        )
     rag_index_interval = settings.LUMIRSS_RAG_INDEX_INTERVAL
     app.state.rag_index_task = None
     if rag_index_interval > 0:
@@ -296,31 +328,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # (and sweep deleted ones) without a manual full rebuild.
         from lumirss.rag import build_rag_incremental_task
 
-        app.state.rag_index_task = build_rag_incremental_task(
-            app.state, rag_index_interval
+        app.state.rag_index_task = SCHEDULERS.start(
+            "rag_index",
+            lambda: build_rag_incremental_task(app.state, rag_index_interval),
         )
     yield
-    sync_task = app.state.search_sync_task
-    if sync_task is not None:
-        sync_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await sync_task
-    obsidian_task = app.state.obsidian_scan_task
-    if obsidian_task is not None:
-        obsidian_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await obsidian_task
-    for task_name in (
-        "digest_scheduler_task",
-        "mail_imap_task",
-        "rag_idle_task",
-        "rag_index_task",
-    ):
-        task = getattr(app.state, task_name, None)
-        if task is not None:
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+    # ARCH-08 shutdown contract: cancel → bounded await → report. The
+    # registry owns every lifespan slot, so one bounded stop covers the
+    # conditional loops (search sync / obsidian / rag index) and the
+    # always-on schedulers; a task that refuses to die within the window
+    # is reported (logged) instead of hanging process shutdown forever.
+    await SCHEDULERS.stop_all(timeout=10.0)
     # In-flight agent turns use the shared http_client: give them a short
     # window to finalize (their `finally` marks the turn done) before the
     # client closes underneath them, then cancel whatever is still running.
