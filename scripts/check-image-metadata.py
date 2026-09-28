@@ -164,6 +164,27 @@ def check_image_metadata() -> list[str]:
     elif re.search(r"^name: CI\s*$", ci, flags=re.MULTILINE) is None:
         failures.append(f"{_CI_WF_PATH} must declare `name: CI` (the workflow_run trigger matches by name)")
 
+    # ---- FIX-377/378/379: release attachment set + promotion identity -----
+    # The tag-release SHA256SUMS must be rebuilt over the ACTUAL asset set
+    # (existing attachments — offline image archives included — downloaded
+    # first), promotion identity must be verified before anything is
+    # attached, and required assets must be asserted against server truth
+    # before the workflow concludes green.
+    _require(
+        publish,
+        r"gh release download \"\$tag\"",
+        failures,
+        "publish-images.yml: attaching must download the release's existing "
+        "assets (offline image archives) into the checksum staging dir",
+    )
+    _require(
+        publish,
+        r"scripts/release-sums\.sh release-assets",
+        failures,
+        "publish-images.yml: the release SHA256SUMS must be rebuilt over the "
+        "actual asset set (scripts/release-sums.sh), never a hardcoded subset",
+    )
+
     # ---- FIX-376: any setup-node cache must hash its lockfile -------------
     for wf in sorted((ROOT / ".github/workflows").glob("*.yml")):
         text = wf.read_text(encoding="utf-8")
