@@ -66,6 +66,7 @@ const Reader = lazy(() => import('./components/Reader'))
 // E1: N045 阅读中断便签（Reader 外层挂载）
 const ReadingInterruptionNote = lazy(() => import('./components/ReadingInterruptionNote'))
 import Sidebar from './components/Sidebar'
+import { RouteErrorBoundary } from './components/RouteErrorBoundary'
 import { PaneSeparator } from './components/ui/PaneSeparator'
 import { Skeleton } from './components/ui/Skeleton'
 
@@ -101,6 +102,17 @@ function PageSkeleton() {
         <Skeleton key={i} className="h-16 w-full" />
       ))}
     </div>
+  )
+}
+
+/** FIX-259：一级页路由边界——页面渲染抛错只落在该路由位（壳层不受
+ * 影响），错误面提供「重试 / 返回首页」两条恢复路径。内含各自的
+ * Suspense，懒加载分包契约不变（fallback 仍为 PageSkeleton）。 */
+function RouteBoundary({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <RouteErrorBoundary label={label}>
+      <Suspense fallback={<PageSkeleton />}>{children}</Suspense>
+    </RouteErrorBoundary>
   )
 }
 
@@ -250,9 +262,9 @@ export default function App() {
   const route = useAppRoute()
   if (route === 'admin') {
     return (
-      <Suspense fallback={<PageSkeleton />}>
+      <RouteBoundary label="管理台">
         <AdminScreen />
-      </Suspense>
+      </RouteBoundary>
     )
   }
 
@@ -362,64 +374,64 @@ export default function App() {
             }
           >
             {section === 'sources' && (
-              <Suspense fallback={<PageSkeleton />}>
+              <RouteBoundary label="来源">
                 <SourcesPage />
-              </Suspense>
+              </RouteBoundary>
             )}
             {section === 'subscriptions' && (
-              <Suspense fallback={<PageSkeleton />}>
+              <RouteBoundary label="订阅">
                 <SubscriptionsPage />
-              </Suspense>
+              </RouteBoundary>
             )}
             {section === 'search' && (
-              <Suspense fallback={<PageSkeleton />}>
+              <RouteBoundary label="搜索">
                 <SearchPage />
-              </Suspense>
+              </RouteBoundary>
             )}
             {section === 'favorites' && (
-              <Suspense fallback={<PageSkeleton />}>
+              <RouteBoundary label="收藏">
                 <FavoritesPage />
-              </Suspense>
+              </RouteBoundary>
             )}
             {section === 'bookmarks' && (
-              <Suspense fallback={<PageSkeleton />}>
+              <RouteBoundary label="书签">
                 <BookmarksPage />
-              </Suspense>
+              </RouteBoundary>
             )}
             {section === 'workspaces' && (
-              <Suspense fallback={<PageSkeleton />}>
+              <RouteBoundary label="工作区">
                 <WorkspacesPage />
-              </Suspense>
+              </RouteBoundary>
             )}
             {section === 'clips' && (
-              <Suspense fallback={<PageSkeleton />}>
+              <RouteBoundary label="网页剪藏">
                 <ClipsPage />
-              </Suspense>
+              </RouteBoundary>
             )}
             {section === 'snapshots' && (
-              <Suspense fallback={<PageSkeleton />}>
+              <RouteBoundary label="网页快照">
                 <SnapshotsPage />
-              </Suspense>
+              </RouteBoundary>
             )}
             {section === 'inbox' && (
-              <Suspense fallback={<PageSkeleton />}>
+              <RouteBoundary label="收件箱">
                 <InboxPage />
-              </Suspense>
+              </RouteBoundary>
             )}
             {section === 'obsidian' && (
-              <Suspense fallback={<PageSkeleton />}>
+              <RouteBoundary label="Obsidian 库">
                 <ObsidianPage />
-              </Suspense>
+              </RouteBoundary>
             )}
             {section === 'agent' && (
-              <Suspense fallback={<PageSkeleton />}>
+              <RouteBoundary label="Agent 工作台">
                 <AgentWorkbenchPage />
-              </Suspense>
+              </RouteBoundary>
             )}
             {section === 'graph' && (
-              <Suspense fallback={<PageSkeleton />}>
+              <RouteBoundary label="标签与图谱">
                 <GraphPage />
-              </Suspense>
+              </RouteBoundary>
             )}
           </section>
         )}
@@ -432,9 +444,9 @@ export default function App() {
             className="hidden min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--lumi-surface)] lg:flex"
             aria-label={section === 'agent' ? 'Agent 工作台' : '标签与图谱'}
           >
-            <Suspense fallback={<PageSkeleton />}>
+            <RouteBoundary label={section === 'agent' ? 'Agent 工作台' : '标签与图谱'}>
               {section === 'agent' ? <AgentWorkbenchPage /> : <GraphPage />}
-            </Suspense>
+            </RouteBoundary>
           </section>
         )}
 
@@ -461,54 +473,56 @@ export default function App() {
               agent/graph 是全宽 section（M1），不进入本三栏分支。 */}
           {section === 'search' ? (
             <div className="hidden min-h-0 flex-1 flex-col lg:flex">
-              <Suspense fallback={<PageSkeleton />}>
+              <RouteBoundary label="搜索">
                 <SearchPage />
-              </Suspense>
+              </RouteBoundary>
             </div>
           ) : section === 'bookmarks' ? (
             <div className="hidden min-h-0 flex-1 flex-col lg:flex">
-              <Suspense fallback={<PageSkeleton />}>
+              <RouteBoundary label="书签">
                 <BookmarksPage />
-              </Suspense>
+              </RouteBoundary>
             </div>
           ) : section === 'workspaces' ? (
             <div className="hidden min-h-0 flex-1 flex-col lg:flex">
-              <Suspense fallback={<PageSkeleton />}>
+              <RouteBoundary label="工作区">
                 <WorkspacesPage />
-              </Suspense>
+              </RouteBoundary>
             </div>
           ) : section === 'clips' ? (
             <div className="hidden min-h-0 flex-1 flex-col lg:flex">
-              <Suspense fallback={<PageSkeleton />}>
+              <RouteBoundary label="网页剪藏">
                 <ClipsPage />
-              </Suspense>
+              </RouteBoundary>
             </div>
           ) : section === 'snapshots' ? (
             <div className="hidden min-h-0 flex-1 flex-col lg:flex">
-              <Suspense fallback={<PageSkeleton />}>
+              <RouteBoundary label="网页快照">
                 <SnapshotsPage />
-              </Suspense>
+              </RouteBoundary>
             </div>
           ) : section === 'inbox' ? (
             <div className="hidden min-h-0 flex-1 flex-col lg:flex">
-              <Suspense fallback={<PageSkeleton />}>
+              <RouteBoundary label="收件箱">
                 <InboxPage />
-              </Suspense>
+              </RouteBoundary>
             </div>
           ) : section === 'obsidian' ? (
             <div className="hidden min-h-0 flex-1 flex-col lg:flex">
-              <Suspense fallback={<PageSkeleton />}>
+              <RouteBoundary label="Obsidian 库">
                 <ObsidianPage />
-              </Suspense>
+              </RouteBoundary>
             </div>
           ) : section === 'sources' ? (
             <div className="hidden min-h-0 flex-1 flex-col lg:flex">
-              <Suspense fallback={<PageSkeleton />}>
+              <RouteBoundary label="来源">
                 <SourcesPage />
-              </Suspense>
+              </RouteBoundary>
             </div>
           ) : (
-            <EntryList />
+            <RouteBoundary label="文章列表">
+              <EntryList />
+            </RouteBoundary>
           )}
         </section>
         )}
