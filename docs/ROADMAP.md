@@ -17,8 +17,8 @@ MVP（0000–0020）、Phase 2 knowledge workbench、Phase 2 recovery 返工、
 check:dashboard` 漂移守卫，看板接法见
 [how-to/deploy.md](how-to/deploy.md) §8），批次历史归档见
 [history/milestones.md](history/milestones.md)，冻结的 recovery 审计
-账本见 [audits/phase2-recovery.md](audits/phase2-recovery.md)。已按批次
-合入但尚未随 2.0.1 发布补入 CHANGELOG 的增量（来源管理增强
+账本见 [audits/phase2-recovery.md](audits/phase2-recovery.md)。已按
+批次合入但未进入任何版本说明的更早增量（2.0.0 前合入的来源管理增强
 N012/N013/N015、NE1 阅读排版批次等）以 `git log` 为准。
 
 ## Next（候选，立项由用户批准的 spec 决定）
