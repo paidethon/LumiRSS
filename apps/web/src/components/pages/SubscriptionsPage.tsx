@@ -62,6 +62,10 @@ import { VolumeOverview } from '../VolumeOverview'
 const SourceRefreshStatusPanel = lazy(() =>
   import('../SourceRefreshStatusPanel').then((m) => ({ default: m.SourceRefreshStatusPanel })),
 )
+// NEW-201..210：来源运维工作台（lazy；重页签非首屏关键路径）
+const SourceOpsDialog = lazy(() =>
+  import('../new201/SourceOpsDialog').then((m) => ({ default: m.SourceOpsDialog })),
+)
 import {
   SourceStaleAlertDialog,
   StaleSourcesPanel,
@@ -252,6 +256,8 @@ export default function SubscriptionsPage() {
   const [muteListOpen, setMuteListOpen] = useState(false)
   const [importBatchesOpen, setImportBatchesOpen] = useState(false)
   const [healthCheckOpen, setHealthCheckOpen] = useState(false)
+  // NEW-201..210：来源运维工作台（停机/观察/回收箱/视图/日历/保留/接管/比对/表单/到期提醒）
+  const [sourceOpsOpen, setSourceOpsOpen] = useState(false)
 
   const toggleChecked = (ref: string) => {
     setCheckedRefs((prev) => {
@@ -495,6 +501,12 @@ export default function SubscriptionsPage() {
           feedUrl: sub.feedUrl,
         }))}
       />
+      {/* NEW-201..210：来源运维工作台（Suspense 由既有 lazy 约定兜底） */}
+      <Suspense fallback={null}>
+        {sourceOpsOpen && (
+          <SourceOpsDialog open={sourceOpsOpen} onClose={() => setSourceOpsOpen(false)} />
+        )}
+      </Suspense>
       <div className="min-h-0 flex-1 overflow-y-auto p-3 max-lg:pb-[calc(4.75rem_+_var(--safe-bottom))]">
         {/* F40：首启向导（尚无订阅且未被关闭时显示；可整体关闭） */}
         {firstRunVisible && !firstRunDismissed ? (
@@ -565,6 +577,10 @@ export default function SubscriptionsPage() {
           </Button>
           <Button variant="secondary" className="text-xs" onClick={() => setHealthCheckOpen(true)} aria-haspopup="dialog">
             维护检查
+          </Button>
+          {/* NEW-201..210：来源运维工作台（单一入口，10 项能力分页签） */}
+          <Button variant="secondary" className="text-xs" onClick={() => setSourceOpsOpen(true)} aria-haspopup="dialog">
+            来源运维
           </Button>
           {/* F001：异常来源筛选开关（aria-pressed = 筛选态可见性） */}
           <Button
