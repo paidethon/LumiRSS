@@ -532,3 +532,74 @@ def test_retry_after_partial_batch_success_reruns_only_failed_blocks(tmp_path):
     assert "<<<BLOCK 0>>>" not in seen_prompts[-1]
     assert [s.status for s in retry] == ["success"] * 4
     assert [s.cached for s in retry] == [True, True, True, False]
+
+
+# ---------------------------------------------------------------------------
+# FIX-141: 单一运行时配置源——分段翻译与 provider 工厂读同一份配置
+# ---------------------------------------------------------------------------
+
+
+def test_segment_generate_resolves_translation_profile_single_source(tmp_path):
+    """FIX-141: the bilingual segment path must resolve ONE runtime config
+    — the translation-purpose view — the same source its provider factory
+    resolves. With a purpose-mapped profile and the GLOBAL base URL/model
+    left EMPTY, generation must run the profile (never a false
+    "AI is not configured") and key cache rows under the PROFILE's model —
+    the same model the settings UI reports for the translation purpose."""
+    from lumirss.ai_profiles import AiProfileStore, PurposeAiSettings
+    from lumirss.ai_settings import AiSettingsStore
+
+    captured: dict[str, str] = {}
+    calls = {"n": 0}
+
+    async def factory(base_url, model):
+        calls["n"] += 1
+        captured["base_url"] = base_url
+        captured["model"] = model
+
+        class FakeProvider:
+            async def complete(self, messages):
+                return f"{_marker(7)}\n列表项译文。"
+
+        return FakeProvider()
+
+    db = Database(tmp_path / "lumi.sqlite")
+    run(db.migrate())
+    settings = AiSettingsStore(db)
+    secrets = SecretsStore(tmp_path / "secrets.json")
+    profiles = AiProfileStore(db, secrets)
+    profile = run(
+        profiles.create_profile(
+            label="DeepSeek 翻译",
+            base_url="http://127.0.0.1:9999/v1",
+            model="profile-model",
+        )
+    )
+    profiles.set_profile_key(profile["id"], "sk-" + "fixture-key")
+    run(profiles.save_purposes({"translation": profile["id"]}))
+
+    service = SegmentTranslationService(
+        db=db,
+        settings_store=PurposeAiSettings(settings, profiles, "translation"),
+        provider_factory=factory,
+        secrets=secrets,
+    )
+    blocks = [SegmentInput(index=7, text="List item text.")]
+    states = run(service.generate("e1.fix141", blocks))
+    assert [s.status for s in states] == ["success"]
+    # provider 实际拿到的就是 profile 的 base URL/model。
+    assert captured == {
+        "base_url": "http://127.0.0.1:9999/v1",
+        "model": "profile-model",
+    }
+    # 缓存行键入的 model 是 profile 的 model（实际执行的模型）。
+    row = run(
+        db.fetch_one("SELECT model FROM ai_translation_segments WHERE entry_ref = ?",
+                     ("e1.fix141",))
+    )
+    assert row is not None
+    assert row["model"] == "profile-model"
+    # 同一用途视图再次生成 → 精确缓存命中，零新增 provider 调用。
+    again = run(service.generate("e1.fix141", blocks))
+    assert again[0].cached is True
+    assert calls["n"] == 1

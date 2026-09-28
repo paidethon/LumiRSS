@@ -508,7 +508,6 @@ async def get_translation_verification(
     只比较可见数字 token（整数/小数/千分位/%；CJK 数字不在范围），
     基于可见差异而非语义判断。手工修订块是人类定稿 —— 原样列出、
     不产生 findings；无源段文本的旧行诚实标记 source_text_unavailable。"""
-    from lumirss.ai_settings import AiSettingsStore
     from lumirss.ai_translation_segments import (
         SEGMENTS_PROMPT_VERSION,
         engine_identity,
@@ -519,7 +518,13 @@ async def get_translation_verification(
 
     decode_entry_ref(entry_ref)
     db = request.app.state.db
-    settings_values = await AiSettingsStore(db).load()
+    # FIX-141：与生成端同一配置源（translation 用途视图）——否则 profile
+    # 映射下校验端点按全局 model 查缓存行，永远查不到刚生成的段落。
+    settings_values = await PurposeAiSettings(
+        _get_ai_settings_store(request),
+        _get_ai_profile_store(request),
+        "translation",
+    ).load()
     provider, model = engine_identity(
         settings_values[KEY_TRANSLATION_ENGINE], settings_values
     )
