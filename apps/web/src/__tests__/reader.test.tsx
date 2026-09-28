@@ -321,8 +321,12 @@ describe('Mutation cache patching (Phase H 精确补丁)', () => {
     await waitFor(() => {
       expect(queryClient.getQueryData(['entry', 'e1.a'])).toMatchObject({ read: true })
     })
-    // read=true 是常规路径：精确补丁，零 invalidate、零重拉。
-    expect(spy).not.toHaveBeenCalled()
+    // read=true 是常规路径：列表（['entries']）零 invalidate、零重拉
+    // （Phase H 精确补丁）。FIX-125 的刻意契约例外：侧栏服务端派生
+    // 计数（['pinned-view-count']）在同一次写入里统一失效——口径极小，
+    // 无挂载观察者时不产生请求；这是三视图一致性的唯一允许项。
+    expect(spy).toHaveBeenCalledTimes(1)
+    expect(spy.mock.calls[0]![0]).toMatchObject({ queryKey: ['pinned-view-count'] })
   })
 
   it('补丁竞态：对 A 发 mutation，完成前切到 B → 只补丁 A 的缓存', async () => {

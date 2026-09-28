@@ -86,8 +86,10 @@ function useInfiniteSentinel(
 }
 
 /** P1.3 列表滚动锚点：离开/滚动时保存，挂载/换范围后数据到达时恢复
- * （rAF 节流保存；恢复对 scrollHeight 有要求，等一拍重试）。 */
-function useListScrollAnchor(
+ * （rAF 节流保存；恢复对 scrollHeight 有要求，等一拍重试）。
+ * FIX-124：切范围/视图后容器是同一 DOM 节点——新范围无锚点时必须显式
+ * 回顶，否则上一范围的 scrollTop 原样带入新列表（旧位置×新内容错位）。 */
+export function useListScrollAnchor(
   containerRef: React.RefObject<HTMLDivElement | null>,
   anchorKey: string,
   loadedCount: number,
@@ -97,7 +99,13 @@ function useListScrollAnchor(
     if (container === null) return
     const restore = (attempt: number) => {
       const target = loadListAnchor(anchorKey)
-      if (target === null || target === 0) return
+      if (target === null || target === 0) {
+        // FIX-124：该范围本次会话从未滚动（无锚点）→ 回顶，不保留
+        // 上一范围的滚动位置。若用户已在本范围滚动，锚点必已保存，
+        // 不会走到这里。
+        container.scrollTop = 0
+        return
+      }
       if (container.scrollHeight > target || attempt > 20) {
         container.scrollTop = target
       } else {
@@ -214,7 +222,10 @@ function ReadLaterList() {
   // 失败信息由 useReadLaterMemberMutation 写入共享 cache，在此诚实展示。
   const lastError = useReadLaterLastError()
 
-  const rows = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data])
+  const rows = useMemo(
+    () => dedupeByItemRef(data?.pages.flatMap((page) => page.items) ?? []),
+    [data],
+  )
   const sentinelRef = useInfiniteSentinel(hasNextPage, isFetchingNextPage, fetchNextPage, rows.length)
 
   return (
@@ -395,6 +406,28 @@ function ReadLaterRow({ row }: { row: ReadLaterItem }) {
 
 // ---- F05 按来源分组（纯函数，可单测） ----
 
+/** FIX-123：跨页重复条目去重。服务端 cursor 异常（重复 cursor、相邻页
+ * keyset 重叠）会让 flatMap 后同一 entryRef 出现多次——保序保留首次
+ * 出现，其余丢弃。纯函数便于单测。 */
+export function dedupeByEntryRef<T extends { entryRef: string }>(items: readonly T[]): T[] {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    if (seen.has(item.entryRef)) return false
+    seen.add(item.entryRef)
+    return true
+  })
+}
+
+/** FIX-123：read-later 时间线行同规则（按 itemRef 去重）。 */
+export function dedupeByItemRef<T extends { itemRef: string }>(items: readonly T[]): T[] {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    if (seen.has(item.itemRef)) return false
+    seen.add(item.itemRef)
+    return true
+  })
+}
+
 /** 来源分组：Map<feedTitle, items> 保持首次出现顺序；feedUrl 取组内
  * 第一项的 feedUrl（可能为 null——组头「只看此来源」按钮据此禁用，
  * 绝不用后续条目回填伪造目标）。 */
@@ -494,7 +527,9 @@ function EntriesList() {
   // 恒为最新优先）；oldest 时把已加载页在客户端 reverse，只对「当前已
   // 加载范围」生效，列表头常驻标注说明这一点（测试断言该标注）。
   const entries = useMemo(() => {
-    const all = data?.pages.flatMap((page) => page.items) ?? []
+    // FIX-123：先按 entryRef 保序去重（cursor 异常时相邻页可能重叠），
+    // 再做展示过滤与排序——重复条目绝不进入列表。
+    const all = dedupeByEntryRef(data?.pages.flatMap((page) => page.items) ?? [])
     const filtered = filterEnabled
       ? all.filter((item) => matchesFilterRules(item.title, filterRules, null) === null)
       : all

@@ -107,8 +107,13 @@ export function SourceRefreshStatusPanel() {
 
   async function runCheck() {
     if (refs.length === 0) return
-    await refreshNow.mutateAsync(refs)
-    await queryClient.invalidateQueries({ queryKey: ['sources', 'recoveries'] })
+    try {
+      await refreshNow.mutateAsync(refs)
+      await queryClient.invalidateQueries({ queryKey: ['sources', 'recoveries'] })
+    } catch {
+      // FIX-129：检查失败必须诚实呈现（下方 role=alert 错误行 + 重试），
+      // 与「检查成功、暂无更新」严格区分——失败绝不伪装成空态成功。
+    }
   }
 
   return (
@@ -151,6 +156,22 @@ export function SourceRefreshStatusPanel() {
           <p className="mt-1 text-[10px] leading-4 text-[var(--lumi-text-tertiary)]">
             「立即检查」复用维护检查探测（手动触发，无后台调度）；同步有新交付的来源也会记录。
           </p>
+          {/* FIX-129：检查请求本身失败（网络/5xx）→ 错误行 + 重试；
+              与下方「还没有检查记录」空态严格区分。 */}
+          {refreshNow.isError && (
+            <div
+              role="alert"
+              data-testid="refresh-check-error"
+              className="mt-2 flex flex-wrap items-center gap-2 rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-selected)] px-2.5 py-1.5 text-xs text-[var(--lumi-danger)]"
+            >
+              <span className="min-w-0 flex-1">
+                检查失败：{refreshNow.error instanceof Error ? refreshNow.error.message : '请稍后重试。'}
+              </span>
+              <Button size="sm" variant="secondary" onClick={runCheck} disabled={refreshNow.isPending}>
+                重试
+              </Button>
+            </div>
+          )}
           {statusQuery.isPending ? (
             <p className="mt-2 flex items-center gap-1.5 text-xs text-[var(--lumi-text-tertiary)]">
               <Loader2 aria-hidden className="size-3.5 animate-spin" /> 加载中…
