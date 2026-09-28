@@ -39,6 +39,7 @@ from lumirss.ai_provider import (
     SUMMARY_PROMPT_VERSION,
     AiNotConfigured,
     AiProviderError,
+    AiUpstreamError,
 )
 from lumirss.ai_settings import (
     KEY_BASE_URL,
@@ -222,6 +223,19 @@ class SummaryService(CachedAiArtifactService):
         await self._db.migrate()
         settings = await self._settings.load()
         require_ai_configured(settings)
+        # FIX-304: identity was resolved from an earlier settings read; if
+        # the effective model/provider/language moved on in between, this
+        # old-identity run is superseded BEFORE any provider call or row
+        # write. Executed model must always equal the recorded/displayed
+        # model — the caller retries cleanly under the current settings.
+        if (
+            identity.provider != settings[KEY_PROVIDER]
+            or identity.model != settings[KEY_MODEL]
+            or identity.language != settings[KEY_SUMMARY_LANGUAGE]
+        ):
+            raise AiUpstreamError(
+                "AI settings changed during generation. Please retry."
+            )
         await self._db.execute(
             "INSERT INTO ai_summaries (entry_ref, content_hash, provider, model, "
             "prompt_version, language, status, created_at, updated_at) "
