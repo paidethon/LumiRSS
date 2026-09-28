@@ -381,7 +381,9 @@ export interface paths {
          *
          *     - 仅 owner/admin 可铸造（member 永远 403，无法伪造提权）；
          *     - 校验的是当前管理员自己的密码（不是目标用户的）；
-         *     - 审计只记 mint 动作 + 用户 id——令牌与密码绝不入日志/审计。
+         *     - FIX-218：令牌绑定 (operation, targetUserId)——与敏感路由要求的
+         *       作用域逐字匹配才会被消费；跨操作/跨目标复用一律 403；
+         *     - 审计只记 mint 动作 + 用户 id + 作用域——令牌与密码绝不入日志。
          */
         post: operations["admin_step_up_api_v1_admin_step_up_post"];
         delete?: never;
@@ -2480,6 +2482,14 @@ export interface paths {
          *     降序重排（服务端执行，query param 真实生效）；上游 continuation
          *     分页语义不变（页边界仍由 FreshRSS 决定，诚实边界）。同时为页内
          *     条目附带 timeCredibility（投影摄取时分类的发布时间异常）。
+         *
+         *     FIX-239 显式排序规则（timeline ordering contract）：默认时间线按
+         *     **上游发表时间**排序（FreshRSS 域内事实，Lumi 不改写）；声明为远
+         *     未来的条目因此可能停留在时间线顶部——这类条目由投影摄取时标记
+         *     （timeCredibility=future，N034），且 ``sort=received`` 提供按接收
+         *     时间排序的显式逃生通道（接收序与声明日期无关，未来日期不能霸占
+         *     排序）。转换型来源（API Sources）在生成 Atom 时直接封顶远未来声
+         *     明日期（api_sources._entry_timing），不让未来条目进入上游时间线。
          */
         get: operations["entries_api_v1_entries_get"];
         put?: never;
@@ -4581,6 +4591,9 @@ export interface paths {
          * @description Sandboxed artifact read-out. The CSP `sandbox` directive strips
          *     scripts, forms, same-origin access and top navigation — the snapshot
          *     can never reach Lumi's origin, cookies or /api endpoints.
+         *     FIX-328：读出端再过一次活动内容剥离（存储层在 runner.run 落盘前已
+         *     剥；这里兜住遗留行/任何绕过存储边界的字节）——双重边界下，服务
+         *     出去的快照绝无脚本/表单/事件属性，原网页 URL 仅作为数据保留。
          */
         get: operations["serve_snapshot_api_v1_library_assets__asset_uuid__page_html_get"];
         put?: never;
@@ -5534,6 +5547,10 @@ export interface paths {
          *     Content-Disposition 恒为 attachment（绝不内联渲染）；响应体大小
          *     以存储 size 为准并再查上限（防越界写入）。文件名经净化并按
          *     RFC 5987 编码（非 ASCII 安全）。
+         *     FIX-349：Range 请求在完整文件缓存（整块 BLOB）上正确切片——
+         *     无 Range → 200 全量 + Accept-Ranges: bytes；合法单区间 → 206 +
+         *     Content-Range 与正确长度；语法坏区间按 RFC 忽略（200 全量）；
+         *     不可满足区间 → 416 + Content-Range: bytes *\/size。
          */
         get: operations["download_mail_attachment_api_v1_mail_attachments__attachment_id__get"];
         put?: never;
@@ -8890,7 +8907,12 @@ export interface paths {
         put?: never;
         /**
          * Test Libretranslate
-         * @description Probe the configured LibreTranslate server (GET /languages).
+         * @description Bounded capability probe (GET /languages) — FIX-142.
+         *
+         *     The outcome is PERSISTED so the settings view can report an ACTUAL
+         *     capability state (ok/failed + checkedAt + diagnostic) instead of a
+         *     config-exists-only "enabled". A stale state stays honest through its
+         *     checkedAt; a GET never probes (no hidden upstream calls).
          */
         post: operations["test_libretranslate_api_v1_settings_translation_libretranslate_test_post"];
         delete?: never;
@@ -9783,6 +9805,13 @@ export interface paths {
          *     F005：Lumi 侧备注/维护记录同步级联删除（见 0037 迁移注释）——
          *     FreshRSS RSS 域数据不在此路径触碰。
          *
+         *     FIX-237 代次语义：feed_url 在**退订之前**解析（退订后上游清单已无
+         *     此订阅，事后解析恒空）；退订成功即 generation-clean 该 feed 的检查
+         *     侧私有状态（source_refresh_log 历史 + feed_recovery 窗口）——同 URL
+         *     重新订阅是新代次，不继承上一代的失败史/恢复窗。用户手工配置的
+         *     显示覆盖/屏蔽规则按 URL 有意保留（跨代用户偏好，不属于对象私有
+         *     状态）。
+         *
          *     N012 keep_artifacts（可选；缺席 = 既有行为原样保留）：
          *     - true：退订后保留工作区引用 / 看板状态 / 批注（引用冻结 ref，
          *       解析层已把缺失条目降级为 stale 卡片，不丢用户整理结构）；
@@ -10177,6 +10206,11 @@ export interface paths {
         /**
          * Tts Synthesize
          * @description 合成语音（缓存优先）。X-Cache: hit | miss 诚实区分来源。
+         *
+         *     FIX-147：客户端中途弃合成（切文/退出页面 → 连接断开）即取消服务端
+         *     合成任务——上游 provider 计费调用与 BFF 任务不因断开空转到
+         *     TTS_TIMEOUT_S；弃合成不落缓存行（合成从未完整发生，无半途结果可
+         *     缓存）。上游失败路径零缓存行 + 响应流必关（FIX-249 finally 边界）。
          */
         post: operations["tts_synthesize_api_v1_tts_synthesize_post"];
         delete?: never;
@@ -11423,10 +11457,18 @@ export interface components {
         /**
          * AdminStepUpRequest
          * @description POST /admin/step-up（N009）——管理员本会话内重新证明自己。
+         *
+         *     FIX-218：令牌铸造时必须声明作用域 (operation, targetUserId)——
+         *     消费端逐字匹配，为某一操作/目标确认的密码证明不能转投其他敏感
+         *     操作或其他目标账户。
          */
         AdminStepUpRequest: {
+            /** Operation */
+            operation: string;
             /** Password */
             password: string;
+            /** Targetuserid */
+            targetUserId: string;
         };
         /**
          * AgentApprovalBatchPreview
@@ -12307,8 +12349,18 @@ export interface components {
             defaultKeyConfigured: boolean;
             /** Envkeyconfigured */
             envKeyConfigured: boolean;
+            /** Libretranslatecheckedat */
+            libretranslateCheckedAt?: string | null;
+            /** Libretranslatediagnostic */
+            libretranslateDiagnostic?: string | null;
             /** Libretranslatekeyconfigured */
             libretranslateKeyConfigured: boolean;
+            /**
+             * Libretranslatestatus
+             * @default untested
+             * @enum {string}
+             */
+            libretranslateStatus: "untested" | "ok" | "failed";
             /** Libretranslateurl */
             libretranslateUrl: string;
             /** Model */
@@ -16690,6 +16742,8 @@ export interface components {
          * @description POST /api/v1/settings/translation/libretranslate-test.
          */
         LibreTranslateTestResult: {
+            /** Checkedat */
+            checkedAt?: string | null;
             /** Message */
             message?: string | null;
             /**
@@ -22620,6 +22674,10 @@ export interface components {
          * UserQuotaPutRequest
          * @description PUT /admin/users/{id}/quota body。缺省键 = 清除该上限；
          *     正整数（1..上限界）才是有效设置。未知键 → 422。
+         *
+         *     FIX-039：字段类型 strict int——JSON 布尔不得经 lax 强转伪装成
+         *     1/0（store 层 _normalize_caps 拒绝 bool，两层校验必须同一契约；
+         *     0 本身被 ge=1 拒绝，「未设限」只是键缺省，与 0 可区分）。
          */
         UserQuotaPutRequest: {
             /** Aiquotaperday */
