@@ -47,6 +47,25 @@ describe('IconButton', () => {
     render(<IconButton icon={<Check aria-hidden />} label="标记为已读" />)
     expect(screen.getByRole('button', { name: '标记为已读' })).toBeInTheDocument()
   })
+
+  it('FIX-076: touch 保持视觉尺寸（size-*），44px 命中区由居中伪元素外扩', () => {
+    render(<IconButton icon={<Check aria-hidden />} label="收藏" size="md" touch />)
+    const btn = screen.getByRole('button', { name: '收藏' })
+    // 视觉盒仍是 md = size-8（32px），不再被 min-h/min-w 撑到 44px
+    expect(btn.className).toContain('size-8')
+    expect(btn.className).not.toMatch(/min-[hw]-11/)
+    // 命中区：居中 44×44 伪元素（伪元素属于按钮的点击区，视觉不可见）
+    expect(btn.className).toContain('after:size-11')
+    expect(btn.className).toContain('after:-translate-x-1/2')
+    expect(btn.className).toContain('after:-translate-y-1/2')
+    expect(btn.className).toMatch(/after:content-\[/)
+  })
+
+  it('FIX-076: 未开 touch 不挂命中区伪元素（桌面视觉尺寸即命中区）', () => {
+    render(<IconButton icon={<Check aria-hidden />} label="收藏" />)
+    const btn = screen.getByRole('button', { name: '收藏' })
+    expect(btn.className).not.toContain('after:size-11')
+  })
 })
 
 describe('Tooltip', () => {
