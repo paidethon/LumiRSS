@@ -181,7 +181,12 @@ async def create_source(payload: ApiSourceCreate, request: Request) -> ApiSource
     if payload.subscribe:
         subscribe_error = await _subscribe_best_effort(request, record, atom_url)
         if subscribe_error is not None:
-            await store.mark_error(record.uuid, "subscribe_failed", subscribe_error)
+            await store.mark_error(
+                record.uuid,
+                "subscribe_failed",
+                subscribe_error,
+                success_witness=record.last_success_at,
+            )
     response = _model(record, with_secret=True)
     response.subscribeError = subscribe_error
     return response
@@ -579,6 +584,7 @@ async def serve_atom(source_uuid: str, secret: str, request: Request) -> Respons
             source_uuid,
             "rate_limited",
             f"上游限流（HTTP 429），下次允许运行时间：{next_allowed}。遇限流将等待，不使用替代密钥规避。",
+            success_witness=record.last_success_at,
         )
         if record.atom_body:
             return _stale_atom_response(record, request)
@@ -588,7 +594,12 @@ async def serve_atom(source_uuid: str, secret: str, request: Request) -> Respons
             content="<error>upstream rate limited</error>",
         )
     except ApiSourceFetchFailed as exc:
-        await store.mark_error(record.uuid, "fetch_failed", str(exc))
+        await store.mark_error(
+            record.uuid,
+            "fetch_failed",
+            str(exc),
+            success_witness=record.last_success_at,
+        )
         if record.atom_body:
             return _stale_atom_response(record, request)
         return Response(
@@ -597,7 +608,12 @@ async def serve_atom(source_uuid: str, secret: str, request: Request) -> Respons
             content="<error>upstream fetch failed</error>",
         )
     except ApiSourceExpressionError as exc:
-        await store.mark_error(record.uuid, "bad_expression", str(exc))
+        await store.mark_error(
+            record.uuid,
+            "bad_expression",
+            str(exc),
+            success_witness=record.last_success_at,
+        )
         if record.atom_body:
             return _stale_atom_response(record, request)
         return Response(
@@ -610,7 +626,10 @@ async def serve_atom(source_uuid: str, secret: str, request: Request) -> Respons
     # never overwrite the last-known-good feed (honest stale instead).
     if not items and record.atom_body:
         await store.mark_error(
-            record.uuid, "empty_response", "上游响应映射结果为空，保留上次内容。"
+            record.uuid,
+            "empty_response",
+            "上游响应映射结果为空，保留上次内容。",
+            success_witness=record.last_success_at,
         )
         return _stale_atom_response(record, request)
     drift = diff_schema(record.confirmed_schema, observe_schema(items))
@@ -623,7 +642,7 @@ async def serve_atom(source_uuid: str, secret: str, request: Request) -> Respons
     )
     atom = generate_atom(record, items, feed_updated, atom_base(), max_entries=max_entries)
     etag = feed_etag(atom)
-    await store.mark_success(record.uuid, etag, atom, feed_updated)
+    run_witness = await store.mark_success(record.uuid, etag, atom, feed_updated)
     if used_fallback:
         # N130: flag AFTER mark_success so the fallback warning survives
         # as the source's latest honest status.
@@ -631,6 +650,7 @@ async def serve_atom(source_uuid: str, secret: str, request: Request) -> Respons
             record.uuid,
             "fallback_used",
             "旧凭据在宽限期内被使用：请尽快更新 FreshRSS 订阅地址为新 Atom URL。",
+            success_witness=run_witness,
         )
     if_none_match = request.headers.get("if-none-match")
     if if_none_match is not None and if_none_match.strip() == etag:
