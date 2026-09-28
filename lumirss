@@ -513,8 +513,12 @@ cmd_update() {
   if cmd_backup; then
     deploy_status_write backup ok
   else
+    # FIX-201: 备份失败绝不继续升级——没有可靠备份就没有新版本。
+    # 先记录阶段结果再退出；旧服务原样保持运行，pull/切流/迁移都不会发生。
     deploy_status_write backup failed
-    warn "pre-update backup failed — continuing (existing backups: $BACKUP_DIR)"
+    deploy_status_write result failed
+    err "pre-update backup failed — update aborted BEFORE pull/switch/migration; the old services keep running (existing backups: $BACKUP_DIR)."
+    exit 1
   fi
   snapshot_for_rollback
   deploy_status_write pull running

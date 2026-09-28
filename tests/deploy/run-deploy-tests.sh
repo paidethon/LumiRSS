@@ -688,6 +688,51 @@ assert_contains "failed update records pull failed + result failed" "failed fail
 rm -rf "$sb" "$stub_dir" "$status_dir" "$fail_dir"
 
 # ---------------------------------------------------------------------------
+echo "== 18. FIX-201: backup failure aborts update BEFORE pull/switch/migration =="
+sb="$(new_sandbox)"
+stub_dir="$(mktemp -d)"
+fail_log="$(mktemp)"
+cat > "$stub_dir/docker" <<'STUB'
+#!/bin/sh
+# stub docker: every backup container fails; pull/up would succeed if reached
+echo "docker $*" >> "${LUMIRSS_TEST_DOCKER_LOG:?}"
+cmd="$1"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  info) exit 0;;
+  run) echo "simulated backup failure" >&2; exit 1;;
+  ps) exit 0;;
+  compose)
+    sub="$1"; shift
+    case "$sub" in
+      version) exit 0;;
+      config) echo '{"name": "lumirss-prod"}';;
+      pull) echo " Pulled";;
+      exec) exit 0;;
+      *) exit 0;;
+    esac;;
+  *) exit 0;;
+esac
+STUB
+chmod +x "$stub_dir/docker"
+status_dir="$(mktemp -d)"
+status_file="$status_dir/backup-fail-status.json"
+ab_out="$(cd "$sb" && cp -f .env.prod.example .env.prod \
+  && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$fail_log" \
+     LUMIRSS_DEPLOY_STATUS_FILE="$status_file" ./lumirss update 2>&1)"
+rc=$?
+assert_eq "backup failure aborts the update (non-zero exit)" "1" "$rc"
+assert_contains "abort names the backup as the cause" "update aborted" "$ab_out"
+assert_contains "abort states the old services keep running" "old services keep running" "$ab_out"
+assert_contains "deploy status records backup failed + result failed" "failed failed" \
+  "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["stages"]["backup"]["status"], d["result"]["status"])' "$status_file" 2>/dev/null || echo broken)"
+if grep -qE "docker compose .*(pull|up)" "$fail_log"; then
+  bad "update proceeded to pull/up after the backup failure"
+else
+  ok "no pull/up after backup failure (old stack untouched, no migration)"
+fi
+rm -rf "$sb" "$stub_dir" "$fail_log" "$status_dir"
+
+# ---------------------------------------------------------------------------
 echo "== 17. FIX-192: consistent backup under a concurrent writer + isolated recovery (real docker) =="
 if docker info >/dev/null 2>&1; then
   sb="$(new_sandbox)"
