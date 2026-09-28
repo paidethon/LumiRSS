@@ -581,7 +581,7 @@ assert_eq "seeded user DB survived the upgrade byte-identical" "$seed_hash" \
 rm -rf "$sb" "$stub_dir" "$up_log"
 
 # ---------------------------------------------------------------------------
-echo "== 16. export-images / import-images: construction + checksum gate =="
+echo "== 16. export-images / import-images: construction + checksum gate + full pinned set (FIX-205) =="
 sb="$(new_sandbox)"
 stub_dir="$(mktemp -d)"
 ex_log="$(mktemp)"
@@ -597,6 +597,11 @@ case "$cmd" in
     [ -n "$out" ] && printf 'fake-image-tar\n' > "$out"
     exit 0;;
   load) exit 0;;
+  compose)
+    case "$*" in
+      *" config"*) echo '{"name": "lumirss-prod", "services": {"freshrss": {"image": "freshrss/freshrss:1.29.1@sha256:ab6b363102ccdbc39f6a62db926f567c61a5289bf25ba460f1c34423d8cc1a4d"}, "rsshub": {"image": "diygod/rsshub@sha256:387fd32ee2d8789154dcf6446a52365976e768d9ede1a7c1e610cf4da9d89fbc"}}}';;
+      *) exit 0;;
+    esac;;
   *) exit 0;;
 esac
 STUB
@@ -612,6 +617,12 @@ assert_eq "export-images exits 0" "0" "$rc"
 assert_contains "export saves BOTH pinned images in one tar (current registry path)" \
   "save -o $sb/offline/lumirss-images-abc123def456.tar ghcr.io/paidethon/lumirss/lumirss-web:abc123def456 ghcr.io/paidethon/lumirss/lumirss-bff:abc123def456" \
   "$(cat "$ex_log")"
+# FIX-205: a complete offline install set must also carry the digest-pinned
+# freshrss/rsshub images (resolved from compose, the single source of pins).
+assert_contains "export includes the digest-pinned freshrss image" \
+  "freshrss/freshrss:1.29.1@sha256:ab6b363102ccdbc39f6a62db926f567c61a5289bf25ba460f1c34423d8cc1a4d" "$(cat "$ex_log")"
+assert_contains "export includes the digest-pinned rsshub image" \
+  "diygod/rsshub@sha256:387fd32ee2d8789154dcf6446a52365976e768d9ede1a7c1e610cf4da9d89fbc" "$(cat "$ex_log")"
 assert_not_contains "export never references the retired registry path" \
   "ghcr.io/paidethon/lumirss-web" "$(cat "$ex_log")"
 assert_not_contains "export never references the retired bff path" \
@@ -642,6 +653,33 @@ if grep -q "docker load" "$bad_log"; then
 else
   ok "corrupted bundle never reached docker load"
 fi
+# FIX-205 degraded path: compose unanswerable → honest warning, web+bff
+# still exported (bundle explicitly flagged as NOT the complete install set).
+: > "$ex_log"
+minimal_stub="$(mktemp -d)"
+cat > "$minimal_stub/docker" <<'STUB'
+#!/bin/sh
+echo "docker $*" >> "${LUMIRSS_TEST_DOCKER_LOG:?}"
+cmd="$1"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  info) exit 0;;
+  save)
+    out=""; prev=""
+    for a in "$@"; do [ "$prev" = "-o" ] && out="$a"; prev="$a"; done
+    [ -n "$out" ] && printf 'fake-image-tar\n' > "$out"
+    exit 0;;
+  *) exit 0;;
+esac
+STUB
+chmod +x "$minimal_stub/docker"
+dg_out="$(cd "$sb" && env PATH="$minimal_stub:$PATH" LUMIRSS_TEST_DOCKER_LOG="$ex_log" \
+  LUMIRSS_IMAGE_TAG=abc123def456 ./lumirss export-images --out "$sb/offline2" 2>&1)"
+assert_contains "degraded export warns the bundle is incomplete" \
+  "NOT a complete offline install set" "$dg_out"
+assert_contains "degraded export still saves web+bff" \
+  "save -o $sb/offline2/lumirss-images-abc123def456.tar ghcr.io/paidethon/lumirss/lumirss-web:abc123def456 ghcr.io/paidethon/lumirss/lumirss-bff:abc123def456" \
+  "$(cat "$ex_log")"
+rm -rf "$minimal_stub"
 rm -rf "$sb" "$stub_dir" "$ex_log" "$im_log" "$bad_log"
 
 # ---------------------------------------------------------------------------

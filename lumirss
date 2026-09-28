@@ -1252,10 +1252,31 @@ cmd_export_images() { # ./lumirss export-images [--out DIR]
   local web_img="ghcr.io/paidethon/lumirss/lumirss-web:$tag"
   local bff_img="ghcr.io/paidethon/lumirss/lumirss-bff:$tag"
   local tar_name="lumirss-images-$tag.tar"
+  # FIX-205: 完整离线包 = 这个栈要跑的全部镜像。freshrss/rsshub 由 compose
+  # 按 digest 钉死，从 compose config 解析（单一事实来源，避免手抄 digest
+  # 漂移）；config 渲染失败时如实告警并只出 web+bff（不再是完整的离线
+  # 安装集）。FIX-206 的备份/恢复助手镜像 = 默认 BFF 镜像（backup_image），
+  # 已包含在包内，离线主机无需额外镜像。
+  local imgs=("$web_img" "$bff_img")
+  local stack_img
+  while IFS= read -r stack_img; do
+    [[ -n "$stack_img" ]] && imgs+=("$stack_img")
+  done < <(DC_D config --format json 2>/dev/null | python3 -c 'import json,sys
+try:
+    svcs = json.load(sys.stdin).get("services", {})
+    for name in ("freshrss", "rsshub"):
+        img = svcs.get(name, {}).get("image", "")
+        if img:
+            print(img)
+except Exception:
+    pass' 2>/dev/null || true)
+  if (( ${#imgs[@]} < 4 )); then
+    warn "could not resolve the freshrss/rsshub pinned images from compose — this bundle covers web+bff only and is NOT a complete offline install set."
+  fi
   mkdir -p "$out"
-  log "exporting $web_img + $bff_img → $out/$tar_name (offline bundle)"
-  docker_cmd save -o "$out/$tar_name" "$web_img" "$bff_img" \
-    || { err "docker save failed — are both images pulled on this host? ('LUMIRSS_IMAGE_TAG=$tag ./lumirss update')"; exit 1; }
+  log "exporting ${#imgs[@]} images → $out/$tar_name (offline bundle)"
+  docker_cmd save -o "$out/$tar_name" "${imgs[@]}" \
+    || { err "docker save failed — are all pinned images pulled on this host? ('LUMIRSS_IMAGE_TAG=$tag ./lumirss update')"; exit 1; }
   ( cd "$out" && sha256sum "$tar_name" > SHA256SUMS )
   local extra=""
   if [[ -f release-manifest.json ]]; then
