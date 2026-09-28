@@ -573,9 +573,16 @@ ex_out="$(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$ex_lo
   LUMIRSS_IMAGE_TAG=abc123def456 ./lumirss export-images --out "$sb/offline" 2>&1)"
 rc=$?
 assert_eq "export-images exits 0" "0" "$rc"
-assert_contains "export saves BOTH pinned images in one tar" \
-  "save -o $sb/offline/lumirss-images-abc123def456.tar ghcr.io/paidethon/lumirss-web:abc123def456 ghcr.io/paidethon/lumirss-bff:abc123def456" \
+# D-01: image references must match docker-compose.prod.yml (the registry
+# path gained the repository segment; the old ghcr.io/paidethon/lumirss-web
+# names no longer exist and broke the offline release chain).
+assert_contains "export saves BOTH pinned images in one tar (current registry path)" \
+  "save -o $sb/offline/lumirss-images-abc123def456.tar ghcr.io/paidethon/lumirss/lumirss-web:abc123def456 ghcr.io/paidethon/lumirss/lumirss-bff:abc123def456" \
   "$(cat "$ex_log")"
+assert_not_contains "export never references the retired registry path" \
+  "ghcr.io/paidethon/lumirss-web" "$(cat "$ex_log")"
+assert_not_contains "export never references the retired bff path" \
+  "ghcr.io/paidethon/lumirss-bff" "$(cat "$ex_log")"
 [[ -s "$sb/offline/lumirss-images-abc123def456.tar" ]] \
   && ok "export wrote the image tar" || bad "export tar missing"
 [[ "$(wc -l < "$sb/offline/SHA256SUMS")" -eq 2 ]] \

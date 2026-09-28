@@ -1063,8 +1063,12 @@ cmd_export_images() { # ./lumirss export-images [--out DIR]
     [[ -n "$out" ]] || { err "usage: ./lumirss export-images [--out DIR]"; exit 1; }
   fi
   local tag="${IMAGE_TAG:-latest}"
-  local web_img="ghcr.io/paidethon/lumirss-web:$tag"
-  local bff_img="ghcr.io/paidethon/lumirss-bff:$tag"
+  # D-01: names must match docker-compose.prod.yml (ghcr.io/paidethon/lumirss/…)
+  # and images_pull_or_build below — the pre-registry-segment names
+  # (ghcr.io/paidethon/lumirss-web) no longer exist and broke the offline
+  # release chain with image-not-found.
+  local web_img="ghcr.io/paidethon/lumirss/lumirss-web:$tag"
+  local bff_img="ghcr.io/paidethon/lumirss/lumirss-bff:$tag"
   local tar_name="lumirss-images-$tag.tar"
   mkdir -p "$out"
   log "exporting $web_img + $bff_img → $out/$tar_name (offline bundle)"
