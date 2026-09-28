@@ -62,5 +62,6 @@
 - **演示隐私遮罩**：全局菜单可临时把标题/来源等敏感文本替换为遮罩块
   （真实替换 DOM 文本，非视觉模糊）；刷新自动退出。
 - **登录失败限流分桶**：反代后按可信代理的 `X-Forwarded-For` 最后一跳
-  分桶（见 `LUMIRSS_TRUSTED_PROXY_NETWORKS`，[configuration.md]
-  (../reference/configuration.md)）；单个客户端刷失败不再锁死其他网络。
+  分桶（见 `LUMIRSS_TRUSTED_PROXY_NETWORKS`，
+  [configuration.md](../reference/configuration.md)）；单个客户端刷失败
+  不再锁死其他网络。
