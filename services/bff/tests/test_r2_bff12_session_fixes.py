@@ -183,3 +183,89 @@ def test_fix030_revoke_exact_id_only_that_session_dies(monkeypatch, tmp_path):
         again = client.delete(f"/api/v1/auth/sessions/{second_id}")
         assert again.status_code == 404
         assert again.json()["error"]["type"] == "session_not_found"
+
+
+# ---------------------------------------------------------------------------
+# FIX-026 — 登录失败对外只有一种形状（不泄露账号是否存在；未知用户同样
+# 烧一次 bcrypt 均衡时序，O171）；恢复链接对未知身份也只用通用错误；
+# 真实原因只进服务端审计（login_failed + detail），供运营者经
+# X-Request-ID 关联诊断。
+
+
+def test_fix026_login_failures_share_one_public_shape(monkeypatch, tmp_path):
+    db_path = _session_env(monkeypatch, tmp_path)
+    password = _fake("pw-")
+    with TestClient(app, base_url="http://lumirss.test") as client:
+        _set_owner_password(db_path, password)
+        unknown_user = client.post(
+            "/api/v1/auth/login",
+            json={"username": "nosuch" + _secrets.token_hex(4), "password": password},
+        )
+        wrong_password = _login(client, password=_fake("wrong-"))
+        # 完全一致的状态码与响应体（不是相近——一致）。
+        assert unknown_user.status_code == wrong_password.status_code == 401
+        assert unknown_user.json() == wrong_password.json()
+        assert unknown_user.json()["error"]["type"] == "invalid_credentials"
+        # 可诊断的事件编号：每个失败响应都带 X-Request-ID（与访问日志
+        # 关联），且不回显任何身份提示。
+        assert unknown_user.headers.get("x-request-id")
+        body_text = repr(unknown_user.json())
+        assert "nosuch" not in body_text
+
+
+def test_fix026_mixed_failure_kinds_share_one_budget(monkeypatch, tmp_path):
+    db_path = _session_env(monkeypatch, tmp_path)
+    password = _fake("pw-")
+    with TestClient(app, base_url="http://lumirss.test") as client:
+        _set_owner_password(db_path, password)
+        # 未知用户 / 错误密码交替烧同一预算：第 LIMIT 次后一律 429。
+        for i in range(middleware.LOGIN_FAILURE_LIMIT):
+            response = (
+                _login(client, password=_fake("wrong-"))
+                if i % 2
+                else client.post(
+                    "/api/v1/auth/login",
+                    json={"username": "nosuch" + _secrets.token_hex(4), "password": password},
+                )
+            )
+            assert response.status_code == 401
+        throttled = _login(client, password=_fake("wrong-"))
+        assert throttled.status_code == 429
+        assert throttled.json()["error"]["type"] == "rate_limited"
+
+
+def test_fix026_recover_unknown_token_is_generic(monkeypatch, tmp_path):
+    _session_env(monkeypatch, tmp_path)
+    with TestClient(app, base_url="http://lumirss.test") as client:
+        garbage = client.post(
+            "/api/v1/auth/recover",
+            json={"token": _fake("tok-") + _fake("x-"), "newPassword": _fake("new-")},
+        )
+        shaped = client.post(
+            "/api/v1/auth/recover",
+            json={"token": _secrets.token_urlsafe(32), "newPassword": _fake("new-")},
+        )
+        # 未知/伪造/过期令牌同一种通用错误——不区分「令牌不存在」与
+        # 「目标账号不存在」，不泄露任何身份信息。
+        assert garbage.status_code == shaped.status_code == 400
+        assert garbage.json() == shaped.json()
+        assert garbage.json()["error"]["type"] == "invite_invalid"
+
+
+def test_fix026_failed_logins_audited_with_real_cause(monkeypatch, tmp_path):
+    db_path = _session_env(monkeypatch, tmp_path)
+    password = _fake("pw-")
+    with TestClient(app, base_url="http://lumirss.test") as client:
+        _set_owner_password(db_path, password)
+        ghost = "nosuch" + _secrets.token_hex(4)
+        client.post(
+            "/api/v1/auth/login", json={"username": ghost, "password": password}
+        )
+        _login(client, password=_fake("wrong-"))
+        rows = _audit_rows(db_path, "login_failed")
+        assert [str(r["detail"]) for r in rows] == ["unknown_user", "bad_password"]
+        # 审计行保留真实原因（服务端可诊断），但绝不含密码材料。
+        for row in rows:
+            for value in row.values():
+                assert password not in str(value)
+                assert "wrong-" not in str(value)

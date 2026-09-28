@@ -187,6 +187,14 @@ async def login(
             deactivation = await _control(request).get_deactivation(str(identity["id"]))
             if deactivation is not None:
                 register_login_failure(request.scope)
+                await _control(request).audit(
+                    actor=username,
+                    action="login_failed",
+                    object_type="user",
+                    object_id=str(identity["id"]),
+                    outcome="denied",
+                    detail="account_deactivated",
+                )
                 return JSONResponse(
                     status_code=403,
                     content={
@@ -204,7 +212,30 @@ async def login(
                     },
                     headers=_NO_STORE,
                 )
+            # 密码正确但账户非 active（paused 等）：对外仍是通用 401。
+            register_login_failure(request.scope)
+            await _control(request).audit(
+                actor=username,
+                action="login_failed",
+                object_type="user",
+                object_id=str(identity["id"]),
+                outcome="denied",
+                detail="account_inactive",
+            )
+            return _reject(401, "invalid_credentials", "Incorrect username or password.")
+        # FIX-026：对外失败形状完全一致（无账号存在性预言，O171 时序
+        # 由 verify_login 的 dummy bcrypt 均衡）；真实原因只进服务端
+        # 审计（login_failed + detail），配合 X-Request-ID 供运营者诊断。
         register_login_failure(request.scope)
+        known = await _control(request).get_user_by_username(username)
+        await _control(request).audit(
+            actor=username,
+            action="login_failed",
+            object_type="user",
+            object_id=str(known["id"]) if known else "unknown",
+            outcome="denied",
+            detail="unknown_user" if known is None else "bad_password",
+        )
         return _reject(401, "invalid_credentials", "Incorrect username or password.")
     user_id = str(user["id"])
     # N007: TOTP-enabled accounts take the two-step path. The pending
