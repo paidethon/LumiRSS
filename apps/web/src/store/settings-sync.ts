@@ -12,6 +12,7 @@
 
 import { ApiError, getServerSettings, patchServerSettings } from '../api/client'
 import { useAuthStore, type AuthGateStatus } from './auth'
+import { PORTABLE_DEFAULTS } from '../api/generated/settings-meta'
 import {
   portableSettings,
   PORTABLE_KEYS,
@@ -252,6 +253,39 @@ export function clearPendingSettingsSync(): void {
   dirtyKeys = new Set()
   persistDirtyKeys()
   flushedFinal = false
+}
+
+/** FIX-061：换账号（登出 / 登录另一个账号）时重置 portable 设置的
+ * 账号投影。不做这一步，B 的整个会话都运行在 A 的 portable 值上：
+ *
+ * 1. 复用 clearPendingSettingsSync——A 未落库的 dirty 键不能变成对
+ *    B 的文档 PATCH（O157 语义不变）；
+ * 2. serverRevision 归零——A 文档的 revision 不能作为 B 的
+ *    baseRevision（错误冲突检测 / 绕过乐观并发）；
+ * 3. hydratedOk 翻回 false——B 登录翻转（unauthenticated →
+ *    authenticated）时 Q-P1-14 订阅会重新 hydration，把 B 自己的
+ *    服务端文档合并回本地；否则 hydratedOk 恒真、B 永远不 rehydrate；
+ * 4. portable 键回默认值——以 applyingServerValues 抑制订阅（不产生
+ *    dirty / 不发 PATCH）：换账号不该把 A 的服务端同步设置留在 B 的
+ *    内存与 lumirss-settings 里；B 登录后由 hydration 恢复 B 自己的
+ *    文档（B 无文档时迁移种子是默认值而非 A 的值）。主题等 portable
+ *    键自 0017 起是账号服务端状态（O157「设备偏好」注释早于 0017，
+ *    以 portable 白名单为准）；真正的设备本地键（语言、自定义 CSS、
+ *    字体资产等）不受影响。
+ *
+ * 幂等；未 init（纯单测环境）时除 store 更新外均为 no-op。 */
+export function resetAccountSettingsSync(): void {
+  clearPendingSettingsSync()
+  serverRevision = null
+  hydratedOk = false
+  applyingServerValues = true
+  try {
+    // as const 白名单的 readerPresets 是 readonly 元组；默认空预设以
+    // 可变数组覆盖展开结果，与 ReaderPreset[] 对齐。
+    useAppSettings.getState().update({ ...PORTABLE_DEFAULTS, readerPresets: [] })
+  } finally {
+    applyingServerValues = false
+  }
 }
 
 /** Q-P1-14：session 登录成功后重新 hydration。

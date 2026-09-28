@@ -18,7 +18,7 @@ import { useReaderUi, ALL_SCOPE } from '../store/reader-ui'
 import { useSearchState } from '../store/search-state'
 import { clearBasketOnLogout } from '../store/search-basket'
 import { useUndo } from '../store/undo'
-import { clearPendingSettingsSync } from '../store/settings-sync'
+import { resetAccountSettingsSync } from '../store/settings-sync'
 import { clearAllDrafts } from './draft-store'
 import { clearSearchHistoryOnLogout } from './search-history'
 import { clearRecentReads } from './recent-reads'
@@ -53,7 +53,9 @@ export function resetAccountState(queryClient: QueryClient): void {
   clearRecentReads() // lumirss-recent-reads
   clearReadingPositions() // lumirss-reading-positions
 
-  // 5. portable 设置的未落库 dirty 键：A 的本地待发变更不能在 B 的
-  //    会话里 PATCH 上去（下次改动会以干净 base 重新入队）。
-  clearPendingSettingsSync()
+  // 5. portable 设置的账号投影（FIX-061）：A 的未落库 dirty 键、A 的
+  //    服务端 revision、hydration 完成标记与 A 的 portable 值全部归零
+  //    ——B 登录翻转时重新 hydration 拿 B 自己的文档，B 的第一次设置
+  //    变更绝不把 A 的整包快照 PATCH 进 B 的账号。
+  resetAccountSettingsSync()
 }
