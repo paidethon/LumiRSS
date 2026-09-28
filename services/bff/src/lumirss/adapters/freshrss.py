@@ -929,7 +929,9 @@ class FreshRSSAdapter(FreshRSSSession):
         if isinstance(alternate, list) and alternate:
             first = alternate[0]
             if isinstance(first, dict) and isinstance(first.get("href"), str):
-                url = first["href"]
+                # FIX-233：相对 href 按 feed 来源基址解析（xml:base 语义），
+                # 绝不把相对路径透传给客户端（否则点击落到 LumiRSS 自身）。
+                url = FreshRSSAdapter._resolved_link_of(first["href"], item)
         published = item.get("published")
         published_at = None
         if isinstance(published, int) and not isinstance(published, bool) and published >= 0:
@@ -1002,6 +1004,47 @@ class FreshRSSAdapter(FreshRSSSession):
         if isinstance(raw, int):
             return str(raw)
         return None
+
+    @staticmethod
+    def _resolved_link_of(href: str, item: dict) -> str | None:
+        """One entry link, resolved to an absolute URL (FIX-233).
+
+        Absolute hrefs (https/http/mailto/…) pass through untouched. A
+        relative href is resolved against the feed-origin base:
+        ``origin.htmlUrl`` first, then the ``origin.streamId`` feed URL —
+        both only when absolute http(s). Without a usable base the link
+        degrades to None: emitting a Lumi-relative path would make the
+        click land on LumiRSS itself instead of the source.
+        """
+        if urllib.parse.urlsplit(href.strip()).scheme:
+            return href
+        base = FreshRSSAdapter._entry_base_url_of(item)
+        if base is None:
+            return None
+        return urllib.parse.urljoin(base, href.strip())
+
+    @staticmethod
+    def _entry_base_url_of(item: dict) -> str | None:
+        """The entry's feed-origin base URL (absolute http(s)) or None."""
+        origin = item.get("origin")
+        if not isinstance(origin, dict):
+            return None
+        html_url = origin.get("htmlUrl")
+        if isinstance(html_url, str) and FreshRSSAdapter._is_absolute_http_url(
+            html_url
+        ):
+            return html_url
+        stream_id = origin.get("streamId")
+        if isinstance(stream_id, str):
+            feed_url = stream_id.removeprefix("feed/")
+            if FreshRSSAdapter._is_absolute_http_url(feed_url):
+                return feed_url
+        return None
+
+    @staticmethod
+    def _is_absolute_http_url(url: str) -> bool:
+        parts = urllib.parse.urlsplit(url)
+        return parts.scheme in ("http", "https") and bool(parts.netloc)
 
     @staticmethod
     def _content_html_of(item: dict) -> str:
