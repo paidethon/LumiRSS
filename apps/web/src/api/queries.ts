@@ -669,6 +669,11 @@ export function useEntryStateMutation() {
           })),
         })
       }
+
+      // 5) 服务端派生计数（侧栏固定视图徽标 ['pinned-view-count', id]）：
+      // 与列表/详情同一次写入统一失效——计数永远从服务端同源刷新，
+      // 不再滞后到窗口重新聚焦才修正（FIX-125 三视图一致性）。
+      void queryClient.invalidateQueries({ queryKey: ['pinned-view-count'] })
     },
   })
 }
