@@ -34,7 +34,6 @@ from lumirss.ai_artifacts import (
     STATUS_GENERATING,
     STATUS_NOT_GENERATED,
     STATUS_SUCCESS,
-    AiCacheIdentity,
     AiContentUnavailable,
     CachedAiArtifactService,
     content_hash,
@@ -56,11 +55,11 @@ from lumirss.ai_settings import (
     KEY_PROVIDER,
     KEY_TRANSLATION_LANGUAGE,
 )
+from lumirss.glossary import get_glossary_version
 from lumirss.util import utc_now
 
 # The generate flow below keeps its 0016 statement text verbatim; these
 # bindings route its helper calls to the shared implementations.
-TranslationCacheIdentity = AiCacheIdentity
 _utc_now = utc_now
 _provider_failure_type = provider_failure_type
 
@@ -101,6 +100,38 @@ class TranslationState:
     generated_at: str | None = None
     failure_type: str | None = None
     cached: bool = False
+
+
+@dataclass(frozen=True)
+class TranslationCacheIdentity:
+    """Exact cache identity for one whole-article translation row.
+
+    FIX-144: the glossary version is part of the identity — the generate
+    prompt attaches the LIVE glossary block, so a glossary write must
+    invalidate exactly like the per-block segment cache (0005/FIX-305).
+    Shape mirrors ``AiCacheIdentity`` (summary keeps its own; a glossary
+    dimension would be meaningless there) with the language dimension
+    spelled ``target_language`` per the table columns.
+    """
+
+    entry_ref: str
+    content_hash: str
+    provider: str
+    model: str
+    prompt_version: str
+    target_language: str
+    glossary_version: str
+
+    def row_params(self) -> tuple[str, str, str, str, str, str, str]:
+        return (
+            self.entry_ref,
+            self.content_hash,
+            self.provider,
+            self.model,
+            self.prompt_version,
+            self.target_language,
+            self.glossary_version,
+        )
 
 
 def parse_translation_output(raw: str) -> tuple[str | None, str]:
@@ -152,7 +183,8 @@ class TranslationService(CachedAiArtifactService):
             provider=settings[KEY_PROVIDER],
             model=settings[KEY_MODEL],
             prompt_version=TRANSLATION_PROMPT_VERSION,
-            language=settings[KEY_TRANSLATION_LANGUAGE],
+            target_language=settings[KEY_TRANSLATION_LANGUAGE],
+            glossary_version=await get_glossary_version(self._db),
         )
         return title, content, identity
 
@@ -161,7 +193,7 @@ class TranslationService(CachedAiArtifactService):
         return await self._db.fetch_one(
             "SELECT * FROM ai_translations WHERE entry_ref = ? AND content_hash = ? "
             "AND provider = ? AND model = ? AND prompt_version = ? "
-            "AND target_language = ?",
+            "AND target_language = ? AND glossary_version = ?",
             identity.row_params(),
         )
 
@@ -200,7 +232,7 @@ class TranslationService(CachedAiArtifactService):
             provider=identity.provider,
             model=identity.model,
             prompt_version=identity.prompt_version,
-            target_language=identity.language,
+            target_language=identity.target_language,
         )
 
     async def get_translation(self, entry_ref: str) -> TranslationState:
@@ -239,20 +271,24 @@ class TranslationService(CachedAiArtifactService):
         # 生效的模型/provider/语言已变化，则按旧身份进行的这次生成被
         # 取消（稳定的可重试错误，零 provider 调用、零落行）——实际执行
         # 的模型必须与记录/展示的模型一致，调用方按当前设置干净重试。
+        # FIX-144：术语表版本同理 —— prompt 附带的是「现在」的术语表，
+        # 行键必须与它一致，漂移即取代（supersede）。
         if (
             identity.provider != settings[KEY_PROVIDER]
             or identity.model != settings[KEY_MODEL]
-            or identity.language != settings[KEY_TRANSLATION_LANGUAGE]
+            or identity.target_language != settings[KEY_TRANSLATION_LANGUAGE]
+            or identity.glossary_version != await get_glossary_version(self._db)
         ):
             raise AiUpstreamError(
                 "AI settings changed during generation. Please retry."
             )
         await self._db.execute(
             "INSERT INTO ai_translations (entry_ref, content_hash, provider, model, "
-            "prompt_version, target_language, status, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "prompt_version, target_language, glossary_version, status, "
+            "created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(entry_ref, content_hash, provider, model, prompt_version, "
-            "target_language) "
+            "target_language, glossary_version) "
             "DO UPDATE SET status = 'generating', failure_type = NULL, "
             "translated_title = NULL, translated_text = NULL, "
             "updated_at = excluded.updated_at",
@@ -261,7 +297,7 @@ class TranslationService(CachedAiArtifactService):
         provider = await self._provider_factory(
             settings[KEY_BASE_URL], settings[KEY_MODEL]
         )
-        target_language = identity.language
+        target_language = identity.target_language
         language_instruction = (
             "目标语言：简体中文 (zh-CN)。"
             if target_language == "zh-CN"
@@ -290,7 +326,7 @@ class TranslationService(CachedAiArtifactService):
                 await self._db.execute(
                     "DELETE FROM ai_translations WHERE entry_ref = ? AND content_hash = ? "
                     "AND provider = ? AND model = ? AND prompt_version = ? "
-                    "AND target_language = ?",
+                    "AND target_language = ? AND glossary_version = ?",
                     identity.row_params(),
                 )
             else:
@@ -298,7 +334,8 @@ class TranslationService(CachedAiArtifactService):
                     "UPDATE ai_translations SET status = 'failed', failure_type = ?, "
                     "translated_title = NULL, translated_text = NULL, updated_at = ? "
                     "WHERE entry_ref = ? AND content_hash = ? AND provider = ? "
-                    "AND model = ? AND prompt_version = ? AND target_language = ?",
+                    "AND model = ? AND prompt_version = ? AND target_language = ? "
+                    "AND glossary_version = ?",
                     (
                         _provider_failure_type(exc),
                         _utc_now(),
@@ -311,7 +348,8 @@ class TranslationService(CachedAiArtifactService):
             "UPDATE ai_translations SET status = 'success', translated_title = ?, "
             "translated_text = ?, failure_type = NULL, updated_at = ? "
             "WHERE entry_ref = ? AND content_hash = ? AND provider = ? "
-            "AND model = ? AND prompt_version = ? AND target_language = ?",
+            "AND model = ? AND prompt_version = ? AND target_language = ? "
+            "AND glossary_version = ?",
             (translated_title, translated_text, _utc_now(), *identity.row_params()),
         )
         row = await self._fetch_row(identity)
