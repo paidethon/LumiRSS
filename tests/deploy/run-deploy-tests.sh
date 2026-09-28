@@ -214,13 +214,21 @@ stub_dir="$(mktemp -d)"
 cat > "$stub_dir/docker" <<'STUB'
 #!/bin/sh
 # stub docker: everything succeeds, compose subcommands answer sanely.
-# inspect answers per --format so FIX-207's per-service probes behave.
+# inspect answers per --format so FIX-207's per-service probes behave;
+# exec answers the version endpoint (FIX-199 verify) and inspect/image
+# agree on one image ID so the digest-parity gate passes.
 cmd="$1"; [ $# -gt 0 ] && shift
 case "$cmd" in
   info) exit 0;;
   run) exit 0;;
+  image)
+    case "$*" in
+      *inspect*) echo "sha256:stub-image-id";;
+      *) exit 0;;
+    esac;;
   inspect)
     case "$*" in
+      *"{{.Image}}"*) echo "sha256:stub-image-id";;
       *OOMKilled*) echo false;;
       *RestartCount*) echo 0;;
       *"State.Health"*) echo none;;
@@ -228,11 +236,12 @@ case "$cmd" in
     esac;;
   ps) exit 0;;
   compose)
-    sub="$1"; shift
-    case "$sub" in
-      version) exit 0;;
-      config) echo '{"name": "lumirss-prod", "services": {"web": {}, "bff": {}, "freshrss": {}, "rsshub": {}}}';;
-      pull) echo " Pulled";;
+    # COMPOSE_ARGS precede the subcommand, so match on the whole arg string
+    # (a sub="$1" case would never match: the first arg is "-f").
+    case "$*" in
+      *" config"*) echo '{"name": "lumirss-prod", "services": {"web": {}, "bff": {}, "freshrss": {}, "rsshub": {}}}';;
+      *" pull"*) echo " Pulled";;
+      *" exec"*) echo '{"commit": "stub-commit", "version": "2.0.1"}';;
       *) exit 0;;
     esac;;
   *) exit 0;;
@@ -260,14 +269,18 @@ cmd="$1"; [ $# -gt 0 ] && shift
 case "$cmd" in
   info) exit 0;;
   run) exit 0;;
-  inspect) exit 0;;   # images exist locally
+  image) echo "sha256:stub-image-id";;   # images exist locally
+  inspect)
+    case "$*" in
+      *"{{.Image}}"*) echo "sha256:stub-image-id";;
+      *) exit 0;;
+    esac;;
   ps) exit 0;;
   compose)
-    sub="$1"; shift
-    case "$sub" in
-      version) exit 0;;
-      config) echo '{"name": "lumirss-prod"}';;
-      pull) echo "Image lumirss-web:latest Skipped"; exit 0;;  # no " Pulled"
+    case "$*" in
+      *" config"*) echo '{"name": "lumirss-prod"}';;
+      *" pull"*) echo "Image lumirss-web:latest Skipped"; exit 0;;  # no " Pulled"
+      *" exec"*) echo '{"commit": "stub-commit", "version": "2.0.1"}';;
       *) exit 0;;
     esac;;
   *) exit 0;;
@@ -499,15 +512,18 @@ cmd="$1"; [ $# -gt 0 ] && shift
 case "$cmd" in
   info) exit 0;;
   run) exit 0;;
-  inspect) exit 0;;
+  inspect)
+    case "$*" in
+      *"{{.Image}}"*) echo "sha256:stub-image-id";;
+      *) exit 0;;
+    esac;;
+  image) echo "sha256:stub-image-id";;
   ps) exit 0;;
   compose)
-    sub="$1"; shift
-    case "$sub" in
-      version) exit 0;;
-      config) echo '{"name": "lumirss-prod"}';;
-      pull) echo " Pulled";;
-      exec) exit 0;;   # wait_health probe
+    case "$*" in
+      *" config"*) echo '{"name": "lumirss-prod"}';;
+      *" pull"*) echo " Pulled";;
+      *" exec"*) echo '{"commit": "stub-commit", "version": "2.0.1"}';;   # wait_health probe + version verify
       *) exit 0;;
     esac;;
   *) exit 0;;
@@ -629,15 +645,18 @@ cmd="$1"; [ $# -gt 0 ] && shift
 case "$cmd" in
   info) exit 0;;
   run) exit 0;;
-  inspect) echo healthy;;
+  image) echo "sha256:stub-image-id";;
+  inspect)
+    case "$*" in
+      *"{{.Image}}"*) echo "sha256:stub-image-id";;
+      *) echo healthy;;
+    esac;;
   ps) exit 0;;
   compose)
-    sub="$1"; shift
-    case "$sub" in
-      version) exit 0;;
-      config) echo '{"name": "lumirss-prod"}';;
-      pull) echo " Pulled";;
-      exec) exit 0;;   # wait_health probe inside the bff container
+    case "$*" in
+      *" config"*) echo '{"name": "lumirss-prod"}';;
+      *" pull"*) echo " Pulled";;
+      *" exec"*) echo '{"commit": "stub-commit", "version": "2.0.1"}';;
       *) exit 0;;
     esac;;
   *) exit 0;;
@@ -1102,7 +1121,12 @@ cmd="$1"; [ $# -gt 0 ] && shift
 case "$cmd" in
   info) exit 0;;
   run) exit 0;;
-  inspect) echo healthy;;
+  image) echo "sha256:stub-image-id";;
+  inspect)
+    case "$*" in
+      *"{{.Image}}"*) echo "sha256:stub-image-id";;
+      *) echo healthy;;
+    esac;;
   ps) exit 0;;
   compose)
     # COMPOSE_ARGS precede the subcommand, so match on the whole arg string.
@@ -1113,6 +1137,7 @@ case "$cmd" in
         [ -n "${LUMIRSS_TEST_LOCK_MARK:-}" ] && printf 'pull-started\n' > "$LUMIRSS_TEST_LOCK_MARK"
         sleep 6
         echo " Pulled";;
+      *" exec"*) echo '{"commit": "stub-commit", "version": "2.0.1"}';;
       *) exit 0;;
     esac;;
   *) exit 0;;
@@ -1176,12 +1201,18 @@ cmd="$1"; [ $# -gt 0 ] && shift
 case "$cmd" in
   info) exit 0;;
   run) exit 0;;
-  inspect) echo healthy;;
+  image) echo "sha256:stub-image-id";;
+  inspect)
+    case "$*" in
+      *"{{.Image}}"*) echo "sha256:stub-image-id";;
+      *) echo healthy;;
+    esac;;
   ps) exit 0;;
   compose)
     case "$*" in
       *" config"*) echo '{"name": "lumirss-prod"}';;
       *" pull"*) echo " Pulled";;
+      *" exec"*) echo '{"commit": "stub-commit", "version": "2.0.1"}';;
       *) exit 0;;
     esac;;
   *) exit 0;;
@@ -1352,6 +1383,85 @@ assert_contains "ready failure distinguishes itself from live" \
   "live above may still be true" "$d_out"
 assert_not_contains "no FAIL on a dead bff (WARN semantics unchanged)" "FAIL " "$d_out"
 rm -rf "$sb" "$stub_dir"
+
+# ---------------------------------------------------------------------------
+echo "== 25. FIX-199: update completion is VERIFIED (version endpoint + image digests) =="
+mk_verify_stub() { # mk_verify_stub DIR COMMIT_MODE DIGEST_MODE
+  # COMMIT_MODE: ok | mismatch | empty ; DIGEST_MODE: ok | mismatch
+  local dir="$1" cmode="$2" dmode="$3"
+  mkdir -p "$dir"
+  cat > "$dir/docker" <<STUB
+#!/bin/sh
+cmd="\$1"; [ \$# -gt 0 ] && shift
+case "\$cmd" in
+  info) exit 0;;
+  run) exit 0;;
+  image)
+    case "\$*" in
+      *inspect*) echo "sha256:pulled-image-id";;
+      *) exit 0;;
+    esac;;
+  inspect)
+    case "\$*" in
+      *"{{.Image}}"*) echo "sha256:$([ "$dmode" = "mismatch" ] && echo running-image-id || echo pulled-image-id)";;
+      *) echo healthy;;
+    esac;;
+  ps) exit 0;;
+  compose)
+    case "\$*" in
+      *" config"*) echo '{"name": "lumirss-prod"}';;
+      *" pull"*) echo " Pulled";;
+      *" exec"*)
+        case "$cmode" in
+          mismatch) echo '{"commit": "other-commit", "version": "2.0.1"}';;
+          empty)    exit 0;;
+          *)        echo '{"commit": "rel208sha", "version": "2.0.1"}';;
+        esac;;
+      *) exit 0;;
+    esac;;
+  *) exit 0;;
+esac
+STUB
+  chmod +x "$dir/docker"
+}
+run_verify_update() { # run_verify_update STUBDIR STATUSFILE OUTFILE
+  (cd "$sb" && cp -f .env.prod.example .env.prod \
+    && env PATH="$1:$PATH" LUMIRSS_DEPLOY_STATUS_FILE="$2" \
+       LUMIRSS_EXPECTED_COMMIT=rel208sha ./lumirss update > "$3" 2>&1)
+}
+
+sb="$(new_sandbox)"
+mk_verify_stub "$sb/stub-ok" ok ok
+v_status="$(mktemp -d)/v-ok.json"
+run_verify_update "$sb/stub-ok" "$v_status" "$sb/out-ok.txt"
+assert_eq "verified update exits 0" "0" "$?"
+assert_contains "completion message states verification" "update complete (verified" "$(cat "$sb/out-ok.txt")"
+assert_contains "status records verify ok + result success" "ok success" \
+  "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["stages"]["verify"]["status"], d["result"]["status"])' "$v_status" 2>/dev/null || echo broken)"
+
+mk_verify_stub "$sb/stub-commit" mismatch ok
+v_status="$(mktemp -d)/v-commit.json"
+rc=0; run_verify_update "$sb/stub-commit" "$v_status" "$sb/out-commit.txt" || rc=$?
+assert_eq "commit mismatch -> update exits 1" "1" "$rc"
+assert_contains "failure names the commit mismatch" "version/commit mismatch" "$(cat "$sb/out-commit.txt")"
+assert_contains "status records verify failed + result failed" "failed failed" \
+  "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["stages"]["verify"]["status"], d["result"]["status"])' "$v_status" 2>/dev/null || echo broken)"
+assert_contains "failure points at manual rollback" "'./lumirss rollback'" "$(cat "$sb/out-commit.txt")"
+
+mk_verify_stub "$sb/stub-digest" ok mismatch
+v_status="$(mktemp -d)/v-digest.json"
+rc=0; run_verify_update "$sb/stub-digest" "$v_status" "$sb/out-digest.txt" || rc=$?
+assert_eq "image-digest mismatch -> update exits 1" "1" "$rc"
+assert_contains "failure names the digest mismatch and the container" \
+  "NOT running the pinned image" "$(cat "$sb/out-digest.txt")"
+
+mk_verify_stub "$sb/stub-unreach" empty ok
+v_status="$(mktemp -d)/v-unreach.json"
+rc=0; run_verify_update "$sb/stub-unreach" "$v_status" "$sb/out-unreach.txt" || rc=$?
+assert_eq "version endpoint unreachable -> update exits 1" "1" "$rc"
+assert_contains "failure names the unreachable version endpoint" \
+  "unreachable through the compose network" "$(cat "$sb/out-unreach.txt")"
+rm -rf "$sb"
 
 # ---------------------------------------------------------------------------
 echo

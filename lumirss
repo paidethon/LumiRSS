@@ -556,6 +556,51 @@ cmd_deploy() {
   fi
 }
 
+# ---------------------------------------------------------------------------
+# FIX-199 部署完成判定：升级宣布"完成"前必须自证——
+#   1) BFF /api/v1/version 经 compose 网络可达（与 './lumirss status' 同一
+#      通道，带内部 token；只取 version/commit，不打印其它内容）；
+#   2) 版本端点报告的 commit 与本次发布一致（可判定时：LUMIRSS_EXPECTED_
+#      COMMIT 覆盖 > git rev-parse HEAD；无法判定则明说跳过，不算失败）；
+#   3) lumirss-bff / lumirss-web 容器实际运行的镜像 ID 与本地按 tag 拉取的
+#      镜像 ID 一致（防 tag 漂移/旧容器未被重建）。
+# 任一硬性检查失败 → verify 阶段记 failed、result 记 failed 并以非零退出；
+# 回滚保持手动（runbook 约定），本命令绝不自动回滚。
+verify_deployment() { # verify_deployment TAG EXPECTED_COMMIT ; 0 = verified
+  local tag="$1" expected_commit="$2" rc=0
+  local token vout reported_commit svc img running_id pulled_id
+  token="$(env_value LUMIRSS_INTERNAL_TOKEN)"
+  vout="$(DC_D exec -e LT="$token" bff python -c "import urllib.request,json,os; req=urllib.request.Request('http://127.0.0.1:8000/api/v1/version', headers={'X-Lumi-Token': os.environ.get('LT','')}); print(urllib.request.urlopen(req, timeout=10).read().decode())" 2>/dev/null || true)"
+  reported_commit="$(printf '%s' "$vout" | python3 -c 'import json,sys
+try:
+    print(json.load(sys.stdin).get("commit") or "")
+except Exception:
+    print("")' 2>/dev/null || true)"
+  if [[ -z "$vout" ]]; then
+    err "verify: BFF /api/v1/version unreachable through the compose network — cannot prove what is running."
+    rc=1
+  fi
+  if [[ -n "$expected_commit" && -n "$reported_commit" && "$reported_commit" != "$expected_commit" ]]; then
+    err "verify: running BFF reports commit '$reported_commit' but this release is '$expected_commit' — version/commit mismatch."
+    rc=1
+  elif [[ -z "$expected_commit" || -z "$reported_commit" ]]; then
+    warn "verify: commit comparison skipped (expected='${expected_commit:-(unknown)}', reported='${reported_commit:-(none)}') — the image-digest check remains the hard gate."
+  fi
+  for svc in bff web; do
+    img="ghcr.io/paidethon/lumirss/lumirss-$svc:$tag"
+    running_id="$(docker_cmd inspect --format '{{.Image}}' "lumirss-$svc" 2>/dev/null || echo "")"
+    pulled_id="$(docker_cmd image inspect --format '{{.Id}}' "$img" 2>/dev/null || echo "")"
+    if [[ -z "$running_id" || -z "$pulled_id" ]]; then
+      err "verify: cannot compare the image of lumirss-$svc (running container: '${running_id:-(none)}', pulled '$img': '${pulled_id:-(none)}')."
+      rc=1
+    elif [[ "$running_id" != "$pulled_id" ]]; then
+      err "verify: lumirss-$svc is NOT running the pinned image (running=$running_id, pulled=$pulled_id) — recreate did not take effect or the tag moved."
+      rc=1
+    fi
+  done
+  return "$rc"
+}
+
 cmd_update() {
   acquire_update_lock   # FIX-195: 第二个并发 run 在任何备份/拉取/迁移之前快速失败
   require_env_file
@@ -594,9 +639,22 @@ cmd_update() {
   deploy_status_write health running
   if wait_health 180; then
     deploy_status_write health ok
-    deploy_status_write result success
-    log "update complete."
-    ./lumirss status || true
+    # FIX-199: 健康检查只证明新容器活了；完成判定还要版本端点与镜像
+    # digest 都对得上本次发布。
+    deploy_status_write verify running "version endpoint + image digests must match the pinned release"
+    if verify_deployment "$IMAGE_TAG" \
+        "${LUMIRSS_EXPECTED_COMMIT:-$(git rev-parse HEAD 2>/dev/null || true)}"; then
+      deploy_status_write verify ok
+      deploy_status_write result success
+      log "update complete (verified: version endpoint + image digests match)."
+      ./lumirss status || true
+    else
+      deploy_status_write verify failed "running stack does not match the pinned release"
+      deploy_status_write result failed
+      err "update finished but post-switch verification FAILED — the running stack does not match the intended release."
+      err "Rollback is manual per runbook: './lumirss rollback'. Treat this deployment as unverified."
+      exit 1
+    fi
   else
     deploy_status_write health failed
     deploy_status_write result failed
