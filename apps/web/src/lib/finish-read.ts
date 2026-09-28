@@ -114,6 +114,10 @@ export function useFinishRead(options: UseFinishReadOptions): FinishReadControll
   const baselineTopRef = useRef(0)
   const maxTopRef = useRef(0)
   const lastScrollTopRef = useRef(0)
+  /** FIX-126：上一次滚动事件时的 scrollHeight——内容高度变化的那一帧
+   * 的位移是被动位移（图片加载/译文展开 + 滚动锚定推高 scrollTop），
+   * 不计主动推进。 */
+  const lastScrollHeightRef = useRef<number | null>(null)
   const programmaticUntilRef = useRef(0)
   const endVisibleRef = useRef(false)
   const scrollRangeRef = useRef(0)
@@ -230,9 +234,13 @@ export function useFinishRead(options: UseFinishReadOptions): FinishReadControll
       baselineTopRef.current = container.scrollTop
       maxTopRef.current = container.scrollTop
       lastScrollTopRef.current = container.scrollTop
+      // lastScrollHeightRef 刻意不在此初始化：挂载/切换时刻的布局尚未
+      // 完成（正文/图片未排版），首帧几何不可信——校准交给第一次滚动
+      // 事件（见 onScroll），避免把「正文就位」误判成内容变化。
       setIsShortArticle(!isArticleScrollable(container.scrollHeight, container.clientHeight))
     } else {
       scrollRangeRef.current = 0
+      lastScrollHeightRef.current = null
       setIsShortArticle(false)
     }
   }, [entryRef, read, clearDwell])
@@ -286,10 +294,18 @@ export function useFinishRead(options: UseFinishReadOptions): FinishReadControll
     if (container === null) return
     // 每次滚动重测余量：图片延迟加载/译文展开/字号变化后，短文可能
     // 变长文（反之亦然）；scrollHeight 读取在滚动帧内通常无强制重排。
+    const scrollHeight = container.scrollHeight
     remeasure()
     const top = container.scrollTop
     const now = Date.now()
-    if (now >= programmaticUntilRef.current) {
+    // FIX-126：与上一次滚动事件相比内容高度变化 → 本帧位移是被动位移
+    //（图片加载/译文展开 + 滚动锚定推高 scrollTop），不计主动推进。
+    // 首次滚动事件只做几何校准、照常累计（挂载时刻布局未完成，几何
+    // 不可信，不能拿它当「上一帧」）；此后内容高度稳定的帧正常累计。
+    const previousHeight = lastScrollHeightRef.current
+    lastScrollHeightRef.current = scrollHeight
+    const contentChanged = previousHeight !== null && previousHeight !== scrollHeight
+    if (!contentChanged && now >= programmaticUntilRef.current) {
       if (top > maxTopRef.current) maxTopRef.current = top
     }
     lastScrollTopRef.current = top
@@ -307,6 +323,7 @@ export function useFinishRead(options: UseFinishReadOptions): FinishReadControll
         baselineTopRef.current = node.scrollTop
         maxTopRef.current = node.scrollTop
         lastScrollTopRef.current = node.scrollTop
+        // lastScrollHeightRef 同样留给首帧滚动校准（见 onScroll）。
         attachObserver()
       }
     },

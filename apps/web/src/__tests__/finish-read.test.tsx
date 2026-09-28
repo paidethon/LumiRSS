@@ -261,6 +261,36 @@ describe('useFinishRead 状态机', () => {
     view.unmount()
   })
 
+  it('FIX-126：图片加载位移（scrollHeight 增长被动推高 scrollTop）不计主动推进；之后的真实滚动照常派发', () => {
+    const view = setup()
+    // 真实推进不足阈值（requiredProgressFor(2000)=40）。
+    userScrollTo(30)
+    // 图片加载：内容长高 600px，滚动锚定把 scrollTop 被动推到 95
+    //（程序性豁免窗口早已过期——这正是此前会误触发的路径）。
+    act(() => {
+      Object.defineProperty(container, 'scrollHeight', { value: 2600, configurable: true })
+      container.scrollTop = 95
+      container.dispatchEvent(new Event('scroll'))
+    })
+    sentinelVisible(true)
+    act(() => {
+      vi.advanceTimersByTime(FINISH_READ_DWELL_MS * 3)
+    })
+    // 内容变化那一帧的被动位移不构成读完证据。
+    expect(markRead).not.toHaveBeenCalled()
+    expect(controller.isDwelling).toBe(false)
+    // 之后的真实滚动（scrollHeight 不变）照常累计并恰好派发一次。
+    userScrollTo(200)
+    sentinelVisible(true)
+    expect(controller.isDwelling).toBe(true)
+    act(() => {
+      vi.advanceTimersByTime(FINISH_READ_DWELL_MS)
+    })
+    expect(markRead).toHaveBeenCalledTimes(1)
+    expect(markRead).toHaveBeenCalledWith('e1')
+    view.unmount()
+  })
+
   it('切文章取消未完成判定；推进量不带入下一篇（不误作用）', () => {
     const view = setup({ entryRef: 'e1' })
     userScrollTo(1200)
