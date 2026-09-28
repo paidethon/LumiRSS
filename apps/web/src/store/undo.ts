@@ -22,6 +22,10 @@ interface UndoState {
   clear: () => void
   /** 过期清理（由组件的定时器驱动，避免常驻轮询） */
   expire: () => void
+  /** FIX-117：悬停/聚焦暂停读取——以剩余时长重置 expiresAt（时钟基准
+   * 从「暂停时刻」续起）。组件暂停时先停表，恢复时用记录的剩余时长
+   * 调用本方法，再重新起表。 */
+  extend: (ttlMs: number) => void
 }
 
 export const useUndo = create<UndoState>((set) => ({
@@ -33,6 +37,12 @@ export const useUndo = create<UndoState>((set) => ({
     set((state) =>
       state.current && state.current.expiresAt <= Date.now()
         ? { current: null }
+        : state,
+    ),
+  extend: (ttlMs) =>
+    set((state) =>
+      state.current
+        ? { current: { ...state.current, expiresAt: Date.now() + Math.max(0, ttlMs) } }
         : state,
     ),
 }))
