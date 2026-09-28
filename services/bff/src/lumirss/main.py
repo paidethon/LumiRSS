@@ -22,6 +22,7 @@ from lumirss.errors import register_error_handlers
 from lumirss.middleware import (
     MAX_REQUEST_BODY_BYTES,  # noqa: F401  (re-exported for tests)
     InternalTokenMiddleware,
+    NoStoreCacheMiddleware,
     RateLimitMiddleware,
     RequestCorrelationMiddleware,
     RequestLogMiddleware,
@@ -368,7 +369,9 @@ app.add_middleware(SessionAuthMiddleware)
 # the record is emitted.
 app.add_middleware(RequestLogMiddleware)
 # pool #47: correlation IDs — outermost of all, so every response
-# (including 401/413 envelopes) carries X-Request-ID.
+# (including 401/413 envelopes) carries X-Request-ID. FIX-368 no-store
+# stamping sits one layer beneath it so its envelopes are covered too.
+app.add_middleware(NoStoreCacheMiddleware)
 app.add_middleware(RequestCorrelationMiddleware)
 
 # Routers are included in the original route-declaration order (matches the

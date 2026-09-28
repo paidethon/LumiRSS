@@ -83,6 +83,49 @@ class RequestCorrelationMiddleware:
         finally:
             _request_id_var.reset(token)
 
+
+class NoStoreCacheMiddleware:
+    """Stamp ``Cache-Control: no-store`` on every /api/* response (FIX-368).
+
+    Every Lumi API response is private by construction — per-account
+    reading state, admin members/invites/audit, auth/session state — so a
+    shared cache (CDN/proxy) storing one by URL is a cross-user leak. The
+    per-route ``headers=_NO_STORE`` pattern covered only responses built
+    as explicit JSONResponses; stamping at the edge closes the gaps for
+    response_model routes AND for envelopes written by the inner
+    middleware layers (403 CSRF / 429 rate limit). Existing explicit
+    headers (all no-store) are preserved untouched; non-/api paths
+    (health probes, generated feeds) keep their own semantics.
+    """
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        is_api = scope.get("path", "").startswith("/api/")
+
+        async def send_with_no_store(message) -> None:
+            if (
+                message["type"] == "http.response.start"
+                and is_api
+                and not any(
+                    key == b"cache-control"
+                    for key, _ in message.get("headers") or []
+                )
+            ):
+                message = {
+                    **message,
+                    "headers": list(message.get("headers") or [])
+                    + [(b"cache-control", b"no-store")],
+                }
+            await send(message)
+
+        await self.app(scope, receive, send_with_no_store)
+
+
 # phase2 recovery (P0-06g): the mail ingest webhook accepts raw MIME up
 # to 10MB (routers/mail.py enforces the same cap). The global 4MB
 # ceiling would otherwise reject large mails before the route sees them.
