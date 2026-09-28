@@ -40,10 +40,10 @@
 | `LUMIRSS_DATA_DIR` | `LUMIRSS_DB_PATH` 的父目录 | Lumi 运行时状态根：`users/<uid>/`（每用户业务库 + secrets）、`secrets.json`（0600）、本地备份 `backups/`、恢复暂存 `restore-staging/` |
 | `FRESHRSS_DATA_DIR` | 空 | FreshRSS 数据目录的**只读**挂载路径，供一致性在线备份；空 = 完整备份不可用（开发态）。生产 compose 固定为 `/freshrss-data` |
 | `LUMIRSS_SEARCH_SYNC_INTERVAL` | `60.0`（秒） | 搜索投影后台同步节奏；`0` 关闭后台同步（测试用）。机制见 [../explanation/search.md](../explanation/search.md) |
-| `LUMIRSS_ATOM_BASE_URL` | 空 | API 来源 / 邮件桥生成的 Atom 相对路径对外解析基准（`GET /api/v1/sources` 返回的 `atomUrl` 用它拼绝对 URL）；空 = 返回相对路径 |
+| `LUMIRSS_ATOM_BASE_URL` | 空 | API 来源 / 邮件桥生成的 Atom feed 的 docker 内网基地址（freshrss 容器经它抓取 `/feeds/...`；`GET /api/v1/sources` 的 `atomPath` 始终是相对路径，浏览器走 Caddy）。空 = 回退 compose 默认 `http://bff:8000`（prod compose 服务名，见 `api_sources.py` 的 `atom_base()`）；dev compose（BFF 在宿主机）需显式设为 freshrss 容器可达地址，如 `http://host.docker.internal:8000` |
 | `LUMIRSS_OBSIDIAN_VAULT_DIR` | 空 | Obsidian vault 的容器内挂载路径（只读）。生产 compose 经 `LUMIRSS_OBSIDIAN_VAULT_HOST_DIR` 绑定宿主目录；空 = Obsidian 投影关闭 |
-| `LUMIRSS_OBSIDIAN_SCAN_INTERVAL` | 秒 | vault 增量扫描节奏（默认见 `config.py`；`0` 关闭后台扫描） |
-| `LUMIRSS_RAG_INDEX_INTERVAL` | 秒 | RAG 语义索引增量收敛节奏；`0` 关闭（显式 rebuild 仍可用）。模型加载在显式启用后进行，空闲自动卸载 |
+| `LUMIRSS_OBSIDIAN_SCAN_INTERVAL` | `0`（秒） | vault 增量扫描节奏（`config.py` 默认 `0` = 仅手动 rescan）；`0` 关闭后台扫描 |
+| `LUMIRSS_RAG_INDEX_INTERVAL` | `300`（秒） | RAG 语义索引增量收敛节奏（`config.py` 默认 `300`）；`0` 关闭（显式 rebuild 仍可用）。模型加载在显式启用后进行，空闲自动卸载 |
 | `LUMIRSS_FETCH_ALLOW_PRIVATE_HOSTS` | 空 | 逗号分隔主机名 allow-list：名单内的私网主机可作为**来源 URL / AI·LibreTranslate base URL** 被服务端访问（容器内 RSSHub、自托管 AI 等）。仅跳过"公网地址拒绝"，取回仍逐跳解析、校验、按钉住 IP 直连 |
 | `LUMIRSS_ACCESS_LOG` | `json` | BFF 访问日志：`json` = 每请求一行结构化 JSON（request_id/路由模板/status/duration_ms/服务端派生 actor）；`off` = 静默。脱敏边界：绝不记录 query string、请求体、header、凭据 |
 | `LUMIRSS_INTERNAL_TOKEN` | 空 | 同上表（BFF 侧读取） |
@@ -54,7 +54,7 @@
 
 | 键 | 默认 | 说明 |
 |---|---|---|
-| `LUMIRSS_IMAGE_TAG` | `latest` | GHCR 镜像 tag（`ghcr.io/paidethon/lumirss-web` / `-bff`）。`./lumirss deploy` 会把它实际部署的值持久化进 `.env.prod`，`update` / `rollback` 复用同一不可变引用；显式环境变量仍优先生效 |
+| `LUMIRSS_IMAGE_TAG` | `latest` | GHCR 镜像 tag（`ghcr.io/paidethon/lumirss/lumirss-web` / `-bff`）。`./lumirss deploy` 会把它实际部署的值持久化进 `.env.prod`，`update` / `rollback` 复用同一不可变引用；显式环境变量仍优先生效 |
 | `LUMIRSS_BUILD_COMMIT` | （空） | 部署/构建时注入的 git commit → Web `VITE_GIT_COMMIT` 与 BFF `LUMIRSS_COMMIT` 两个 build-arg，「关于」页与 `/api/v1/version` 展示，用于版本偏斜诊断 |
 | `LUMIRSS_HTTP_PORT` / `LUMIRSS_HTTPS_PORT` | `80` / `443` | Caddy 发布到宿主的端口；与 `COMPOSE_PROJECT_NAME` 一起用于同机隔离测试（避免端口与卷冲突） |
 | `LUMIRSS_EXTERNAL_CADDY` | （空） | `1` = 外部宿主反代模式：web 只发布 `127.0.0.1:LUMIRSS_UPSTREAM_PORT`（纯 HTTP、任意 Host，无 ACME/443），TLS 由宿主 Caddy/nginx 负责。`./lumirss deploy --external-caddy` 自动写入；见 [../how-to/deploy.md](../how-to/deploy.md) |
@@ -68,6 +68,7 @@
 | `LUMIRSS_RSSHUB_MEMORY_MAX` | `256`（MB） | RSSHub 进程内 memory cache 上限（与固定镜像默认一致；low-memory 预设 64——小规模自托管足够） |
 | `LUMIRSS_RSSHUB_NODE_OPTIONS` | （空 = V8 默认） | RSSHub Node 堆上限（如 `--max-old-space-size=256`）。**容器 limit 必须明显高于 V8 堆**，给 native memory 留余量（low-memory 预设 = 256 堆 + 448 容器） |
 | `LUMIRSS_BACKUP_DIR` | `./backups` | `./lumirss backup` 输出目录（每次备份一个 `<stamp>/` 子目录 + `LATEST` 指针，见 [../how-to/backup-restore.md](../how-to/backup-restore.md)） |
+| `LUMIRSS_FRESHRSS_CRON_MIN` | `13,43` | FreshRSS 容器内置 cron 的自动刷新分钟（本部署唯一调度拥有者；缺省时 cron 不启动，RSS 永不自动更新） |
 | `LUMIRSS_BACKUP_IMAGE` | （空 = 栈自身的 BFF 镜像） | `./lumirss backup` / `restore` 临时容器镜像的覆盖项。默认解析 compose 里的 BFF 镜像（python3 + tar 内置，离线主机零额外拉取；解析失败回退 `ghcr.io/paidethon/lumirss/lumirss-bff:$LUMIRSS_IMAGE_TAG`）；覆盖镜像**必须提供 python3 + tar**，缺失时备份如实失败——活库绝不裸 tar |
 | `LUMIRSS_DOMAIN` / `LUMIRSS_AUTH_USER` / `LUMIRSS_AUTH_HASH` / `LUMIRSS_AUTH_PASSWORD` / `LUMIRSS_UPSTREAM_PORT` | — | 仅 `./lumirss deploy` 的非交互覆盖（环境变量，非文件键） |
 

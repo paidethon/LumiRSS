@@ -303,11 +303,12 @@ rss.example.com {
 ### 8b. 直接服务仓库内 dist/（file_server 指向仓库路径）
 
 不想复制文件时，`root` 直接指到仓库检出内的 dist 目录也可（注意运行
-Caddy 的用户需要该路径的读权限；git pull 后即生效）：
+Caddy 的用户需要该路径的读权限；git pull 后即生效）。`<仓库检出>`
+换成你机器上仓库检出的实际绝对路径：
 
 ```caddyfile
     handle_path /project/* {
-        root * /srv/LumiRSS/tools/progress-dashboard/dist
+        root * <仓库检出>/tools/progress-dashboard/dist
         file_server
     }
 ```

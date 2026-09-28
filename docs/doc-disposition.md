@@ -59,3 +59,21 @@
 5. 认证/会话语义：configuration.md（键）+ deploy.md（流程）
 6. 邀请/池运维：how-to/invite-members.md
 7. 测试命令：reference/testing.md
+
+## 生成器输出 × 手写文档冲突核查（FIX-396，2026-09-28）
+
+核查全仓库会写文件的生成器，确认没有任何生成输出能覆盖手写文档
+（同路径冲突 = 无；证据为各生成器源码中的唯一输出常量）：
+
+| 生成器 | 命令 | 输出路径（唯一所有者） | 与手写文档冲突 | 漂移守卫 |
+|---|---|---|---|---|
+| OpenAPI 导出 | `pnpm api:generate`（services/bff/scripts/export_openapi.py + openapi-typescript） | `apps/web/src/api/generated/openapi.json`、`schema.ts` | 无——目录生成专属 | `pnpm api:check`（git diff --exit-code） |
+| 设置元数据导出 | `pnpm settings:generate`（services/bff/scripts/export_settings_meta.py，`WEB_OUT` 常量） | `apps/web/src/api/generated/settings-meta.ts` | 无——同上目录 | `pnpm settings:check` |
+| 文档站构建 | `npm run docs:build`（vitepress build docs） | `docs/.vitepress/dist/`（.gitignore:59，不入库） | 无——只**读** `docs/**` 源，绝不写回源树 | 构建内建死链检查 |
+| 进度看板构建 | `npm run build:dashboard`（tools/progress-dashboard/build.mjs） | `tools/progress-dashboard/dist/{project-data.js,index.html}` | 无——`dist/` 生成专属；手写模板 `index.html` 在上一级，路径不同（dist/index.html 是其字节拷贝） | `pnpm check:dashboard`（对照 `docs/implementation-status.json`） |
+
+docs/ 内的两份 JSON 均为手写**输入**、无生成器回写：
+`implementation-status.json`（机读台账，看板构建的数据源）、
+`release-notes.json`（BFF 版本导览读取）。结论：**BASELINE_OK** ——
+生成目录各有唯一所有者，手写解释不会被生成器删除；后续新增生成器时
+先在本表登记输出路径。
