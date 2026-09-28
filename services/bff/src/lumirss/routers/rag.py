@@ -759,15 +759,26 @@ async def rag_ask(payload: RagAskRequest, request: Request):
     ask_model_id = await _live_model_id(db, _DEFAULT_MODEL)
 
     async def _excerpts_for(refs: list[str]) -> list[RagAskExcerpt]:
-        """refs → 原文片段（rag_chunks 优先，投影回退；每 ref 有界）。"""
+        """refs → 原文片段（rag_chunks 优先，投影回退；每 ref 有界）。
+
+        FIX-316：分块的 content_hash ≠ 当前投影正文 hash（正文已改、
+        索引未重建）时，这些 ``ord`` 是旧正文版本的块位——绝不当作
+        当前文本坐标外带（否则引用会跳到旧版式的无关段落），改为按
+        未索引口径回退到当前正文摘录（ord=0）。"""
+        from lumirss.rag import doc_content_hash
+
         excerpts: list[RagAskExcerpt] = []
         for ref in refs[:8]:
             title = await _ref_title(db, ref)
+            body = await _ref_body(db, ref)
+            current_hash = doc_content_hash(body) if body is not None else None
             rows = await db.fetch_all(
-                "SELECT ord, text FROM rag_chunks WHERE ref = ? AND model_id = ? ORDER BY ord ASC LIMIT 3",
+                "SELECT ord, text, content_hash FROM rag_chunks WHERE ref = ? AND model_id = ? ORDER BY ord ASC LIMIT 3",
                 (ref, ask_model_id),
             )
-            if rows:
+            if rows and any(
+                str(row["content_hash"] or "") == current_hash for row in rows
+            ):
                 for row in rows:
                     excerpts.append(
                         RagAskExcerpt(
@@ -778,7 +789,6 @@ async def rag_ask(payload: RagAskRequest, request: Request):
                         )
                     )
                 continue
-            body = await _ref_body(db, ref)
             if body:
                 excerpts.append(
                     RagAskExcerpt(ref=ref, title=title, ord=0, text=body[:600])
