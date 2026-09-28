@@ -34,6 +34,13 @@ import {
 } from '../lib/para-anchor'
 import { withHeadingIds } from '../lib/article-toc'
 import { decorateCodeCopyButtons } from '../lib/code-copy'
+// FIX-137：正文链接分类（external 新标签 + noopener / 同源应用内路由 /
+// 危险协议纵深拦截）。
+import {
+  classifyContentLink,
+  decorateContentLinks,
+  openContentLink,
+} from '../lib/content-links'
 import { countCodeLines, CODE_READER_MIN_LINES } from '../lib/code-reader'
 import { renderMath } from '../lib/katex-render'
 import {
@@ -500,10 +507,19 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
   // 代码块复制按钮（pool #04）：渲染后 DOM 装饰（幂等），html 变化
   // （管线重跑）后重装饰。
   const contentRef = useRef<HTMLDivElement | null>(null)
+  // FIX-137：相对链接解析基准 = 文章原站 URL（与 FIX-263 媒体绝对化同
+  // 一基准）；缺失时退回文档 baseURI。
+  const linkBase =
+    detail.url !== null && detail.url !== undefined && detail.url !== ''
+      ? detail.url
+      : document.baseURI
   useEffect(() => {
     const container = contentRef.current
     if (container === null || !hasHtml) return
     decorateCodeCopyButtons(container)
+    // FIX-137：外链补 target=_blank + rel=noopener noreferrer；同源链接
+    // 不留新标签语义（点击走应用内路由）。
+    decorateContentLinks(container, linkBase)
     // F009：占位 img → 「加载本图」按钮（渲染后装饰，幂等）
     decorateBlockedRemoteImages(container)
     // N066：仅手动媒体 → 「加载图片/视频/音频」占位按钮（幂等）
@@ -513,7 +529,7 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
       setLinkMenu({ url, x, y })
     })
     return cleanupMenu
-  }, [htmlWithIds, hasHtml])
+  }, [htmlWithIds, hasHtml, linkBase])
 
   // F010：外链菜单与「复制干净链接」预览对话框状态
   const [linkMenu, setLinkMenu] = useState<{ url: string; x: number; y: number } | null>(null)
@@ -741,6 +757,16 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
           }
           return
         }
+        // FIX-137：非 hash 链接的打开方式——跨源 http(s) 新标签
+        // （noopener,noreferrer）；同源走应用内路由（pushState，不整页
+        // 跳转）；危险协议纵深拦截（DOMPurify 之外的最后一道）。接管
+        // 成功才 preventDefault + 返回；passive（mailto: 等）保留默认
+        // 行为并继续走原有媒体/脚注分支（与既有落穿语义一致）。
+        const classification = classifyContentLink(href, linkBase)
+        if (openContentLink(classification)) {
+          event.preventDefault()
+          return
+        }
       }
       // F059：脚注引用按钮 → 弹层显示净化后的定义内容。
       const fnButton = target.closest<HTMLElement>('[data-lumi-fn-ref]')
@@ -814,7 +840,7 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
     }
     container.addEventListener('click', onClick)
     return () => container.removeEventListener('click', onClick)
-  }, [htmlWithIds, hasHtml])
+  }, [htmlWithIds, hasHtml, linkBase])
 
   useEffect(() => {
     const container = contentRef.current
