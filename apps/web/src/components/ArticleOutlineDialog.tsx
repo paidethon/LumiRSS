@@ -124,7 +124,7 @@ export function ArticleOutlineDialog({
         ) : (
           <>
             <section aria-label="标题结构">
-              <h4 className="text-xs font-medium text-[var(--lumi-text-tertiary)]">
+              <h4 className="text-sm font-medium text-[var(--lumi-text-tertiary)]">
                 标题（{outline.headings.length}）
               </h4>
               {outline.headings.length === 0 ? (

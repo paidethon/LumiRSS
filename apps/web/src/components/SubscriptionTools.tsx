@@ -171,7 +171,7 @@ export function SourceNotesDialog({
           {notes.isPending && <Skeleton className="h-20 w-full" />}
           {fields.map((field) => (
             <div key={field.id} className="flex flex-col gap-1.5">
-              <label htmlFor={field.id} className="text-sm font-medium text-[var(--lumi-text-primary)]">
+              <label htmlFor={field.id} className="text-xs font-medium text-[var(--lumi-text-primary)]">
                 {field.label}
               </label>
               <textarea
@@ -266,7 +266,7 @@ export function BatchMoveDialog({
           将 {refs.length} 个订阅移动到目标分类（受影响 {refs.length} 项；逐项执行，失败不中断整批）。
         </p>
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="batch-move-target" className="text-sm font-medium text-[var(--lumi-text-primary)]">
+          <label htmlFor="batch-move-target" className="text-xs font-medium text-[var(--lumi-text-primary)]">
             目标分类
           </label>
           <select

@@ -190,28 +190,28 @@ export function RagSettingsSection() {
       {/* W5 面板：F091 索引范围 / F092 试检索 / F100 版本一致性 */}
       <div className="flex flex-col gap-4 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-3">
         <section aria-label="索引范围" className="flex flex-col gap-1.5">
-          <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">索引范围</h4>
+          <h4 className="text-sm font-semibold text-[var(--lumi-text-primary)]">索引范围</h4>
           <RagExclusionsPanel />
         </section>
         <section aria-label="试检索" className="flex flex-col gap-1.5">
-          <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">试检索</h4>
+          <h4 className="text-sm font-semibold text-[var(--lumi-text-primary)]">试检索</h4>
           <RagTrySearchPanel enabled={data.enabled} />
         </section>
         <section aria-label="索引覆盖率" className="flex flex-col gap-1.5">
-          <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">索引覆盖率</h4>
+          <h4 className="text-sm font-semibold text-[var(--lumi-text-primary)]">索引覆盖率</h4>
           <RagCoveragePanel />
         </section>
         <section aria-label="分块预览" className="flex flex-col gap-1.5">
-          <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">分块预览</h4>
+          <h4 className="text-sm font-semibold text-[var(--lumi-text-primary)]">分块预览</h4>
           <RagChunkPreviewPanel />
         </section>
         <section aria-label="版本一致性" className="flex flex-col gap-1.5">
-          <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">版本一致性</h4>
+          <h4 className="text-sm font-semibold text-[var(--lumi-text-primary)]">版本一致性</h4>
           <RagConsistencyPanel />
         </section>
         {/* N159：检索质量收藏（评测样例；私有 local-only）。 */}
         <section aria-label="评测样例" className="flex flex-col gap-1.5">
-          <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">评测样例</h4>
+          <h4 className="text-sm font-semibold text-[var(--lumi-text-primary)]">评测样例</h4>
           <RagEvalSamplesPanel />
         </section>
       </div>

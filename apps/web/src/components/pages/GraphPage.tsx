@@ -327,7 +327,7 @@ export default function GraphPage() {
       {/* 标签列表（非图形等价路径）：chip = #名称 (数量)，可聚焦 */}
       <section aria-labelledby="graph-tags-heading" className="mt-3 px-1">
         <div className="flex items-center justify-between gap-2">
-          <h3 id="graph-tags-heading" className="text-xs font-semibold text-[var(--lumi-text-secondary)]">
+          <h3 id="graph-tags-heading" className="text-sm font-semibold text-[var(--lumi-text-secondary)]">
             标签列表（非图形等价路径）
           </h3>
           {(tags.data?.items.length ?? 0) >= 2 && (

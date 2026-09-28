@@ -1149,13 +1149,13 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
         >
           <div className="grid max-h-[70vh] gap-3 overflow-y-auto md:grid-cols-2">
             <section data-testid="extract-compare-current" className="min-w-0">
-              <h3 className="mb-1.5 text-xs font-medium text-[var(--lumi-text-secondary)]">
+              <h3 className="mb-1.5 text-sm font-medium text-[var(--lumi-text-secondary)]">
                 当前正文
               </h3>
               <div className="article-content text-sm" dangerouslySetInnerHTML={htmlProp} />
             </section>
             <section data-testid="extract-compare-refetch" className="min-w-0">
-              <h3 className="mb-1.5 text-xs font-medium text-[var(--lumi-text-secondary)]">
+              <h3 className="mb-1.5 text-sm font-medium text-[var(--lumi-text-secondary)]">
                 重抓原文
               </h3>
               {compareExtractMutation.isPending ? (

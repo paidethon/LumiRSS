@@ -202,7 +202,7 @@ function CompileDraftView({
               key={section.sectionId ?? `flat-${index}`}
               aria-label={`汇编节 ${section.title}`}
             >
-              <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">
+              <h4 className="text-sm font-semibold text-[var(--lumi-text-primary)]">
                 {section.title}
               </h4>
               {section.items.length === 0 ? (

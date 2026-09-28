@@ -142,7 +142,7 @@ export function TotpSection() {
           <CopyLine label="otpauth URI" value={setupSecret.otpauthUri} />
           <form onSubmit={handleEnable} className="flex flex-wrap items-end gap-2" noValidate>
             <div>
-              <label htmlFor="totp-enable-code" className="mb-1.5 block text-sm font-medium text-[var(--lumi-text-primary)]">
+              <label htmlFor="totp-enable-code" className="mb-1.5 block text-xs font-medium text-[var(--lumi-text-primary)]">
                 输入 6 位验证码确认
               </label>
               <input
@@ -196,7 +196,7 @@ export function TotpSection() {
       {enabled && (
         <form onSubmit={handleDisable} className="mt-3 flex flex-wrap items-end gap-2" noValidate data-lumi-totp-disable="">
           <div>
-            <label htmlFor="totp-disable-password" className="mb-1.5 block text-sm font-medium text-[var(--lumi-text-primary)]">
+            <label htmlFor="totp-disable-password" className="mb-1.5 block text-xs font-medium text-[var(--lumi-text-primary)]">
               当前登录密码
             </label>
             <input
@@ -210,7 +210,7 @@ export function TotpSection() {
             />
           </div>
           <div>
-            <label htmlFor="totp-disable-code" className="mb-1.5 block text-sm font-medium text-[var(--lumi-text-primary)]">
+            <label htmlFor="totp-disable-code" className="mb-1.5 block text-xs font-medium text-[var(--lumi-text-primary)]">
               验证码或恢复码
             </label>
             <input

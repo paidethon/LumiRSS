@@ -141,7 +141,7 @@ export function SourceStatsDrawer({
       ) : (
         <div className="flex flex-col gap-4 py-1">
           <section>
-            <h4 className="text-xs font-medium text-[var(--lumi-text-secondary)]">
+            <h4 className="text-sm font-medium text-[var(--lumi-text-secondary)]">
               最近同步
             </h4>
             <p className="mt-1 text-sm text-[var(--lumi-text-primary)]">
@@ -156,7 +156,7 @@ export function SourceStatsDrawer({
           </section>
 
           <section>
-            <h4 className="text-xs font-medium text-[var(--lumi-text-secondary)]">
+            <h4 className="text-sm font-medium text-[var(--lumi-text-secondary)]">
               近 30 天发布频率
             </h4>
             {/* F024 柱状图：纯 div 柱，语义由表格外的文字摘要承担 */}
@@ -182,7 +182,7 @@ export function SourceStatsDrawer({
           </section>
 
           <section>
-            <h4 className="text-xs font-medium text-[var(--lumi-text-secondary)]">
+            <h4 className="text-sm font-medium text-[var(--lumi-text-secondary)]">
               30 天更新日历
             </h4>
             {/* F035 热力格：4 级深浅 */}
@@ -311,7 +311,7 @@ function SourceMetadataEditor({
 
   return (
     <section className="flex flex-col gap-2 border-t border-[var(--lumi-border)] pt-3">
-      <h4 className="text-xs font-medium text-[var(--lumi-text-secondary)]">来源元数据</h4>
+      <h4 className="text-sm font-medium text-[var(--lumi-text-secondary)]">来源元数据</h4>
       {overThreshold && (
         <p
           role="status"
