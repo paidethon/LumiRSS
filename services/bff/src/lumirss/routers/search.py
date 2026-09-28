@@ -64,6 +64,7 @@ from lumirss.search_snapshot_store import (
     SearchSnapshotNotFound,
     SearchSnapshotStore,
 )
+from lumirss.user_scope import current_user_id
 
 from ..deps import _get_search_service
 
@@ -148,7 +149,11 @@ async def search(
         # F078：同义词扩展（进 cursor scope，翻页不漂移）
         "expandSynonyms": expandSynonyms,
     }
+    # FIX-363: cursor scope 绑定发放账户（他人 token → 400，不再续接）。
     library_scope: dict[str, Any] = {"q": query, "favorite": bool(favorite)}
+    _account = current_user_id()
+    rss_scope["account"] = _account
+    library_scope["account"] = _account
     # Cursor decoding happens outside the per-leg try blocks: a bad or
     # scope-mismatched cursor is a client error (400), never a silent
     # "library temporarily unavailable" string.

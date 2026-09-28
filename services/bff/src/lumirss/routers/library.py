@@ -38,6 +38,7 @@ from lumirss.models import (
     BulkLinksResponse,
 )
 from lumirss.url_normalize import normalize_content_url
+from lumirss.user_scope import current_user_id
 
 from ..deps import _get_library_store, _get_tag_store
 
@@ -96,8 +97,9 @@ async def list_bookmarks(
     if limit < 1 or limit > _MAX_LIMIT:
         raise BookmarkInvalid(f"limit must be between 1 and {_MAX_LIMIT}.")
     store: LibraryStore = _get_library_store(request)
+    # FIX-363: 续页 token 绑定（账户 + q 过滤）指纹。
     items, next_cursor = await store.list_bookmarks(
-        cursor=cursor, limit=limit, q=q
+        cursor=cursor, limit=limit, q=q, scope_account=current_user_id()
     )
     return BookmarkListResponse(
         items=[_bookmark_model(view) for view in items],

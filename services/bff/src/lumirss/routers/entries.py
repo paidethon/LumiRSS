@@ -19,6 +19,7 @@ from lumirss.models import (
     EntryListResponse,
     EntryRevisionsResponse,
 )
+from lumirss.user_scope import current_user_id
 from lumirss.util import utc_now
 
 router = APIRouter()
@@ -87,8 +88,13 @@ async def entries(
         raise InvalidEntryReference("feedUrl and categoryId are mutually exclusive.")
     effective_view = view or "all"
     continuation: str | None = None
+    account_id = current_user_id()
     if cursor is not None:
         scope = decode_cursor(cursor)  # raises InvalidCursor → 400
+        # FIX-363: cursor 绑定发放账户——他人（或升级前无账户绑定的旧
+        # token）的 continuation 不得续接当前查询。
+        if scope.account != account_id:
+            raise InvalidCursor("cursor does not belong to this account.")
         if view is not None and scope.view != view:
             raise InvalidCursor("cursor scope does not match the requested view.")
         if feedUrl is not None and scope.feed_url != feedUrl:
@@ -184,6 +190,7 @@ async def entries(
             feedUrl,
             source_type=sourceType,
             category_id=categoryId,
+            account=account_id,
         )
         if page.upstreamContinuation is not None
         else None

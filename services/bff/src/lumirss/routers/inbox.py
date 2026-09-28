@@ -30,7 +30,7 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 
 from lumirss.credential_rotation import CredentialTestFailed, match_fallback
-from lumirss.cursor import InvalidCursor
+from lumirss.cursor import InvalidCursor, scope_fingerprint
 from lumirss.deps import StrictId
 from lumirss.errors import InvalidInboxPayload
 from lumirss.inbox_rules import (
@@ -60,6 +60,7 @@ from lumirss.models import (
     InboxSourceCreate,
     InboxSourceCreated,
 )
+from lumirss.user_scope import current_user_id
 
 from ..deps import (
     _get_inbox_store,
@@ -171,17 +172,23 @@ def _clean_categories(categories: list[str]) -> list[str]:
     return cleaned
 
 
-def _encode_cursor(created_at: str, item_uuid: str) -> str:
-    payload = json.dumps({"k": created_at, "u": item_uuid}).encode()
+def _encode_cursor(created_at: str, item_uuid: str, scope_key: str) -> str:
+    """FIX-363: cursor 绑定（账户 + sourceUuid 过滤）指纹——换个列表或
+    账户重放直接 400，不把别的列表续页拼进当前结果。"""
+    payload = json.dumps({"k": created_at, "u": item_uuid, "s": scope_key}).encode()
     return _CURSOR_PREFIX + base64.urlsafe_b64encode(payload).decode().rstrip("=")
 
 
-def _decode_cursor(cursor: str) -> tuple[str, str]:
+def _decode_cursor(cursor: str, scope_key: str) -> tuple[str, str]:
     try:
         raw = cursor.removeprefix(_CURSOR_PREFIX)
         padded = raw + "=" * (-len(raw) % 4)
         data = json.loads(base64.urlsafe_b64decode(padded.encode()))
+        if data.get("s") != scope_key:
+            raise InvalidCursor("Inbox cursor belongs to a different list or account.")
         return str(data["k"]), str(data["u"])
+    except InvalidCursor:
+        raise
     except Exception as exc:
         raise InvalidCursor("Invalid inbox cursor.") from exc
 
@@ -636,14 +643,17 @@ async def list_inbox_items(
     if limit < 1 or limit > 50:
         raise InvalidInboxPayload("limit must be between 1 and 50.")
     store = _get_inbox_store(request)
-    keyset = _decode_cursor(cursor) if cursor is not None else None
+    scope_key = scope_fingerprint(current_user_id(), sourceUuid)
+    keyset = _decode_cursor(cursor, scope_key) if cursor is not None else None
     rows, has_more = await store.list_items(
         source_uuid=sourceUuid, keyset=keyset, limit=limit
     )
     next_cursor = None
     if has_more and rows:
         last = rows[-1]
-        next_cursor = _encode_cursor(last["createdAt"], _uuid_of(last["ref"]))
+        next_cursor = _encode_cursor(
+            last["createdAt"], _uuid_of(last["ref"]), scope_key
+        )
     return InboxItemList(
         items=[
             InboxItemRow(

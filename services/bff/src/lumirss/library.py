@@ -13,6 +13,7 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
+from lumirss.cursor import scope_fingerprint
 from lumirss.db_tx import transaction
 from lumirss.itemref import (
     LIBRARY_DOMAIN,
@@ -276,13 +277,24 @@ class LibraryStore:
         cursor: str | None = None,
         limit: int = _DEFAULT_LIMIT,
         q: str | None = None,
+        scope_account: str | None = None,
     ) -> tuple[list[BookmarkView], str | None]:
-        """Keyset-paged bookmark list, newest first; q filters title/url/note."""
+        """Keyset-paged bookmark list, newest first; q filters title/url/note.
+
+        FIX-363: ``scope_account`` 提供后，续页 token 绑定（账户 + 归一化
+        q 的）指纹——换过滤词或换账户重放 → BookmarkInvalid（400）。"""
         if limit < 1 or limit > _MAX_LIMIT:
             raise BookmarkInvalid(f"limit must be between 1 and {_MAX_LIMIT}.")
         await self._db.migrate()
-        keyset = _decode_bookmark_cursor(cursor) if cursor else None
         needle = q.strip() if q else ""
+        cursor_scope = (
+            scope_fingerprint(scope_account, needle)
+            if scope_account is not None
+            else None
+        )
+        keyset = (
+            _decode_bookmark_cursor(cursor, cursor_scope) if cursor else None
+        )
         like = f"%{_escape_like(needle)}%" if needle else None
         key_created = keyset[0] if keyset else None
         key_uuid = keyset[1] if keyset else None
@@ -293,7 +305,9 @@ class LibraryStore:
         next_cursor = None
         if has_more and items:
             last = items[-1]
-            next_cursor = _encode_bookmark_cursor(last.created_at, _uuid_of(last.ref))
+            next_cursor = _encode_bookmark_cursor(
+                last.created_at, _uuid_of(last.ref), cursor_scope
+            )
         return items, next_cursor
 
     async def list_all_bookmarks(self) -> list[BookmarkView]:
@@ -398,12 +412,20 @@ def _escape_like(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def _encode_bookmark_cursor(created_at: str, item_uuid: str) -> str:
-    payload = json.dumps([created_at, item_uuid], separators=(",", ":"))
+def _encode_bookmark_cursor(
+    created_at: str, item_uuid: str, scope_key: str | None = None
+) -> str:
+    """FIX-363: scope_key 绑定（账户 + q 过滤）指纹；None = 不绑定
+    （仅限直接调用 store 的既有用法）。"""
+    payload = json.dumps(
+        [created_at, item_uuid, scope_key], separators=(",", ":")
+    )
     return encode_opaque_ref(_CURSOR_PREFIX, payload)
 
 
-def _decode_bookmark_cursor(cursor: str) -> tuple[str, str]:
+def _decode_bookmark_cursor(
+    cursor: str, scope_key: str | None = None
+) -> tuple[str, str]:
     try:
         payload = decode_opaque_ref(
             cursor,
@@ -412,7 +434,18 @@ def _decode_bookmark_cursor(cursor: str) -> tuple[str, str]:
             error_type=BookmarkInvalid,
             description="bookmark cursor",
         )
-        created_at, item_uuid = json.loads(payload)
+        parsed = json.loads(payload)
+        if scope_key is not None:
+            if not isinstance(parsed, list) or len(parsed) != 3:
+                raise BookmarkInvalid(
+                    "bookmark cursor does not carry a query scope."
+                )
+            if parsed[2] != scope_key:
+                raise BookmarkInvalid(
+                    "bookmark cursor belongs to a different query or account."
+                )
+            parsed = parsed[:2]
+        created_at, item_uuid = parsed
         if not isinstance(created_at, str) or not isinstance(item_uuid, str):
             raise BookmarkInvalid("bookmark cursor payload is not a key pair.")
         return created_at, item_uuid

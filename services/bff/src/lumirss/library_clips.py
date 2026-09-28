@@ -16,6 +16,7 @@ import sqlite3
 from dataclasses import dataclass
 
 from lumirss.clip_fetch import ClipForbidden
+from lumirss.cursor import scope_fingerprint
 from lumirss.db_tx import transaction
 from lumirss.itemref import new_library_uuid
 from lumirss.opaque_ref import decode_opaque_ref, encode_opaque_ref
@@ -220,11 +221,17 @@ class ClipStore:
         *,
         cursor: str | None = None,
         limit: int = _DEFAULT_LIMIT,
+        scope_account: str | None = None,
     ) -> tuple[list[ClipView], str | None]:
+        """FIX-363: ``scope_account`` 提供后，续页 token 绑定发放账户
+        指纹——他人 token 重放 → ClipInvalid（400）。"""
         if limit < 1 or limit > _MAX_LIMIT:
             raise ClipInvalid(f"limit must be between 1 and {_MAX_LIMIT}.")
         await self._db.migrate()
-        keyset = _decode_cursor(cursor) if cursor else None
+        cursor_scope = (
+            scope_fingerprint(scope_account) if scope_account is not None else None
+        )
+        keyset = _decode_cursor(cursor, cursor_scope) if cursor else None
         key_created = keyset[0] if keyset else None
         key_uuid = keyset[1] if keyset else None
         rows = await self._db.fetch_all(
@@ -237,7 +244,9 @@ class ClipStore:
         next_cursor = None
         if has_more and items:
             last = items[-1]
-            next_cursor = _encode_cursor(last.created_at, last.ref.split(":", 1)[1])
+            next_cursor = _encode_cursor(
+                last.created_at, last.ref.split(":", 1)[1], cursor_scope
+            )
         return items, next_cursor
 
     async def count_clips(self) -> int:
@@ -318,12 +327,14 @@ def _validate_text(content_text: str) -> str:
     return content_text
 
 
-def _encode_cursor(created_at: str, item_uuid: str) -> str:
-    payload = json.dumps([created_at, item_uuid], separators=(",", ":"))
+def _encode_cursor(
+    created_at: str, item_uuid: str, scope_key: str | None = None
+) -> str:
+    payload = json.dumps([created_at, item_uuid, scope_key], separators=(",", ":"))
     return encode_opaque_ref(_CURSOR_PREFIX, payload)
 
 
-def _decode_cursor(cursor: str) -> tuple[str, str]:
+def _decode_cursor(cursor: str, scope_key: str | None = None) -> tuple[str, str]:
     try:
         payload = decode_opaque_ref(
             cursor,
@@ -332,7 +343,15 @@ def _decode_cursor(cursor: str) -> tuple[str, str]:
             error_type=ClipInvalid,
             description="clip cursor",
         )
-        created_at, item_uuid = json.loads(payload)
+        parsed = json.loads(payload)
+        if scope_key is not None:
+            if not isinstance(parsed, list) or len(parsed) != 3:
+                raise ClipInvalid("clip cursor does not carry an account scope.")
+            if parsed[2] != scope_key:
+                raise ClipInvalid(
+                    "clip cursor belongs to a different account."
+                )
+        created_at, item_uuid = parsed[:2]
         if not isinstance(created_at, str) or not isinstance(item_uuid, str):
             raise ClipInvalid("clip cursor payload is not a key pair.")
         return created_at, item_uuid
