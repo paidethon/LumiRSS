@@ -413,8 +413,23 @@ def build_session_cookie(raw_token: str, max_age_seconds: int) -> str:
 
 
 def clear_session_cookie() -> str:
-    """Set-Cookie value that expires the session cookie immediately."""
-    return f"{session_cookie_name()}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"
+    """Set-Cookie value that expires the session cookie immediately.
+
+    FIX-024：属性与签发对称——Secure 模式下清除头同样带 Secure。
+    浏览器按 RFC 6265bis 前缀规则校验**任何**针对 __Host- 名字的
+    Set-Cookie（包括删除写入），缺 Secure 的清除头会被整体忽略，
+    旧 Cookie 在浏览器里残留（登出/改密/停用后不清干净）。
+    """
+    parts = [
+        f"{session_cookie_name()}=",
+        "Path=/",
+        "HttpOnly",
+        "SameSite=Strict",
+        "Max-Age=0",
+    ]
+    if LumiSettings().LUMIRSS_SESSION_SECURE_COOKIES:
+        parts.append("Secure")
+    return "; ".join(parts)
 
 
 def parse_session_cookie(headers) -> str | None:

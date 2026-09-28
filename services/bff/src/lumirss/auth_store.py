@@ -318,14 +318,29 @@ class AuthStore:
         """按 8 位 id（token_hash 前缀）撤销；不存在 → False。
 
         多账户模式下 user_id 必传：用户只能撤销自己的会话。
+
+        FIX-030：id 是「8 位十六进制精确前缀」。用 substr 相等比较而
+        不是 LIKE——LIKE 语义下 %/_ 通配（例如 8 个下划线）会把任意
+        传入值变成「前缀任意」，误撤销另一条会话并误报成功。
         """
-        if not session_id or len(session_id) != 8:
+        if (
+            not session_id
+            or len(session_id) != 8
+            or re.fullmatch(r"[0-9a-fA-F]{8}", session_id) is None
+        ):
             return False
         await self._db.migrate()
+        prefix = session_id.lower()
         if user_id is None:
-            row = await self._db.fetch_one("SELECT token_hash FROM auth_sessions WHERE token_hash LIKE ? || '%'", (session_id,))
+            row = await self._db.fetch_one(
+                "SELECT token_hash FROM auth_sessions WHERE substr(token_hash, 1, 8) = ?",
+                (prefix,),
+            )
         else:
-            row = await self._db.fetch_one("SELECT token_hash FROM auth_sessions WHERE token_hash LIKE ? || '%' AND user_id = ?", (session_id, user_id))
+            row = await self._db.fetch_one(
+                "SELECT token_hash FROM auth_sessions WHERE substr(token_hash, 1, 8) = ? AND user_id = ?",
+                (prefix, user_id),
+            )
         if row is None:
             return False
         await self._db.execute(
