@@ -90,7 +90,9 @@ describe('FIX-112 reduced-motion 判定真源', () => {
     expect(screen.getByTestId('probe').textContent).toBe('full')
     // OS 偏好翻转 → change 事件 → 重渲染为 reduced
     mql.matches = true
-    if (listener !== null) act(() => listener())
+    // 回调内赋值无法被 CFA 追踪——显式放宽类型
+    const fire = listener as (() => void) | null
+    if (fire !== null) act(() => fire())
     expect(screen.getByTestId('probe').textContent).toBe('reduced')
   })
 })
