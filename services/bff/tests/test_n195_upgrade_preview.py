@@ -18,13 +18,15 @@ import pytest
 from fastapi.testclient import TestClient
 
 from lumirss.accounts_store import AccountsStore, hash_password
+from lumirss.config import LumiSettings
 from lumirss.main import app
 from lumirss.storage import Database
 
 PASSWORD = "prev-" + _secrets.token_urlsafe(9)
 OWNER_USER = "owner"
 A_USER = "alice"
-CURRENT_VERSION = "2.0.0"
+# FIX-181：跟随应用单一版本来源，版本线提升时 fixture 不再漂移。
+CURRENT_VERSION = LumiSettings().LUMIRSS_VERSION
 
 
 @pytest.fixture()
