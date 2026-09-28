@@ -100,3 +100,9 @@ jobs:
       # (FROM-scratch probe with the repo's own .dockerignore).
       - name: Run release pipeline metadata + build-context tests
         run: tests/deploy/run-image-metadata-tests.sh
+
+      # FIX-374/377/378/379: exec bits survive packaging, release SHA256SUMS
+      # covers the actual upload set, promotion identity is verified, and a
+      # half-finished release cannot end green.
+      - name: Run release publishing tests
+        run: tests/deploy/run-release-publish-tests.sh
