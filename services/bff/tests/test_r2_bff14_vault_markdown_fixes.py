@@ -29,6 +29,20 @@ def run(coroutine):
     return asyncio.run(coroutine)
 
 
+def _bash_quote(text: str) -> str:
+    """Single-quote for safe interpolation into a bash stub script."""
+    return "'" + text.replace("'", "'\\''") + "'"
+
+
+@pytest.fixture()
+def asset_store(tmp_path):
+    from lumirss.library_assets import AssetStore
+
+    db = Database(tmp_path / "assets-lumi.sqlite")
+    run(db.migrate())
+    return AssetStore(db, tmp_path / "assets", quota_bytes=8 * 1024 * 1024)
+
+
 @pytest.fixture()
 def obsidian(tmp_path):
     db = Database(tmp_path / "lumi.sqlite")
@@ -578,3 +592,140 @@ def test_fix349_malformed_and_multirange_ignored_serve_full(pdf_attachment, clie
         )
         assert response.status_code == 200, header
         assert response.content == pdf, header
+
+
+# ---------------------------------------------------------------------------
+# FIX-328 — 快照包含内嵌远程表单或脚本事件：快照查看器禁止活动内容，
+# 原网页链接仍可单独打开。
+#
+# 三层证据：纯函数剥离语义；生产 runner 采集→落盘字节惰性（stub
+# monolith 写入敌意 HTML）；读出端点对遗留敌意存储字节同样服务惰性
+# 内容（CSP sandbox 保持第三层），且 source_url 作为数据完整保留。
+# ---------------------------------------------------------------------------
+
+_HOSTILE_SNAPSHOT = (
+    "<!DOCTYPE html><html><head><title>页面标题</title>"
+    "<script>alert('xss')</script>"
+    '<meta http-equiv="refresh" content="0;url=https://evil.example/">'
+    '<base href="https://evil.example/">'
+    "</head><body>"
+    "<h1>快照标题</h1><p>可见正文段落。</p>"
+    '<form action="/steal"><input name="q" onfocus="evil()"><button onclick="go()">提交</button></form>'
+    '<iframe src="https://evil.example/frame"></iframe>'
+    '<a href="javascript:alert(1)">坏链接</a>'
+    '<a href="https://origin.example/story">原文链接</a>'
+    '<img src="data:image/png;base64,iVBORw0KGgo=" onerror="boom()">'
+    "<style>div > p { color: red }</style>"
+    "</body></html>"
+)
+
+
+def test_fix328_strip_active_content_semantics():
+    from lumirss.snapshots import strip_active_content
+
+    inert = strip_active_content(_HOSTILE_SNAPSHOT)
+    lowered = inert.lower()
+    # 活动内容零存活。
+    for needle in (
+        "<script", "alert(", "<form", "<input", "<button", "<iframe",
+        "onclick", "onfocus", "onerror", "javascript:", "<meta", "<base",
+        "https://evil.example",
+    ):
+        assert needle not in lowered, needle
+    # 合法内容与版面保真：文本、内联图片、原文链接、CSS 原文。
+    assert "快照标题" in inert and "可见正文段落。" in inert
+    assert "data:image/png;base64,iVBORw0KGgo=" in inert
+    assert '<a href="https://origin.example/story">原文链接</a>' in inert
+    assert "div > p { color: red }" in inert  # style CDATA 未被实体化
+    assert inert.startswith("<!DOCTYPE html><html>")
+
+
+def test_fix328_runner_persists_inert_bytes_and_keeps_source_url(
+    asset_store, tmp_path, monkeypatch
+):
+    import stat
+
+    import lumirss.snapshots as snapshots
+
+    script = (
+        "#!/usr/bin/env bash\n"
+        'out=""\nprev=""\nfor arg in "$@"; do\n'
+        '  if [[ "$prev" == "-o" ]]; then out="$arg"; fi\n'
+        '  prev="$arg"\ndone\n'
+        f"printf '%s' {_bash_quote(_HOSTILE_SNAPSHOT)} > \"$out\"\n"
+    )
+    binary = tmp_path / "fake-monolith.sh"
+    binary.write_text(script)
+    binary.chmod(binary.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    monkeypatch.setattr(snapshots, "monolith_path", lambda: str(binary))
+
+    async def no_network(url: str) -> None:
+        return None
+
+    monkeypatch.setattr(snapshots, "validate_hop", no_network)
+
+    class StubProxy:
+        port = 0
+
+        @property
+        def url(self):
+            return "http://127.0.0.1:0"
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+    runner = snapshots.SnapshotJobRunner(asset_store, proxy_factory=StubProxy)
+    result = run(runner.run("https://origin.example/story"))
+
+    stored = run(asset_store.read_bytes(result["asset"]["uuid"])).decode()
+    lowered = stored.lower()
+    assert "<script" not in lowered and "<form" not in lowered
+    assert "onerror" not in lowered and "javascript:" not in lowered
+    assert "快照标题" in stored
+    # 原网页 URL 作为数据完整保留（列表/详情仍可单独打开原页）。
+    assert result["asset"]["url"] == "https://origin.example/story"
+    row = run(
+        asset_store._db.fetch_one(
+            "SELECT url FROM library_assets WHERE uuid = ?",
+            (result["asset"]["uuid"],),
+        )
+    )
+    assert row is not None and str(row["url"]) == "https://origin.example/story"
+
+
+def test_fix328_serving_endpoint_inert_even_for_legacy_hostile_rows(
+    client, tmp_path, monkeypatch
+):
+    """FIX 前已入库的敌意字节（绕过存储边界）在读出端同样被剥离：
+    served body 惰性 + CSP sandbox 保持 + source_url 作为数据完整。"""
+    import lumirss.routers.snapshots as snap_routes
+    from lumirss.library_assets import AssetStore
+
+    store = AssetStore(client.app.state.db, tmp_path / "assets")
+    monkeypatch.setattr(snap_routes, "_get_snapshot_store", lambda request: store)
+
+    record, _deduped = run(
+        store.save_snapshot(
+            data=_HOSTILE_SNAPSHOT.encode("utf-8"),
+            mime="text/html",
+            url="https://origin.example/legacy",
+        )
+    )
+    served = client.get(f"/api/v1/library/assets/{record.uuid}/page.html")
+    assert served.status_code == 200
+    assert "sandbox" in served.headers["content-security-policy"]
+    body = served.text
+    lowered = body.lower()
+    for needle in ("<script", "alert(", "<form", "<input", "onfocus", "javascript:", "<base", "<meta"):
+        assert needle not in lowered, needle
+    assert "可见正文段落。" in body
+
+    listed = client.get("/api/v1/library/snapshots")
+    assert listed.status_code == 200
+    item = next(
+        i for i in listed.json()["items"] if i["uuid"] == record.uuid
+    )
+    assert item["url"] == "https://origin.example/legacy"

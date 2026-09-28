@@ -115,14 +115,19 @@ async def list_snapshots(request: Request) -> SnapshotListResponse:
 async def serve_snapshot(asset_uuid: str, request: Request) -> Response:
     """Sandboxed artifact read-out. The CSP `sandbox` directive strips
     scripts, forms, same-origin access and top navigation — the snapshot
-    can never reach Lumi's origin, cookies or /api endpoints."""
+    can never reach Lumi's origin, cookies or /api endpoints.
+    FIX-328：读出端再过一次活动内容剥离（存储层在 runner.run 落盘前已
+    剥；这里兜住遗留行/任何绕过存储边界的字节）——双重边界下，服务
+    出去的快照绝无脚本/表单/事件属性，原网页 URL 仅作为数据保留。"""
+    from lumirss.snapshots import make_snapshot_inert
+
     store: AssetStore = _get_snapshot_store(request)
     try:
         data = await store.read_bytes(asset_uuid)
     except AssetNotFound:
         raise
     return Response(
-        content=data,
+        content=make_snapshot_inert(data),
         media_type="text/html; charset=utf-8",
         headers={
             "Content-Security-Policy": (
