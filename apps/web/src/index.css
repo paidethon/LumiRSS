@@ -500,6 +500,18 @@ html[data-reader-code-font-size='l'] .article-content pre code {
   font-size: 2em;
 }
 
+/* ---- FIX-132：公式不撑破阅读面板 ----
+ * KaTeX 自带样式只有 white-space:nowrap（katex.min.css 无溢出处理），
+ * 超宽 display 公式会横向溢出正文列、拖出整页横向滚动。与宽表格
+ * （.article-content table display:block + overflow-x:auto）和代码块
+ * （.article-content pre overflow-x:auto）同一「内容内部滚动」语义：
+ * 公式在自己容器内横向滚动，阅读列与页面宽度不受影响。 */
+.article-content .katex-display {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
 /* ---- 专注阅读模式（Reader 会话级开关，article[data-lumi-focus]） ----
  * 视口中心块全亮，其余块降透明度；滚动帧内由 lib/reader-focus 打标。
  * 减少动效偏好下不做过渡。 */

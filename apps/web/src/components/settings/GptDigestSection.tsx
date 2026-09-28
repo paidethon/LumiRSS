@@ -40,6 +40,9 @@ import {
   useUpdateGptDigestConfigMutation,
 } from '../../api/queries'
 import { formatTimestamp } from '../../lib/date-format'
+// FIX-131：AI 富文本（事实对照 bodyHtml）与原文/剪藏遵守同一安全边界
+// ——进 dangerouslySetInnerHTML 前必过唯一净化点（DOMPurify）。
+import { sanitizeArticleHtml } from '../../lib/sanitize-article-html'
 import { Button } from '../ui/Button'
 import { Select } from '../ui/Select'
 import { Switch } from '../ui/Switch'
@@ -1254,7 +1257,9 @@ function IssueRow({
         <div
           className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-2.5 text-xs"
           data-facts-compare
-          dangerouslySetInnerHTML={{ __html: facts.data.bodyHtml }}
+          // FIX-131：bodyHtml 虽由服务端转义生成，仍按「HTML 进 DOM 前必过
+          // sanitize」的全局不变式处理——客户端不信任任何网络响应的 HTML。
+          dangerouslySetInnerHTML={{ __html: sanitizeArticleHtml(facts.data.bodyHtml) }}
         />
       ) : null}
       {explain.isError && explain.error instanceof ApiError && explain.variables?.issueKey === issue.issueKey ? (
