@@ -273,13 +273,25 @@ class DigestScheduler:
     ``last_sent_at`` converted to the SAME timezone, so restarts stay
     idempotent and a deployment move never shifts send times. A fixed
     ``clock`` can be injected for deterministic tests (cross-day, DST).
-    Concurrency-safe via a process-local flag.
+    Concurrency-safe via a process-local flag PLUS a persisted window
+    lease (ARCH-08): the ``last_sent_at`` check is TOCTOU-racy across
+    processes, so the exact hour window is leased in the user's SQLite
+    before ``send_fn`` runs — a second process (restarted deployment on
+    the same data dir) cannot double-send the live window, and a crashed
+    owner's expired lease is takeable on a later tick.
     """
 
-    def __init__(self, db: Database, *, clock: Any = None) -> None:
+    def __init__(
+        self, db: Database, *, clock: Any = None, leases: Any = None
+    ) -> None:
         self._db = db
         self._busy = False
         self._clock = clock
+        if leases is None:
+            from lumirss.runtime import RuntimeLeases
+
+            leases = RuntimeLeases(db)
+        self._leases = leases
 
     def _now(self, timezone: str) -> datetime:
         if self._clock is not None:
@@ -312,11 +324,20 @@ class DigestScheduler:
                 last.strftime("%Y-%m-%dT%H") == now.strftime("%Y-%m-%dT%H")
             ):
                 return
+        # ARCH-08: lease the exact hour window before the side effect.
+        # Acquire failure = another owner (another process, or a concurrent
+        # tick) holds the live window → skip honestly.
+        scope = f"digest:{now.strftime('%Y-%m-%dT%H')}"
+        if not await self._leases.acquire(scope):
+            return
         self._busy = True
         try:
             await send_fn()
         finally:
             self._busy = False
+            # Release only helps a still-alive owner; a crashed process
+            # leaves the lease to expire (TTL takeover, migration 0140).
+            await self._leases.release(scope)
 
 
 # -- Server-derived digest content + background scheduling (P0-06a/b/j) -----
