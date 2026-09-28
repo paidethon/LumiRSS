@@ -5,9 +5,14 @@
  * POST /api/v1/feed-preview 验证 → 共享 PreviewStage（分类 + 订阅）。
  *
  * 边界：发现能力由 BFF safe-fetch 边界保证（SSRF 防护、有界响应、
- * 有界探测）；浏览器不抓网页、不猜路径。 */
+ * 有界探测）；浏览器不抓网页、不猜路径。
+ *
+ * FIX-283：发现/预览结果绑定发起时的输入版本——用户在请求在途改了
+ * URL，晚到的旧结果直接丢弃，不覆盖新输入的候选状态。
+ * FIX-290：单条 URL 框粘贴多行内容时浏览器会静默吞掉换行——拦截粘贴，
+ * 保留第一行并诚实报出格式问题（多行地址走批量导入入口）。 */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AlertCircle, ChevronRight, Globe, Loader2, Rss } from 'lucide-react'
 import {
   useFeedPreviewMutation,
@@ -29,6 +34,10 @@ const SOURCE_LABEL: Record<DiscoveryCandidate['source'], string> = {
 
 export function WebsiteTab({ onClose, registerGuard }: AddSourceTabProps) {
   const [url, setUrl] = useState('')
+  // FIX-283：输入的实时镜像（mutation onSuccess 闭包里读不到新 state）
+  const urlRef = useRef('')
+  // FIX-290：多行粘贴的格式提示（单行粘贴不出现）
+  const [pasteHint, setPasteHint] = useState<string | null>(null)
   const [candidates, setCandidates] = useState<DiscoveryCandidate[] | null>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [preview, setPreview] = useState<FeedPreviewMetadata | null>(null)
@@ -54,6 +63,29 @@ export function WebsiteTab({ onClose, registerGuard }: AddSourceTabProps) {
     return () => registerGuard(null)
   }, [pending, registerGuard])
 
+  /** FIX-290：粘贴多行 → 只保留第一个非空行 + 诚实提示；单行走默认行为。 */
+  function handleUrlPaste(event: React.ClipboardEvent<HTMLInputElement>) {
+    const raw = event.clipboardData.getData('text')
+    const lines = raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line !== '')
+    if (lines.length <= 1) return
+    event.preventDefault()
+    const first = lines[0] ?? ''
+    urlRef.current = first
+    setUrl(first)
+    setPasteHint(
+      `粘贴了 ${lines.length} 行内容：单条订阅只保留第一行；多个地址请使用批量导入。`,
+    )
+  }
+
+  function handleUrlChange(next: string) {
+    urlRef.current = next
+    setUrl(next)
+    if (pasteHint !== null) setPasteHint(null)
+  }
+
   function startDiscovery() {
     const value = url.trim()
     if (!value) return
@@ -61,6 +93,8 @@ export function WebsiteTab({ onClose, registerGuard }: AddSourceTabProps) {
     setPreview(null)
     discoveryMutation.mutate(value, {
       onSuccess: (result) => {
+        // FIX-283：结果只作用于发起时的输入版本——晚到的旧结果不覆盖新输入。
+        if (urlRef.current.trim() !== value) return
         setCandidates(result.candidates)
         setSelectedIndex(0)
       },
@@ -101,8 +135,10 @@ export function WebsiteTab({ onClose, registerGuard }: AddSourceTabProps) {
               autoComplete="off"
               spellCheck={false}
               value={url}
-              onChange={(e) => setUrl(e.target.value)}
+              onChange={(e) => handleUrlChange(e.target.value)}
+              onPaste={handleUrlPaste}
               placeholder="https://example.com"
+              aria-describedby={pasteHint !== null ? 'add-source-website-paste-hint' : undefined}
               className={cx(
                 'min-h-11 w-full rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)]',
                 'bg-[var(--lumi-surface)] px-3 py-2.5 text-sm text-[var(--lumi-text-primary)]',
@@ -110,6 +146,15 @@ export function WebsiteTab({ onClose, registerGuard }: AddSourceTabProps) {
                 'focus:outline-2 focus:-outline-offset-2 focus:outline-[var(--lumi-focus-ring)]',
               )}
             />
+            {pasteHint !== null && (
+              <p
+                id="add-source-website-paste-hint"
+                role="status"
+                className="text-xs text-[var(--lumi-text-secondary)]"
+              >
+                {pasteHint}
+              </p>
+            )}
             <p className="text-xs text-[var(--lumi-text-tertiary)]">
               自动发现该网站声明或常见位置上的 RSS / Atom 订阅源（不会抓取网页内容）。
             </p>

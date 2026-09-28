@@ -51,6 +51,7 @@ const mocks = vi.hoisted(() => ({
   getRegistrationPolicy: vi.fn(),
   updateRegistrationPolicy: vi.fn(),
   getAdminUserQuota: vi.fn(),
+  setAdminUserQuota: vi.fn(),
   getAdminCapacity: vi.fn(),
   getAdminUpgradePreview: vi.fn(),
   getAdminDeployStatus: vi.fn(),
@@ -80,6 +81,7 @@ vi.mock('../api/client', async (importOriginal) => {
     getRegistrationPolicy: mocks.getRegistrationPolicy,
     updateRegistrationPolicy: mocks.updateRegistrationPolicy,
     getAdminUserQuota: mocks.getAdminUserQuota,
+    setAdminUserQuota: mocks.setAdminUserQuota,
     getAdminCapacity: mocks.getAdminCapacity,
     getAdminUpgradePreview: mocks.getAdminUpgradePreview,
     getAdminDeployStatus: mocks.getAdminDeployStatus,
@@ -779,5 +781,160 @@ describe('FIX-052 基线：管理台无标签页门控，深链接即全部分�
     expect(screen.getByLabelText('系统状态')).toBeInTheDocument()
     // 同理不存在任何 role=tab 的分区切换器。
     expect(screen.queryAllByRole('tab')).toHaveLength(0)
+  })
+})
+
+// ===== FIX-034 基线验证 ======================================================
+// 审计项「启用/禁用/删除按钮作用于选中行而非当前行」对照当前实现为
+// BASELINE_OK：MembersSection 没有「选中行」状态——每个动作按钮都在
+// users.data.map 的行闭包里绑定各自的 user.id。本用例渲染两行成员，
+// 点第二行的动作，断言请求只命中该行 id（若未来引入共享 selected id
+// 引用，本用例失败）。
+
+describe('FIX-034 基线：成员行动作按行绑定（不存在「选中行」引用）', () => {
+  it('点击 carol（第 2 行）「恢复」只对 carol 发 resume；确认动作同样只作用于所在行', async () => {
+    mocks.resumeAdminUser.mockResolvedValue({})
+    mocks.revokeAdminUserSessions.mockResolvedValue({})
+    renderAdmin()
+    const list = await screen.findByTestId('admin-user-list')
+    expect(within(list).getByText('alice')).toBeInTheDocument()
+    expect(within(list).getByText('carol')).toBeInTheDocument()
+
+    // 直接动作：carol（已暂停）行唯一的「恢复」按钮 → resume('u3')，
+    // 绝不触达 alice（'u1'）。
+    fireEvent.click(screen.getByRole('button', { name: '恢复' }))
+    await waitFor(() => expect(mocks.resumeAdminUser).toHaveBeenCalledTimes(1))
+    expect(mocks.resumeAdminUser).toHaveBeenCalledWith('u3')
+    expect(mocks.resumeAdminUser).not.toHaveBeenCalledWith('u1')
+
+    // 确认动作：carol 行的「撤销会话」（按行定位）→ 确认 → revoke('u3')
+    const carolRow = within(list).getByText('carol').closest('li')
+    expect(carolRow).not.toBeNull()
+    fireEvent.click(within(carolRow as HTMLElement).getByRole('button', { name: '撤销会话' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('carol')
+    fireEvent.click(within(dialog).getByRole('button', { name: '撤销会话' }))
+    await waitFor(() => expect(mocks.revokeAdminUserSessions).toHaveBeenCalledTimes(1))
+    expect(mocks.revokeAdminUserSessions).toHaveBeenCalledWith('u3')
+    expect(mocks.pauseAdminUser).not.toHaveBeenCalled()
+  })
+})
+
+// ===== FIX-040 基线验证 ======================================================
+// 审计项「用户搜索内容和翻页位置在详情返回后丢失」对照当前实现为
+// BASELINE_OK（N/A）：管理台成员列表没有搜索框、没有分页游标、没有
+// 详情路由——listAdminUsers(signal?) 契约无任何 query 参数，全部成员
+// 单页直出。不存在可丢失的搜索/翻页状态。本用例固化该结构属性：
+// 卸载重进后列表完整重载，且每次查询都无过滤实参（若未来引入搜索/
+// 分页/详情，必须把状态持久化到 URL，否则本用例的「无实参」断言会
+// 提醒同步本防线）。
+
+describe('FIX-040 基线：成员列表无搜索/分页/详情路由——无「返回丢上下文」面', () => {
+  it('卸载重进后列表完整重载；查询不带任何过滤/游标实参', async () => {
+    const first = renderAdmin()
+    await screen.findByTestId('admin-user-list')
+    first.unmount()
+
+    renderAdmin()
+    const list = await screen.findByTestId('admin-user-list')
+    expect(within(list).getByText('alice')).toBeInTheDocument()
+    expect(within(list).getByText('carol')).toBeInTheDocument()
+    // listAdminUsers 每次调用只有 signal 一个实参——没有可丢失的过滤状态。
+    expect(mocks.listAdminUsers.mock.calls.length).toBeGreaterThanOrEqual(2)
+    for (const call of mocks.listAdminUsers.mock.calls) {
+      expect(call).toHaveLength(1)
+    }
+  })
+})
+
+// ===== FIX-282 基线验证 ======================================================
+// 审计项「清除选择器值发出空字符串而契约要求 null」对照当前实现为
+// BASELINE_OK：全库审计未发现违反点——每处「空=清除」的提交路径都做
+// 了 '' → null 转换（funnel 筛选 / 额度上限 / voiceURI / categoryId /
+// compareWith / SaveSearchDialog.workspaceId 等）；MailSection 的
+// listUuid 是唯一发 '' 的，但其契约语义就是 ''（BFF exclude_none 下
+// null = 不改动，'' = 解绑，见 services/bff routers/mail.py）。本组
+// 用例固化两条代表性路径的转换行为。
+
+describe('FIX-282 基线：清除选择器值发 null（契约），不发空串', () => {
+  it('漏斗方案筛选清除 → getInviteFunnel(signal, null)；全程无 \'\' 实参', async () => {
+    renderAdmin()
+    await screen.findByTestId('funnel-cards')
+    expect(mocks.getInviteFunnel).toHaveBeenCalledWith(expect.anything(), null)
+    // 等方案选项渲染完成再选择（s1 选项来自 listInviteSchemes）
+    await screen.findByRole('option', { name: '新人套餐' })
+    fireEvent.change(screen.getByTestId('funnel-scheme-filter'), { target: { value: 's1' } })
+    await waitFor(() =>
+      expect(mocks.getInviteFunnel).toHaveBeenCalledWith(expect.anything(), 's1'),
+    )
+    // 清除（选回「全部方案」）→ 契约 null，不是 ''
+    fireEvent.change(screen.getByTestId('funnel-scheme-filter'), { target: { value: '' } })
+    await waitFor(() =>
+      expect(mocks.getInviteFunnel).toHaveBeenCalledWith(expect.anything(), null),
+    )
+    const schemeArgs = mocks.getInviteFunnel.mock.calls.map((call) => call[1])
+    expect(schemeArgs).not.toContain('')
+  })
+
+  it('成员额度：AI 上限输入清空保存 → payload aiQuotaPerDay=null（非 \'\'）', async () => {
+    mocks.getAdminUserQuota.mockResolvedValue({
+      caps: { maxSources: 3, aiQuotaPerDay: 100 },
+      backgroundPaused: false,
+      backgroundPauseReason: null,
+    })
+    mocks.setAdminUserQuota.mockResolvedValue({
+      caps: { maxSources: 3, aiQuotaPerDay: null },
+    })
+    renderAdmin()
+    await screen.findByTestId('admin-user-list')
+    fireEvent.click(screen.getByTestId('quota-open-carol'))
+    const aiInput = await screen.findByTestId('quota-ai-per-day')
+    fireEvent.change(aiInput, { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存额度' }))
+    await screen.findByTestId('quota-saved-note')
+    expect(mocks.setAdminUserQuota).toHaveBeenCalledWith('u3', {
+      maxSources: 3,
+      aiQuotaPerDay: null,
+    })
+  })
+})
+
+// ===== FIX-287 基线验证 ======================================================
+// 审计项「受控输入在 undefined 与字符串间切换丢值」对照当前实现为
+// BASELINE_OK：QuotaDialog 的输入状态恒为 string（null 上限 → ''，
+// 数字 → String(n)），value 始终受控，从不在 undefined↔string 间切换。
+// 本用例证明：服务端值 seeding 后输入为受控字符串、用户输入跨
+// 保存重渲染存活、控制台零受控/非受控切换警告。
+
+describe('FIX-287 基线：额度输入恒为受控字符串（无 undefined↔字符串切换）', () => {
+  it('seeding 后输入受控；输入值跨保存重渲染存活；零切换警告', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mocks.getAdminUserQuota.mockResolvedValue({
+      caps: { maxSources: 3, aiQuotaPerDay: null },
+      backgroundPaused: false,
+      backgroundPauseReason: null,
+    })
+    mocks.setAdminUserQuota.mockResolvedValue({
+      caps: { maxSources: 9, aiQuotaPerDay: null },
+    })
+    renderAdmin()
+    await screen.findByTestId('admin-user-list')
+    fireEvent.click(screen.getByTestId('quota-open-carol'))
+
+    // 服务端 3 → 受控数字输入显示 3；null 的 AI 上限显示空（不是 undefined）
+    const sources = await screen.findByTestId('quota-max-sources')
+    expect(sources).toHaveValue(3)
+    expect(screen.getByTestId('quota-ai-per-day')).toHaveValue(null)
+
+    fireEvent.change(sources, { target: { value: '9' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存额度' }))
+    await screen.findByTestId('quota-saved-note')
+    // 保存成功 → setQueryData + 重渲染后，用户输入的 9 仍存活
+    expect(screen.getByTestId('quota-max-sources')).toHaveValue(9)
+
+    const consoleText = consoleError.mock.calls.map((args) => args.join(' ')).join('\n')
+    expect(consoleText).not.toMatch(/uncontrolled/i)
+    expect(consoleText).not.toMatch(/controlled input/i)
+    consoleError.mockRestore()
   })
 })
