@@ -403,6 +403,31 @@ describe('F07 多选批量', () => {
     expect(screen.getByTestId('batch-star')).toBeDisabled()
     expect(screen.getByTestId('batch-readLater')).toBeDisabled()
   })
+
+  it('FIX-285 基线：全选后取消一项——批量提交只含叶子行 ref（全选控件不贡献伪状态值）', async () => {
+    // 当前实现为 BASELINE_OK：src 中不存在任何 indeterminate 复选框
+    // （grep 0 命中）；「全选已加载」是按钮，仅把叶子行 ref 写进选择集，
+    // 提交值（[...selectedRefs]）永远派生自叶子行——全选的中间态没有
+    // 通道成为提交值。本用例把该性质固化为回归防线。
+    const { fetchMock, patchCalls } = mockEntriesApi()
+    vi.stubGlobal('fetch', fetchMock)
+    render(withProviders(<EntryList />))
+    await screen.findAllByText('文章 e1.a')
+
+    fireEvent.click(screen.getByTestId('enter-select-mode'))
+    fireEvent.click(screen.getByRole('button', { name: '全选已加载' }))
+    expect(screen.getByTestId('selected-count')).toHaveTextContent('已选 3 条')
+    // 取消 e1.b 的叶子勾选 → 批量提交集合只含剩余叶子行
+    fireEvent.click(screen.getAllByRole('checkbox', { name: '选择「文章 e1.b」' })[0]!)
+    expect(screen.getByTestId('selected-count')).toHaveTextContent('已选 2 条')
+
+    fireEvent.click(screen.getByTestId('batch-read'))
+    await waitFor(() => expect(patchCalls).toHaveLength(2))
+    expect(patchCalls.map((call) => call.ref).sort()).toEqual(['e1.a', 'e1.c'])
+    for (const call of patchCalls) {
+      expect(call.body).toEqual({ read: true })
+    }
+  })
 })
 
 describe('F09 下拉刷新（刷新列表数据，不触发上游抓取）', () => {
