@@ -240,9 +240,14 @@ export function WorkspaceGoalCard({
             aria-valuemax={data.targetCount ?? 0}
             aria-valuenow={done}
             aria-label="阅读目标进度"
-            className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[var(--lumi-surface-selected)]"
+            className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[var(--lumi-surface-selected)] forced-colors:bg-[ButtonBorder]"
           >
-            <div className="h-full rounded-full bg-[var(--lumi-accent)]" style={{ width: `${pct}%` }} />
+            {/* FIX-294：进度条靠背景色区分轨道/填充，forced-colors 下两者
+                同被强制为 ButtonFace 而消失——填充用 Highlight 保底。 */}
+            <div
+              className="h-full rounded-full bg-[var(--lumi-accent)] forced-colors:bg-[Highlight]"
+              style={{ width: `${pct}%` }}
+            />
           </div>
         </div>
         {onOpenList && (

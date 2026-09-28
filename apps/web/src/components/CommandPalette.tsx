@@ -334,7 +334,7 @@ export default function CommandPalette() {
           id="command-palette-listbox"
           role="listbox"
           aria-label="命令列表"
-          className="max-h-[50dvh] min-h-0 flex-1 overflow-y-auto p-1.5"
+          className="max-h-[50dvh] min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable] p-1.5"
         >
           {filtered.length === 0 ? (
             <li

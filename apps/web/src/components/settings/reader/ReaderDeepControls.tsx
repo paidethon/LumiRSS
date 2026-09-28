@@ -35,7 +35,7 @@ export function ChineseTypographySettings() {
 
   return (
     <div className="py-3">
-      <label className="text-sm font-medium leading-none text-[var(--lumi-text-primary)]">
+      <label className="text-sm font-medium leading-tight text-[var(--lumi-text-primary)]">
         中文排版
       </label>
       <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
@@ -236,7 +236,7 @@ export function ReadingRhythmSettings() {
 
   return (
     <div className="py-3">
-      <label className="text-sm font-medium leading-none text-[var(--lumi-text-primary)]">
+      <label className="text-sm font-medium leading-tight text-[var(--lumi-text-primary)]">
         阅读节奏
       </label>
       <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
@@ -277,7 +277,7 @@ export function CodeHighlightSettings() {
 
   return (
     <div className="py-3">
-      <label className="text-sm font-medium leading-none text-[var(--lumi-text-primary)]">
+      <label className="text-sm font-medium leading-tight text-[var(--lumi-text-primary)]">
         代码高亮
       </label>
       <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
@@ -360,7 +360,7 @@ export function ReaderThemePackSettings() {
 
   return (
     <div className="py-3">
-      <label className="text-sm font-medium leading-none text-[var(--lumi-text-primary)]">
+      <label className="text-sm font-medium leading-tight text-[var(--lumi-text-primary)]">
         阅读主题包
       </label>
       <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">

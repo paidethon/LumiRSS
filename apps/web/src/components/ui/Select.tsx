@@ -20,12 +20,14 @@ export interface SelectProps
 export function Select({ options, className, ...rest }: SelectProps) {
   return (
     <select
+      // FIX-293：焦点环由 [data-lumi-focus-ring]（index.css，unlayered）承载，
+      // 消费侧 className 不可覆盖（与 Button/IconButton 同一合并规则）。
+      data-lumi-focus-ring=""
       className={cx(
         'min-h-9 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2.5 text-sm',
         'text-[var(--lumi-text-primary)]',
         'transition-colors duration-[var(--lumi-motion-fast)]',
         'hover:border-[var(--lumi-text-tertiary)]',
-        'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
         'disabled:cursor-not-allowed disabled:opacity-50',
         className,
       )}

@@ -530,7 +530,9 @@ export function EntryActionButtons({
           title={`稍后读操作失败：${readLaterError instanceof Error ? readLaterError.message : '请稍后重试。'}`}
           aria-label={`稍后读操作失败：${readLaterError instanceof Error ? readLaterError.message : '请稍后重试。'}`}
           className={cx(
-            'shrink-0 rounded-full bg-[var(--lumi-danger)]',
+            // FIX-294：forced-colors 下 bg-danger 被强制为 ButtonFace（纯背景
+            // 失败信号会消失）——CanvasText 系统色保底（最大对比）。
+            'shrink-0 rounded-full bg-[var(--lumi-danger)] forced-colors:bg-[CanvasText]',
             compact ? 'size-1.5' : 'size-2',
           )}
         />

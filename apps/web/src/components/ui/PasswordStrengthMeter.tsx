@@ -8,10 +8,12 @@ import { cx } from './cx'
 
 const TIER_ORDER: PasswordStrength[] = ['weak', 'medium', 'strong']
 
+// FIX-294：分档条纯背景承载，forced-colors 下被强制为 ButtonFace 而
+// 消失——弱/中 CanvasText、强 Highlight 系统色保底（条下仍有文字兜底）。
 const TIER_FILL: Record<PasswordStrength, string> = {
-  weak: 'bg-[var(--lumi-danger)]',
-  medium: 'bg-[var(--lumi-warning)]',
-  strong: 'bg-[var(--lumi-accent-text)]',
+  weak: 'bg-[var(--lumi-danger)] forced-colors:bg-[CanvasText]',
+  medium: 'bg-[var(--lumi-warning)] forced-colors:bg-[CanvasText]',
+  strong: 'bg-[var(--lumi-accent-text)] forced-colors:bg-[Highlight]',
 }
 
 export function PasswordStrengthMeter({

@@ -259,7 +259,7 @@ export function GesturePracticeSettings() {
   return (
     <div className="flex items-center justify-between gap-4 py-3">
       <div className="min-w-0">
-        <p className="text-sm font-medium leading-none text-[var(--lumi-text-primary)]">
+        <p className="text-sm font-medium leading-tight text-[var(--lumi-text-primary)]">
           触控操作练习区
         </p>
         <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">

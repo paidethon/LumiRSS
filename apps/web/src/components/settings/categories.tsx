@@ -413,7 +413,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           node: (
             <div className="flex items-center justify-between gap-4 py-3">
               <div className="min-w-0">
-                <label className="text-sm font-medium leading-none text-[var(--lumi-text-primary)]">
+                <label className="text-sm font-medium leading-tight text-[var(--lumi-text-primary)]">
                   界面语言
                 </label>
                 <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">

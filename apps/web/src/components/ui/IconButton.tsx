@@ -51,13 +51,15 @@ export function IconButton({
     <button
       type={type}
       aria-label={label}
+      // FIX-293：焦点环由 [data-lumi-focus-ring]（index.css，unlayered）承载，
+      // 消费侧 className 不可覆盖（与 Button/Select 同一合并规则）。
+      data-lumi-focus-ring=""
       className={cx(
         'inline-flex items-center justify-center rounded-[var(--lumi-radius-md)] text-[var(--lumi-text-secondary)]',
         sizeClasses[size],
         'transition-colors duration-[var(--lumi-motion-fast)]',
         'hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)]',
         'active:bg-[var(--lumi-surface-pressed)]',
-        'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
         'disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none',
         touch && touchHitArea,
         className,

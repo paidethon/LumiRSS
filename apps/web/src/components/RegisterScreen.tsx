@@ -54,10 +54,12 @@ import { Button } from './ui/Button'
 const USERNAME_PATTERN = /^[a-z0-9][a-z0-9_-]{2,31}$/
 const MIN_PASSWORD_LENGTH = 8
 
+// FIX-294：分档条纯背景承载，forced-colors（高对比系统模式）下被强制为
+// ButtonFace 而消失——弱/中 CanvasText、强 Highlight 系统色保底。
 const STRENGTH_COLOR: Record<PasswordStrength, string> = {
-  weak: 'bg-[var(--lumi-danger)]',
-  medium: 'bg-[var(--lumi-text-tertiary)]',
-  strong: 'bg-[var(--lumi-accent)]',
+  weak: 'bg-[var(--lumi-danger)] forced-colors:bg-[CanvasText]',
+  medium: 'bg-[var(--lumi-text-tertiary)] forced-colors:bg-[CanvasText]',
+  strong: 'bg-[var(--lumi-accent)] forced-colors:bg-[Highlight]',
 }
 
 function usernameIssue(value: string): string | null {

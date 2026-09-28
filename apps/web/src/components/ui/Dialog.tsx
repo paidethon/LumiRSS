@@ -102,8 +102,11 @@ export function Dialog({ open, onClose, title, children, footer, panelClassName,
               {title}
             </BaseDialog.Title>
             {/* Q-P2-26：内容区自身滚动——高表单（API 来源创建+预览等）
-                在小屏不再上下双向裁剪且 footer 恒可达。 */}
-            <div className="min-h-0 flex-1 overflow-y-auto text-sm text-[var(--lumi-text-primary)]">{children}</div>
+                在小屏不再上下双向裁剪且 footer 恒可达。
+                FIX-296：scrollbar-gutter stable 预留滚动条宽度——内容
+                高度变化（折叠/展开、异步加载）让滚动条出现/消失时，
+                内容不再整体横跳。 */}
+            <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable] text-sm text-[var(--lumi-text-primary)]">{children}</div>
             {footer && <div className="mt-5 flex shrink-0 justify-end gap-2">{footer}</div>}
           </BaseDialog.Popup>
         </BaseDialog.Viewport>

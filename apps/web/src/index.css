@@ -809,6 +809,17 @@ html.dark:not([data-glass='off']) .lumi-glass {
     0 8px 28px -12px rgb(0 0 0 / 0.5);
 }
 
+/* ---- FIX-293：primitives 焦点环不可被消费侧 className 覆盖 ----
+ * Button / IconButton / Select 接受消费侧 className（cx 顺序拼接）。
+ * Tailwind v4 全部工具类都在 @layer utilities 内；本规则未分层
+ * （unlayered），按 cascade layers 语义优先于一切分层规则——消费侧
+ * 即使传 focus-visible:outline-none / outline-* 也压不掉焦点环
+ * （可见键盘焦点是项目 a11y 门，non-overridable）。 */
+[data-lumi-focus-ring]:focus-visible {
+  outline: 2px solid var(--lumi-focus-ring);
+  outline-offset: -2px;
+}
+
 /* ---- F01（2026-09 移动端专项）：列表密度 ----
  * 列表容器 data-density 驱动卡片/行的内边距与行距；动作按钮尺寸
  * （44px 触控）不随密度缩小——密度只调节奏，不牺牲可达性。 */

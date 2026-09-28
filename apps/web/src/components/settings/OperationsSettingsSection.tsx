@@ -25,7 +25,10 @@ function StatusDot({ status }: { status: string }) {
     <span
       className={cx(
         'size-2.5 shrink-0 rounded-full',
-        status === 'healthy' ? 'bg-[var(--lumi-accent)]' : 'bg-[var(--lumi-text-tertiary)]',
+        // FIX-294：forced-colors 下纯背景状态点不可见——CanvasText 保底。
+        status === 'healthy'
+          ? 'bg-[var(--lumi-accent)] forced-colors:bg-[CanvasText]'
+          : 'bg-[var(--lumi-text-tertiary)] forced-colors:bg-[CanvasText]',
       )}
       aria-hidden="true"
     />

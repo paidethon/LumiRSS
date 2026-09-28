@@ -825,7 +825,10 @@ function RunRow({ run }: { run: RssHubRouteRun }) {
         aria-hidden
         className={cx(
           'size-2 shrink-0 rounded-full',
-          failed ? 'bg-[var(--lumi-danger)]' : 'bg-[var(--lumi-success)]',
+          // FIX-294：状态点纯背景，forced-colors 下用 CanvasText 保底。
+          failed
+            ? 'bg-[var(--lumi-danger)] forced-colors:bg-[CanvasText]'
+            : 'bg-[var(--lumi-success)] forced-colors:bg-[CanvasText]',
         )}
       />
       <span className="sr-only">{failed ? '失败' : '成功'}</span>

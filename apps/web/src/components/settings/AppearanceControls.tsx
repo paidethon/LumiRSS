@@ -38,7 +38,7 @@ export function AccentColorPicker() {
 
   return (
     <div className="py-3">
-      <label className="text-sm font-medium leading-none text-[var(--lumi-text-primary)]">
+      <label className="text-sm font-medium leading-tight text-[var(--lumi-text-primary)]">
         主题色
       </label>
       <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
@@ -100,7 +100,7 @@ export function ReaderBackgroundPicker() {
 
   return (
     <div className="py-3">
-      <label className="text-sm font-medium leading-none text-[var(--lumi-text-primary)]">
+      <label className="text-sm font-medium leading-tight text-[var(--lumi-text-primary)]">
         阅读背景
       </label>
       <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
@@ -225,7 +225,7 @@ function ReaderBackgroundImageSection() {
     <div className="mt-3 border-t border-[var(--lumi-separator)] pt-3">
       <label
         htmlFor="reader-bg-image-file"
-        className="text-sm font-medium leading-none text-[var(--lumi-text-primary)]"
+        className="text-sm font-medium leading-tight text-[var(--lumi-text-primary)]"
       >
         背景图片
       </label>
@@ -334,7 +334,7 @@ export function CustomCssEditor() {
 
   return (
     <div className="py-3">
-      <label className="text-sm font-medium leading-none text-[var(--lumi-text-primary)]">
+      <label className="text-sm font-medium leading-tight text-[var(--lumi-text-primary)]">
         自定义 CSS
       </label>
       <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
@@ -565,7 +565,7 @@ export function ReaderPresetPicker() {
 
   return (
     <div className="py-3">
-      <label className="text-sm font-medium leading-none text-[var(--lumi-text-primary)]">
+      <label className="text-sm font-medium leading-tight text-[var(--lumi-text-primary)]">
         排版预设
       </label>
       <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
