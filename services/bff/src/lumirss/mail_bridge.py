@@ -36,6 +36,7 @@ from lumirss.mail_attachments import (
     MAX_ATTACHMENT_BYTES,
     MAX_ATTACHMENTS_PER_MAIL,
     MailAttachmentStore,
+    attachment_content_mismatch,
     classify_attachment,
 )
 from lumirss.mail_sanitize import html_to_text, sanitize_email_html_with_blocked
@@ -653,6 +654,11 @@ def _process_attachments(
             if allowed_mime is None:
                 item["status"] = "skipped_unsafe"
                 item["reason"] = "附件类型不在允许名单（脚本/可执行等），未保存。"
+            elif (mismatch := attachment_content_mismatch(filename, payload)) is not None:
+                # FIX-322：扩展名/声明 MIME 之外再核对实际内容（魔法字节）
+                # ——改名/改声明的不一致样本安全拒绝并给出原因。
+                item["status"] = "skipped_mismatch"
+                item["reason"] = mismatch
             elif len(stored) >= MAX_ATTACHMENTS_PER_MAIL:
                 item["status"] = "skipped_limit"
                 item["reason"] = "超过每封 20 个附件上限，未保存。"

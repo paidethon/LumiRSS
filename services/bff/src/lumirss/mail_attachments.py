@@ -1,12 +1,15 @@
 """N125 邮件附件的有界存储（mail_attachments，0102）。
 
-策略（ingest 时执行，双重判定 = 扩展名 + MIME）：
+策略（ingest 时执行，三重判定 = 扩展名 + MIME + 实际内容魔法字节）：
 
 - 放行：pdf、图片（png/jpeg/gif/webp/bmp）、文本（txt/csv/md/ics）、
   office 文档（doc/docx/xls/xlsx/ppt/pptx/odt/ods/odp）；
 - 拒绝：脚本与可执行类型（.exe/.msi/.bat/.cmd/.sh/.ps1/.js/.mjs/.vbs/
   .jar/.py/.html/.htm/.svg 等，含对应脚本型 MIME）——绝不存盘；
 - 其余未知类型一律拒绝（allowlist 语义，宁可少存不少存危险物）；
+- FIX-322：放行名单内的二进制类型再按魔法字节核对实际内容（pdf/
+  图片/OLE2/ZIP 容器各自的特征头；文本类拒绝 HTML 文档标记开头），
+  改名/改声明的不一致样本按 skipped_mismatch 安全拒绝并给出原因；
 - 单文件 >5MB → skipped_oversize；每封 >20 个 → 其余 skipped_limit。
 
 下载走 GET /api/v1/mail/attachments/{id}：Content-Disposition:
@@ -69,6 +72,74 @@ class MailAttachmentDenied(Exception):
 
 class MailAttachmentNotFound(Exception):
     """附件不存在（跨用户/错误 id 同型 404，不泄露存在性）。"""
+
+
+# FIX-322：放行的二进制类型按魔法字节核对实际内容——扩展名/声明 MIME
+# 都由发送方自证，改名/改声明的不一致样本（如 HTML 改名 .png）必须在
+# 存盘前拦下。键为 _ALLOWED 的扩展名，值为 (magic 前缀们, 类型说明)。
+_BINARY_MAGIC: dict[str, tuple[tuple[bytes, ...], str]] = {
+    ".pdf": ((b"%PDF-",), "PDF"),
+    ".png": ((b"\x89PNG\r\n\x1a\n",), "PNG 图片"),
+    ".jpg": ((b"\xff\xd8\xff",), "JPEG 图片"),
+    ".jpeg": ((b"\xff\xd8\xff",), "JPEG 图片"),
+    ".gif": ((b"GIF87a", b"GIF89a"), "GIF 图片"),
+    ".webp": ((b"RIFF",), "WebP 图片"),
+    ".bmp": ((b"BM",), "BMP 图片"),
+    ".doc": (
+        (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),
+        "Word 文档",
+    ),
+    ".xls": ((b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",), "Excel 工作簿"),
+    ".ppt": ((b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",), "PowerPoint 演示"),
+    ".docx": (
+        (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"),
+        "Word 文档",
+    ),
+    ".xlsx": (
+        (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"),
+        "Excel 工作簿",
+    ),
+    ".pptx": (
+        (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"),
+        "PowerPoint 演示",
+    ),
+    ".odt": ((b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"), "ODF 文档"),
+    ".ods": ((b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"), "ODF 表格"),
+    ".odp": ((b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"), "ODF 演示"),
+}
+
+# WebP 的 RIFF 头需要核对 8..12 字节的 WEBP 标记（RIFF 容器复用）。
+def _matches_magic(ext: str, content: bytes) -> bool:
+    magics, _label = _BINARY_MAGIC[ext]
+    if ext == ".webp":
+        return content[:4] == b"RIFF" and content[8:12] == b"WEBP"
+    return any(content.startswith(magic) for magic in magics)
+
+
+# 文本类（txt/csv/md/ics）的嗅探规则：拒绝以 HTML 文档标记开头的内容
+# ——「不把 HTML 当文本/图片嵌入」；其余文本原样放行（下载始终是
+# Content-Disposition: attachment，不进入渲染面）。
+_HTML_MARKERS = (b"<!doctype html", b"<html")
+
+
+def attachment_content_mismatch(filename: str, content: bytes) -> str | None:
+    """内容嗅探：返回不一致原因（拒绝理由），None = 与声明类型一致。
+
+    只对「存在明确魔法字节的类型」做硬核对；文本类做 HTML 标记检查。
+    嗅探失败是安全拒绝（宁可少存不少存危险物），原因如实进入 ingest
+    的附件清单（status=skipped_mismatch）。"""
+    name = str(filename or "").strip().lower()
+    dot = name.rfind(".")
+    ext = name[dot:] if dot >= 0 else ""
+    if ext in _BINARY_MAGIC:
+        if not _matches_magic(ext, content):
+            _label = _BINARY_MAGIC[ext][1]
+            return f"附件内容与声明的类型不一致（实际内容不是{_label}），未保存。"
+        return None
+    lowered = content[:512].lower()
+    if any(lowered.startswith(marker) for marker in _HTML_MARKERS):
+        return "附件内容与声明的类型不一致（实际内容是 HTML 文档），未保存。"
+    return None
 
 
 def classify_attachment(filename: str, mime: str) -> str | None:

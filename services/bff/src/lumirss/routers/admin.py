@@ -635,6 +635,11 @@ async def reset_user_password(user_id: str, request: Request) -> JSONResponse:
     denial = await require_step_up(request, principal, "user_password_reset")
     if denial is not None:
         return denial
+    # D-03：与其他 owner-targetable 端点同语义——owner 账号不可作为密码
+    # 重置目标（403）。否则敌意 admin 可借重置链接接管 owner 身份；
+    # owner 自己的密码走自助/恢复通道，不经本端点。
+    if user["role"] == "owner":
+        return _forbid("The owner account password cannot be reset here.")
     import secrets as _secrets
 
     await accounts.set_password_hash(user_id, hash_password(_secrets.token_urlsafe(24)))

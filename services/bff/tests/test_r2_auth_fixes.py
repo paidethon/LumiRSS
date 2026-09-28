@@ -471,3 +471,155 @@ def test_fix220_write_immediately_after_logout_response_rejected(
         assert client.get("/api/v1/auth/sessions", headers=headers).status_code == 401
         # 服务端状态已提交：会话行已物理删除。
         assert _session_row(db_path, raw_token) is None
+
+
+# ---------------------------------------------------------------------------
+# D-03 — reset-password 与其他 owner-targetable 端点同语义：owner 目标 403。
+#（敌意 admin 不得借密码重置接管 owner 身份；owner 自己的密码走自助/
+#  恢复通道，不经管理端点。）
+
+
+def _grant_admin_role(client, owner_headers, password: str, member_name: str) -> str:
+    """把一个已激活 member 提为 admin（owner-only 端点），返回其 user id。"""
+    users = client.get("/api/v1/admin/users", headers=owner_headers).json()
+    member_id = next(
+        str(u["id"]) for u in users if str(u["username"]) == member_name
+    )
+    step = client.post(
+        "/api/v1/admin/step-up", json={"password": password}, headers=owner_headers
+    )
+    assert step.status_code == 200, step.text
+    role = client.post(
+        f"/api/v1/admin/users/{member_id}/role",
+        json={"role": "admin"},
+        headers={**owner_headers, "X-Lumi-Step-Up": step.json()["token"]},
+    )
+    assert role.status_code == 200, role.text
+    return member_id
+
+
+def test_d03_admin_cannot_reset_owner_password(monkeypatch, tmp_path):
+    db_path = _session_env(monkeypatch, tmp_path)
+    password = _fake("pw-")
+    member_name = "d03a" + _secrets.token_hex(3)
+    with TestClient(app, base_url="http://lumirss.test") as client:
+        _set_owner_password(db_path, password)
+        owner = _login(client, password=password)
+        owner_headers = _cookie_headers(owner)
+        admin_headers, _ = _activate_member(
+            client, owner_headers, member_name, password
+        )
+        _grant_admin_role(client, owner_headers, password, member_name)
+        users = client.get("/api/v1/admin/users", headers=owner_headers).json()
+        owner_id = next(
+            str(u["id"]) for u in users if str(u.get("role")) == "owner"
+        )
+        # admin 提权后 step-up 用自己的（同一个随机生成的测试）密码。
+        step = client.post(
+            "/api/v1/admin/step-up",
+            json={"password": password},
+            headers=admin_headers,
+        )
+        assert step.status_code == 200, step.text
+        reset = client.post(
+            f"/api/v1/admin/users/{owner_id}/reset-password",
+            headers={**admin_headers, "X-Lumi-Step-Up": step.json()["token"]},
+        )
+        assert reset.status_code == 403, reset.text
+        assert reset.json()["error"]["type"] == "forbidden"
+        # owner 的会话不因这次被拒的尝试而受影响。
+        assert (
+            client.get("/api/v1/auth/sessions", headers=owner_headers).status_code
+            == 200
+        )
+
+
+def test_d03_owner_cannot_target_itself_via_reset_password(monkeypatch, tmp_path):
+    db_path = _session_env(monkeypatch, tmp_path)
+    password = _fake("pw-")
+    with TestClient(app, base_url="http://lumirss.test") as client:
+        _set_owner_password(db_path, password)
+        owner = _login(client, password=password)
+        owner_headers = _cookie_headers(owner)
+        users = client.get("/api/v1/admin/users", headers=owner_headers).json()
+        owner_id = next(str(u["id"]) for u in users if str(u.get("role")) == "owner")
+        step = client.post(
+            "/api/v1/admin/step-up", json={"password": password}, headers=owner_headers
+        )
+        assert step.status_code == 200, step.text
+        reset = client.post(
+            f"/api/v1/admin/users/{owner_id}/reset-password",
+            headers={**owner_headers, "X-Lumi-Step-Up": step.json()["token"]},
+        )
+        assert reset.status_code == 403, reset.text
+        assert reset.json()["error"]["type"] == "forbidden"
+
+
+# ---------------------------------------------------------------------------
+# FIX-036 — 服务器侧语义核验（BASELINE_OK）：恢复令牌明文只出现一次
+#（库里仅 SHA-256），消费是单条条件 UPDATE（单赢家）；二次兑换干净拒绝。
+
+
+def test_fix036_recovery_token_hash_only_and_single_consumption(
+    monkeypatch, tmp_path
+):
+    from lumirss.accounts_store import AccountsStore, InviteInvalid, hash_password
+    from lumirss.token_hash import hash_token
+
+    db_path = str(tmp_path / "lumi.sqlite")
+    monkeypatch.setenv("LUMIRSS_DB_PATH", db_path)
+    password = _fake("pw-")
+
+    async def setup():
+        database = Database(db_path)
+        await database.migrate()
+        store = AccountsStore(database)
+        user = await store.create_user(
+            username="f036member",
+            password_hash=hash_password(password),
+            role="member",
+        )
+        raw, invite = await store.create_invite(
+            created_by="test",
+            ttl_hours=1,
+            kind="recovery",
+            target_user=str(user["id"]),
+            label="f036",
+        )
+        return raw, invite, store
+
+    raw, invite, _store = _run(setup())
+    # 明文只在返回值里出现一次；库行只有 SHA-256，绝不回读出明文。
+    assert isinstance(raw, str) and raw
+    assert invite.get("token_hash") is None  # 行投影不含 token_hash 之外的明文
+
+    async def verify_row():
+        database = Database(db_path)
+        await database.migrate()
+        return await database.fetch_one(
+            "SELECT * FROM invites WHERE id = ?", (invite["id"],)
+        )
+
+    row = _run(verify_row())
+    assert str(row["token_hash"]) == hash_token(raw)
+    assert str(row["token_hash"]) != raw
+    for value in row:
+        if isinstance(value, str):
+            assert raw not in value  # 明文不出现在任何列
+
+    async def redeem_twice():
+        database = Database(db_path)
+        await database.migrate()
+        store = AccountsStore(database)
+        first = await store.redeem_invite(raw)
+        try:
+            await store.redeem_invite(raw)
+        except InviteInvalid:
+            second = "rejected"
+        else:
+            second = "accepted"
+        return first, second
+
+    first, second = _run(redeem_twice())
+    assert first["used_at"] is not None
+    assert second == "rejected"
