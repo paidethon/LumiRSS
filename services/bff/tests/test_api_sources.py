@@ -493,3 +493,75 @@ def test_streaming_fetch_caps_oversized_response(monkeypatch):
             await fetch_json(client_http, "https://api.example.com/big")
 
     asyncio.run(scenario())
+
+
+# --- FIX-244: Retry-After 两种 RFC 7231 形态都被遵守（有界、落库） ----------
+
+
+def test_parse_retry_after_honors_http_date_and_delta_forms():
+    """FIX-244：Retry-After 的 delta-seconds 与 HTTP-date 两种形态都换算
+    成有界秒数（钳到 [0, 3600]）——此前 HTTP-date 被当成不可解析直接
+    返回 None，路由层退回固定 3600s，无视服务端给出的具体判决。"""
+    from datetime import UTC, datetime, timedelta
+
+    from lumirss.api_sources import parse_retry_after
+
+    now = datetime(2026, 9, 28, 12, 0, 0, tzinfo=UTC)
+    http_date = (now + timedelta(seconds=90)).strftime("%a, %d %b %Y %H:%M:%S GMT")
+    assert parse_retry_after(http_date, now=now) == 90
+    assert parse_retry_after("120", now=now) == 120  # delta-seconds 不变
+    # 过去时刻 → 0（不倒扣，也不回退默认值）
+    past = (now - timedelta(seconds=30)).strftime("%a, %d %b %Y %H:%M:%S GMT")
+    assert parse_retry_after(past, now=now) == 0
+    # 敌意上游想钉死一小时以上 → 封顶 3600（两种形态一致）
+    assert parse_retry_after("99999") == 3600
+    far_future = (now + timedelta(days=30)).strftime("%a, %d %b %Y %H:%M:%S GMT")
+    assert parse_retry_after(far_future, now=now) == 3600
+    # 缺失 / 不可解析 → None（调用方自行决定退避）
+    assert parse_retry_after(None) is None
+    assert parse_retry_after("garbage") is None
+    assert parse_retry_after("") is None
+
+
+def test_upstream_429_http_date_retry_after_bounds_next_run(client):
+    """FIX-244：上游以 HTTP-date 形态给出 Retry-After 时，next_allowed_run
+    按「服务端判决」落库（此处 ≈ now+120s），而不是固定 3600s 兜底。"""
+    from datetime import UTC, datetime, timedelta
+
+    import lumirss.routers.api_sources as routes
+    from lumirss.api_sources import ApiSourceRateLimited
+
+    server_now = datetime.now(UTC)
+    retry_at = server_now + timedelta(seconds=120)
+    retry_after_date = retry_at.strftime("%a, %d %b %Y %H:%M:%S GMT")
+
+    async def _rate_limited(url, *args, **kwargs):
+        # 模拟 fetch_json 内部对 HTTP-date 的解析结果（parse_retry_after
+        # 的换算在上游 mock 边界内；此处直供换算后的有界秒数）。
+        from lumirss.api_sources import parse_retry_after
+
+        raise ApiSourceRateLimited(parse_retry_after(retry_after_date, now=server_now))
+
+    original = routes.fetch_json
+    routes.fetch_json = _rate_limited
+    try:
+        created = client.post(
+            "/api/v1/api-sources",
+            json={
+                "name": "日期限流源",
+                "endpoint": "https://api.example.com/x",
+                "itemsExpr": "[*]",
+                "fieldMap": {"id": "id", "title": "name"},
+                "subscribe": False,
+            },
+        )
+        assert created.status_code == 201
+        assert client.get(created.json()["atomPath"]).status_code == 502
+        detail = client.get("/api/v1/api-sources").json()["items"][0]
+        next_allowed = datetime.strptime(
+            detail["nextAllowedRun"], "%Y-%m-%dT%H:%M:%SZ"
+        ).replace(tzinfo=UTC)
+        waited = (next_allowed - server_now).total_seconds()
+        assert 60 <= waited <= 240, waited  # ≈120s，绝非 3600s 兜底
+    finally:
+        routes.fetch_json = original
