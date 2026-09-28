@@ -760,3 +760,24 @@ describe('账户与注册（P0-05 注册策略开关）', () => {
     expect(section).toHaveTextContent('当前状态：已关闭')
   })
 })
+
+// ===== FIX-052 基线验证 ======================================================
+// 审计项「管理页标签切换丢失 URL 状态」对照当前实现为 BASELINE_OK（N/A）：
+// AdminScreen 没有标签页状态——全部分区在单一滚动页同时渲染，/admin
+// 深链接打开的就是完整管理台，不存在「URL 只能定位到默认分区」的丢失面。
+// 本用例将该结构属性固化为回归防线：若未来引入分区标签页，必须同步把
+// 分区写进 URL（否则本用例失败）。
+
+describe('FIX-052 基线：管理台无标签页门控，深链接即全部分区', () => {
+  it('/admin 渲染时不同区域的分区同时可见（无 tab 状态可丢失）', async () => {
+    renderAdmin()
+    await screen.findByTestId('admin-user-list')
+    // 成员（左上）、邀请（右上）、系统（页尾）——来自三个互不相邻的
+    // 区域，同帧可见即「无分区标签页」结构成立。
+    expect(screen.getByLabelText('成员列表')).toBeInTheDocument()
+    expect(screen.getByLabelText('邀请管理')).toBeInTheDocument()
+    expect(screen.getByLabelText('系统状态')).toBeInTheDocument()
+    // 同理不存在任何 role=tab 的分区切换器。
+    expect(screen.queryAllByRole('tab')).toHaveLength(0)
+  })
+})
