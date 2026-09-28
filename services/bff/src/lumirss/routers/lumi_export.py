@@ -117,6 +117,11 @@ async def import_lumi_data_preview(request: Request) -> JSONResponse:
         control_adapter=control,
         store=_import_sessions(request),
     )
+    # FIX-049：预览会话绑定创建者身份——apply 只接受同一会话身份，
+    # 请求里的任何 user_id/字段都不能替代（身份仅来自服务端验证）。
+    session = _import_sessions(request).get(str(result.get("importId")))
+    if session is not None:
+        session["owner"] = _session_owner(request)
     return JSONResponse(
         content=result, headers={"Cache-Control": "no-store"}
     )
@@ -137,16 +142,11 @@ async def import_lumi_data_apply(body: ImportApplyBody, request: Request) -> JSO
     sessions = _import_sessions(request)
     session = sessions.get(body.importId)
     if session is None:
-        return JSONResponse(
-            status_code=404,
-            content={
-                "error": {
-                    "type": "import_session_not_found",
-                    "message": "预览会话不存在或已过期——请重新上传并预览。",
-                }
-            },
-            headers={"Cache-Control": "no-store"},
-        )
+        return _session_not_found()
+    # FIX-049：跨账户消费拒绝——apply 只认预览会话的创建者（服务端
+    # 会话身份），他人 importId 按「不存在」口径 404（不泄漏存在性）。
+    if str(session.get("owner") or "") != _session_owner(request):
+        return _session_not_found()
     selected = [key for key in body.components if key in COMPONENT_LABELS]
     if not selected:
         return _import_error("没有可识别的组件选择。")
@@ -168,5 +168,26 @@ def _import_error(message: str) -> JSONResponse:
     return JSONResponse(
         status_code=400,
         content={"error": {"type": "invalid_import", "message": message}},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+def _session_owner(request: Request) -> str:
+    """FIX-049：preview/apply 的属主 = 服务端验证的会话身份（绝不来自
+    请求体）。basic 模式中间件固定注入 owner 上下文，因此这里总有值。"""
+    from lumirss.user_scope import current_user_id
+
+    return current_user_id() or ""
+
+
+def _session_not_found() -> JSONResponse:
+    return JSONResponse(
+        status_code=404,
+        content={
+            "error": {
+                "type": "import_session_not_found",
+                "message": "预览会话不存在或已过期——请重新上传并预览。",
+            }
+        },
         headers={"Cache-Control": "no-store"},
     )
