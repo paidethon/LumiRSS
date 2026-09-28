@@ -162,8 +162,10 @@ export default function RecentReads({
             <span
               aria-hidden="true"
               className={cx(
-                'absolute top-0.5 size-4.5 rounded-full bg-white shadow transition-all duration-[var(--lumi-motion-fast)]',
-                enabled ? 'left-[1.375rem]' : 'left-0.5',
+                // FIX-111：thumb 位移走 transform（transition-transform），
+                // 不用 transition-all/left——只动画 cheap property。
+                'absolute left-0.5 top-0.5 size-4.5 rounded-full bg-white shadow transition-transform duration-[var(--lumi-motion-fast)]',
+                enabled ? 'translate-x-[1.25rem]' : 'translate-x-0',
               )}
             />
           </button>
