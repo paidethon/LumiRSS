@@ -317,7 +317,7 @@ function ResultRow({
           {!item.read && (
             <span
               aria-label="未读"
-              className="ml-1 size-2 shrink-0 rounded-full bg-[var(--lumi-accent-text)]"
+              className="ml-1 size-2 shrink-0 rounded-full bg-[var(--lumi-accent-text)] forced-colors:bg-[Highlight]"
             />
           )}
         </div>

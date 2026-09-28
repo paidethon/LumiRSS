@@ -215,8 +215,8 @@ function ConnectorList() {
               className={cx(
                 'size-1.5 shrink-0 rounded-full',
                 source.lastError == null
-                  ? 'bg-[var(--lumi-success)]'
-                  : 'bg-[var(--lumi-danger)]',
+                  ? 'bg-[var(--lumi-success)] forced-colors:bg-[CanvasText]'
+                  : 'bg-[var(--lumi-danger)] forced-colors:bg-[CanvasText]',
               )}
             />
             <span className="min-w-0 flex-1">

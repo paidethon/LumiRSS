@@ -1091,7 +1091,10 @@ export function HealthCheckDialog({
                   <span
                     className={cx(
                       'size-2 rounded-full',
-                      item.status === 'ok' ? 'bg-[var(--lumi-accent)]' : 'bg-[var(--lumi-danger)]',
+                      // FIX-294：状态点纯背景，forced-colors 下用 CanvasText 保底。
+                      item.status === 'ok'
+                        ? 'bg-[var(--lumi-accent)] forced-colors:bg-[CanvasText]'
+                        : 'bg-[var(--lumi-danger)] forced-colors:bg-[CanvasText]',
                     )}
                     aria-hidden
                   />

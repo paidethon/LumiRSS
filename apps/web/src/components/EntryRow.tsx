@@ -193,7 +193,8 @@ function EntryRow({
               aria-hidden="true"
               className={cx(
                 'size-2 shrink-0 rounded-full',
-                item.read ? 'bg-transparent' : 'bg-[var(--lumi-accent)]',
+                // FIX-294：forced-colors 下纯背景未读点不可见——Highlight 保底。
+                item.read ? 'bg-transparent' : 'bg-[var(--lumi-accent)] forced-colors:bg-[Highlight]',
               )}
             />
             <SourceGlyph name={item.feedTitle} />

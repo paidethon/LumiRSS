@@ -970,7 +970,9 @@ function SpeechToolbarControls({
                     <span
                       aria-hidden
                       data-lumi-speaking-indicator=""
-                      className="absolute -right-1 -top-0.5 size-1.5 rounded-full bg-[var(--lumi-accent-text)]"
+                      // FIX-294：forced-colors 下背景色被强制为 ButtonFace，
+                      // 纯背景圆点会消失——系统色 Highlight 保底。
+                      className="absolute -right-1 -top-0.5 size-1.5 rounded-full bg-[var(--lumi-accent-text)] forced-colors:bg-[Highlight]"
                     />
                   )}
                 </span>

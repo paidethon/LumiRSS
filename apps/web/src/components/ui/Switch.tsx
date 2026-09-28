@@ -56,12 +56,18 @@ export function Switch({
           // 把可点区域向上下各撑 10px → ≥44×44 的触达目标（不改布局/观感）。
           'after:absolute after:-inset-y-2.5 after:inset-x-0 after:content-[""]',
           'bg-[var(--lumi-surface-pressed)] data-checked:bg-[var(--lumi-accent)]',
+          // FIX-294：forced-colors（高对比系统模式）下轨道/拇指的背景色同被
+          // 强制为 ButtonFace → 开关整体不可见。系统色保底：关=ButtonBorder
+          // 轨道 + ButtonText 拇指，开=Highlight 轨道。
+          'forced-colors:bg-[ButtonBorder] forced-colors:data-checked:bg-[Highlight]',
           'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
         )}
       >
         <BaseSwitch.Thumb
           className={cx(
             'absolute size-4.5 rounded-full bg-white shadow-sm',
+            // FIX-294：拇指在 forced-colors 下用 ButtonText 保证与轨道反差。
+            'forced-colors:bg-[ButtonText]',
             'left-0.5 transition-transform duration-[var(--lumi-motion-fast)]',
             'data-checked:translate-x-5',
           )}

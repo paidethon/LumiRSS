@@ -132,8 +132,8 @@ function RegistryRow({
         className={cx(
           'mt-1.5 size-1.5 shrink-0 rounded-full',
           !entry.enabled || unhealthy
-            ? 'bg-[var(--lumi-danger)]'
-            : 'bg-[var(--lumi-success)]',
+            ? 'bg-[var(--lumi-danger)] forced-colors:bg-[CanvasText]'
+            : 'bg-[var(--lumi-success)] forced-colors:bg-[CanvasText]',
         )}
       />
       <div className="min-w-0 flex-1">
