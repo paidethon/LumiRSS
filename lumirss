@@ -918,7 +918,16 @@ cmd_restore() {
   if [[ "$target" == *freshrss-data* ]]; then vol="freshrss-data"; fi
   local proj
   proj="$(DC_D config --format json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("name","lumirss-prod"))' 2>/dev/null || echo lumirss-prod)"
-  log "stopping bff…"; DC_D stop bff >/dev/null 2>&1 || true
+  # FIX-202: 覆盖前必须停掉"这个卷"的全部写入者（备份 MANIFEST 记录的
+  # 写入者集合）。lumi-data 的写入者 = bff 容器（含其内置调度器）；
+  # freshrss-data 的写入者 = freshrss php 容器（cron 自动刷新）——只停
+  # bff 时，恢复 freshrss-data 可能与 cron 的 actualize 撕裂。bff 对
+  # freshrss-data 只是只读挂载，停它属于防御（operator 覆盖挂载场景）。
+  local writers="bff"
+  [[ "$vol" == "freshrss-data" ]] && writers="bff freshrss"
+  log "stopping writers ($writers)…"
+  # 有意不加引号：writers 展开为多个服务名。
+  DC_D stop $writers >/dev/null 2>&1 || true
   local bdir
   bdir="$(cd "$(dirname "$target")" && pwd)"
   log "restoring $vol from $target"
@@ -943,9 +952,9 @@ cmd_restore() {
     docker_cmd run --rm -v "${proj}_${vol}:/dst" -v "$bdir":/bkp:ro "$BACKUP_IMAGE" \
       sh -c 'cp -a "/bkp/$1/." /dst/ && cd /bkp && awk "NF && \$1 !~ /^#/ {print \$1 \"  \" \$3}" MANIFEST.txt | sha256sum -c - >/dev/null' \
       sh "$tree" \
-      || { err "MANIFEST checksum mismatch — refusing an inconsistent restore."; DC_D start bff >/dev/null 2>&1 || true; exit 1; }
+      || { err "MANIFEST checksum mismatch — refusing an inconsistent restore."; DC_D start $writers >/dev/null 2>&1 || true; exit 1; }
   fi
-  DC_D start bff >/dev/null 2>&1 || true
+  DC_D start $writers >/dev/null 2>&1 || true
   wait_health 180 && log "restore complete."
 }
 

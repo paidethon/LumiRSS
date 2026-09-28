@@ -1474,6 +1474,56 @@ assert_contains "failure names the unreachable version endpoint" \
 rm -rf "$sb"
 
 # ---------------------------------------------------------------------------
+echo "== 26. FIX-202: restore stops ALL writers of the volume it overwrites =="
+sb="$(new_sandbox)"
+stub_dir="$(mktemp -d)"
+r202_log="$(mktemp)"
+cat > "$stub_dir/docker" <<'STUB'
+#!/bin/sh
+# logging stub: compose stop/start are recorded; containers are never real
+echo "docker $*" >> "${LUMIRSS_TEST_DOCKER_LOG:?}"
+cmd="$1"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  info) exit 0;;
+  run) exit 0;;
+  compose)
+    case "$*" in
+      *" config"*) echo '{"name": "lumirss-prod"}';;
+      *) exit 0;;   # stop/start/exec succeed
+    esac;;
+  *) exit 0;;
+esac
+STUB
+chmod +x "$stub_dir/docker"
+mkdir -p "$sb/bk-frs" "$sb/bk-lumi"
+printf 'frs-canary\n' > "$sb/bk-frs/frs.txt"
+printf 'lumi-canary\n' > "$sb/bk-lumi/lumi.txt"
+tar -C "$sb/bk-frs" -czf "$sb/bk-frs/freshrss-data.files.tar.gz" frs.txt
+tar -C "$sb/bk-lumi" -czf "$sb/bk-lumi/lumi-data.files.tar.gz" lumi.txt
+cd "$sb" && cp -f .env.prod.example .env.prod
+cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$r202_log" \
+  ./lumirss restore "$sb/bk-frs/freshrss-data.files.tar.gz" --yes >/dev/null 2>&1
+assert_eq "freshrss-data restore exits 0" "0" "$?"
+assert_contains "freshrss cron writer is stopped before overwrite" "stop bff freshrss" "$(cat "$r202_log")"
+assert_contains "both writers restarted afterwards" "start bff freshrss" "$(cat "$r202_log")"
+stop_line="$(grep -n "stop bff freshrss" "$r202_log" | head -1 | cut -d: -f1)"
+run_line="$(grep -nE "docker run .*freshrss-data" "$r202_log" | head -1 | cut -d: -f1)"
+if [[ -n "$stop_line" && -n "$run_line" && "$stop_line" -lt "$run_line" ]]; then
+  ok "stop happens before the volume-mutating container runs"
+else
+  bad "restore container may run before writers stopped (stop=$stop_line run=$run_line)"
+fi
+: > "$r202_log"
+cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$r202_log" \
+  ./lumirss restore "$sb/bk-lumi/lumi-data.files.tar.gz" --yes >/dev/null 2>&1
+assert_eq "lumi-data restore exits 0" "0" "$?"
+assert_contains "lumi-data restore stops its writer (bff)" "stop bff" "$(cat "$r202_log")"
+assert_not_contains "lumi-data restore does not stop freshrss (not a writer of that volume)" \
+  "stop bff freshrss" "$(cat "$r202_log")"
+cd - >/dev/null
+rm -rf "$sb" "$stub_dir" "$r202_log"
+
+# ---------------------------------------------------------------------------
 echo
 echo "deploy-lifecycle tests: $PASS passed, $FAIL failed"
 if [[ "$FAIL" -gt 0 ]]; then exit 1; fi
