@@ -212,70 +212,100 @@ def _rel_for_display(root: Path, path: Path) -> str:
         return path.name
 
 
-def parse_note(resolved_path: Path, root: Path) -> dict[str, Any] | None:
-    """One file → projection payload (frontmatter + wikilinks + text)."""
-    rel_path = resolved_path.relative_to(root).as_posix()
-    try:
-        stat = resolved_path.stat()
-    except OSError:
-        return None
-    try:
-        raw = resolved_path.read_bytes()
-    except OSError:
-        return None
-    if b"\x00" in raw[:4096]:
-        return None  # binary masquerading as .md
-    fingerprint = f"{stat.st_mtime_ns}:{stat.st_size}"
-    content_hash = hashlib.sha256(raw).hexdigest()
-    try:
-        post = fm_module.loads(raw.decode("utf-8", errors="replace"))
-    except Exception:
-        return None
-    meta_tags = post.get("tags", [])
+def _decode_markdown(raw: bytes) -> str:
+    """FIX-338：UTF-8 解码 + BOM 剥离一次（frontmatter 才能正常解析）。"""
+    text = raw.decode("utf-8", errors="replace")
+    if text.startswith("\ufeff"):
+        text = text[1:]
+    return text
+
+
+def _normalize_body(text: str) -> str:
+    """FIX-338：CRLF/CR → LF；保留有意义换行（绝不逐行 trim、绝不把
+    代码块压平成一行）；仅去掉首尾空白行。"""
+    return text.replace("\r\n", "\n").replace("\r", "\n").strip()
+
+
+def _frontmatter_tags(meta_tags: Any) -> list[str]:
+    """FIX-333：tags 异常标量类型（int/date/bool…）降级为无 frontmatter
+    标签——单个文件的类型怪癖绝不拖垮整个扫描批次。"""
     if isinstance(meta_tags, str):
-        meta_tags = [meta_tags]
-    tags = [
-        str(t).lstrip("#")[:_MAX_TAG_LENGTH] for t in (meta_tags or []) if t
-    ]
-    body = str(post.content or "")
-    wikilinks: list[str] = []
-    wikilink_raws: list[str] = []
-    for chunk in body.split("[[")[1:]:
-        target = chunk.split("]]", 1)[0]
-        raw = target.strip()
-        target = target.split("|", 1)[0].split("#", 1)[0].strip()
-        if raw and raw not in wikilink_raws:
-            wikilink_raws.append(raw[:200])  # F080：保留别名/锚点原文
-        if target and target not in wikilinks:
-            wikilinks.append(target[:200])
-    inline_tags: list[str] = []
-    for token in body.replace("]", " ").split():
-        if token.startswith("#") and len(token) > 1:
-            candidate = token.lstrip("#")[:_MAX_TAG_LENGTH]
-            if candidate.isprintable() and candidate not in inline_tags:
-                inline_tags.append(candidate)
-    for candidate in inline_tags:
-        if candidate not in tags:
-            tags.append(candidate)
-    text = " ".join(body.split())
-    title = str(post.get("title") or resolved_path.stem)
-    truncated = (
-        len(text) > _MAX_BODY_LENGTH
-        or len(tags) > 30
-        or len(wikilinks) > _MAX_WIKILINKS
-        or len(title) > _MAX_TITLE_LENGTH
-    )
-    return {
-        "rel_path": rel_path,
-        "fingerprint": fingerprint,
-        "content_hash": content_hash,
-        "title": title[:_MAX_TITLE_LENGTH],
-        "tags": tags[:30],
-        "wikilinks": wikilinks[:_MAX_WIKILINKS],
-        "wikilink_raws": wikilink_raws[:_MAX_WIKILINKS],
-        "body_text": text[:_MAX_BODY_LENGTH],
-        "truncated": 1 if truncated else 0,
-    }
+        return [meta_tags]
+    if isinstance(meta_tags, (list, tuple, set)):
+        return [t for t in meta_tags if t]
+    return []
+
+
+def parse_note(resolved_path: Path, root: Path) -> dict[str, Any] | None:
+    """One file → projection payload (frontmatter + wikilinks + text).
+
+    FIX-333：整个单文件解析是 total 的——任何异常都降级为 None（该文件
+    进 skipped 诊断，批次照常），绝不冒泡拖垮整批。
+    """
+    try:
+        rel_path = resolved_path.relative_to(root).as_posix()
+        try:
+            stat = resolved_path.stat()
+        except OSError:
+            return None
+        try:
+            raw = resolved_path.read_bytes()
+        except OSError:
+            return None
+        if b"\x00" in raw[:4096]:
+            return None  # binary masquerading as .md
+        fingerprint = f"{stat.st_mtime_ns}:{stat.st_size}"
+        content_hash = hashlib.sha256(raw).hexdigest()
+        try:
+            post = fm_module.loads(_decode_markdown(raw))
+        except Exception:
+            return None
+        tags = [
+            str(t).lstrip("#")[:_MAX_TAG_LENGTH]
+            for t in _frontmatter_tags(post.get("tags", []))
+        ]
+        body = _normalize_body(str(post.content or ""))
+        wikilinks: list[str] = []
+        wikilink_raws: list[str] = []
+        for chunk in body.split("[[")[1:]:
+            target = chunk.split("]]", 1)[0]
+            raw = target.strip()
+            target = target.split("|", 1)[0].split("#", 1)[0].strip()
+            if raw and raw not in wikilink_raws:
+                wikilink_raws.append(raw[:200])  # F080：保留别名/锚点原文
+            if target and target not in wikilinks:
+                wikilinks.append(target[:200])
+        inline_tags: list[str] = []
+        for token in body.replace("]", " ").split():
+            if token.startswith("#") and len(token) > 1:
+                candidate = token.lstrip("#")[:_MAX_TAG_LENGTH]
+                if candidate.isprintable() and candidate not in inline_tags:
+                    inline_tags.append(candidate)
+        for candidate in inline_tags:
+            if candidate not in tags:
+                tags.append(candidate)
+        text = body
+        title = str(post.get("title") or resolved_path.stem)
+        truncated = (
+            len(text) > _MAX_BODY_LENGTH
+            or len(tags) > 30
+            or len(wikilinks) > _MAX_WIKILINKS
+            or len(title) > _MAX_TITLE_LENGTH
+        )
+        return {
+            "rel_path": rel_path,
+            "fingerprint": fingerprint,
+            "content_hash": content_hash,
+            "title": title[:_MAX_TITLE_LENGTH],
+            "tags": tags[:30],
+            "wikilinks": wikilinks[:_MAX_WIKILINKS],
+            "wikilink_raws": wikilink_raws[:_MAX_WIKILINKS],
+            "body_text": text[:_MAX_BODY_LENGTH],
+            "truncated": 1 if truncated else 0,
+        }
+    except Exception:  # noqa: BLE001 — FIX-333：单文件异常 = 单文件降级
+        _logger.debug("parse_note degraded per-file", exc_info=True)
+        return None
 
 
 class ObsidianService:

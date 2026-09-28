@@ -372,3 +372,94 @@ def test_fix334_title_ambiguity_resolves_deterministically(obsidian, tmp_path):
     # → rel_path 字典序（逐字节：ASCII 'n' < CJK '指'）→ deep/nest/指南。
     assert reason is None
     assert target == by_rel["deep/nest/指南.md"]
+
+
+# ---------------------------------------------------------------------------
+# FIX-333 — Markdown frontmatter 类型异常拖垮整个批次：单文件准确报错。
+#
+# tags 为标量（int/date/bool/None）时旧实现 `for t in 42` TypeError 直接
+# 冒泡 → 整个扫描批次 500。修复后：异常类型降级（该文件照常入库，仅
+# frontmatter 标签丢弃），任何单文件解析异常都不中断批次，且该文件进
+# N138 skipped 诊断（准确到文件）。
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("scalar", ["42", "2024-01-01", "true", "null"])
+def test_fix333_frontmatter_scalar_tags_do_not_crash_parse(obsidian, tmp_path, scalar):
+    from lumirss.obsidian import parse_note
+
+    service, tmp = obsidian
+    vault = _write_vault(tmp, {"n.md": f"---\ntitle: t\ntags: {scalar}\n---\n正文\n"})
+    note = parse_note(vault / "n.md", vault)
+    assert note is not None  # 单文件降级，绝不做掉整批
+    assert note["title"] == "t"
+    for tag in ("42", "2024-01-01", "True", "None", "true"):
+        assert tag not in note["tags"]
+
+
+def test_fix333_bad_frontmatter_file_does_not_abort_batch(obsidian, tmp_path):
+    service, tmp = obsidian
+    vault = _write_vault(
+        tmp,
+        {
+            "01-good.md": "---\ntitle: 好笔记\ntags: [a]\n---\n好内容\n",
+            "02-hostile.md": "---\ntitle: 异常笔记\ntags: 2024-01-01\n---\n异常内容\n",
+            "03-good.md": "---\ntitle: 好笔记三\n---\n三号内容\n",
+            "04-broken-yaml.md": "---\ntitle: [unclosed\n---\n坏 YAML\n",
+        },
+    )
+    run(service.set_vault_path(str(vault)))
+    report = run(service.rescan())  # 旧实现：TypeError → 整批 raise
+    # 批次继续：3 个可解析文件入库；坏 YAML 文件按「单文件 skipped」
+    # 准确落进 N138 诊断，绝不中断也不假报。
+    assert report["added"] == 3
+    assert "04-broken-yaml.md" in report["files"]["skipped"]["items"]
+    notes = run(service.list_notes())
+    titles = {n["title"] for n in notes}
+    assert {"好笔记", "异常笔记", "好笔记三"} <= titles
+    hostile = next(n for n in notes if n["title"] == "异常笔记")
+    assert hostile["tags"] == []  # 异常标量类型降级为无 frontmatter 标签
+
+
+# ---------------------------------------------------------------------------
+# FIX-338 — 换行和 BOM 处理破坏代码块：导入保留有意义换行并规范元信息。
+#
+# BOM 开头的笔记：旧实现 frontmatter 解析失败（title 掉回文件名、
+# frontmatter 文本混进正文）；正文旧实现 " ".join(split()) 压平一切换
+# 行（fenced code 被拍成一行）。修复后：BOM 剥离一次、frontmatter 正常
+# 解析（元信息规范化），CRLF→LF，代码块内容逐行保真（绝不逐行 trim /
+# 压平换行），渲染出真正的 <pre><code>。
+# ---------------------------------------------------------------------------
+
+
+def test_fix338_bom_crlf_code_block_preserved(obsidian, tmp_path):
+    from lumirss.obsidian import parse_note
+
+    service, tmp = obsidian
+    raw = (
+        "\ufeff---\r\ntitle: 代码笔记\r\ntags: [py]\r\n---\r\n"
+        "\r\n```python\r\nx = 1\r\n    y = 2\r\n\r\nz = 3\r\n```\r\n"
+        "\r\n尾段落。\r\n"
+    )
+    vault = tmp / "vault"
+    vault.mkdir()
+    (vault / "code.md").write_bytes(raw.encode("utf-8"))
+    run(service.set_vault_path(str(vault)))
+
+    note = parse_note(vault / "code.md", vault)
+    assert note is not None
+    assert note["title"] == "代码笔记"  # BOM 剥离后 frontmatter 正常解析
+    assert "py" in note["tags"]
+    body = note["body_text"]
+    assert "\ufeff" not in body  # BOM 只剥离一次且不残留
+    assert "---" not in body.split("```")[0] or "title:" not in body  # 元信息不入正文
+    assert "\r" not in body  # CRLF 规范化为 LF
+    # 代码内容逐行保真：换行保留、行内缩进/空行不被动过。
+    code = body.split("```")[1].removeprefix("python\n")
+    assert code == "x = 1\n    y = 2\n\nz = 3\n"
+
+    run(service.rescan())
+    notes = run(service.list_notes())
+    detail = run(service.get_note(notes[0]["ref"].split(":", 1)[1]))
+    assert "<pre><code" in detail["contentHtml"]
+    assert "x = 1\n    y = 2\n\nz = 3" in detail["contentHtml"]  # 渲染保真
