@@ -235,11 +235,13 @@ def test_move_subscription_not_found_is_404():
 
 
 def test_delete_subscription_returns_204():
+    """FIX-237：feed_url 在退订**之前**解析（先 list 后破坏性写）——
+    退订后上游清单已无此订阅，事后解析恒空。"""
     fake = FakeControlAdapter()
     response = call(fake, "DELETE", f"/api/v1/subscriptions/{EXISTING_REF}")
 
     assert response.status_code == 204
-    assert fake.calls == [("unsubscribe", "feed/7")]
+    assert fake.calls == [("list_subscriptions",), ("unsubscribe", "feed/7")]
 
 
 def test_delete_subscription_malformed_ref_is_400():
