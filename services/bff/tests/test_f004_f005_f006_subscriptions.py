@@ -40,6 +40,9 @@ def _install_subscriptions(rows: list[tuple[str, str]]) -> dict[str, str]:
 
 
 def test_f004_same_url_and_query_param_diff_merge(client):
+    """FIX-235 修订后的契约：feed 的查询参数逐字符保留（业务意义不明，
+    保守不合并）——``?utm_source=x`` 与裸 feed 是不同订阅，不再归并；
+    尾斜杠 + 大小写 + scheme 差异仍归并（见 FIX-235 专项测试）。"""
     _install_subscriptions(
         [
             ("源 A", "https://example.com/feed?utm_source=x"),
@@ -48,11 +51,7 @@ def test_f004_same_url_and_query_param_diff_merge(client):
         ]
     )
     body = client.get("/api/v1/subscriptions/duplicate-suspects").json()
-    assert len(body["groups"]) == 1, "同 URL（大小写/尾斜杠/追踪参数差异）合并"
-    members = {m["feedUrl"] for m in body["groups"][0]["members"]}
-    assert members == {"https://example.com/feed?utm_source=x", "https://EXAMPLE.com/feed/"}
-    assert body["groups"][0]["key"].startswith("example.com/feed")
-    assert "utm_source" not in body["groups"][0]["key"]
+    assert body["groups"] == [], "三个 URL 的规范化键互不相同，不归并"
     assert body["checked"] == 3
 
 
