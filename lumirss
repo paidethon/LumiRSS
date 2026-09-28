@@ -1205,9 +1205,18 @@ cmd_freshrss_init() { # make the internal FreshRSS usable by the BFF
 
   if ! docker_cmd exec lumirss-freshrss php ./cli/list-users.php 2>/dev/null | grep -qx "$user"; then
     log "creating FreshRSS user '$user'…"
+    # FIX-210: FreshRSS 1.29.1 的 create-user.php 只接受命令行参数传密码
+    # （cli/CliOptionsParser 无 env/stdin/文件通道；Docker 入口的
+    # FRESHRSS_USER 最终也展开成同一条 argv，且 env 常驻容器元数据更糟）
+    # ——上游不提供非 argv 的受控输入通道，argv 暴露无法在不绕过上游 CLI
+    # 的前提下消除。已做的最小收敛：
+    # - 不再传 --password（web 登录密码）：FreshRSS web 面板按设计不发布
+    #   端口、从不登录，少一份 argv 拷贝、少一个无人用的凭据；
+    # - 只保留 BFF 实际消费的 --api-password；明文仅存于 chmod 600 的
+    #   $ENV_FILE，绝不出现在日志/输出。
+    # 上游若未来提供 stdin/env/hash 通道，应立即替换此调用。
     docker_cmd exec lumirss-freshrss php ./cli/create-user.php \
       --user "$user" \
-      --password "$pw" \
       --api-password "$pw" \
       --no-default-feeds >/dev/null
   fi

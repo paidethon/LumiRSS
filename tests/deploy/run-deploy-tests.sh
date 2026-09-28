@@ -304,9 +304,12 @@ rm -rf "$sb" "$stub_dir" "$rebuild_log"
 echo "== 9. freshrss-init lifecycle (stub execs) =="
 sb="$(new_sandbox)"
 stub_dir="$(mktemp -d)"
+init_log="$(mktemp)"
 cat > "$stub_dir/docker" <<'STUB'
 #!/bin/sh
-# stub docker: execs succeed with empty output (FreshRSS CLI)
+# stub docker: execs succeed with empty output (FreshRSS CLI); every call
+# is logged so FIX-210 can assert what reaches process argv.
+echo "docker $*" >> "${LUMIRSS_TEST_DOCKER_LOG:?}"
 cmd="$1"; [ $# -gt 0 ] && shift
 case "$cmd" in
   info) exit 0;;
@@ -322,7 +325,7 @@ esac
 STUB
 chmod +x "$stub_dir/docker"
 init_out="$(cd "$sb" && cp -f .env.prod.example .env.prod \
-  && env PATH="$stub_dir:$PATH" ./lumirss freshrss-init 2>&1)"
+  && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$init_log" ./lumirss freshrss-init 2>&1)"
 rc=$?
 assert_eq "freshrss-init exits 0" "0" "$rc"
 assert_contains "freshrss-init installs FreshRSS" "installing FreshRSS" "$init_out"
@@ -333,10 +336,17 @@ assert_not_contains "freshrss-init never prints the generated password" \
   "$(grep '^FRESHRSS_API_PASSWORD=' "$sb/.env.prod" | cut -d= -f2-)" "$init_out"
 pw_val="$(grep '^FRESHRSS_API_PASSWORD=' "$sb/.env.prod" | cut -d= -f2-)"
 assert_eq "freshrss-init persists a usable FRESHRSS_API_PASSWORD" "32" "${#pw_val}"
-init2_out="$(cd "$sb" && env PATH="$stub_dir:$PATH" ./lumirss freshrss-init 2>&1)"
+# FIX-210: the ONLY password argument reaching process argv is the greader
+# API password FreshRSS 1.29.1 cannot consume any other way; the unused
+# web-login --password is gone (upstream constraint documented in lumirss).
+assert_contains "create-user receives the api password" "--api-password" "$(cat "$init_log")"
+assert_not_contains "unused web-login --password argv is gone" " --password " "$(cat "$init_log")"
+assert_eq "plaintext reaches argv exactly once (single copy; upstream-forced channel)" "1" \
+  "$(grep -o -F -- "$pw_val" "$init_log" | wc -l)"
+init2_out="$(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$init_log" ./lumirss freshrss-init 2>&1)"
 assert_not_contains "second freshrss-init is idempotent (no regen)" \
   "generated FRESHRSS_API_PASSWORD" "$init2_out"
-rm -rf "$sb" "$stub_dir"
+rm -rf "$sb" "$stub_dir" "$init_log"
 
 # ---------------------------------------------------------------------------
 echo "== 10. session auth mode: entrypoint + deploy persistence =="
