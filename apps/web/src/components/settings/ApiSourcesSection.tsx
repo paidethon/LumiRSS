@@ -991,7 +991,7 @@ function SchemaDriftPanel({ source }: { source: ApiSource }) {
         />
         数据结构
         {hasDrift ? (
-          <span className="flex items-center gap-1 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-danger-soft,rgba(220,80,80,0.15))] px-1.5 py-0.5 text-[10px] text-[var(--lumi-danger)]">
+          <span className="flex items-center gap-1 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-danger-soft)] px-1.5 py-0.5 text-[10px] text-[var(--lumi-danger)]">
             <AlertCircle aria-hidden className="size-3" />
             结构已变化
           </span>

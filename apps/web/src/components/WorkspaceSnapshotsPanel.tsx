@@ -207,7 +207,7 @@ function SnapshotDiffDialog({
               )}
             {diff.data.added.length > 0 && (
               <section aria-label="新增条目" data-diff-added="">
-                <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">
+                <h4 className="text-sm font-semibold text-[var(--lumi-text-primary)]">
                   新增（目标有、基准无）· {diff.data.added.length}
                 </h4>
                 <ul className="mt-1 flex flex-col gap-0.5">
@@ -221,7 +221,7 @@ function SnapshotDiffDialog({
             )}
             {diff.data.removed.length > 0 && (
               <section aria-label="移除条目" data-diff-removed="">
-                <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">
+                <h4 className="text-sm font-semibold text-[var(--lumi-text-primary)]">
                   移除（基准有、目标无）· {diff.data.removed.length}
                 </h4>
                 <ul className="mt-1 flex flex-col gap-0.5">
@@ -235,7 +235,7 @@ function SnapshotDiffDialog({
             )}
             {diff.data.moved.length > 0 && (
               <section aria-label="位置变化" data-diff-moved="">
-                <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">
+                <h4 className="text-sm font-semibold text-[var(--lumi-text-primary)]">
                   位置变化 · {diff.data.moved.length}
                 </h4>
                 <ul className="mt-1 flex flex-col gap-0.5">
@@ -250,7 +250,7 @@ function SnapshotDiffDialog({
             )}
             {diff.data.groupChanges.length > 0 && (
               <section aria-label="分组变化" data-diff-groups="">
-                <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">
+                <h4 className="text-sm font-semibold text-[var(--lumi-text-primary)]">
                   分组变化 · {diff.data.groupChanges.length}
                 </h4>
                 <ul className="mt-1 flex flex-col gap-0.5">

@@ -262,6 +262,7 @@ export function ReaderFontManager() {
         ref={fileRef}
         type="file"
         accept=".woff2,font/woff2"
+        aria-label="导入字体文件"
         className="sr-only"
         onChange={(e) => {
           const f = e.target.files?.[0]

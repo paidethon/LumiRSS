@@ -46,6 +46,9 @@
   --lumi-font-sans:
     system-ui, 'SN Pro', 'PingFang SC', 'Hiragino Sans GB',
     'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
+  /* FIX-078：UI 字体档缺失时的兜底别名曾被引用却未定义
+   * （app-settings/reader-style 的 `?? 'var(--lumi-font-default)'` 链）。 */
+  --lumi-font-default: var(--lumi-font-sans);
 
   /* 层级（z-index 只允许经由这些 token）。O123 定序：对话框内触发的
    * 菜单/提示（portal 到 body）必须盖过对话框本身——popover 55 > 

@@ -101,7 +101,7 @@ export function FreshnessSuggestionsSection() {
                 {item.refreshAdvisory === 'accepted' ? (
                   <span
                     role="status"
-                    className="text-[11px] text-[var(--lumi-success, var(--lumi-text-primary))]"
+                    className="text-[11px] text-[var(--lumi-success)]"
                     data-testid="advisory-accepted"
                   >
                     已接受低频建议

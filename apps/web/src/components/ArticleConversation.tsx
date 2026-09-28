@@ -44,7 +44,7 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
         className={cx(
           'max-w-[85%] whitespace-pre-wrap rounded-[var(--lumi-radius-lg)] px-3 py-2 text-sm leading-relaxed',
           isUser
-            ? 'bg-[var(--lumi-accent)] text-[var(--lumi-on-accent, #fff)]'
+            ? 'bg-[var(--lumi-accent)] text-[var(--lumi-accent-contrast)]'
             : 'border border-[var(--lumi-border)] bg-[var(--lumi-surface)] text-[var(--lumi-text-primary)]',
         )}
       >

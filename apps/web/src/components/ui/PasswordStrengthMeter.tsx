@@ -10,7 +10,7 @@ const TIER_ORDER: PasswordStrength[] = ['weak', 'medium', 'strong']
 
 const TIER_FILL: Record<PasswordStrength, string> = {
   weak: 'bg-[var(--lumi-danger)]',
-  medium: 'bg-[var(--lumi-warning, #d97706)]',
+  medium: 'bg-[var(--lumi-warning)]',
   strong: 'bg-[var(--lumi-accent-text)]',
 }
 

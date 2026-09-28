@@ -200,7 +200,7 @@ export function AskBatchDialog({
               <>
                 {compareResult.commonPoints.length > 0 && (
                   <section>
-                    <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">共同点</h4>
+                    <h4 className="text-sm font-semibold text-[var(--lumi-text-primary)]">共同点</h4>
                     <ul className="mt-1 list-disc ps-4 text-xs text-[var(--lumi-text-secondary)]">
                       {compareResult.commonPoints.map((point, i) => (
                         <li key={i}>{point}</li>
@@ -210,7 +210,7 @@ export function AskBatchDialog({
                 )}
                 {compareResult.differences.length > 0 && (
                   <section>
-                    <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">分歧</h4>
+                    <h4 className="text-sm font-semibold text-[var(--lumi-text-primary)]">分歧</h4>
                     {compareResult.differences.map((d, i) => (
                       <div key={i} className="mt-1.5">
                         <p className="text-xs font-medium text-[var(--lumi-text-secondary)]">{d.topic}</p>
@@ -238,7 +238,7 @@ export function AskBatchDialog({
                 )}
                 {compareResult.evidence.length > 0 && (
                   <section>
-                    <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">证据</h4>
+                    <h4 className="text-sm font-semibold text-[var(--lumi-text-primary)]">证据</h4>
                     <ul className="mt-1 flex flex-col gap-1">
                       {compareResult.evidence.map((e, i) => (
                         <li key={i} className="text-xs text-[var(--lumi-text-secondary)]">
@@ -259,7 +259,7 @@ export function AskBatchDialog({
                               'ms-1 rounded-[var(--lumi-radius-full)] px-1.5 py-0.5 text-[11px]',
                               e.verified
                                 ? 'bg-[var(--lumi-surface-selected)] text-[var(--lumi-text-secondary)]'
-                                : 'bg-[var(--lumi-danger-soft, var(--lumi-surface-selected))] text-[var(--lumi-danger)]',
+                                : 'bg-[var(--lumi-danger-soft)] text-[var(--lumi-danger)]',
                             )}
                           >
                             {e.verified ? '已核验' : '未验证'}
@@ -271,7 +271,7 @@ export function AskBatchDialog({
                 )}
                 {compareResult.uncertainties.length > 0 && (
                   <section>
-                    <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">不确定</h4>
+                    <h4 className="text-sm font-semibold text-[var(--lumi-text-primary)]">不确定</h4>
                     <ul className="mt-1 list-disc ps-4 text-xs text-[var(--lumi-text-tertiary)]">
                       {compareResult.uncertainties.map((u, i) => (
                         <li key={i}>{u}</li>

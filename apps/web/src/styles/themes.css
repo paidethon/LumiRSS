@@ -57,6 +57,19 @@
   --lumi-danger-hover: #9d555b;
   --lumi-danger-contrast: #ffffff;
 
+  /* FIX-077（2026-09 R2）：success / warning / 状态淡底补齐。此前 30+ 处
+   * 引用 --lumi-success / --lumi-warning / --lumi-danger-soft 却从未定义，
+   * 各处手写 fallback 互不相同（danger 文本 #dc2626/#b3261e/#b91c1c；
+   * warning #d97706/#b45309/降级为 muted），同语义不同值。收敛到本组
+   * token（不新增平行色板）。对比校准：success 文本 Light #166534 在
+   * surface/elevated/selected 全部浅色底 ≥5.7:1（AA）；Dark #7cc39a 在
+   * 深色底 ≥7:1。warning 文本 Light #b45309 on surface ≈4.85:1；Dark
+   * #f59e0b ≈7.4:1。soft 淡底由同族前景衍生，两主题各一档。 */
+  --lumi-success: #166534;
+  --lumi-success-soft: rgba(22, 101, 52, 0.12);
+  --lumi-warning: #b45309;
+  --lumi-danger-soft: rgba(170, 92, 98, 0.14);
+
   /* ---- 分类柔彩（低饱和，仅小图标/圆点/低透明 tint） ---- */
   --lumi-category-blue: #79a9d6;
   --lumi-category-green: #76a08b;
@@ -67,6 +80,9 @@
   --lumi-category-red: #b8656b;
 
   /* ---- 阴影（仅浮层用：popover / dialog / floating） ---- */
+  /* FIX-078：Tabs 选中页签此前引用 --lumi-shadow-sm 却无定义（阴影整体
+   * 失效）。补最小一档；Dark 加深同族。 */
+  --lumi-shadow-sm: 0 1px 2px rgba(41, 40, 44, 0.06);
   --lumi-shadow-popover: 0 4px 16px rgba(41, 40, 44, 0.08);
   --lumi-shadow-dialog: 0 16px 48px rgba(41, 40, 44, 0.16);
   --lumi-shadow-floating: 0 24px 64px rgba(41, 40, 44, 0.2);
@@ -111,7 +127,14 @@
   --lumi-danger-hover: #da9298;
   --lumi-danger-contrast: #15151a;
 
+  /* FIX-077：状态族 Dark 档（对比校准见 Light 侧注释）。 */
+  --lumi-success: #7cc39a;
+  --lumi-success-soft: rgba(124, 195, 154, 0.16);
+  --lumi-warning: #f59e0b;
+  --lumi-danger-soft: rgba(208, 128, 135, 0.16);
+
   /* ---- 阴影（深色下加深） ---- */
+  --lumi-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --lumi-shadow-popover: 0 4px 16px rgba(0, 0, 0, 0.32);
   --lumi-shadow-dialog: 0 16px 48px rgba(0, 0, 0, 0.48);
   --lumi-shadow-floating: 0 24px 64px rgba(0, 0, 0, 0.56);

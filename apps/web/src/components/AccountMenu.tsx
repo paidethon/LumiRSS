@@ -183,7 +183,7 @@ export default function AccountMenu() {
         ) : (
           <form id="change-password-form" onSubmit={handleChangePassword} className="flex flex-col gap-3" noValidate>
             <div>
-              <label htmlFor="change-current-password" className="mb-1.5 block text-sm font-medium text-[var(--lumi-text-primary)]">
+              <label htmlFor="change-current-password" className="mb-1.5 block text-xs font-medium text-[var(--lumi-text-primary)]">
                 当前密码
               </label>
               <input
@@ -197,7 +197,7 @@ export default function AccountMenu() {
               />
             </div>
             <div>
-              <label htmlFor="change-new-password" className="mb-1.5 block text-sm font-medium text-[var(--lumi-text-primary)]">
+              <label htmlFor="change-new-password" className="mb-1.5 block text-xs font-medium text-[var(--lumi-text-primary)]">
                 新密码
               </label>
               <input

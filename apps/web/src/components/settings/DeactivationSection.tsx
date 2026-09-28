@@ -64,7 +64,7 @@ export function DeactivationSection({ onDeactivated }: { onDeactivated: () => vo
         </>
       ) : (
         <div className="flex flex-col gap-2">
-          <p className="text-xs text-[var(--lumi-text-danger, #dc2626)]">
+          <p className="text-xs text-[var(--lumi-danger)]">
             请输入当前密码确认。建议先完成数据迁出（设置 → 数据控制 → 迁出向导）。
           </p>
           <input

@@ -459,7 +459,7 @@ export default function ObsidianDevicesSection({ envRootConfigured }: { envRootC
         <div className="mt-3 flex flex-col gap-4">
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
-              <h3 className="text-xs font-medium text-[var(--lumi-text-secondary)]">设备档案</h3>
+              <h3 className="text-sm font-medium text-[var(--lumi-text-secondary)]">设备档案</h3>
               {!adding && (
                 <Button size="sm" variant="secondary" aria-label="新增设备档案" onClick={() => setAdding(true)}>
                   <Plus aria-hidden className="size-3.5" />
@@ -530,12 +530,12 @@ export default function ObsidianDevicesSection({ envRootConfigured }: { envRootC
           </div>
 
           <div className="flex flex-col gap-2">
-            <h3 className="text-xs font-medium text-[var(--lumi-text-secondary)]">导出重名处理</h3>
+            <h3 className="text-sm font-medium text-[var(--lumi-text-secondary)]">导出重名处理</h3>
             <ExportNamePolicySection />
           </div>
 
           <div className="flex flex-col gap-2">
-            <h3 className="text-xs font-medium text-[var(--lumi-text-secondary)]">导出模板</h3>
+            <h3 className="text-sm font-medium text-[var(--lumi-text-secondary)]">导出模板</h3>
             <TemplateEditor />
           </div>
         </div>

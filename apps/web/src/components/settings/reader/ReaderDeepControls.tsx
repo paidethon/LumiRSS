@@ -396,6 +396,7 @@ export function ReaderThemePackSettings() {
         ref={fileRef}
         type="file"
         accept=".lumitheme,.json,application/json"
+        aria-label="导入阅读主题文件"
         className="sr-only"
         onChange={(e) => {
           const f = e.target.files?.[0]

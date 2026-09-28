@@ -115,7 +115,7 @@ export function TotpSection() {
           className={
             enabled
               ? 'rounded-[var(--lumi-radius-full)] bg-[var(--lumi-accent-soft)] px-2 py-0.5 text-[11px] text-[var(--lumi-accent-text)]'
-              : 'rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-2)] px-2 py-0.5 text-[11px] text-[var(--lumi-text-tertiary)]'
+              : 'rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-2 py-0.5 text-[11px] text-[var(--lumi-text-tertiary)]'
           }
         >
           {enabled ? '已开启' : '未开启'}
@@ -142,7 +142,7 @@ export function TotpSection() {
           <CopyLine label="otpauth URI" value={setupSecret.otpauthUri} />
           <form onSubmit={handleEnable} className="flex flex-wrap items-end gap-2" noValidate>
             <div>
-              <label htmlFor="totp-enable-code" className="mb-1.5 block text-sm font-medium text-[var(--lumi-text-primary)]">
+              <label htmlFor="totp-enable-code" className="mb-1.5 block text-xs font-medium text-[var(--lumi-text-primary)]">
                 输入 6 位验证码确认
               </label>
               <input
@@ -171,7 +171,7 @@ export function TotpSection() {
           </p>
           <ul className="grid grid-cols-2 gap-1 sm:grid-cols-4">
             {recoveryCodes.map((recovery) => (
-              <li key={recovery} className="rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-2)] px-2 py-1 font-mono text-xs text-[var(--lumi-text-primary)]">
+              <li key={recovery} className="rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-selected)] px-2 py-1 font-mono text-xs text-[var(--lumi-text-primary)]">
                 {recovery}
               </li>
             ))}
@@ -196,7 +196,7 @@ export function TotpSection() {
       {enabled && (
         <form onSubmit={handleDisable} className="mt-3 flex flex-wrap items-end gap-2" noValidate data-lumi-totp-disable="">
           <div>
-            <label htmlFor="totp-disable-password" className="mb-1.5 block text-sm font-medium text-[var(--lumi-text-primary)]">
+            <label htmlFor="totp-disable-password" className="mb-1.5 block text-xs font-medium text-[var(--lumi-text-primary)]">
               当前登录密码
             </label>
             <input
@@ -210,7 +210,7 @@ export function TotpSection() {
             />
           </div>
           <div>
-            <label htmlFor="totp-disable-code" className="mb-1.5 block text-sm font-medium text-[var(--lumi-text-primary)]">
+            <label htmlFor="totp-disable-code" className="mb-1.5 block text-xs font-medium text-[var(--lumi-text-primary)]">
               验证码或恢复码
             </label>
             <input

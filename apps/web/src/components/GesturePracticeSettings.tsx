@@ -228,7 +228,7 @@ export function GesturePracticeOverlay({ onClose }: { onClose: () => void }) {
           data-testid="practice-ledger"
           className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-2.5"
         >
-          <h4 className="text-xs font-medium text-[var(--lumi-text-tertiary)]">
+          <h4 className="text-sm font-medium text-[var(--lumi-text-tertiary)]">
             练习台账（{ledger.length}）
           </h4>
           {ledger.length === 0 ? (

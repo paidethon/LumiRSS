@@ -71,7 +71,7 @@ export function MediaFailuresPanel({ entryRef }: { entryRef: string | null }) {
         <ImageOff aria-hidden className="size-3.5" />
         失效附件
         {failures.length > 0 && (
-          <span className="rounded-[var(--lumi-radius-full)] bg-[var(--lumi-danger)] px-1.5 text-[10px] text-white">
+          <span className="rounded-[var(--lumi-radius-full)] bg-[var(--lumi-danger)] px-1.5 text-[10px] text-[var(--lumi-danger-contrast)]">
             {failures.length}
           </span>
         )}

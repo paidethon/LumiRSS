@@ -420,7 +420,7 @@ function PanelSection({
 }) {
   return (
     <section className="flex flex-col gap-1.5 border-t border-[var(--lumi-separator)] pt-2.5">
-      <h4 className="text-xs font-medium text-[var(--lumi-text-tertiary)]">{title}</h4>
+      <h4 className="text-sm font-medium text-[var(--lumi-text-tertiary)]">{title}</h4>
       {children}
       {note !== undefined && (
         <p className="text-xs leading-5 text-[var(--lumi-text-tertiary)]">{note}</p>

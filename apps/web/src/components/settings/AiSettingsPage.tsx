@@ -71,7 +71,7 @@ function FieldShell({
 }) {
   return (
     <div>
-      <label className="block text-sm font-medium text-[var(--lumi-text-primary)]">
+      <label className="block text-xs font-medium text-[var(--lumi-text-primary)]">
         {label}
       </label>
       {hint !== undefined && (
@@ -189,7 +189,7 @@ function PurposeMappingSection({
           <div key={purpose} className="flex flex-col gap-1">
             <div className="flex items-center justify-between gap-3">
               <label
-                className="shrink-0 text-sm font-medium text-[var(--lumi-text-primary)]"
+                className="shrink-0 text-xs font-medium text-[var(--lumi-text-primary)]"
                 htmlFor={`ai-purpose-${purpose}`}
               >
                 {PURPOSE_LABELS[purpose]}

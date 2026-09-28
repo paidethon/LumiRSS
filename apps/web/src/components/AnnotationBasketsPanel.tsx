@@ -153,7 +153,7 @@ export function AnnotationBasketsPanel({ selectedIds }: { selectedIds: Set<strin
           <Button
             size="sm"
             variant="ghost"
-            className="text-[var(--lumi-danger, #dc2626)]"
+            className="text-[var(--lumi-danger)]"
             onClick={() => deleteBasketMutation.mutate(activeBasketId)}
           >
             <Trash2 aria-hidden className="size-3.5" /> 删除此篮
