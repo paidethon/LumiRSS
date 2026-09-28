@@ -1160,6 +1160,81 @@ assert_eq "update succeeds with a leftover lock file from a dead run" "0" "$stal
 rm -rf "$sb" "$stub_dir" "$lock1_log" "$lock2_log" "$lock_mark"
 
 # ---------------------------------------------------------------------------
+echo "== 22. FIX-208: each update run gets its own run_id; retries never mix two runs' progress =="
+sb="$(new_sandbox)"
+stub_dir="$(mktemp -d)"
+cat > "$stub_dir/docker" <<'STUB'
+#!/bin/sh
+cmd="$1"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  info) exit 0;;
+  run) exit 0;;
+  inspect) echo healthy;;
+  ps) exit 0;;
+  compose)
+    case "$*" in
+      *" config"*) echo '{"name": "lumirss-prod"}';;
+      *" pull"*) echo " Pulled";;
+      *) exit 0;;
+    esac;;
+  *) exit 0;;
+esac
+STUB
+chmod +x "$stub_dir/docker"
+status_dir="$(mktemp -d)"
+status_file="$status_dir/retry-status.json"
+# Residue of a PREVIOUS failed run: old startedAt, a stale failed stage, a
+# ghost stage that never existed in this run, and a failed result.
+cat > "$status_file" <<'JSON'
+{"command": "update", "imageTag": "oldtag",
+ "result": {"finishedAt": "2020-01-01T00:00:01Z", "status": "failed"},
+ "runId": "previous-run-20200101",
+ "schema": "lumirss-deploy-status/v1",
+ "stages": {
+   "ghost": {"startedAt": "2020-01-01T00:00:00Z", "status": "running"},
+   "health": {"finishedAt": "2020-01-01T00:00:01Z", "startedAt": "2020-01-01T00:00:00Z", "status": "failed"}
+ },
+ "startedAt": "2020-01-01T00:00:00Z", "updatedAt": "2020-01-01T00:00:01Z"}
+JSON
+retry_out="$(cd "$sb" && cp -f .env.prod.example .env.prod \
+  && env PATH="$stub_dir:$PATH" LUMIRSS_DEPLOY_STATUS_FILE="$status_file" \
+     LUMIRSS_IMAGE_TAG=retry208tag ./lumirss update 2>&1)"
+rc=$?
+assert_eq "update over a previous run's failed status file completes" "0" "$rc"
+assert_contains "retry assigns a NEW run_id (not the previous run's)" "RUN-ID-OK" \
+  "$(python3 - "$status_file" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+rid = d.get("runId", "")
+print("RUN-ID-OK" if rid and rid != "previous-run-20200101" else "RUN-ID-BAD")
+PY
+)"
+assert_contains "retry restarts startedAt (does not inherit the failed run's)" "STARTED-AT-OK" \
+  "$(python3 - "$status_file" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+print("STARTED-AT-OK" if d.get("startedAt", "").startswith("20") and not d["startedAt"].startswith("2020-01-01") else "STARTED-AT-BAD")
+PY
+)"
+assert_contains "ghost stage from the previous run is gone" "GHOST-GONE" \
+  "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("GHOST-GONE" if "ghost" not in d["stages"] else "GHOST-STILL-THERE")' "$status_file")"
+assert_contains "previous failed health stage replaced by this run's ok stage" "HEALTH-OK" \
+  "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("HEALTH-OK" if d["stages"].get("health",{}).get("status")=="ok" else "HEALTH-BAD")' "$status_file")"
+assert_contains "result reflects only this run" "success" \
+  "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["result"]["status"])' "$status_file")"
+run1_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("runId"))' "$status_file")"
+# A second consecutive run must also get a DIFFERENT run id (per-run identity).
+(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_DEPLOY_STATUS_FILE="$status_file" \
+   LUMIRSS_IMAGE_TAG=retry208tag ./lumirss update >/dev/null 2>&1)
+run2_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("runId"))' "$status_file")"
+if [[ -n "$run1_id" && -n "$run2_id" && "$run1_id" != "$run2_id" ]]; then
+  ok "two consecutive updates get distinct run ids ($run1_id vs $run2_id)"
+else
+  bad "run ids not distinct/absent (run1=$run1_id run2=$run2_id)"
+fi
+rm -rf "$sb" "$stub_dir" "$status_dir"
+
+# ---------------------------------------------------------------------------
 echo
 echo "deploy-lifecycle tests: $PASS passed, $FAIL failed"
 if [[ "$FAIL" -gt 0 ]]; then exit 1; fi

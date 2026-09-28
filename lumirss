@@ -364,13 +364,25 @@ wait_health() { # wait_health <timeout_seconds>
 # 把每个阶段（backup/pull/migrate/health）的运行/结果状态写入该路径的
 # JSON（schema lumirss-deploy-status/v1），BFF GET /admin/deploy-status
 # 把它只读转述给管理台进度页。写入是 best-effort：任何 I/O 失败只
-# warn，绝不影响升级本身。文件内容绝无秘密——只有阶段名、状态、
-# RFC3339(UTC) 时间戳与公开的镜像 tag。无效/缺失的旧文件会被整体
-# 重写，不让坏状态卡住新的升级。
+# warn，绝不影响升级本身。文件内容绝无秘密——只有 run_id、阶段名、
+# 状态、RFC3339(UTC) 时间戳与公开的镜像 tag。无效/缺失的旧文件会被整体
+# 重写，不让坏状态卡住新的升级；跨 run 的旧进度同样整体作废（FIX-208）。
+# FIX-208: 每次升级调用分配独立 run_id（UUID）——失败后的重试从零开始
+# 记进度，绝不沿用上一次的 startedAt 或残留阶段状态（否则管理台进度页
+# 会把两次升级混在一份 JSON 里，时间线完全失真）。deploy_status_write
+# 在发现文件里的 runId 与本次不同（或旧文件没有 runId）时整体作废旧
+# 内容重新开局。
+deploy_status_begin() {
+  [[ -n "${LUMIRSS_DEPLOY_STATUS_FILE:-}" ]] || return 0
+  LUMIRSS_DEPLOY_RUN_ID="$(python3 -c 'import uuid; print(uuid.uuid4().hex)' 2>/dev/null || true)"
+  LUMIRSS_DEPLOY_RUN_ID="${LUMIRSS_DEPLOY_RUN_ID:-run-$(date +%s)-$$}"
+}
+
 deploy_status_write() { # deploy_status_write STAGE STATUS [NOTE] ; result: deploy_status_write result STATUS
   [[ -n "${LUMIRSS_DEPLOY_STATUS_FILE:-}" ]] || return 0
   LUMIRSS_DEPLOY_STAGE="$1" LUMIRSS_DEPLOY_STATE="$2" LUMIRSS_DEPLOY_NOTE="${3:-}" \
   LUMIRSS_DEPLOY_PATH="$LUMIRSS_DEPLOY_STATUS_FILE" LUMIRSS_DEPLOY_TAG="${IMAGE_TAG:-}" \
+  LUMIRSS_DEPLOY_RUN_ID="${LUMIRSS_DEPLOY_RUN_ID:-}" \
   python3 -c '
 import datetime, json, os
 
@@ -379,6 +391,7 @@ now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isofor
 stage = os.environ["LUMIRSS_DEPLOY_STAGE"]
 state = os.environ["LUMIRSS_DEPLOY_STATE"]
 note = os.environ.get("LUMIRSS_DEPLOY_NOTE", "")
+run_id = os.environ.get("LUMIRSS_DEPLOY_RUN_ID", "")
 data = {}
 if os.path.exists(path):
     try:
@@ -392,8 +405,20 @@ data.setdefault("schema", "lumirss-deploy-status/v1")
 data.setdefault("command", "update")
 data["imageTag"] = os.environ.get("LUMIRSS_DEPLOY_TAG", "") or None
 data["updatedAt"] = now
+if run_id and data.get("runId") != run_id:
+    # FIX-208: 新的一次 run —— 上一次的 startedAt/阶段/result 全部作废。
+    data = {
+        "schema": "lumirss-deploy-status/v1",
+        "command": "update",
+        "runId": run_id,
+        "startedAt": now,
+        "imageTag": data.get("imageTag"),
+        "stages": {},
+    }
 if "startedAt" not in data:
     data["startedAt"] = now
+if run_id:
+    data["runId"] = run_id
 stages = data.setdefault("stages", {})
 if stage == "result":
     for entry in stages.values():
@@ -538,6 +563,7 @@ cmd_update() {
   # N196: every stage is reported (running → ok/failed) into
   # $LUMIRSS_DEPLOY_STATUS_FILE when set; writes are best-effort and
   # never alter the upgrade flow itself.
+  deploy_status_begin   # FIX-208: 本次调用 = 新 run（新 runId，旧进度作废）
   deploy_status_write backup running
   if cmd_backup; then
     deploy_status_write backup ok
