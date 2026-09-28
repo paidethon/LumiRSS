@@ -893,10 +893,11 @@ cmd_restore() {
 
 cmd_doctor() {
   local fail=0
-  check() { # check PASS|WARN|FAIL description…
+  check() { # check PASS|WARN|FAIL|INFO description…
     local level="$1"; shift
     case "$level" in
       PASS) log "PASS  $*";;
+      INFO) log "INFO  $*";;
       WARN) warn "WARN  $*";;
       FAIL) err   "FAIL  $*"; fail=1;;
     esac
@@ -914,19 +915,50 @@ cmd_doctor() {
   fi
   if docker_cmd info >/dev/null 2>&1; then
     if [[ -f "$ENV_FILE" ]]; then
-      local running
-      running="$(DC_D ps --status running 2>/dev/null | tail -n +2 | wc -l)"
-      [[ "$running" -eq 4 ]] && check PASS "4/4 containers running" || check WARN "only $running/4 containers running"
-      DC_D exec bff python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5).status==200 else 1)" >/dev/null 2>&1 \
-        && check PASS "bff health/ready" || check WARN "bff health/ready not OK"
-      for svc in lumirss-freshrss lumirss-rsshub; do
-        state="$(docker_cmd inspect --format '{{.State.Health.Status}}' "$svc" 2>/dev/null || echo missing)"
-        if [[ "$state" == "healthy" ]]; then
-          check PASS "$svc healthy"
+      # FIX-207: 期望容器集合来自实际启用的 compose 服务（config --format
+      # json），不再写死 "4/4"——被停用/裁剪的可选服务不误报缺失，关键
+      # 服务缺失不允许只降级为 WARN（漏报）。可选集：rsshub（AD-0018-3，
+      # BFF 只要求它 started、不要求健康）与 on-demand libretranslate。
+      local cfg_json enabled svc state health critical
+      cfg_json="$(DC_D config --format json 2>/dev/null || true)"
+      enabled="$(printf '%s' "$cfg_json" | python3 -c 'import json,sys
+try:
+    print("\n".join(sorted(json.load(sys.stdin).get("services", {}))))
+except Exception:
+    pass' 2>/dev/null || true)"
+      if [[ -z "$enabled" ]]; then
+        check WARN "compose config lists no services — cannot verify containers (is $ENV_FILE valid?)"
+      fi
+      for svc in $enabled; do
+        case "$svc" in
+          rsshub|libretranslate) critical=0;;
+          *) critical=1;;
+        esac
+        state="$(docker_cmd inspect --format '{{.State.Status}}' "lumirss-$svc" 2>/dev/null || echo absent)"
+        health="$(docker_cmd inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "lumirss-$svc" 2>/dev/null || echo absent)"
+        if [[ "$state" == "running" || "$state" == "healthy" ]]; then
+          case "$health" in
+            healthy|none|running)
+              check PASS "$svc running (health: $health)";;
+            starting)
+              check WARN "$svc running but its health check is still starting";;
+            *)
+              if ((critical == 1)); then
+                check FAIL "$svc unhealthy (health: $health) — core dependency"
+              else
+                check WARN "$svc unhealthy (health: $health)"
+              fi;;
+          esac
+        elif ((critical == 1)); then
+          check FAIL "$svc not running (state: $state) — core dependency"
         else
-          check WARN "$svc health: $state"
+          # 可选服务被停用是允许的常态（on-demand / 失败隔离），不算异常；
+          # 只有它 unhealthy 才值得提示。
+          check INFO "$svc not running (optional service — off by design; start it explicitly if needed)"
         fi
       done
+      DC_D exec bff python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5).status==200 else 1)" >/dev/null 2>&1 \
+        && check PASS "bff health/ready" || check WARN "bff health/ready not OK"
       # Resource-budget guard: a killed container means the limit is too
       # low for real traffic, never a successful "lower number".
       for svc in lumirss-web lumirss-bff lumirss-freshrss lumirss-rsshub; do

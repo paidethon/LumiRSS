@@ -213,18 +213,25 @@ sb="$(new_sandbox)"
 stub_dir="$(mktemp -d)"
 cat > "$stub_dir/docker" <<'STUB'
 #!/bin/sh
-# stub docker: everything succeeds, compose subcommands answer sanely
+# stub docker: everything succeeds, compose subcommands answer sanely.
+# inspect answers per --format so FIX-207's per-service probes behave.
 cmd="$1"; [ $# -gt 0 ] && shift
 case "$cmd" in
   info) exit 0;;
   run) exit 0;;
-  inspect) echo healthy;;
+  inspect)
+    case "$*" in
+      *OOMKilled*) echo false;;
+      *RestartCount*) echo 0;;
+      *"State.Health"*) echo none;;
+      *) echo running;;
+    esac;;
   ps) exit 0;;
   compose)
     sub="$1"; shift
     case "$sub" in
       version) exit 0;;
-      config) echo '{"name": "lumirss-prod"}';;
+      config) echo '{"name": "lumirss-prod", "services": {"web": {}, "bff": {}, "freshrss": {}, "rsshub": {}}}';;
       pull) echo " Pulled";;
       *) exit 0;;
     esac;;
@@ -1233,6 +1240,71 @@ else
   bad "run ids not distinct/absent (run1=$run1_id run2=$run2_id)"
 fi
 rm -rf "$sb" "$stub_dir" "$status_dir"
+
+# ---------------------------------------------------------------------------
+echo "== 23. FIX-207: doctor judges health by ENABLED compose services (no hardcoded 4/4) =="
+sb="$(new_sandbox)"
+stub_dir="$(mktemp -d)"
+cat > "$stub_dir/docker" <<'STUB'
+#!/bin/sh
+# config lists the ENABLED services (LUMITEST_NO_RSSHUB=1 simulates an
+# operator override that removed rsshub); inspect fails only for
+# $LUMITEST_ABSENT (container missing/stopped), else healthy.
+cmd="$1"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  info) exit 0;;
+  compose)
+    case "$*" in
+      *" config"*)
+        if [ "${LUMITEST_NO_RSSHUB:-0}" = "1" ]; then
+          printf '{"name": "lumirss-prod", "services": {"web": {}, "bff": {}, "freshrss": {}}}'
+        else
+          printf '{"name": "lumirss-prod", "services": {"web": {}, "bff": {}, "freshrss": {}, "rsshub": {}}}'
+        fi;;
+      *) exit 0;;
+    esac;;
+  inspect)
+    name=""; prev=""
+    for a in "$@"; do
+      case "$a" in lumirss-*) name="$a";; esac
+      prev="$a"
+    done
+    [ -n "${LUMITEST_ABSENT:-}" ] && [ "$name" = "$LUMITEST_ABSENT" ] && exit 1
+    case "$*" in
+      *OOMKilled*) echo false;;
+      *RestartCount*) echo 0;;
+      *"State.Health"*) echo none;;
+      *) echo running;;
+    esac;;
+  ps) exit 0;;
+  *) exit 0;;
+esac
+STUB
+chmod +x "$stub_dir/docker"
+run_doctor207() { # run_doctor207 [env assignments…] -> doctor output
+  (cd "$sb" && cp -f .env.prod.example .env.prod \
+    && env PATH="$stub_dir:$PATH" "$@" ./lumirss doctor 2>&1)
+}
+d_out="$(run_doctor207)"
+assert_eq "all four services up -> doctor exits 0" "0" "$?"
+assert_contains "each enabled service checked individually" "rsshub running" "$d_out"
+assert_not_contains "healthy stack has no FAIL" "FAIL " "$d_out"
+d_out="$(run_doctor207 LUMITEST_ABSENT=lumirss-rsshub)"
+assert_eq "optional rsshub down -> doctor still exits 0 (no false missing alarm)" "0" "$?"
+assert_contains "optional absence is reported as INFO, not a failure" \
+  "rsshub not running (optional service" "$d_out"
+assert_not_contains "optional absence is never a FAIL" "FAIL " "$d_out"
+d_out="$(run_doctor207 LUMITEST_NO_RSSHUB=1)"
+assert_eq "service removed from compose -> doctor exits 0" "0" "$?"
+assert_not_contains "disabled service is not reported missing at all" "rsshub not running" "$d_out"
+d_out="$(run_doctor207 LUMITEST_ABSENT=lumirss-bff)"
+assert_eq "critical bff missing -> doctor exits 1 (no missed alarm)" "1" "$?"
+assert_contains "critical absence is a FAIL naming the service" \
+  "bff not running (state: absent) — core dependency" "$d_out"
+d_out="$(run_doctor207 LUMITEST_ABSENT=lumirss-web)"
+assert_eq "critical web missing -> doctor exits 1" "1" "$?"
+assert_contains "web absence is a FAIL" "web not running" "$d_out"
+rm -rf "$sb" "$stub_dir"
 
 # ---------------------------------------------------------------------------
 echo
