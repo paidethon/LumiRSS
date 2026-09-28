@@ -5,10 +5,16 @@
  * 外点关闭、Title 自动 aria-labelledby（含 hideTitle 时的 sr-only 兜底，
  * 修复旧实现 hideTitle 后 aria-labelledby 悬空的缺陷）。
  * Lumi 只负责视觉：--lumi-* token、遮罩色、面板圆角/阴影/边框、
- * 移动端全屏（<768 撑满 viewport）、footer 布局。 */
+ * 移动端全屏（<768 撑满 viewport）、footer 布局。
+ *
+ * FIX-103：Base UI 的「Escape 只关最顶层」只认 React 树内嵌套的
+ * dialog/drawer（onNestedDialogOpen 计数）。兄弟挂载的浮层（App 层独立
+ * 挂载的确认 Dialog、自绘覆盖层）不在其中——open 时登记 overlay-stack，
+ * escape-key 关闭仅在自身为最上层时放行。 */
 
-import { type ReactNode, useRef } from 'react'
+import { type ReactNode, useEffect, useId, useRef } from 'react'
 import { Dialog as BaseDialog } from '@base-ui/react/dialog'
+import { acquireTopmostOverlay, isTopmostOverlay } from '../../lib/overlay-stack'
 import { cx } from './cx'
 
 export interface DialogProps {
@@ -33,12 +39,22 @@ const FOCUSABLE =
 
 export function Dialog({ open, onClose, title, children, footer, panelClassName, hideTitle, fullscreenOnMobile }: DialogProps) {
   const popupRef = useRef<HTMLDivElement>(null)
+  const overlayId = `dialog-${useId()}`
+  // FIX-103：open 期间登记跨浮层栈（兄弟挂载浮层间定「谁是最上层」）
+  useEffect(() => {
+    if (!open) return
+    return acquireTopmostOverlay(overlayId)
+  }, [open, overlayId])
 
   return (
     <BaseDialog.Root
       open={open}
-      onOpenChange={(next) => {
-        if (!next) onClose()
+      onOpenChange={(next, details) => {
+        if (!next) {
+          // FIX-103：不是最上层时的 Escape 不归本层——只关最上层
+          if (details.reason === 'escape-key' && !isTopmostOverlay(overlayId)) return
+          onClose()
+        }
       }}
     >
       <BaseDialog.Portal>

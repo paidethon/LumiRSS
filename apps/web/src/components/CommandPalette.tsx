@@ -23,6 +23,7 @@ import { CornerDownLeft, Search } from 'lucide-react'
 import { useReaderUi } from '../store/reader-ui'
 import { useAppSettings } from '../store/app-settings'
 import { goBack, registerOverlay, unregisterOverlay } from '../lib/nav-history'
+import { acquireTopmostOverlay, isTopmostOverlay } from '../lib/overlay-stack'
 import { COMMAND_PALETTE_TOGGLE_EVENT, shouldIgnoreKeyEvent } from '../lib/keyboard-shortcuts'
 import {
   buildCommands,
@@ -87,6 +88,31 @@ export default function CommandPalette() {
     if (!open) return
     registerOverlay(OVERLAY_ID, close)
     return () => unregisterOverlay(OVERLAY_ID)
+  }, [open, close])
+
+  // FIX-103：Escape 只在面板是「最上层浮层」时关闭本面板。面板从导航
+  // 抽屉（Base UI Drawer）之上唤起：抽屉的 Base UI 监听与面板各自的
+  // Escape 处理互不感知，一次 Escape 曾把两层一起关掉。window capture
+  // （先于 Base UI 的 document bubble 监听）+ overlay-stack 顶层门控，
+  // 确属最上层时 stopPropagation，下层收不到这次按键。输入框内的
+  // Escape 分支随之移除（capture 阶段已统一处理，避免双路径）。
+  useEffect(() => {
+    if (!open) return
+    const release = acquireTopmostOverlay(OVERLAY_ID)
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      // P13：IME 组合中的 Escape 交还原生取消行为（与输入框旧分支同守卫）
+      if (event.isComposing || event.keyCode === 229 || shouldIgnoreKeyEvent(event)) return
+      if (!isTopmostOverlay(OVERLAY_ID)) return
+      event.preventDefault()
+      event.stopPropagation()
+      close()
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      release()
+      window.removeEventListener('keydown', onKeyDown, true)
+    }
   }, [open, close])
 
   // 打开时重置查询与选中项；关闭时把焦点还给触发元素（F120 回焦）
@@ -237,11 +263,8 @@ export default function CommandPalette() {
   const onInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     // P13：IME 组合中的按键不驱动面板（Enter 上屏 / Esc 取消组合交还原生行为）
     if (shouldIgnoreKeyEvent(event.nativeEvent)) return
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      close()
-      return
-    }
+    // Escape 不在这里处理：FIX-103 统一移到 window capture（见上方 effect），
+    // 面板是唯一最上层时才会关闭，且不再击穿下层的抽屉/对话框。
     // 面板自身输入框聚焦时 Ctrl/⌘+K 关闭（全局快捷键对输入框不劫持）
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
       event.preventDefault()
