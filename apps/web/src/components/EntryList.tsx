@@ -1352,10 +1352,10 @@ function EntriesList() {
                 data-testid={`batch-${kind}`}
                 disabled={batchRunning || overLimit || selectedRefs.size === 0}
                 onClick={() => void runBatch(kind, [...selectedRefs])}
-                {/* FIX-291：禁用语义仅作用一次。accent-soft 本身是 rgba 淡底
-                 * （自带透明度），再叠 disabled:opacity-50 = 双重透明——淡底
-                 * 几乎消失、文字对比被乘两次。禁用时收敛到单一 token：
-                 * 去掉淡底 + text-disabled（无额外 alpha）。 */}
+                // FIX-291：禁用语义仅作用一次。accent-soft 本身是 rgba 淡底
+                // （自带透明度），再叠 disabled:opacity-50 = 双重透明——淡底
+                // 几乎消失、文字对比被乘两次。禁用时收敛到单一 token：
+                // 去掉淡底 + text-disabled（无额外 alpha）。
                 className="min-h-11 rounded-[var(--lumi-radius-md)] bg-[var(--lumi-accent-soft)] px-2.5 py-1 text-xs font-medium text-[var(--lumi-accent-text)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-accent-soft)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)] disabled:cursor-not-allowed disabled:bg-transparent disabled:text-[var(--lumi-text-disabled)]"
               >
                 {BATCH_LABELS[kind]}

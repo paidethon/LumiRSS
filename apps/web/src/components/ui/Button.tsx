@@ -44,9 +44,11 @@ const sizeClasses: Record<Size, string> = {
   md: 'min-h-10 px-3.5 text-sm gap-2',
 }
 
-// 共态：圆角 md（8px，Spec §设计规格）+ motion-fast + focus ring
+// 共态：圆角 md（8px，Spec §设计规格）+ motion-fast + focus ring。
+// FIX-293：焦点环由 [data-lumi-focus-ring]（index.css，unlayered）承载——
+// 消费侧 className 里任何 outline-* 工具类都压不掉（a11y 门 non-overridable）。
 const base =
-  'inline-flex items-center justify-center rounded-[var(--lumi-radius-md)] font-medium transition-colors duration-[var(--lumi-motion-fast)] select-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)] disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none'
+  'inline-flex items-center justify-center rounded-[var(--lumi-radius-md)] font-medium transition-colors duration-[var(--lumi-motion-fast)] select-none disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none'
 
 export function Button({
   variant = 'secondary',
@@ -62,6 +64,7 @@ export function Button({
     <button
       type={type}
       aria-busy={loading || undefined}
+      data-lumi-focus-ring=""
       disabled={disabled === undefined ? loading : disabled || loading}
       className={cx(base, variantClasses[variant], sizeClasses[size], className)}
       {...rest}
