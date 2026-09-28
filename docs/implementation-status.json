@@ -132,7 +132,7 @@
    "title": "项目看板更新部署",
    "phase": "P",
    "status": "deployed_verified",
-   "baseline_state": "看板由台账生成并部署 rss.oouo.top/project/(200)",
+   "baseline_state": "看板由台账生成并部署 rss.example.com/project/(200)",
    "novelty": "n/a",
    "acceptance": "见任务书 P-12",
    "evidence": [],
@@ -2850,7 +2850,7 @@
    "commit": "a1582ea",
    "deploy_status": "DEPLOYED AND VERIFIED: 生产钉 v2.0.0 tag 镜像,API 版本/镜像来源链(GHCR digest→逐 blob 校验→SHA256SUMS→diff_id 19/19)/健康/数据完整性全部验收通过。"
   },
-  "dashboard": "https://rss.oouo.top/project/ (随本次提交的 dist 重新分发)"
+  "dashboard": "https://rss.example.com/project/ (随本次提交的 dist 重新分发)"
  },
  "summary": {
   "p_total": 20,

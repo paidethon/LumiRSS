@@ -1,5 +1,9 @@
 # LumiRSS License Audit — Gate 0
 
+> **历史档案（frozen · 2026-09-28 归档）**：本文为 Gate 0 时点的清单
+> 存档，不再是当前指南；现状（含最终采纳的许可）以仓库根 `README.md`
+> 与 [docs/README.md](../README.md) 索引的活跃文档为准。
+
 > This file is an engineering checklist, not legal advice.
 >
 > No direct upstream source adaptation should be merged until the user

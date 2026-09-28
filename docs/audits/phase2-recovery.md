@@ -8,6 +8,11 @@
 > [../how-to/troubleshoot.md](../how-to/troubleshoot.md) 与
 > [../how-to/deploy.md](../how-to/deploy.md)。
 
+> **脱敏说明（2026-09-28）**：按公共文档隐私规则，本文中的生产域名与
+> 服务器公网 IP 已替换为占位符 `rss.example.com` 与 `203.0.113.10`
+> （RFC 5737 文档地址）；其余证据结构未改动，原始值只存在于私有部署
+> 记录、不入库。
+
 > 单一事实账本。每项必须有：症状、根因、复现、受影响文件、数据风险、修复方案、
 > 回归测试、修复 commit、local/compose/production 三层状态、证据。
 > 状态机：`confirmed → implementing → locally_verified → compose_verified → production_verified`
@@ -18,7 +23,7 @@
 
 - `origin/main` = `7d1191b7b6033988b345bcbec93f587dc737cec6`（PR #43 Phase 2 integration，审计基线一致）。
 - 修复分支：`phase2/recovery-20260913`（自 `7d1191b` 创建）。
-- 生产（rss.oouo.top / 47.100.64.202）：据 2026-09-13 部署记录为 `7d1191b`，migration v15，
+- 生产（rss.example.com / 203.0.113.10）：据 2026-09-13 部署记录为 `7d1191b`，migration v15，
   备份 20260913-012436 存在，回滚快照已修正指向 `872035a`。**本会话无 SSH 密钥，直接核验 = 外部阻塞**
   （BLOCKER-E1）。Phase 2 用户数据已在生产：所有 schema 修复必须 forward-only migration。
 - 本地资源：WSL2，7.6GB RAM（可用 ~4.4GB），20 核，磁盘 924GB。dev 容器 freshrss/rsshub 运行中。
@@ -317,7 +322,7 @@ IMPL-BE-1/2 可对 `errors.py`/`models.py` 做**追加式 Edit**（只加自己�
 - 合并：PR #44（recovery → main）required checks 8/8 绿后合并 `8177748`；
   部署后生产 smoke 发现 graph 路由 `max` 参数遮蔽内置函数的 500 → PR #45 修复
   （HTTP 级回归测试补齐）→ checks 绿 → 合并 `0704e2c`。
-- 生产：47.100.64.202 /opt/lumirss，`./lumirss update --build`（GHCR 私有拉取 denied →
+- 生产：203.0.113.10 /opt/lumirss，`./lumirss update --build`（GHCR 私有拉取 denied →
   服务器本地构建）。**旧 SHA 7d1191b → 新 SHA 0704e2c**（镜像 tag 0704e2c9b0a2）。
 - 部署前备份：20260913-060626（+ 更早的 20260913-012436）；回滚快照
   `.image-tag.previous` / `.env.prod.previous` 已手工修正指向 7d1191b7b603（已知
