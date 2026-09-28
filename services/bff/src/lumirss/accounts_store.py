@@ -179,6 +179,17 @@ class AccountsStore:
         row = await self._db.fetch_one("SELECT id, username, password_hash, role, status, display_name, created_at, updated_at, password_updated_at FROM users WHERE id = ?", (user_id,))
         return dict(row) if row else None
 
+    async def get_user_lifecycle(self, user_id: str) -> dict[str, object] | None:
+        """Lifecycle facts only (FIX-217 pre-execution checks): status +
+        pending-deletion marker. None = account gone. Kept separate from
+        ``get_user`` so the marker is never forgotten by its consumers."""
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT status, deactivation_requested_at FROM users WHERE id = ?",
+            (user_id,),
+        )
+        return dict(row) if row else None
+
     async def get_user_by_username(self, username: str) -> dict[str, object] | None:
         await self._db.migrate()
         row = await self._db.fetch_one("SELECT id, username, password_hash, role, status, display_name, created_at, updated_at, password_updated_at FROM users WHERE username = ?", (username,))
@@ -187,12 +198,19 @@ class AccountsStore:
     async def list_users(self, limit: int = 200) -> list[dict[str, object]]:
         """Directory listing — never includes password hashes. Includes
         the invite-scheme name (N001) as directory metadata only; a
-        deleted scheme degrades to NULL, never hides the member."""
+        deleted scheme degrades to NULL, never hides the member.
+
+        FIX-031: the contract is deliberately UNpaginated (small-scale
+        invite-only deployment; bounded window below) — no filter/sort/
+        page parameters exist, so "total" is always the full directory
+        and the client never sees a stale count/page split. The ORDER BY
+        carries ``id`` as a deterministic tiebreaker so rows created in
+        the same second still come back in one stable order."""
         await self._db.migrate()
         rows = await self._db.fetch_all(
             "SELECT u.id, u.username, u.role, u.status, u.display_name, u.created_at, u.updated_at, u.password_updated_at, s.name AS scheme_name"
             " FROM users u LEFT JOIN invite_schemes s ON s.id = u.scheme_id"
-            " ORDER BY u.created_at ASC LIMIT ?",
+            " ORDER BY u.created_at ASC, u.id ASC LIMIT ?",
             (max(1, min(limit, 500)),),
         )
         return [dict(r) for r in rows]
