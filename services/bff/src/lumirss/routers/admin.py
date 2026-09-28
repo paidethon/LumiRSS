@@ -1091,10 +1091,14 @@ async def set_registration_policy(
 
 class UserQuotaPutRequest(BaseModel):
     """PUT /admin/users/{id}/quota body。缺省键 = 清除该上限；
-    正整数（1..上限界）才是有效设置。未知键 → 422。"""
+    正整数（1..上限界）才是有效设置。未知键 → 422。
 
-    maxSources: int | None = Field(default=None, ge=1, le=10_000)
-    aiQuotaPerDay: int | None = Field(default=None, ge=1, le=100_000)
+    FIX-039：字段类型 strict int——JSON 布尔不得经 lax 强转伪装成
+    1/0（store 层 _normalize_caps 拒绝 bool，两层校验必须同一契约；
+    0 本身被 ge=1 拒绝，「未设限」只是键缺省，与 0 可区分）。"""
+
+    maxSources: int | None = Field(default=None, ge=1, le=10_000, strict=True)
+    aiQuotaPerDay: int | None = Field(default=None, ge=1, le=100_000, strict=True)
 
 
 class BackgroundPauseRequest(BaseModel):
