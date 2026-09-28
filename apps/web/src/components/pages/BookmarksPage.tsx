@@ -315,7 +315,7 @@ export default function BookmarksPage() {
 
   if (pageTab === 'knowledge') {
     return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 max-lg:pb-[76px]">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 max-lg:pb-[calc(4.75rem_+_var(--safe-bottom))]">
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <h1 className="text-base font-semibold text-[var(--lumi-text-primary)]">知识卡片</h1>
           <div className="flex items-center gap-1.5" role="group" aria-label="页签">
@@ -338,7 +338,7 @@ export default function BookmarksPage() {
 
   if (pageTab === 'annotations') {
     return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 max-lg:pb-[76px]">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 max-lg:pb-[calc(4.75rem_+_var(--safe-bottom))]">
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1.5" role="group" aria-label="页签">
             <Button size="sm" variant="ghost" onClick={() => setPageTab('bookmarks')}>
@@ -362,7 +362,7 @@ export default function BookmarksPage() {
 
   if (pageTab === 'notes') {
     return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 max-lg:pb-[76px]">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 max-lg:pb-[calc(4.75rem_+_var(--safe-bottom))]">
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <h1 className="text-base font-semibold text-[var(--lumi-text-primary)]">笔记</h1>
           <div className="flex items-center gap-1.5" role="group" aria-label="页签">
@@ -402,7 +402,7 @@ export default function BookmarksPage() {
       {bulkPasteOpen && (
         <BulkPasteDialog target="bookmark" onClose={() => setBulkPasteOpen(false)} />
       )}
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 max-lg:pb-[76px]">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 max-lg:pb-[calc(4.75rem_+_var(--safe-bottom))]">
         {/* 头部：标题 + 页签 + 导入 / 导出 / 新建 */}
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-base font-semibold text-[var(--lumi-text-primary)]">书签</h1>

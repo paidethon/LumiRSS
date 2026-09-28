@@ -10,8 +10,9 @@
  * （旧实现定义了 motion token 但从未真正动画，此处补齐且尊重
  * prefers-reduced-motion / data-motion-reduce）。 */
 
-import { type ReactNode, useEffect, useRef } from 'react'
+import { type ReactNode, useEffect, useId, useRef } from 'react'
 import { Drawer as BaseDrawer } from '@base-ui/react/drawer'
+import { acquireTopmostOverlay, isTopmostOverlay } from '../../lib/overlay-stack'
 import { registerOverlay, unregisterOverlay } from '../../lib/nav-history'
 import { cx } from './cx'
 
@@ -52,12 +53,23 @@ export function Sheet({ open, onClose, label, children, side = 'left', panelClas
     registerOverlay(overlayId, () => onCloseRef.current())
     return () => unregisterOverlay(overlayId)
   }, [open])
+  // FIX-103：跨浮层栈登记（兄弟挂载浮层间定「谁是最上层」），Escape
+  // 关闭仅在自身最上层时放行——自绘覆盖层叠在抽屉上时一次 Escape 不再
+  // 把抽屉一起击穿。
+  const escapeStackId = `sheet-escape-${useId()}`
+  useEffect(() => {
+    if (!open) return
+    return acquireTopmostOverlay(escapeStackId)
+  }, [open, escapeStackId])
 
   return (
     <BaseDrawer.Root
       open={open}
-      onOpenChange={(next) => {
-        if (!next) onClose()
+      onOpenChange={(next, details) => {
+        if (!next) {
+          if (details.reason === 'escape-key' && !isTopmostOverlay(escapeStackId)) return
+          onClose()
+        }
       }}
       swipeDirection={SWIPE_DIRECTION[side]}
     >

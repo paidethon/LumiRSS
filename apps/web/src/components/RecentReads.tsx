@@ -14,9 +14,10 @@
  * 自持 z 层级且不与抽屉的 Base UI Drawer 行为叠加。z 取 dialog+1，
  * 保证盖在抽屉之上。 */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { History, Trash2, X } from 'lucide-react'
 import { useReaderUi } from '../store/reader-ui'
+import { acquireTopmostOverlay, isTopmostOverlay } from '../lib/overlay-stack'
 import {
   clearRecentReads,
   isRecentReadsEnabled,
@@ -48,15 +49,32 @@ export default function RecentReads({
     setEnabled(isRecentReadsEnabled())
   }, [open])
 
-  // Escape 关闭
+  // FIX-103：Escape 只在本面板是「最上层浮层」时关闭本面板。面板从导航
+  // 抽屉（Base UI Drawer）之上唤起：旧实现挂 window bubble 监听，一次
+  // Escape 会与抽屉的 Base UI 监听各自为政、同时关两层。改为 window
+  // capture（先于 Base UI 的 document bubble 监听）+ overlay-stack 顶层
+  // 门控；确属最上层时 stopPropagation，下层收不到这次按键。
+  const overlayId = `recent-reads-${useId()}`
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
   useEffect(() => {
     if (!open) return
+    const release = acquireTopmostOverlay(overlayId)
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      // IME 组合中的 Escape 交还原生取消行为
+      if (event.isComposing || event.keyCode === 229) return
+      if (!isTopmostOverlay(overlayId)) return
+      event.preventDefault()
+      event.stopPropagation()
+      onCloseRef.current()
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [open, onClose])
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      release()
+      window.removeEventListener('keydown', onKeyDown, true)
+    }
+  }, [open, overlayId])
 
   if (!open) return null
 
