@@ -463,3 +463,118 @@ def test_fix338_bom_crlf_code_block_preserved(obsidian, tmp_path):
     detail = run(service.get_note(notes[0]["ref"].split(":", 1)[1]))
     assert "<pre><code" in detail["contentHtml"]
     assert "x = 1\n    y = 2\n\nz = 3" in detail["contentHtml"]  # 渲染保真
+
+
+# ---------------------------------------------------------------------------
+# FIX-349 — 附件 Range 请求命中完整文件缓存时响应错误：返回正确状态、
+# 范围和长度。
+#
+# 旧实现：GET /api/v1/mail/attachments/{id} 无视 Range 头，一律 200 全
+# 量（音频/播放器类客户端无法seek）。修复后：无 Range → 200 全量 +
+# Accept-Ranges: bytes；合法单区间 → 206 + Content-Range/正确长度；
+# 语法坏区间 → 按 RFC 忽略（200 全量）；不可满足区间 → 416 +
+# Content-Range: bytes */size。
+# ---------------------------------------------------------------------------
+
+
+def _mime_pdf(content: bytes) -> bytes:
+    import base64
+
+    b64 = base64.b64encode(content).decode()
+    return (
+        "From: N <n@example.com>\r\nTo: r@example.com\r\nSubject: range\r\n"
+        "Message-ID: <range-349@example.com>\r\nMIME-Version: 1.0\r\n"
+        'Content-Type: multipart/mixed; boundary="BND"\r\n\r\n'
+        "--BND\r\nContent-Type: text/plain\r\n\r\n正文\r\n"
+        "--BND\r\n"
+        "Content-Type: application/pdf; name=\"a.pdf\"\r\n"
+        "Content-Disposition: attachment; filename=\"a.pdf\"\r\n"
+        "Content-Transfer-Encoding: base64\r\n\r\n"
+        f"{b64}\r\n"
+        "--BND--\r\n"
+    ).encode()
+
+
+@pytest.fixture()
+def pdf_attachment(client):
+    """入库一个 512 字节确定性 PDF 附件 → attachment id。"""
+    pdf = b"%PDF-1.4\n" + bytes(range(256)) + bytes(range(256))
+    created = client.post("/api/v1/mail/bridge-lists", json={"name": "r349"})
+    assert created.status_code == 201
+    lst = created.json()
+    ingested = client.post(
+        f"/api/mail/ingest/{lst['uuid']}",
+        content=_mime_pdf(pdf),
+        headers={"Authorization": f"Bearer {lst['secret']}"},
+    )
+    assert ingested.status_code == 200, ingested.text
+    detail = client.get(
+        f"/api/v1/mail/lists/{lst['uuid']}/messages/{ingested.json()['messageId']}/detail"
+    )
+    att = detail.json()["attachments"][0]
+    return att["id"], pdf
+
+
+def test_fix349_no_range_serves_full_200(pdf_attachment, client):
+    att_id, pdf = pdf_attachment
+    response = client.get(f"/api/v1/mail/attachments/{att_id}")
+    assert response.status_code == 200
+    assert response.content == pdf
+    assert response.headers["accept-ranges"] == "bytes"
+    assert response.headers["content-disposition"].startswith("attachment;")
+
+
+def test_fix349_range_serves_206_with_correct_span(pdf_attachment, client):
+    att_id, pdf = pdf_attachment
+    response = client.get(
+        f"/api/v1/mail/attachments/{att_id}", headers={"Range": "bytes=0-99"}
+    )
+    assert response.status_code == 206
+    assert response.headers["content-range"] == "bytes 0-99/521"
+    assert len(response.content) == 100
+    assert response.content == pdf[:100]
+
+    response = client.get(
+        f"/api/v1/mail/attachments/{att_id}", headers={"Range": "bytes=500-"}
+    )
+    assert response.status_code == 206
+    assert response.headers["content-range"] == "bytes 500-520/521"
+    assert response.content == pdf[500:]
+
+    response = client.get(
+        f"/api/v1/mail/attachments/{att_id}", headers={"Range": "bytes=-12"}
+    )
+    assert response.status_code == 206
+    assert response.headers["content-range"] == "bytes 509-520/521"
+    assert response.content == pdf[-12:]
+
+    response = client.get(
+        f"/api/v1/mail/attachments/{att_id}", headers={"Range": "bytes=0-999999"}
+    )
+    assert response.status_code == 206
+    assert response.headers["content-range"] == "bytes 0-520/521"
+    assert response.content == pdf
+
+
+def test_fix349_unsatisfiable_range_is_416(pdf_attachment, client):
+    att_id, _pdf = pdf_attachment
+    response = client.get(
+        f"/api/v1/mail/attachments/{att_id}", headers={"Range": "bytes=1000-"}
+    )
+    assert response.status_code == 416
+    assert response.headers["content-range"] == "bytes */521"
+
+    response = client.get(
+        f"/api/v1/mail/attachments/{att_id}", headers={"Range": "bytes=-0"}
+    )
+    assert response.status_code == 416
+
+
+def test_fix349_malformed_and_multirange_ignored_serve_full(pdf_attachment, client):
+    att_id, pdf = pdf_attachment
+    for header in ("bytes=abc", "bytes=0-1,10-20", "items=0-5", "bytes="):
+        response = client.get(
+            f"/api/v1/mail/attachments/{att_id}", headers={"Range": header}
+        )
+        assert response.status_code == 200, header
+        assert response.content == pdf, header

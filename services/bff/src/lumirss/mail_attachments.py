@@ -74,6 +74,53 @@ class MailAttachmentNotFound(Exception):
     """附件不存在（跨用户/错误 id 同型 404，不泄露存在性）。"""
 
 
+class RangeUnsatisfiable(Exception):
+    """FIX-349：Range 头语法合法但区间不可满足（→ 416 +
+    ``Content-Range: bytes */size``）。"""
+
+
+def parse_range_header(header: str, size: int) -> tuple[int, int] | None:
+    """FIX-349：解析单个 bytes 区间（RFC 9110 §14.1.2 的诚实子集）。
+
+    返回闭区间 (start, end)；None = 无/可忽略的 Range（按 RFC 必须忽略
+    的形态：非 bytes 单位、多区间、语法坏值 → 服务端回 200 全量）；
+    语法合法但不可满足（start ≥ size / "-0"）→ :class:`RangeUnsatisfiable`
+    （→ 416）。服务端实现拒绝多区间而整体忽略，符合 RFC 允许的兜底。"""
+    text = header.strip()
+    if not text.lower().startswith("bytes="):
+        return None
+    range_set = text[len("bytes="):].strip()
+    if not range_set or "," in range_set:
+        return None  # 多区间/空集：诚实回退全量，绝不相交切片拼接
+    spec = range_set.strip()
+    if "-" not in spec:
+        return None
+    first, _, last = spec.partition("-")
+    first, last = first.strip(), last.strip()
+    try:
+        if first == "":
+            # 后缀形态 "-N"：取最后 N 字节；N=0 不可满足。
+            suffix = int(last)
+            if suffix <= 0:
+                raise RangeUnsatisfiable(spec)
+            if size == 0:
+                raise RangeUnsatisfiable(spec)
+            return (max(0, size - suffix), size - 1)
+        start = int(first)
+        if start < 0:
+            return None
+        if start >= size:
+            raise RangeUnsatisfiable(spec)
+        if last == "":
+            return (start, size - 1)
+        end = int(last)
+        if end < start:
+            return None
+        return (start, min(end, size - 1))
+    except ValueError:
+        return None  # 语法坏值：按 RFC 必须忽略（200 全量）
+
+
 # FIX-322：放行的二进制类型按魔法字节核对实际内容——扩展名/声明 MIME
 # 都由发送方自证，改名/改声明的不一致样本（如 HTML 改名 .png）必须在
 # 存盘前拦下。键为 _ALLOWED 的扩展名，值为 (magic 前缀们, 类型说明)。
