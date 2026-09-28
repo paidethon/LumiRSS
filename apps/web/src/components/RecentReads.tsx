@@ -172,7 +172,7 @@ export default function RecentReads({
         </div>
 
         {/* 历史 / 空态 */}
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
           {items.length === 0 ? (
             <EmptyState
               icon={<History aria-hidden className="size-8" />}

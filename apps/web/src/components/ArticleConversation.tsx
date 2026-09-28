@@ -113,7 +113,7 @@ export default function ArticleConversation({
       </header>
 
       {/* 消息区 */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto [scrollbar-gutter:stable] px-4 py-4">
         {conversation.isPending && (
           <div className="flex flex-col gap-3" aria-label="正在加载对话">
             <Skeleton className="h-9 w-4/5 self-start" />
