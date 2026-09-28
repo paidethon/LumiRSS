@@ -12,7 +12,7 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import ArticleContent from '../components/ArticleContent'
 import { withHeadingIds } from '../lib/article-toc'
