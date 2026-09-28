@@ -1040,7 +1040,7 @@ case "$cmd" in
 esac
 STUB
 chmod +x "$stub_dir/docker"
-cd "$sb" && cp -f .env.prod.example .env.prod
+(cd "$sb" && cp -f .env.prod.example .env.prod)
 (cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_BACKUP_DIR="$sb/backups" ./lumirss backup >/dev/null 2>&1)
 assert_eq "first rapid backup succeeds" "0" "$?"
 before="$(ls "$sb/backups" | grep -v '^LATEST$')"
@@ -1538,10 +1538,11 @@ printf 'frs-canary\n' > "$sb/bk-frs/frs.txt"
 printf 'lumi-canary\n' > "$sb/bk-lumi/lumi.txt"
 tar -C "$sb/bk-frs" -czf "$sb/bk-frs/freshrss-data.files.tar.gz" frs.txt
 tar -C "$sb/bk-lumi" -czf "$sb/bk-lumi/lumi-data.files.tar.gz" lumi.txt
-cd "$sb" && cp -f .env.prod.example .env.prod
-cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$r202_log" \
-  ./lumirss restore "$sb/bk-frs/freshrss-data.files.tar.gz" --yes >/dev/null 2>&1
-assert_eq "freshrss-data restore exits 0" "0" "$?"
+(cd "$sb" && cp -f .env.prod.example .env.prod)
+frs_rc=0
+(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$r202_log" \
+  ./lumirss restore "$sb/bk-frs/freshrss-data.files.tar.gz" --yes >/dev/null 2>&1) || frs_rc=$?
+assert_eq "freshrss-data restore exits 0" "0" "$frs_rc"
 assert_contains "freshrss cron writer is stopped before overwrite" "stop bff freshrss" "$(cat "$r202_log")"
 assert_contains "both writers restarted afterwards" "start bff freshrss" "$(cat "$r202_log")"
 stop_line="$(grep -n "stop bff freshrss" "$r202_log" | head -1 | cut -d: -f1)"
@@ -1552,13 +1553,13 @@ else
   bad "restore container may run before writers stopped (stop=$stop_line run=$run_line)"
 fi
 : > "$r202_log"
-cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$r202_log" \
-  ./lumirss restore "$sb/bk-lumi/lumi-data.files.tar.gz" --yes >/dev/null 2>&1
-assert_eq "lumi-data restore exits 0" "0" "$?"
+lumi_rc=0
+(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$r202_log" \
+  ./lumirss restore "$sb/bk-lumi/lumi-data.files.tar.gz" --yes >/dev/null 2>&1) || lumi_rc=$?
+assert_eq "lumi-data restore exits 0" "0" "$lumi_rc"
 assert_contains "lumi-data restore stops its writer (bff)" "stop bff" "$(cat "$r202_log")"
 assert_not_contains "lumi-data restore does not stop freshrss (not a writer of that volume)" \
   "stop bff freshrss" "$(cat "$r202_log")"
-cd - >/dev/null
 rm -rf "$sb" "$stub_dir" "$r202_log"
 
 # ---------------------------------------------------------------------------
