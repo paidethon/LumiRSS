@@ -84,8 +84,8 @@ docker-compose.yml    FreshRSS + RSSHub dev services
 1. Read `docs/README.md` (index) → task scope → affected files + tests;
 2. `docs/explanation/architecture.md` only when touching data paths or
    boundaries; `docs/product/PRD.md` only when product scope is unclear;
-3. Do NOT preload milestone history, `docs/research/`, upstream studies
-   or reference repos unless the task specifically requires them;
+3. Do NOT preload milestone history, upstream studies or reference
+   repos unless the task specifically requires them;
 4. Prefer exact symbol / component / directory search over broad scans;
    do not scan the repo, inspect or refactor unrelated modules;
 5. Verification: targeted tests during development; full Web + BFF tests
