@@ -329,6 +329,19 @@ export async function syncAnnotationsWithServer(): Promise<void> {
   }
 }
 
+/** FIX-062：换账号时清空批注离线缓存并复位同步标记。
+ * 缓存里是 A 的划线/笔记内容（B 不可见）；标记不清零的话 B 在同一
+ * 标签页里永远不会触发自己的服务端同步（也不会用服务端列表覆盖
+ * 本地残留）。由 lib/auth-reset 统一调用。 */
+export function resetAnnotationsForAccountSwitch(): void {
+  try {
+    localStorage.removeItem(ANNOTATIONS_STORAGE_KEY)
+  } catch {
+    /* 存储不可用：静默（会话内仍可用） */
+  }
+  serverSyncStarted = false
+}
+
 /** 新增 / 更新一条批注：本地缓存立即生效 + 服务端异步写入。 */
 export function saveAnnotation(annotation: Annotation): void {
   const existing = readAllAnnotations().find((a) => a.id === annotation.id)

@@ -51,6 +51,17 @@ export function stashSearchHits(entryRef: string, hits: SearchHit[]): void {
   writeMap(map)
 }
 
+/** FIX-062：换账号清空搜索命中定位暂存（sessionStorage 同样在
+ * 同一标签页内跨账号存活）。 */
+export function clearStashedSearchHits(): void {
+  if (typeof sessionStorage === 'undefined') return
+  try {
+    sessionStorage.removeItem(STORAGE_KEY)
+  } catch {
+    /* 写失败不影响本会话 */
+  }
+}
+
 export function takeSearchHits(entryRef: string): SearchHit[] {
   const map = readMap()
   const hits = map[entryRef]

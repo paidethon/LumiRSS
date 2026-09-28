@@ -187,6 +187,18 @@ export function writeAttachmentQueue(
   }
 }
 
+/** FIX-062：换账号清空附件下载队列元数据（条目名是 A 的阅读足迹）。 */
+export function clearAttachmentQueue(
+  storage: Storage | null = typeof localStorage === 'undefined' ? null : localStorage,
+): void {
+  if (storage === null) return
+  try {
+    storage.removeItem(ATTACHMENT_QUEUE_STORAGE_KEY)
+  } catch {
+    /* 写失败静默 */
+  }
+}
+
 // ---- 容量规划（LRU 逐出，返回诚实清单） ----
 
 export interface CapacityPlan {

@@ -93,6 +93,17 @@ export function saveSpeechBookmark(entryRef: string, blockIndex: number): void {
   }
 }
 
+/** FIX-062：换账号清空全部朗读书签（A 的听读位置不留给 B）。 */
+export function clearAllSpeechBookmarks(): void {
+  const store = storage()
+  if (store === null) return
+  try {
+    store.removeItem(SPEECH_BOOKMARKS_STORAGE_KEY)
+  } catch {
+    /* 写失败不影响本会话 */
+  }
+}
+
 /** 删除单个 entry 的书签（书签 chip 上的显式清除入口）。 */
 export function deleteSpeechBookmark(entryRef: string): void {
   const store = storage()

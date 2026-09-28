@@ -23,6 +23,16 @@ import { clearAllDrafts } from './draft-store'
 import { clearSearchHistoryOnLogout } from './search-history'
 import { clearRecentReads } from './recent-reads'
 import { clearReadingPositions } from './reading-position'
+import { resetAnnotationsForAccountSwitch } from './annotations'
+import { clearRecap } from './session-recap'
+import { clearReadingPath } from './reading-path'
+import { clearAllSourceAliases } from './source-aliases'
+import { clearExcludedAnnotations } from './search-timeline-exclusions'
+import { clearAllSpeechBookmarks } from './speech-bookmarks'
+import { clearWorkspaceTabFootprints } from './workspace-tabs'
+import { clearAttachmentQueue } from './attachment-queue'
+import { clearEnclosurePositions } from './enclosure'
+import { clearStashedSearchHits } from './search-hit-locate'
 
 /** 登录/登出后的统一状态重置。queryClient 由调用方传入（main.tsx /
  * useQueryClient 持有同一实例）。 */
@@ -52,6 +62,22 @@ export function resetAccountState(queryClient: QueryClient): void {
   clearSearchHistoryOnLogout() // lumirss-search-history (+暂停标记)
   clearRecentReads() // lumirss-recent-reads
   clearReadingPositions() // lumirss-reading-positions
+
+  // 4b. FIX-062：审计补齐的按账号积累足迹——批注离线缓存（含服务端
+  //     同步标记复位）、阅读会话回顾、阅读路径、来源别名离线缓存、
+  //     时间线排除批注、朗读书签、工作区足迹（最近关闭/预览草稿/
+  //     分组折叠）、附件下载队列元数据、播放续播位置、搜索命中定位
+  //     暂存（sessionStorage 同样在同一标签页内跨账号存活）。
+  resetAnnotationsForAccountSwitch()
+  clearRecap()
+  clearReadingPath()
+  clearAllSourceAliases()
+  clearExcludedAnnotations()
+  clearAllSpeechBookmarks()
+  clearWorkspaceTabFootprints()
+  clearAttachmentQueue()
+  clearEnclosurePositions()
+  clearStashedSearchHits()
 
   // 5. portable 设置的账号投影（FIX-061）：A 的未落库 dirty 键、A 的
   //    服务端 revision、hydration 完成标记与 A 的 portable 值全部归零

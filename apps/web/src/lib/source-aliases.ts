@@ -81,6 +81,15 @@ export function clearSourceAlias(feedTitle: string): void {
   writeAll(map)
 }
 
+/** FIX-062：换账号清空全部本地别名（A 的别名不留给 B）。 */
+export function clearAllSourceAliases(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY)
+  } catch {
+    /* 存储不可用：静默 */
+  }
+}
+
 /** 上限（设置页提示用） */
 export const SOURCE_ALIAS_LIMIT = MAX_ALIASES
 
