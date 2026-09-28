@@ -662,6 +662,7 @@ export function ReaderPresetPicker() {
           ref={fileRef}
           type="file"
           accept="application/json"
+          aria-label="导入预设配置文件"
           className="sr-only"
           onChange={(e) => {
             const f = e.target.files?.[0]

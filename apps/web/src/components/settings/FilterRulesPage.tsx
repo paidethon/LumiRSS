@@ -131,6 +131,7 @@ export function FilterRulesSection() {
           ref={fileRef}
           type="file"
           accept="application/json"
+          aria-label="导入过滤规则文件"
           className="sr-only"
           onChange={(e) => {
             const f = e.target.files?.[0]
