@@ -1588,6 +1588,10 @@ export function useDeleteBookmarkMutation() {
     mutationFn: (bookmarkRef: string) => deleteBookmark(bookmarkRef),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['library', 'bookmarks'] })
+      // FIX-154：服务端失效是直读（FIX-320），不推送事件——删除改变搜索
+      // 索引成员资格，客户端必须自己失效搜索结果缓存，否则已删内容继续
+      // 出现在缓存结果里（点击才发现 stale/404）。
+      await queryClient.invalidateQueries({ queryKey: SEARCH_RESULTS_KEY })
     },
   })
 }
@@ -2046,6 +2050,8 @@ export function useDeleteClipMutation() {
     mutationFn: (clipRef: string) => deleteClip(clipRef),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['library', 'clips'] })
+      // FIX-154：同书签删除——搜索结果缓存一并失效（服务端直读无推送）。
+      await queryClient.invalidateQueries({ queryKey: SEARCH_RESULTS_KEY })
     },
   })
 }
@@ -2078,6 +2084,8 @@ export function useDeleteSnapshotMutation() {
     mutationFn: (uuid: string) => deleteSnapshot(uuid),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['library', 'snapshots'] })
+      // FIX-154：同书签删除——搜索结果缓存一并失效（服务端直读无推送）。
+      await queryClient.invalidateQueries({ queryKey: SEARCH_RESULTS_KEY })
     },
   })
 }
