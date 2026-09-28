@@ -45,6 +45,12 @@ jobs:
         shell: bash
         run: python3 scripts/check-version.py
 
+      # FIX-373/FIX-372: image metadata (OCI labels, build args, ci-gate
+      # identity) is wired to VERSION + the tested SHA; drift fails here.
+      - name: Verify release pipeline metadata (FIX-373)
+        shell: bash
+        run: python3 scripts/check-image-metadata.py
+
       - name: Reject tracked secret and runtime files
         shell: bash
         run: |
@@ -88,3 +94,9 @@ jobs:
 
       - name: Run deploy lifecycle tests
         run: tests/deploy/run-deploy-tests.sh
+
+      # FIX-373/FIX-375: metadata mutations are caught, build contexts stay
+      # subdirectory-scoped, and a poisoned context is really excluded
+      # (FROM-scratch probe with the repo's own .dockerignore).
+      - name: Run release pipeline metadata + build-context tests
+        run: tests/deploy/run-image-metadata-tests.sh

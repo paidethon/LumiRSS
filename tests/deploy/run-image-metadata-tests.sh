@@ -101,6 +101,78 @@ else
 fi
 rm -rf "$wt"
 
+# ---------------------------------------------------------------------------
+echo "== 3. FIX-375 static: every build context is a subdirectory, never the repo root =="
+# Root-level secrets (.env.prod, .lumi ledger, .git) are then structurally
+# outside every build context, whatever the ignore files say.
+context_paths="$(
+  { grep -hoE '^\s*context: \S+' "$REPO_ROOT"/docker-compose*.yml "$REPO_ROOT"/e2e/stack/docker-compose.e2e.yml 2>/dev/null;
+    grep -hoE '(docker build|context: )\S*services/bff\S*|(docker build|context: )\S*apps/web\S*' \
+      "$REPO_ROOT"/.github/workflows/*.yml 2>/dev/null; } |
+  sed -E 's/^\s*context: //; s/^docker build //' | sed 's/-t .*//' | sort -u
+)"
+echo "$context_paths" | sed 's/^/    context: /'
+root_ctx="$(printf '%s\n' "$context_paths" | grep -E '^\.?/?$' || true)"
+assert_eq "no build context is the repo root" "" "$root_ctx"
+for ctx in $context_paths; do
+  norm="${ctx#./}"
+  case "$norm" in
+    services/bff|apps/web|../../services/bff|../../apps/web) ;;
+    *) bad "unexpected build context path: $ctx" ;;
+  esac
+done
+ok "all build contexts resolve to apps/web or services/bff"
+
+# ---------------------------------------------------------------------------
+echo "== 4. FIX-375 behavioral: a poisoned context is really excluded =="
+if docker info >/dev/null 2>&1; then
+  probe_context() { # dir poison... -> build FROM scratch, list what entered
+    local dir="$1"
+    cat > "$dir/Dockerfile" <<'EOF'
+FROM scratch
+COPY . /probe
+CMD ["/probe"]
+EOF
+    (cd "$dir" && docker build -q -t lumirss-ctx-probe . >/dev/null 2>&1)
+    local cid; cid="$(docker create lumirss-ctx-probe)"
+    docker export "$cid" | tar -tf - | sed 's#^probe/##' | grep -v '^$'
+    docker rm "$cid" >/dev/null 2>&1
+    docker rmi lumirss-ctx-probe >/dev/null 2>&1
+  }
+
+  poison_context() { # dir
+    local dir="$1"; mkdir -p "$dir/sub/deep" "$dir/backups" "$dir/.work" "$dir/.git"
+    printf 'LEAK=1\n'            > "$dir/.env"
+    printf 'PROD-SECRET\n'       > "$dir/.env.prod"
+    printf 'NESTED-SECRET\n'     > "$dir/sub/deep/.env.local"
+    printf 'KEYFILE\n'           > "$dir/service-account.key"
+    printf 'CERTFILE\n'          > "$dir/server.pem"
+    printf 'db\n'                > "$dir/lumi.sqlite"
+    printf 'wal\n'               > "$dir/lumi.sqlite-wal"
+    printf 'ledger\n'            > "$dir/backups/20240101.tar.gz"
+    printf 'tasks\n'             > "$dir/.work/task-bundle.tgz"
+    printf 'ref: refs/heads/x\n' > "$dir/.git/HEAD"
+  }
+
+  for pair in "web:apps/web:package.json" "bff:services/bff:pyproject.toml"; do
+    name="${pair%%:*}"; rest="${pair#*:}"; ctxdir="${rest%%:*}"; legit="${rest#*:}"
+    sb="$(mktemp -d "${TMPDIR:-/tmp}/lumirss-ctx.XXXXXX")"
+    cp "$REPO_ROOT/$ctxdir/.dockerignore" "$sb/"
+    poison_context "$sb"
+    printf 'legit\n' > "$sb/$legit"
+    entered="$(probe_context "$sb")" || entered=""
+    rm -rf "$sb"
+    leaked=""
+    for evil in .env .env.prod sub/deep/.env.local service-account.key server.pem \
+                lumi.sqlite lumi.sqlite-wal backups/20240101.tar.gz .work/task-bundle.tgz .git/HEAD; do
+      if printf '%s\n' "$entered" | grep -Fxq "$evil"; then leaked="$leaked $evil"; fi
+    done
+    assert_eq "$name context: none of the 10 poisoned files entered the build" "" "$leaked"
+    assert_contains "$name context: legit file still builds in" "$legit" "$(printf '%s\n' "$entered")"
+  done
+else
+  bad "docker daemon unavailable — FIX-375 behavioral context probe NOT executed"
+fi
 
 # ---------------------------------------------------------------------------
 echo
