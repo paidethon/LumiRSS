@@ -10,9 +10,7 @@
 - stage 分批阅读：必须由用户指定时段；已有时段归属的跳过如实计数。
 """
 
-from fastapi.testclient import TestClient
 
-from new2xx_ab import ab_env, seed_entry  # noqa: F811
 
 
 class FakeStateAdapter:
@@ -50,6 +48,7 @@ def _seed_old(ab_env, who: str, item_id: str, feed: str, *, read=0, starred=0):
     # seed_entry 固定 feed_url；这里直接扩展：插入后改 feed_url。
     ref = _seed(ab_env, who, item_id, title=item_id, read=read)
     import asyncio
+
     from lumirss.user_scope import user_context
 
     async def run():
@@ -66,6 +65,7 @@ def _seed_old(ab_env, who: str, item_id: str, feed: str, *, read=0, starred=0):
 
 def _old_published(ab_env, who: str, ref: str, published_at: str) -> None:
     import asyncio
+
     from lumirss.user_scope import user_context
 
     async def run():
@@ -80,12 +80,10 @@ def _old_published(ab_env, who: str, ref: str, published_at: str) -> None:
 
 def test_preview_groups_and_keep_exclusion(ab_env):  # noqa: F811
     client = ab_env["client"]
-    r1 = _seed_old(ab_env, "a", "b1", "https://a.example/rss")
+    _seed_old(ab_env, "a", "b1", "https://a.example/rss")
     _seed_old(ab_env, "a", "b2", "https://a.example/rss")
     _seed_old(ab_env, "a", "b3", "https://b.example/rss", starred=1)  # 保护
-    for ref in (r1,):
-        pass
-    # 上面 seed 的 published_at 默认 2026-09-20（约 8 天前）→ olderThanDays=7 命中。
+    # seed 的 published_at 默认 2026-09-20（约 8 天前）→ olderThanDays=7 命中。
 
     preview = client.post(
         "/api/v1/backlog/wizard/preview",

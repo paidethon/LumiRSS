@@ -8,15 +8,13 @@
 - A/B 每用户隔离 + 时间戳/超限校验。
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-from fastapi.testclient import TestClient
-
-from new2xx_ab import ab_env, seed_entry  # noqa: F811
+from new2xx_ab import seed_entry  # noqa: F811
 
 
 def _iso(delta_seconds: int) -> str:
-    moment = datetime.now(timezone.utc) + timedelta(seconds=delta_seconds)
+    moment = datetime.now(UTC) + timedelta(seconds=delta_seconds)
     return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 

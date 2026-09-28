@@ -9,9 +9,8 @@
   本模块没有任何写队列顺序的路径，绝不自动替用户决定兴趣。
 """
 
-from typing import Any
-
 import uuid
+from typing import Any
 
 from lumirss.itemref import InvalidItemRef, parse_item_ref
 from lumirss.reading_queue import today_queue_date
@@ -124,7 +123,7 @@ class QueueTopicStore:
         for topic, members in by_topic.items():
             positions = sorted(member["position"] for member in members)
             min_gap = (
-                min(b - a for a, b in zip(positions, positions[1:]))
+                min(b - a for a, b in zip(positions, positions[1:], strict=True))
                 if len(positions) > 1
                 else None
             )

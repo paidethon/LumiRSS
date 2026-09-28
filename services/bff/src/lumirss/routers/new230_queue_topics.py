@@ -7,7 +7,7 @@ invalid_queue_topic。
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from lumirss.new230_queue_topics import TopicInvalid, QueueTopicStore
+from lumirss.new230_queue_topics import QueueTopicStore, TopicInvalid
 
 router = APIRouter()
 

@@ -65,7 +65,7 @@ def ab_env(monkeypatch, tmp_path):
                 "cookie": activation.headers["set-cookie"].split(";")[0],
                 "userId": str(activation.json().get("userId") or ""),
             }
-        for username, member in members.items():
+        for _username, member in members.items():
             if not member["userId"]:
                 probe = client.get(
                     "/api/v1/auth/session", headers={"cookie": member["cookie"]}

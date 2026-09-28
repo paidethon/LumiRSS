@@ -11,9 +11,8 @@
 - 归档/取消归档 set 语义；校验（空用户名/非法日期/非法 key）。
 """
 
-from fastapi.testclient import TestClient
 
-from new2xx_ab import ab_env, seed_entry  # noqa: F811
+from new2xx_ab import seed_entry  # noqa: F811
 
 
 def test_create_join_and_independent_confirm(ab_env):  # noqa: F811

@@ -9,7 +9,7 @@
 from typing import Any
 
 from fastapi import APIRouter, Request, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from lumirss.new222_queue_prereqs import (
     PrereqInvalid,

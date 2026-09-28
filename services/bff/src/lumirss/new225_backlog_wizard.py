@@ -21,8 +21,8 @@ from typing import Any
 from lumirss.backlog import (
     _EFFECTIVE_EXCLUSIONS,
     BacklogConflict,
-    backlog_batches,
     backlog_batch_rows,
+    backlog_batches,
     issue_preview_token,
     record_batch_log,
     validate_apply_token,

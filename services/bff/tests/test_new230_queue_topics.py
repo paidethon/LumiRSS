@@ -10,7 +10,7 @@
 
 from fastapi.testclient import TestClient
 
-from new2xx_ab import ab_env, seed_entry  # noqa: F811
+from new2xx_ab import seed_entry  # noqa: F811
 
 
 def _seed_queue(client: TestClient, headers: dict, refs: list[str]) -> list[dict]:

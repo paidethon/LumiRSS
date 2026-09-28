@@ -14,9 +14,8 @@
 便签是 Lumi 自有状态：绝不写入 FreshRSS，绝不参与任何同步。
 """
 
-from typing import Any
-
 import uuid
+from typing import Any
 
 from lumirss.itemref import InvalidItemRef, parse_item_ref
 from lumirss.storage import Database

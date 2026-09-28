@@ -11,7 +11,7 @@
 
 from fastapi.testclient import TestClient
 
-from new2xx_ab import ab_env, seed_entry  # noqa: F811
+from new2xx_ab import seed_entry  # noqa: F811
 
 
 def _set_capacity(client: TestClient, headers: dict, capacity: int, enabled: bool = True):

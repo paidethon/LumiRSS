@@ -9,9 +9,8 @@
 - session_no 是第几次阅读（1..52），可留空（未分配）。
 """
 
-from typing import Any
-
 import uuid
+from typing import Any
 
 from lumirss.itemref import InvalidItemRef, parse_item_ref
 from lumirss.storage import Database
