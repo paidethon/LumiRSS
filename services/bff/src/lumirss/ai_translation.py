@@ -45,7 +45,11 @@ from lumirss.ai_artifacts import (
 from lumirss.ai_artifacts import (
     normalize_ai_content as normalize_content,
 )
-from lumirss.ai_provider import AiNotConfigured, AiProviderError
+from lumirss.ai_provider import (
+    AiNotConfigured,
+    AiProviderError,
+    AiUpstreamError,
+)
 from lumirss.ai_settings import (
     KEY_BASE_URL,
     KEY_MODEL,
@@ -231,6 +235,18 @@ class TranslationService(CachedAiArtifactService):
         await self._db.migrate()
         settings = await self._settings.load()
         require_ai_configured(settings)
+        # FIX-304：identity 来自更早的一次设置读取；若在生成步骤执行前
+        # 生效的模型/provider/语言已变化，则按旧身份进行的这次生成被
+        # 取消（稳定的可重试错误，零 provider 调用、零落行）——实际执行
+        # 的模型必须与记录/展示的模型一致，调用方按当前设置干净重试。
+        if (
+            identity.provider != settings[KEY_PROVIDER]
+            or identity.model != settings[KEY_MODEL]
+            or identity.language != settings[KEY_TRANSLATION_LANGUAGE]
+        ):
+            raise AiUpstreamError(
+                "AI settings changed during generation. Please retry."
+            )
         await self._db.execute(
             "INSERT INTO ai_translations (entry_ref, content_hash, provider, model, "
             "prompt_version, target_language, status, created_at, updated_at) "

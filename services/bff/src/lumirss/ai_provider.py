@@ -324,31 +324,21 @@ class OpenAICompatibleProvider:
                 # N165: streaming responses deliver usage on a final chunk.
                 if isinstance(event, dict) and isinstance(event.get("usage"), dict):
                     self.last_usage = event["usage"]
-                delta = _delta_of(event)
-                if delta is None:
-                    continue
-                content = delta.get("content")
-                if isinstance(content, str) and content:
-                    yield {"content_delta": content}
-                for call in delta.get("tool_calls") or []:
-                    if not isinstance(call, dict):
-                        continue
-                    function = call.get("function") or {}
-                    yield {
-                        "tool_call_delta": {
-                            "index": int(call.get("index") or 0),
-                            "id": call.get("id"),
-                            "name": function.get("name"),
-                            "arguments_delta": function.get("arguments") or "",
-                        }
-                    }
-        tail = _parse_sse_line(buffer)
-        if tail is not None and tail != "[DONE]":
-            delta = _delta_of(tail)
-            if delta is not None:
-                content = delta.get("content")
-                if isinstance(content, str) and content:
-                    yield {"content_delta": content}
+                for delta_event in _delta_events(event):
+                    yield delta_event
+        # FIX-302: the stream may end with a COMPLETE event that has no
+        # trailing newline. Dispatch the buffered remainder exactly like a
+        # newline-terminated line — content deltas, tool-call fragments
+        # and usage included — instead of dropping everything but text.
+        if buffer:
+            tail = _parse_sse_line(buffer)
+            if tail == "[DONE]":
+                return
+            if isinstance(tail, dict) and isinstance(tail.get("usage"), dict):
+                self.last_usage = tail["usage"]
+            if isinstance(tail, dict):
+                for delta_event in _delta_events(tail):
+                    yield delta_event
 
 
 def _parse_sse_line(line: bytes) -> dict | str | None:
@@ -380,6 +370,34 @@ def _delta_of(event: dict) -> dict | None:
         return None
     delta = choices[0].get("delta")
     return delta if isinstance(delta, dict) else None
+
+
+def _delta_events(event: dict) -> list[dict]:
+    """One SSE JSON event → its typed delta events (content and/or
+    tool-call fragments). Shared by newline-terminated lines and the
+    FIX-302 newline-less tail so neither path can drift."""
+    out: list[dict] = []
+    delta = _delta_of(event)
+    if delta is None:
+        return out
+    content = delta.get("content")
+    if isinstance(content, str) and content:
+        out.append({"content_delta": content})
+    for call in delta.get("tool_calls") or []:
+        if not isinstance(call, dict):
+            continue
+        function = call.get("function") or {}
+        out.append(
+            {
+                "tool_call_delta": {
+                    "index": int(call.get("index") or 0),
+                    "id": call.get("id"),
+                    "name": function.get("name"),
+                    "arguments_delta": function.get("arguments") or "",
+                }
+            }
+        )
+    return out
 
 
 def json_loads(text: str) -> Any:

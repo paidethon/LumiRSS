@@ -262,3 +262,94 @@ def test_stale_generating_reported_as_interrupted(tmp_path):
     state = service._state_from_row(row, cached=False)
     assert state.status == "failed"
     assert state.failure_type == "interrupted"
+
+
+# ---- FIX-303: HTTP 200 with a business-error body is never a translation ----
+
+
+def test_provider_200_business_error_body_persists_failed_not_translation(tmp_path):
+    """FIX-303 baseline: a provider 200 whose BODY is an error object is
+    detected by the response-shape check in ``complete()`` and persisted
+    as an honest failure (invalid_response) — never stored as a
+    successful translation."""
+    import httpx
+
+    from lumirss.ai_provider import AiInvalidResponse, OpenAICompatibleProvider
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"error": {"message": "model overloaded", "code": "503"}},
+        )
+
+    provider = OpenAICompatibleProvider(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        base_url="https://api.example.com/v1",
+        model="model-a",
+        api_key="test-" + "credential",
+    )
+    db, _adapter, _fake, service = wire(tmp_path, provider=provider)
+    configure(db)
+
+    with pytest.raises(AiInvalidResponse):
+        run(service.generate_translation(VALID_REF))
+
+    row = run(
+        db.fetch_one("SELECT * FROM ai_translations WHERE entry_ref = ?", (VALID_REF,))
+    )
+    assert row is not None
+    assert row["status"] == "failed"
+    assert row["failure_type"] == "invalid_response"
+    assert row["translated_text"] is None
+    assert row["translated_title"] is None
+
+
+# ---- FIX-304: a model change supersedes the in-flight old-model run ----
+
+
+def test_model_change_between_resolve_and_generate_supersedes_old_run(tmp_path):
+    """FIX-304: mirror of the summary fix — when the effective model
+    changed between identity resolution and the generation step, the
+    old-identity run is superseded (stable retryable error, zero provider
+    calls, no row) instead of executing under the new model while being
+    stored and displayed under the old one."""
+    from lumirss.ai_provider import AiUpstreamError
+    from lumirss.ai_settings import KEY_MODEL
+
+    class SwitchingSettingsStore:
+        """load() #1 → model-a (identity resolve); #2+ → model-b."""
+
+        def __init__(self, inner) -> None:
+            self._inner = inner
+            self.loads = 0
+
+        async def load(self):
+            self.loads += 1
+            values = await self._inner.load()
+            if self.loads >= 2:
+                return {**values, KEY_MODEL: "model-b"}
+            return values
+
+    provider = FakeProvider()
+    db, _adapter, _fake, service = wire(
+        tmp_path,
+        provider=provider,
+    )
+    # Rebuild the service with the switching settings view.
+    service = TranslationService(
+        db=db,
+        adapter=_adapter,
+        settings_store=SwitchingSettingsStore(AiSettingsStore(db)),
+        provider_factory=_async_provider(provider),
+    )
+    configure(db)
+
+    with pytest.raises(AiUpstreamError) as excinfo:
+        run(service.generate_translation(VALID_REF))
+    assert "retry" in str(excinfo.value)
+
+    assert provider.calls == 0
+    row = run(
+        db.fetch_one("SELECT * FROM ai_translations WHERE entry_ref = ?", (VALID_REF,))
+    )
+    assert row is None

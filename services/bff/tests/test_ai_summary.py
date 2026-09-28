@@ -307,3 +307,91 @@ def test_concurrent_generation_makes_exactly_one_provider_call(db):
     run(generate_both())
 
     assert provider.calls == 1
+
+
+# ---- FIX-303: HTTP 200 with a business-error body is never a summary ----
+
+
+def test_provider_200_business_error_body_persists_failed_not_summary(db):
+    """FIX-303 baseline: a provider 200 whose BODY is an error object is
+    detected by the response-shape check in ``complete()`` and persisted
+    as an honest failure (invalid_response) — never stored as a
+    successful summary."""
+    import httpx
+
+    from lumirss.ai_provider import AiInvalidResponse, OpenAICompatibleProvider
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "error": {"message": "insufficient quota", "type": "server_error"}
+            },
+        )
+
+    provider = OpenAICompatibleProvider(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        base_url="https://api.example.com/v1",
+        model="model-a",
+        api_key="test-" + "credential",
+    )
+    service, _ = make_service(db, provider=provider)
+    run(configure_settings(db))
+
+    with pytest.raises(AiInvalidResponse):
+        run(service.generate_summary(VALID_REF))
+
+    row = run(
+        db.fetch_one("SELECT * FROM ai_summaries WHERE entry_ref = ?", (VALID_REF,))
+    )
+    assert row is not None
+    assert row["status"] == "failed"
+    assert row["failure_type"] == "invalid_response"
+    assert row["summary_text"] is None
+
+
+# ---- FIX-304: a model change supersedes the in-flight old-model run ----
+
+
+def test_model_change_between_resolve_and_generate_supersedes_old_run(db):
+    """FIX-304: one generate flow must EXECUTE under the same model it
+    RECORDS AND DISPLAYS. The identity is resolved from an earlier
+    settings read; when the effective model has changed by the time the
+    generation step runs, the old-identity run is superseded BEFORE any
+    provider call or row write (stable retryable error) — a result
+    executed by one model can never land under another model's name."""
+    from lumirss.ai_provider import AiUpstreamError
+    from lumirss.ai_settings import KEY_MODEL
+
+    class SwitchingSettingsStore:
+        """load() #1 → model-a (identity resolve); #2+ → model-b."""
+
+        def __init__(self, inner) -> None:
+            self._inner = inner
+            self.loads = 0
+
+        async def load(self):
+            self.loads += 1
+            values = await self._inner.load()
+            if self.loads >= 2:
+                return {**values, KEY_MODEL: "model-b"}
+            return values
+
+    provider = FakeProvider()
+    service = SummaryService(
+        db=db,
+        adapter=FakeAdapter(),
+        settings_store=SwitchingSettingsStore(AiSettingsStore(db)),
+        provider_factory=_async_provider(provider),
+    )
+    run(configure_settings(db))
+
+    with pytest.raises(AiUpstreamError) as excinfo:
+        run(service.generate_summary(VALID_REF))
+    assert "retry" in str(excinfo.value)
+
+    assert provider.calls == 0
+    row = run(
+        db.fetch_one("SELECT * FROM ai_summaries WHERE entry_ref = ?", (VALID_REF,))
+    )
+    assert row is None

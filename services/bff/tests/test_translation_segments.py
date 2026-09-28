@@ -479,3 +479,56 @@ def test_generate_accepts_arbitrary_subset_only_requested_blocks(tmp_path):
     again = run(service.generate("e1.n087", subset))
     assert [s.cached for s in again] == [True, True]
     assert len(seen_indexes) == 1
+
+
+# ---------------------------------------------------------------------------
+# FIX-305: 部分成功后的重试只补跑失败段（分段状态即幂等键）
+# ---------------------------------------------------------------------------
+
+
+def test_retry_after_partial_batch_success_reruns_only_failed_blocks(tmp_path):
+    """首跑 4 段拆两批：批 [0,1,2] 成功、批 [3] 超时失败；重试必须只把
+    失败的第 3 段重新请求 provider——已成功段的缓存行（分段状态持久化
+    + 精确缓存身份即幂等键）绝不再收费。"""
+    calls = {"n": 0}
+    seen_prompts: list[str] = []
+    block3_raised = {"v": False}
+
+    # 每段规范化后恰 4000 字符：批大小规则（≤12000 字符）把 0/1/2 归入
+    # 第一批，第 3 段溢出到第二批 → 一次「部分成功」的批量生成。
+    blocks = [SegmentInput(index=i, text=f"第{i}段内容。" * 800) for i in range(4)]
+
+    async def factory(base_url, model):
+        class FakeProvider:
+            async def complete(self, messages):
+                calls["n"] += 1
+                prompt = messages[-1]["content"]
+                seen_prompts.append(prompt)
+                if "<<<BLOCK 3>>>" in prompt and not block3_raised["v"]:
+                    block3_raised["v"] = True
+                    raise AiTimeout("upstream timeout")
+                # 回显：标记行 + 原文即合法的「译文」。
+                return prompt
+
+        return FakeProvider()
+
+    service, settings, _secrets = _make_service(tmp_path, provider_factory=factory)
+    run(settings.save(AiSettingsUpdate(baseUrl="http://ai.local/v1", model="m1")))
+
+    first = run(service.generate("e1.fix305", blocks))
+    assert [s.status for s in first] == [
+        "success",
+        "success",
+        "success",
+        "failed",
+    ]
+    assert first[3].failure_type == "timeout"
+    assert calls["n"] == 2  # 两批各一次
+
+    # 重试：仅第 3 段重新请求（成功段走缓存行，零重复计费）。
+    retry = run(service.generate("e1.fix305", blocks))
+    assert calls["n"] == 3  # 恰好一次新 provider 调用
+    assert "<<<BLOCK 3>>>" in seen_prompts[-1]
+    assert "<<<BLOCK 0>>>" not in seen_prompts[-1]
+    assert [s.status for s in retry] == ["success"] * 4
+    assert [s.cached for s in retry] == [True, True, True, False]
