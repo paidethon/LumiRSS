@@ -757,12 +757,18 @@ async def download_mail_attachment(attachment_id: str, request: Request) -> Resp
 
     Content-Disposition 恒为 attachment（绝不内联渲染）；响应体大小
     以存储 size 为准并再查上限（防越界写入）。文件名经净化并按
-    RFC 5987 编码（非 ASCII 安全）。"""
+    RFC 5987 编码（非 ASCII 安全）。
+    FIX-349：Range 请求在完整文件缓存（整块 BLOB）上正确切片——
+    无 Range → 200 全量 + Accept-Ranges: bytes；合法单区间 → 206 +
+    Content-Range 与正确长度；语法坏区间按 RFC 忽略（200 全量）；
+    不可满足区间 → 416 + Content-Range: bytes */size。"""
     from urllib.parse import quote
 
     from lumirss.mail_attachments import (
         MAX_ATTACHMENT_BYTES,
         MailAttachmentStore,
+        RangeUnsatisfiable,
+        parse_range_header,
     )
     from lumirss.mail_bridge import MailBridgeNotFound
 
@@ -792,15 +798,47 @@ async def download_mail_attachment(attachment_id: str, request: Request) -> Resp
             },
         )
     filename = str(row["filename"]).replace('"', "_") or "attachment"
+    disposition = (
+        f'attachment; filename="{filename}"; '
+        f"filename*=UTF-8''{quote(filename)}"
+    )
+    body = bytes(content)
+    range_header = request.headers.get("range")
+    range_slice: tuple[int, int] | None = None
+    if range_header and range_header.strip():
+        try:
+            range_slice = parse_range_header(range_header, size)
+        except RangeUnsatisfiable:
+            return JSONResponse(
+                status_code=416,
+                content={
+                    "error": {
+                        "type": "range_not_satisfiable",
+                        "message": "请求区间超出附件大小。",
+                    }
+                },
+                headers={"Content-Range": f"bytes */{size}"},
+            )
+    if range_slice is None:
+        return Response(
+            content=body,
+            media_type=str(row["mime"]) or "application/octet-stream",
+            headers={
+                "Content-Disposition": disposition,
+                "X-Content-Type-Options": "nosniff",
+                "Accept-Ranges": "bytes",
+            },
+        )
+    start, end = range_slice
     return Response(
-        content=bytes(content),
+        content=body[start : end + 1],
+        status_code=206,
         media_type=str(row["mime"]) or "application/octet-stream",
         headers={
-            "Content-Disposition": (
-                f'attachment; filename="{filename}"; '
-                f"filename*=UTF-8''{quote(filename)}"
-            ),
+            "Content-Disposition": disposition,
             "X-Content-Type-Options": "nosniff",
+            "Accept-Ranges": "bytes",
+            "Content-Range": f"bytes {start}-{end}/{size}",
         },
     )
 

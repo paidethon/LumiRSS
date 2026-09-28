@@ -68,30 +68,70 @@ def _normalize_key(rel_path: str) -> str:
     return rel_path.strip().lower().removesuffix(".md")
 
 
+def _dir_depth(rel_path: str) -> tuple[str, ...]:
+    """rel_path 的目录分量（不含文件名；FIX-334 最近路径判定用）。"""
+    key = _normalize_key(rel_path)
+    if "/" not in key:
+        return ()
+    return tuple(key.rsplit("/", 1)[0].split("/"))
+
+
+def _closest_candidate(candidates: list[tuple[str, str]], from_rel: str) -> str:
+    """FIX-334：同名候选的确定性裁决 —— 与链接方共享目录前缀最深者
+    优先（「最近相对路径」），平局取 rel_path 字典序。candidates 为
+    [(rel_path, uuid)]，返回 uuid。"""
+    from_parts = _dir_depth(from_rel)
+
+    def sort_key(item: tuple[str, str]) -> tuple[int, str]:
+        shared = 0
+        for mine, theirs in zip(from_parts, _dir_depth(item[0]), strict=False):
+            if mine != theirs:
+                break
+            shared += 1
+        return (-shared, _normalize_key(item[0]))
+
+    return min(candidates, key=sort_key)[1]
+
+
 async def rebuild_backlinks(db: Any) -> int:
     """按 obsidian_notes 的 wikilinks 索引重建反向链接表。
 
-    解析目标：其余笔记的 rel_path（忽略 .md/大小写）或标题。穿越/未
-    解析 → broken 行。返回重建后的总行数。"""
+    解析目标（FIX-334 确定性规则）：其余笔记的 rel_path（忽略 .md/
+    大小写）精确命中优先；同名 basename/标题有多个候选时取「与链接方
+    最近相对路径」（共享目录前缀最深，平局字典序）——绝不随 DB 行序
+    任意 pick。穿越/未解析 → broken 行。返回重建后的总行数。"""
     await db.migrate()
     notes = await db.fetch_all(
-        "SELECT item_uuid, rel_path, title, wikilinks, wikilink_raws FROM obsidian_notes LIMIT 5000"
+        "SELECT item_uuid, rel_path, title, wikilinks, wikilink_raws FROM obsidian_notes ORDER BY rel_path ASC LIMIT 5000"
     )
-    by_key: dict[str, str] = {}
-    titles: dict[str, str] = {}
+    by_path: dict[str, str] = {}
+    by_stem: dict[str, list[tuple[str, str]]] = {}
+    titles: dict[str, list[tuple[str, str]]] = {}
     for note in notes:
         uuid_ = str(note["item_uuid"])
         rel_path = str(note["rel_path"])
-        by_key[_normalize_key(rel_path)] = uuid_
+        by_path[_normalize_key(rel_path)] = uuid_
         # basename（无目录前缀、无 .md）也可解析——Obsidian 同名短链习惯
         stem = _normalize_key(rel_path).rsplit("/", 1)[-1]
-        by_key.setdefault(stem, uuid_)
+        by_stem.setdefault(stem, []).append((rel_path, uuid_))
         title = str(note["title"] or "").strip()
         if title:
-            titles[title] = uuid_
+            titles.setdefault(title, []).append((rel_path, uuid_))
+
+    def _resolve_target(target: str, from_rel: str) -> str | None:
+        direct = by_path.get(_normalize_key(target))
+        if direct is not None:
+            return direct
+        stem = _normalize_key(target).rsplit("/", 1)[-1]
+        for bucket in (by_stem.get(stem), titles.get(target)):
+            if bucket:
+                return _closest_candidate(bucket, from_rel)
+        return None
+
     pairs: list[tuple] = []
     for note in notes:
         from_uuid = str(note["item_uuid"])
+        from_rel = str(note["rel_path"])
         try:
             raws = _json.loads(str(note["wikilink_raws"] or "[]"))
             raw_links = raws if isinstance(raws, list) and raws else _json.loads(
@@ -104,7 +144,7 @@ async def rebuild_backlinks(db: Any) -> int:
             if parsed.escaped_vault:
                 pairs.append((from_uuid, None, parsed.target.lower(), parsed.raw, parsed.alias, parsed.heading, 1, "path_escaped_vault"))
                 continue
-            target_uuid = by_key.get(_normalize_key(parsed.target)) or titles.get(parsed.target)
+            target_uuid = _resolve_target(parsed.target, from_rel)
             if target_uuid is None:
                 pairs.append((from_uuid, None, parsed.target.lower(), parsed.raw, parsed.alias, parsed.heading, 1, "unresolved"))
                 continue
