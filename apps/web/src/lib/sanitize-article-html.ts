@@ -13,6 +13,11 @@
  *
  * 危险内容（<script>、on* 事件属性、javascript: 协议等）由 DOMPurify
  * 默认规则移除；不在此手写任何 URI sanitizer regex。
+ *
+ * FIX-136（深色主题可读性）：作者 inline style 与表现层颜色属性
+ * （font color / bgcolor / background）都在此边界统一移除——任何渲染
+ * 路径都不会把原站配色带进 Reader；图片与 class 承载的语义色（代码
+ * 高亮随主题）保留。见 sanitize.test 与 fix-136 测试。
  */
 
 import DOMPurify from 'dompurify'
@@ -32,11 +37,21 @@ const FORBID_TAGS = [
   'template',
 ]
 
+/**
+ * FIX-136：表现层颜色属性与 inline style 同罪——`<font color>` /
+ * `bgcolor` / `background`（属性形态的背景图）是 HTML profile 默认
+ * 放行的遗留表现属性，深色主题下作者色（如 `color="#333"`、
+ * `bgcolor="white"`）同样制造不可读区块。与 FORBID_ATTR style 一并
+ * 在边界移除；文本内容保留，图片（img）与 class 语义（如 shiki 代码
+ * 高亮的 `.lumi-sh-*` 颜色 class——颜色随主题切换）不受影响。
+ */
+const FORBID_COLOR_ATTRS = ['color', 'bgcolor', 'background']
+
 /** 清洗不可信的 RSS 文章 HTML，返回可安全渲染的字符串。 */
 export function sanitizeArticleHtml(html: string): string {
   return DOMPurify.sanitize(html, {
     USE_PROFILES: { html: true }, // 纯 HTML：不允许 SVG / MathML 命名空间
     FORBID_TAGS,
-    FORBID_ATTR: ['style'], // inline style 一律移除
+    FORBID_ATTR: ['style', ...FORBID_COLOR_ATTRS], // inline style 与表现层颜色一律移除
   })
 }
