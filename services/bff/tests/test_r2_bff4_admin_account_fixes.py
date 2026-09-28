@@ -75,9 +75,12 @@ def _cookie_headers(response) -> dict[str, str]:
     return {"cookie": response.headers["set-cookie"].split(";")[0]}
 
 
-def _step_up(client, headers, password: str) -> dict[str, str]:
+def _step_up(client, headers, password: str, *, target: str = "") -> dict[str, str]:
+    """FIX-218：铸造作用域绑定令牌（quota 操作 + 目标账户）。"""
     minted = client.post(
-        "/api/v1/admin/step-up", json={"password": password}, headers=headers
+        "/api/v1/admin/step-up",
+        json={"password": password, "operation": "user_quota_set", "targetUserId": target},
+        headers=headers,
     )
     assert minted.status_code == 200, minted.text
     return {**headers, "X-Lumi-Step-Up": minted.json()["token"]}
@@ -408,7 +411,7 @@ def test_fix039_quota_bounds_consistent_zero_is_not_unlimited(quota_env):
         return client.put(
             f"/api/v1/admin/users/{member_id}/quota",
             json=body,
-            headers=_step_up(client, owner_headers, password),
+            headers=_step_up(client, owner_headers, password, target=member_id),
         )
 
     # 0 与负数：两层校验一致拒绝——0 不是「无限额」。
@@ -430,7 +433,7 @@ def test_fix039_quota_bounds_consistent_zero_is_not_unlimited(quota_env):
     # DELETE = 显式回到无限额，与「设为 0」（拒绝）可区分。
     cleared = client.delete(
         f"/api/v1/admin/users/{member_id}/quota",
-        headers=_step_up(client, owner_headers, password),
+        headers=_step_up(client, owner_headers, password, target=member_id),
     )
     assert cleared.status_code == 200
     assert cleared.json()["caps"] == {}

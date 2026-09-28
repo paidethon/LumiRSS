@@ -240,7 +240,7 @@ def test_paused_member_loses_access_immediately(env):
     a_id = next(row["id"] for row in users.json() if row["username"] == A_USER)
     step_up = client.post(
         "/api/v1/admin/step-up",
-        json={"password": PASSWORD},
+        json={"password": PASSWORD, "operation": "user_paused", "targetUserId": a_id},
         headers={"cookie": env["owner"]["cookie"]},
     )
     assert step_up.status_code == 200, step_up.text
@@ -256,7 +256,7 @@ def test_paused_member_loses_access_immediately(env):
     assert _get(env, B_USER, "/api/v1/search/views").status_code == 200
     step_up = client.post(
         "/api/v1/admin/step-up",
-        json={"password": PASSWORD},
+        json={"password": PASSWORD, "operation": "user_active", "targetUserId": a_id},
         headers={"cookie": env["owner"]["cookie"]},
     )
     resumed = client.post(

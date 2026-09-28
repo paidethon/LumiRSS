@@ -406,17 +406,17 @@ async def activate_account(body: ActivateAccountRequest, request: Request, respo
     try:
         invite = await accounts.redeem_invite(body.token)
     except InviteNotActive as exc:
-        await accounts.audit(actor="anonymous", action="invite_activation_failed", object_type="invite", object_id=exc.invite_id, detail="not_active")
+        await accounts.audit(actor="anonymous", action="invite_activation_failed", object_type="invite", object_id=exc.invite_id, outcome="denied", detail="not_active")
         return JSONResponse(
             status_code=403,
             content={"error": {"type": "invite_not_active", "message": "This invitation is not active yet.", "serverTime": _iso(exc.now), "notBefore": _iso(exc.not_before)}},
             headers=_NO_STORE,
         )
     except InviteInvalid as exc:
-        await accounts.audit(actor="anonymous", action="invite_activation_failed", object_type="invite", object_id=exc.invite_id, detail="invite_invalid")
+        await accounts.audit(actor="anonymous", action="invite_activation_failed", object_type="invite", object_id=exc.invite_id, outcome="denied", detail="invite_invalid")
         return _reject(400, "invite_invalid", "Invitation is invalid, expired or already used.")
     if str(invite.get("kind") or "signup") != "signup":
-        await accounts.audit(actor="anonymous", action="invite_activation_failed", object_type="invite", object_id=str(invite.get("id")), detail="kind_not_signup")
+        await accounts.audit(actor="anonymous", action="invite_activation_failed", object_type="invite", object_id=str(invite.get("id")), outcome="denied", detail="kind_not_signup")
         return _reject(400, "invite_invalid", "This invitation is not a signup invite.")
     try:
         user = await accounts.create_user(
@@ -429,17 +429,33 @@ async def activate_account(body: ActivateAccountRequest, request: Request, respo
         # Restore the invite: a failed signup (name taken, weak password)
         # must not burn the one-time token.
         await accounts.restore_unused_invite(token_hash)
-        await accounts.audit(actor="anonymous", action="invite_activation_failed", object_type="invite", object_id=str(invite.get("id")), detail="account_create_rejected")
+        await accounts.audit(actor="anonymous", action="invite_activation_failed", object_type="invite", object_id=str(invite.get("id")), outcome="denied", detail="account_create_rejected")
         return _reject(400, "invalid_username", str(exc))
     user_id = str(user["id"])
     await accounts.mark_invite_used_by(token_hash, user_id)
     # FreshRSS binding from the pool — atomic assignment, honest pending.
     # A held pool account (N003) is converted assigned for THIS user.
     assigned = await accounts.pool_assign(user_id, held_freshrss_username=(str(invite["held_pool_account"]) if invite.get("held_pool_account") else None))
+    binding_state = "binding_pending" if assigned is None else "pool_assigned"
     if assigned is not None:
+        # FIX-032 半成功中点：池位已 assigned 但绑定写失败（如控制层
+        # secrets 缺池密码）→ 释放池位回 ready（可重试、不烧名额），
+        # 审计留痕，账户以诚实的 binding_pending 状态保留——与池空的
+        # 既有契约同形，绝不遗留「assigned 但无绑定」的半状态。
         from lumirss.control_resources import bind_freshrss_account
 
-        await bind_freshrss_account(request.app.state, user_id, str(assigned["freshrss_username"]), str(assigned["base_url"]))
+        try:
+            await bind_freshrss_account(request.app.state, user_id, str(assigned["freshrss_username"]), str(assigned["base_url"]))
+        except Exception:  # noqa: BLE001 — 绑定失败必须可恢复，不得 500 掉已建账户
+            await accounts.pool_release(user_id)
+            binding_state = "binding_pending"
+            await accounts.audit(
+                actor=user_id,
+                action="activation_binding_failed",
+                object_type="freshrss_pool",
+                object_id=str(assigned["freshrss_username"]),
+                outcome="failed",
+            )
     # Scheme bookkeeping (N001): record scheme on the account row, then
     # best-effort subscribe of the scheme's initial sources.
     initial_sources: list[ActivationSourceResult] | None = None
@@ -454,7 +470,7 @@ async def activate_account(body: ActivateAccountRequest, request: Request, respo
 
                 results = await apply_scheme_initial_sources(request.app.state, user_id, urls)
                 initial_sources = [ActivationSourceResult(**result) for result in results]
-    await accounts.audit(actor=user_id, action="account_activate", object_type="user", object_id=user_id, detail="pool_assigned" if assigned else "binding_pending")
+    await accounts.audit(actor=user_id, action="account_activate", object_type="user", object_id=user_id, detail=binding_state)
     status = await _mint_session(request, response, user_id)
     status.initialSources = initial_sources
     return status
@@ -502,6 +518,7 @@ async def register(body: RegisterRequest, request: Request, response: Response) 
             action="register_rejected",
             object_type="user",
             object_id="policy_closed",
+            outcome="denied",
         )
         return _reject(403, "registration_disabled", "Registration is disabled on this instance.")
     username = body.username.strip().lower()
@@ -525,16 +542,30 @@ async def register(body: RegisterRequest, request: Request, response: Response) 
     user_id = str(user["id"])
     # FreshRSS binding from the pool — atomic assignment, honest pending.
     assigned = await accounts.pool_assign(user_id)
+    binding_state = "binding_pending" if assigned is None else "pool_assigned"
     if assigned is not None:
+        # FIX-032 半成功中点（与 /activate 同一恢复语义）：释放池位回
+        # ready、审计留痕、账户诚实 binding_pending——不烧名额不留半态。
         from lumirss.control_resources import bind_freshrss_account
 
-        await bind_freshrss_account(request.app.state, user_id, str(assigned["freshrss_username"]), str(assigned["base_url"]))
+        try:
+            await bind_freshrss_account(request.app.state, user_id, str(assigned["freshrss_username"]), str(assigned["base_url"]))
+        except Exception:  # noqa: BLE001 — 绑定失败必须可恢复，不得 500 掉已建账户
+            await accounts.pool_release(user_id)
+            binding_state = "binding_pending"
+            await accounts.audit(
+                actor=user_id,
+                action="activation_binding_failed",
+                object_type="freshrss_pool",
+                object_id=str(assigned["freshrss_username"]),
+                outcome="failed",
+            )
     await accounts.audit(
         actor=user_id,
         action="account_register",
         object_type="user",
         object_id=user_id,
-        detail="pool_assigned" if assigned else "binding_pending",
+        detail=binding_state,
     )
     return await _mint_session(request, response, user_id)
 

@@ -120,11 +120,11 @@ def _seed_projection_feeds(env, username: str, count: int) -> None:
     asyncio.run(run())
 
 
-def _step_up(env, who: str) -> dict:
-    """N009：为管理员铸造一次性提权令牌并返回带头的请求头。"""
+def _step_up(env, who: str, target: str) -> dict:
+    """N009 + FIX-218：铸造 (user_quota_set, 目标) 绑定的提权令牌。"""
     minted = env["client"].post(
         "/api/v1/admin/step-up",
-        json={"password": PASSWORD},
+        json={"password": PASSWORD, "operation": "user_quota_set", "targetUserId": target},
         headers={"cookie": env[who]["cookie"]},
     )
     assert minted.status_code == 200, minted.text
@@ -133,7 +133,7 @@ def _step_up(env, who: str) -> dict:
 
 def _put_quota(env, who: str, user_id: str, body: dict):
     headers = (
-        _step_up(env, who)
+        _step_up(env, who, user_id)
         if who == "owner" and user_id != "u00000000000000000000000000000000"
         else {"cookie": env[who]["cookie"]}
     )
@@ -199,7 +199,7 @@ def test_set_get_clear_roundtrip_and_audit(quota_env):
     assert get_response.json()["caps"] == {"maxSources": 7, "aiQuotaPerDay": 9}
 
     clear_response = env["client"].delete(
-        f"/api/v1/admin/users/{member_id}/quota", headers=_step_up(env, "owner")
+        f"/api/v1/admin/users/{member_id}/quota", headers=_step_up(env, "owner", member_id)
     )
     assert clear_response.status_code == 200
     assert clear_response.json()["caps"] == {}
@@ -256,7 +256,7 @@ def test_clear_quota_restores_subscribe(quota_env):
     app.state.freshrss_control_adapter = env["stub"]
     assert _subscribe(env, "alice", "https://example.test/feed-new.xml").status_code == 429
 
-    env["client"].delete(f"/api/v1/admin/users/{member_id}/quota", headers=_step_up(env, "owner"))
+    env["client"].delete(f"/api/v1/admin/users/{member_id}/quota", headers=_step_up(env, "owner", member_id))
     allowed = _subscribe(env, "alice", "https://example.test/feed-new.xml")
     assert allowed.status_code in (200, 201), allowed.text
 

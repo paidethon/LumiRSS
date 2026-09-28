@@ -264,18 +264,43 @@ async def for_each_active_user(app_state, coro_fn, *, skip_paused_check: bool = 
     never stops the others, and every pass runs under that user's context
     so the routing database/secrets resolve correctly. Paused users are
     excluded at source (active_user_ids).
+
+    FIX-217 lifecycle re-check: the uid snapshot can go stale — a member
+    deleted or deactivated (pause / pending deactivation) AFTER the list
+    was taken must not get their work executed anyway, or the first
+    connect under their context would happily re-create
+    ``<users_root>/<uid>/`` for a dead account. Each iteration therefore
+    re-reads the account row from the control DB immediately before
+    entering the user context and skips cleanly (no directory, no rows)
+    when the account is gone or no longer active.
     """
     import logging
 
     from lumirss.accounts_store import AccountsStore
 
     logger = logging.getLogger("lumirss.userloop")
+    accounts = AccountsStore(app_state.control_db)
     try:
-        uids = await AccountsStore(app_state.control_db).active_user_ids()
+        uids = await accounts.active_user_ids()
     except Exception:  # noqa: BLE001 — control db trouble must not kill loops
         logger.exception("background loop could not list users")
         return
     for uid in uids:
+        # FIX-217：执行前验证账户生命周期（代次即时复读——列表快照之后
+        # 被删除/停用/待删除的账户在这里被干净跳过，绝不为死账户重建
+        # 用户库目录或写行）。
+        try:
+            row = await accounts.get_user_lifecycle(uid)
+        except Exception:  # noqa: BLE001 — 控制库读失败按跳过处理（fail-closed）
+            logger.exception("background loop lifecycle check failed for %s", uid)
+            continue
+        if (
+            row is None
+            or row.get("status") != "active"
+            or row.get("deactivation_requested_at") is not None
+        ):
+            logger.info("background pass skipped for inactive/deleted user %s", uid)
+            continue
         try:
             with user_context(uid):
                 await coro_fn(uid)

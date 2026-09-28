@@ -33,6 +33,7 @@ from lumirss.accounts_store import (
 )
 from lumirss.auth_store import AuthStore
 from lumirss.step_up import (
+    STEP_UP_OP_PATTERN,
     STEP_UP_TTL_MINUTES,
     mint_step_up_token,
     require_step_up,
@@ -156,9 +157,15 @@ class UserRoleRequest(BaseModel):
 
 
 class AdminStepUpRequest(BaseModel):
-    """POST /admin/step-up（N009）——管理员本会话内重新证明自己。"""
+    """POST /admin/step-up（N009）——管理员本会话内重新证明自己。
+
+    FIX-218：令牌铸造时必须声明作用域 (operation, targetUserId)——
+    消费端逐字匹配，为某一操作/目标确认的密码证明不能转投其他敏感
+    操作或其他目标账户。"""
 
     password: str = Field(min_length=1, max_length=256)
+    operation: str = Field(pattern=STEP_UP_OP_PATTERN)
+    targetUserId: str = Field(min_length=1, max_length=64)
 
 
 @router.post("/step-up", response_model=None, response_model_exclude_none=True)
@@ -167,20 +174,34 @@ async def admin_step_up(body: AdminStepUpRequest, request: Request) -> JSONRespo
 
     - 仅 owner/admin 可铸造（member 永远 403，无法伪造提权）；
     - 校验的是当前管理员自己的密码（不是目标用户的）；
-    - 审计只记 mint 动作 + 用户 id——令牌与密码绝不入日志/审计。"""
+    - FIX-218：令牌绑定 (operation, targetUserId)——与敏感路由要求的
+      作用域逐字匹配才会被消费；跨操作/跨目标复用一律 403；
+    - 审计只记 mint 动作 + 用户 id + 作用域——令牌与密码绝不入日志。"""
     principal = await _require_admin(request)
     if principal is None:
         return _forbid()
     accounts = _accounts(request)
-    minted = await mint_step_up_token(
-        request.app.state.control_db, principal["user_id"], body.password
-    )
+    try:
+        minted = await mint_step_up_token(
+            request.app.state.control_db,
+            principal["user_id"],
+            body.password,
+            body.operation,
+            body.targetUserId,
+        )
+    except ValueError:
+        return JSONResponse(
+            status_code=400,
+            content={"error": {"type": "invalid_request", "message": "Unknown step-up operation."}},
+            headers=_NO_STORE,
+        )
     if minted is None:
         await accounts.audit(
             actor=principal["user_id"],
             action="admin_step_up_mint_failed",
             object_type="step_up",
             object_id=principal["user_id"],
+            outcome="denied",
         )
         return JSONResponse(
             status_code=400,
@@ -197,6 +218,7 @@ async def admin_step_up(body: AdminStepUpRequest, request: Request) -> JSONRespo
         action="admin_step_up_mint",
         object_type="step_up",
         object_id=principal["user_id"],
+        detail=f"{body.operation}:{body.targetUserId}",
     )
     return {
         "token": minted["token"],
@@ -540,7 +562,8 @@ async def set_user_role(user_id: str, body: UserRoleRequest, request: Request) -
             headers=_NO_STORE,
         )
     # N009：临时提权在 404 之后、任何状态变更之前（404 语义不变）。
-    denial = await require_step_up(request, principal, "user_role_change")
+    # FIX-218：提权令牌绑定 (操作, 目标账户)。
+    denial = await require_step_up(request, principal, "user_role_change", user_id)
     if denial is not None:
         return denial
     if user["role"] == "owner":
@@ -576,7 +599,8 @@ async def _set_member_status(user_id: str, request: Request, status: str) -> JSO
             headers=_NO_STORE,
         )
     # N009：临时提权在 404 之后、任何状态变更之前（404 语义不变）。
-    denial = await require_step_up(request, principal, f"user_{status}")
+    # FIX-218：提权令牌绑定 (操作, 目标账户)。
+    denial = await require_step_up(request, principal, f"user_{status}", user_id)
     if denial is not None:
         return denial
     if user["role"] == "owner":
@@ -632,7 +656,7 @@ async def reset_user_password(user_id: str, request: Request) -> JSONResponse:
             content={"error": {"type": "user_not_found", "message": "No such member."}},
             headers=_NO_STORE,
         )
-    denial = await require_step_up(request, principal, "user_password_reset")
+    denial = await require_step_up(request, principal, "user_password_reset", user_id)
     if denial is not None:
         return denial
     # D-03：与其他 owner-targetable 端点同语义——owner 账号不可作为密码
@@ -1177,7 +1201,8 @@ async def set_user_quota(user_id: str, body: UserQuotaPutRequest, request: Reque
             headers=_NO_STORE,
         )
     # N009：临时提权在 404 之后、任何写入之前。
-    denial = await require_step_up(request, principal, "user_quota_set")
+    # FIX-218：提权令牌绑定 (user_quota_set, 目标账户)。
+    denial = await require_step_up(request, principal, "user_quota_set", user_id)
     if denial is not None:
         return denial
     from lumirss.user_quotas import UserQuotaStore
@@ -1215,7 +1240,8 @@ async def clear_user_quota(user_id: str, request: Request) -> JSONResponse:
             headers=_NO_STORE,
         )
     # N009：临时提权在 404 之后、任何写入之前。
-    denial = await require_step_up(request, principal, "user_quota_set")
+    # FIX-218：提权令牌绑定 (user_quota_set, 目标账户)。
+    denial = await require_step_up(request, principal, "user_quota_set", user_id)
     if denial is not None:
         return denial
     from lumirss.user_quotas import UserQuotaStore
