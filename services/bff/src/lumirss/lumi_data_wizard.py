@@ -557,24 +557,56 @@ async def apply_import(
         return {"added": added, "skipped": skipped, "failed": failed}
 
     async def _apply_tags() -> dict[str, Any]:
-        from lumirss.tags import TagInvalid
+        from lumirss.tags import TagInvalid, normalize_tag_name
 
         payload = components.get("tags") or {}
         store = TagStore(db)
         added = skipped = failed = 0
+        # FIX-330：跳过项的 (tag, itemRef) 原行定位（有界样本 ≤50，
+        # 计数本身不受限）——跳过不再冒充新增，用户可定位到原始行。
+        skipped_rows: list[dict[str, str]] = []
+
+        def _record_skip(tag: str, ref: str) -> None:
+            skipped_rows.append({"tag": tag, "itemRef": ref})
+
         for binding in payload.get("bindings") or []:
             name = str(binding.get("tag") or "").strip()
             if not name:
                 continue
             for ref in (binding.get("itemRefs") or [])[:_MAX_IMPORT_ATTEMPTS]:
                 try:
+                    # 先查后挂（与 attach 同口径：NFC 规范名 + NOCASE 查找
+                    # + origin 作用域存在性）：已存在的绑定按 skipped 计数，
+                    # 不再依赖「attach 幂等原样返回」把跳过算成新增。
+                    clean = normalize_tag_name(name)
+                    tag_row = await db.fetch_one(
+                        "SELECT id FROM tags WHERE name = ? COLLATE NOCASE",
+                        (clean,),
+                    )
+                    if tag_row is not None:
+                        bound = await db.fetch_one(
+                            "SELECT 1 FROM item_tags WHERE item_ref = ? AND tag_id = ? AND origin = 'manual'",
+                            (str(ref), int(tag_row["id"])),
+                        )
+                        if bound is not None:
+                            skipped += 1
+                            if len(skipped_rows) < 50:
+                                _record_skip(clean, str(ref))
+                            continue
                     await store.attach(str(ref), name)
-                    added += 1  # attach 幂等：重复绑定原样返回，不产生重复行
+                    added += 1
                 except TagInvalid:
                     skipped += 1
+                    if len(skipped_rows) < 50:
+                        _record_skip(name, str(ref))
                 except Exception:  # noqa: BLE001 — 单条失败继续
                     failed += 1
-        return {"added": added, "skipped": skipped, "failed": failed}
+        return {
+            "added": added,
+            "skipped": skipped,
+            "failed": failed,
+            "skippedRows": skipped_rows,
+        }
 
     async def _apply_workspaces() -> dict[str, Any]:
         payload = components.get("workspaces") or {}
