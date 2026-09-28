@@ -11,6 +11,7 @@ import asyncio
 import contextlib
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -344,3 +345,196 @@ def test_lease_table_stays_bounded_expired_rows_swept(tmp_path):
     assert run(count_rows()) == 1, "expired rows are swept on acquire"
 
 
+# ---- 4. two concurrent schedulers on ONE db: once per window ----------------
+
+
+def test_two_concurrent_digest_schedulers_send_once_per_window(tmp_path):
+    """Lease proof at the digest level: scheduler A holds the window
+    mid-send; concurrent scheduler B (second Database handle on the same
+    file) must not send; after A completes, the same-hour tick is a no-op
+    (last_sent_at + released lease) — exactly one send per window."""
+    from lumirss.mail_digest import DigestScheduler, DigestStore
+    from lumirss.secrets_store import SecretsStore
+
+    async def scenario():
+        db_a = await _tmp_db_async(tmp_path, "digest.sqlite")
+        db_b = Database(tmp_path / "digest.sqlite")
+        store = DigestStore(db_a, SecretsStore(tmp_path / "secrets.json"))
+        await store.save({"enabled": True, "hour": 8, "timezone": "UTC"})
+
+        fixed = datetime(2026, 9, 28, 8, 10, tzinfo=ZoneInfo("UTC"))
+        scope = "digest:2026-09-28T08"
+        sent: list[str] = []
+        entered = asyncio.Event()
+        release = asyncio.Event()
+        b_result: dict[str, object] = {}
+
+        async def send_a() -> None:
+            sent.append("a")
+            entered.set()
+            await release.wait()
+            await db_a.execute(
+                "UPDATE digest_settings SET last_sent_at = ? WHERE id = 1",
+                (fixed.isoformat(),),
+            )
+
+        async def send_b() -> None:
+            sent.append("b")
+
+        sched_a = DigestScheduler(db_a, clock=_frozen_wall(fixed))
+        sched_b = DigestScheduler(db_b, clock=_frozen_wall(fixed))
+
+        async def run_b() -> None:
+            b_result["value"] = await sched_b.maybe_send(send_b)
+
+        task_a = asyncio.create_task(sched_a.maybe_send(send_a))
+        task_b = asyncio.create_task(run_b())
+        await entered.wait()  # A holds the lease, mid-send
+        await asyncio.wait_for(task_b, timeout=5.0)
+        assert b_result["value"] is None, "live lease blocks the second owner"
+        assert sent == ["a"], "no double send while the window is leased"
+
+        release.set()
+        await asyncio.wait_for(task_a, timeout=5.0)
+
+        # window closed: same-hour tick is a no-op on either handle
+        sched_c = DigestScheduler(db_b, clock=_frozen_wall(fixed))
+        await sched_c.maybe_send(send_b)
+        assert sent == ["a"], "one send per window, even after the lease freed"
+
+        probe = RuntimeLeases(db_a)
+        assert await probe.inspect(scope) is None, "lease released after send"
+
+    run(scenario())
+
+
+def test_two_concurrent_gpt_schedulers_generate_once_per_issue(tmp_path):
+    """Same proof for the GPT digest scheduler: the issue-key existence
+    check alone is TOCTOU across processes; the lease makes the window
+    exclusive while generation runs."""
+    from lumirss.gpt_digest import GptDigestScheduler
+    from lumirss.gpt_digest_configs import GptDigestConfigStore
+    from lumirss.gpt_digest_issues import GptDigestIssuesStore
+
+    async def scenario():
+        db_a = await _tmp_db_async(tmp_path, "gpt.sqlite")
+        db_b = Database(tmp_path / "gpt.sqlite")
+        configs = GptDigestConfigStore(db_a)
+        created = await configs.create_config(
+            {"name": "日报", "hour": 8, "timezone": "UTC"}
+        )
+        await configs.update_config(int(created["id"]), {"enabled": True})
+        config = await configs.get_config(int(created["id"]))
+        assert config is not None
+        issues = GptDigestIssuesStore(db_a)
+
+        fixed = datetime(2026, 9, 28, 8, 5, tzinfo=ZoneInfo("UTC"))
+        generated: list[str] = []
+        entered = asyncio.Event()
+        release = asyncio.Event()
+        b_result: dict[str, object] = {}
+
+        async def generate_a(plan):
+            generated.append(plan.issue_key)
+            entered.set()
+            await release.wait()
+            await issues.upsert_issue(
+                config_id=int(config["id"]),
+                issue_key=plan.issue_key,
+                title="t",
+                body_html="",
+                sections_json="[]",
+                refs_json="{}",
+                model="m",
+                published_at=fixed.isoformat(),
+            )
+            return {"issue_key": plan.issue_key}
+
+        async def generate_b(plan):
+            generated.append(f"b:{plan.issue_key}")
+            return {"issue_key": plan.issue_key}
+
+        sched_a = GptDigestScheduler(db_a, clock=_frozen_wall(fixed))
+        sched_b = GptDigestScheduler(db_b, clock=_frozen_wall(fixed))
+
+        async def run_b() -> None:
+            b_result["value"] = await sched_b.maybe_generate_config(
+                generate_b, config, issues
+            )
+
+        task_a = asyncio.create_task(
+            sched_a.maybe_generate_config(generate_a, config, issues)
+        )
+        task_b = asyncio.create_task(run_b())
+        await entered.wait()
+        await asyncio.wait_for(task_b, timeout=5.0)
+        assert b_result["value"] is None, "live lease blocks the second owner"
+        assert generated == ["2026-09-28"], "only A ran; B never generated"
+        assert len(generated) == 1
+
+        release.set()
+        await asyncio.wait_for(task_a, timeout=5.0)
+
+        sched_c = GptDigestScheduler(db_b, clock=_frozen_wall(fixed))
+        again = await sched_c.maybe_generate_config(generate_b, config, issues)
+        assert again is None, "issue exists → the window never re-runs"
+        assert len(generated) == 1
+
+    run(scenario())
+
+
+def test_crashed_owner_lease_takeover_without_double_run(tmp_path):
+    """Crash/restart: the crashed process leaves its lease behind (no
+    release). While it is LIVE, the restarted scheduler must not run the
+    window again; once EXPIRED, the next tick takes the window over and
+    runs exactly once."""
+    from lumirss.mail_digest import DigestScheduler, DigestStore
+    from lumirss.secrets_store import SecretsStore
+
+    async def scenario():
+        db = await _tmp_db_async(tmp_path, "crash.sqlite")
+        store = DigestStore(db, SecretsStore(tmp_path / "secrets.json"))
+        await store.save({"enabled": True, "hour": 8, "timezone": "UTC"})
+
+        t0 = datetime(2026, 9, 28, 8, 0, tzinfo=UTC)
+        scope = "digest:2026-09-28T08"
+        crashed_clock = _LeaseClock(t0)
+        crashed = RuntimeLeases(
+            db,
+            ttl_seconds=60,
+            owner="crashed-process",
+            now_fn=crashed_clock,
+        )
+        # the process died right after acquiring — no release ever runs
+        assert await crashed.acquire(scope) is True
+
+        sent: list[str] = []
+
+        async def send() -> None:
+            # the real send path records last_sent_at (mark_sent) — the
+            # restarted owner closes the window by the same rule
+            sent.append("x")
+            await db.execute(
+                "UPDATE digest_settings SET last_sent_at = ? WHERE id = 1",
+                ("2026-09-28T08:05:00+00:00",),
+            )
+
+        tick_clock = _LeaseClock(t0)
+        restarted = DigestScheduler(
+            db,
+            clock=_frozen_wall(datetime(2026, 9, 28, 8, 5, tzinfo=ZoneInfo("UTC"))),
+            leases=RuntimeLeases(
+                db, ttl_seconds=60, owner="restarted", now_fn=tick_clock
+            ),
+        )
+
+        await restarted.maybe_send(send)
+        assert sent == [], "live stale lease must not be stolen"
+
+        tick_clock.advance(120)  # beyond the 60s TTL — crash recovery
+        await restarted.maybe_send(send)
+        assert sent == ["x"], "expired lease is takeable exactly once"
+        await restarted.maybe_send(send)
+        assert sent == ["x"], "post-takeover the owner holds the window"
+
+    run(scenario())

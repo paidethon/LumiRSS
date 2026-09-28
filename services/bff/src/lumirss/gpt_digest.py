@@ -1902,17 +1902,25 @@ class GptDigestScheduler:
     ``last_issue_key``（配置时区墙钟日期）保证重启/错过时刻后的幂等补跑
     ——错过 08:00 的进程在 08:04 重启后仍会生成当天期号，但同一天绝不
     重复调度发布（同日重复生成只作为显式修订动作存在）。并发由进程内
-    busy 标志 + issue_key UNIQUE 双层约束。``generate_fn`` 由调用方注入
+    busy 标志 + 持久化窗口租约（ARCH-08，migration 0140）+ issue_key
+    UNIQUE 三层约束。``generate_fn`` 由调用方注入
     （与 mail_digest.maybe_send(send_fn) 相同的接法），本模块不做 FastAPI
     依赖反向导入。
 
     F02：多时点配置（slots）由 :func:`plan_run` 计算最近到期时点；
     是否已生成以期刊存在性为准（比标记更鲁棒）。"""
 
-    def __init__(self, db: Any, *, clock: Any = None) -> None:
+    def __init__(
+        self, db: Any, *, clock: Any = None, leases: Any = None
+    ) -> None:
         self._db = db
         self._busy = False
         self._clock = clock
+        if leases is None:
+            from lumirss.runtime import RuntimeLeases
+
+            leases = RuntimeLeases(db)
+        self._leases = leases
 
     def _now(self, timezone: str) -> datetime:
         if self._clock is not None:
@@ -1974,11 +1982,19 @@ class GptDigestScheduler:
             # backfill（默认）：按原期号/原窗口补生成。
         elif await issues.get_issue(int(config["id"]), plan.issue_key) is not None:
             return None
+        # ARCH-08：真正生成前按「配置 × 期号」取持久化窗口租约。期刊
+        # 存在性检查跨进程是 TOCTOU 的（两个进程都可能在对方落库前通过
+        # 检查），租约让同一窗口只有一个 owner 生成；崩溃进程的过期租约
+        # 可被后续 tick 接管（migration 0140）。
+        scope = f"gpt-digest:{int(config['id'])}:{plan.issue_key}"
+        if not await self._leases.acquire(scope):
+            return None
         self._busy = True
         try:
             return await generate_fn(plan)
         finally:
             self._busy = False
+            await self._leases.release(scope)
 
 
 _SCHEDULE_TICK_SECONDS = 300
