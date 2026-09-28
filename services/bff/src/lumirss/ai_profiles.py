@@ -132,8 +132,14 @@ class PurposeAiSettings:
             self._purpose, values, env_api_key=""
         )
         if effective.source == "profile":
+            # FIX-141: the PROVIDER is part of the single runtime config
+            # source. Without this override a ``gemini`` profile would
+            # execute GeminiProvider while cache identities, stored rows
+            # and the drift check record the global openai_compatible —
+            # config and actually-running provider would disagree.
             return {
                 **values,
+                KEY_PROVIDER: effective.provider,
                 KEY_BASE_URL: effective.base_url,
                 KEY_MODEL: effective.model,
             }

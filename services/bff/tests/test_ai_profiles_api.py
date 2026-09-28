@@ -259,6 +259,115 @@ def test_disabled_profile_falls_back_to_default(tmp_path):
         assert status["purposeStatus"]["translation"]["source"] == "default"
 
 
+# ---- FIX-141: one runtime config source for purpose-resolved AI ----------
+
+
+def test_purpose_view_surfaces_profile_provider_for_translation(tmp_path):
+    """FIX-141: ``PurposeAiSettings.load()`` is the single config source
+    the translation services read; it must surface the mapped profile's
+    PROVIDER too — not only base URL/model. Otherwise a ``gemini``
+    translation profile executes GeminiProvider while the cache identity,
+    stored rows and the FIX-304 drift check all record the global
+    ``openai_compatible`` — config and actually-running provider disagree."""
+    from lumirss.ai_profiles import AiProfileStore, PurposeAiSettings
+    from lumirss.ai_settings import (
+        GEMINI_BASE_URL,
+        KEY_BASE_URL,
+        KEY_MODEL,
+        KEY_PROVIDER,
+        AiSettingsStore,
+    )
+
+    db = Database(tmp_path / "lumi.sqlite")
+    run(db.migrate())
+    settings = AiSettingsStore(db)
+    profiles = AiProfileStore(db, SecretsStore(tmp_path / "secrets.json"))
+    profile = run(
+        profiles.create_profile(
+            label="Gemini 翻译", provider="gemini", model="gemini-flash"
+        )
+    )
+    profiles.set_profile_key(profile["id"], FAKE_KEY)
+    run(profiles.save_purposes({"translation": profile["id"]}))
+
+    values = run(PurposeAiSettings(settings, profiles, "translation").load())
+    assert values[KEY_PROVIDER] == "gemini"
+    assert values[KEY_MODEL] == "gemini-flash"
+    assert values[KEY_BASE_URL] == GEMINI_BASE_URL
+
+
+def test_segment_translation_route_uses_translation_profile_end_to_end(
+    client, monkeypatch
+):
+    """FIX-141 (route level): with the translation purpose mapped to a
+    profile and the GLOBAL base URL/model EMPTY, the bilingual segment
+    generate route must run the PROFILE — one runtime config source, the
+    same resolution its provider factory performs — instead of failing
+    with "AI is not configured". The verification endpoint must resolve
+    the SAME effective model, so generated segments show up there too
+    (pre-fix it keyed lookups under the empty global model)."""
+    import httpx
+
+    from lumirss.entryref import encode_entry_ref
+
+    monkeypatch.setenv("LUMIRSS_FETCH_ALLOW_PRIVATE_HOSTS", "127.0.0.1,ai.local")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {"message": {"content": "<<<BLOCK 7>>>\n列表项译文。"}}
+                ]
+            },
+        )
+
+    monkeypatch.setattr(
+        app.state,
+        "http_client",
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        raising=False,
+    )
+    # 清掉可能被先前用例缓存的服务槽位（无身份请求会缓存到 app.state）。
+    app.state.segment_translation_service = None
+
+    profile = _create_profile(
+        client,
+        label="DeepSeek 翻译",
+        baseUrl="http://ai.local/v1",
+        model="profile-model",
+    )
+    put_key = client.put(
+        f"/api/v1/settings/ai/profiles/{profile['id']}/secret",
+        json={"value": FAKE_KEY},
+    )
+    assert put_key.status_code == 204
+    put_purpose = client.put(
+        "/api/v1/settings/ai/purposes", json={"translation": profile["id"]}
+    )
+    assert put_purpose.status_code == 200
+
+    entry_ref = encode_entry_ref(
+        "tag:google.com,2005:reader/item/0000000000000001"
+    )
+    response = client.post(
+        f"/api/v1/entries/{entry_ref}/translation/segments/generate",
+        json={"blocks": [{"index": 7, "text": "List item text."}]},
+    )
+    assert response.status_code == 200, response.text
+    segments = response.json()["segments"]
+    assert [s["status"] for s in segments] == ["success"]
+    assert segments[0]["translatedText"] == "列表项译文。"
+
+    verify = client.get(
+        f"/api/v1/entries/{entry_ref}/translation-verification"
+    )
+    assert verify.status_code == 200, verify.text
+    blocks = verify.json()["blocks"]
+    assert blocks, "verification must resolve the same effective model"
+    assert blocks[0]["verifiable"] is True
+
+
 def test_manual_trigger_only_get_routes_never_build_a_provider(tmp_path):
     """Reading status/settings/profiles must never require or touch a key
     beyond boolean flags — GET /settings/ai works with zero config."""

@@ -532,3 +532,168 @@ def test_retry_after_partial_batch_success_reruns_only_failed_blocks(tmp_path):
     assert "<<<BLOCK 0>>>" not in seen_prompts[-1]
     assert [s.status for s in retry] == ["success"] * 4
     assert [s.cached for s in retry] == [True, True, True, False]
+
+
+# ---------------------------------------------------------------------------
+# FIX-141: 单一运行时配置源——分段翻译与 provider 工厂读同一份配置
+# ---------------------------------------------------------------------------
+
+
+def test_segment_generate_resolves_translation_profile_single_source(tmp_path):
+    """FIX-141: the bilingual segment path must resolve ONE runtime config
+    — the translation-purpose view — the same source its provider factory
+    resolves. With a purpose-mapped profile and the GLOBAL base URL/model
+    left EMPTY, generation must run the profile (never a false
+    "AI is not configured") and key cache rows under the PROFILE's model —
+    the same model the settings UI reports for the translation purpose."""
+    from lumirss.ai_profiles import AiProfileStore, PurposeAiSettings
+    from lumirss.ai_settings import AiSettingsStore
+
+    captured: dict[str, str] = {}
+    calls = {"n": 0}
+
+    async def factory(base_url, model):
+        calls["n"] += 1
+        captured["base_url"] = base_url
+        captured["model"] = model
+
+        class FakeProvider:
+            async def complete(self, messages):
+                return f"{_marker(7)}\n列表项译文。"
+
+        return FakeProvider()
+
+    db = Database(tmp_path / "lumi.sqlite")
+    run(db.migrate())
+    settings = AiSettingsStore(db)
+    secrets = SecretsStore(tmp_path / "secrets.json")
+    profiles = AiProfileStore(db, secrets)
+    profile = run(
+        profiles.create_profile(
+            label="DeepSeek 翻译",
+            base_url="http://127.0.0.1:9999/v1",
+            model="profile-model",
+        )
+    )
+    profiles.set_profile_key(profile["id"], "sk-" + "fixture-key")
+    run(profiles.save_purposes({"translation": profile["id"]}))
+
+    service = SegmentTranslationService(
+        db=db,
+        settings_store=PurposeAiSettings(settings, profiles, "translation"),
+        provider_factory=factory,
+        secrets=secrets,
+    )
+    blocks = [SegmentInput(index=7, text="List item text.")]
+    states = run(service.generate("e1.fix141", blocks))
+    assert [s.status for s in states] == ["success"]
+    # provider 实际拿到的就是 profile 的 base URL/model。
+    assert captured == {
+        "base_url": "http://127.0.0.1:9999/v1",
+        "model": "profile-model",
+    }
+    # 缓存行键入的 model 是 profile 的 model（实际执行的模型）。
+    row = run(
+        db.fetch_one("SELECT model FROM ai_translation_segments WHERE entry_ref = ?",
+                     ("e1.fix141",))
+    )
+    assert row is not None
+    assert row["model"] == "profile-model"
+    # 同一用途视图再次生成 → 精确缓存命中，零新增 provider 调用。
+    again = run(service.generate("e1.fix141", blocks))
+    assert again[0].cached is True
+    assert calls["n"] == 1
+
+
+# ---------------------------------------------------------------------------
+# FIX-143（基线核验）：结构块往返——列表/表格/引用的对齐不破坏结构
+# ---------------------------------------------------------------------------
+
+
+def test_block_structure_round_trip_list_table_quote(tmp_path):
+    """FIX-143 baseline: bilingual pairing rests on EXPLICIT block
+    identity end-to-end — the server never re-segments, reorders or
+    re-pairs paragraphs. A source document containing a list, a table
+    and a blockquote (segmented the way the browser annotates: one block
+    per outermost block-level element; list items and table-cell
+    paragraphs as their own blocks; the blockquote as ONE block) must
+    round-trip with each translation attached to exactly its own block —
+    multi-line translations included, no cross-block bleed, no
+    renumbering, no structural reassembly.
+
+    DOM structure itself is owned client-side (annotateBlocks /
+    textContent-only overlay); this pins the server contract that makes
+    structure preservation possible."""
+    from lumirss.ai_settings import AiSettingsStore
+
+    db = Database(tmp_path / "lumi.sqlite")
+    run(db.migrate())
+    settings = AiSettingsStore(db)
+    service = SegmentTranslationService(
+        db=db,
+        settings_store=settings,
+        provider_factory=None,  # replaced below
+        secrets=SecretsStore(tmp_path / "secrets.json"),
+    )
+
+    async def factory(base_url, model):
+        class FakeProvider:
+            async def complete(self, messages):
+                import re
+
+                user_prompt = messages[1]["content"]
+                indexes = [
+                    int(m)
+                    for m in re.findall(r"<<<BLOCK (\d+)>>>", user_prompt)
+                ]
+                # 每块译文携带自己的索引与块内多行结构（如引用块的两行、
+                # 列表项的换行）——配对绝不依赖换行数或顺序猜测。
+                return "\n\n".join(
+                    f"<<<BLOCK {i}>>>\n第{i}块译文。\n第二行结构内容。"
+                    for i in indexes
+                )
+
+        return FakeProvider()
+
+    service._provider_factory = factory  # noqa: SLF001 — 测试注入点
+    run(settings.save(AiSettingsUpdate(baseUrl="http://ai.local/v1", model="m1")))
+
+    blocks = [
+        SegmentInput(index=0, text="Intro paragraph."),
+        # 无序列表：每个 li 是自己的块（索引按文档顺序由浏览器分配）。
+        SegmentInput(index=1, text="List item one."),
+        SegmentInput(index=2, text="List item two."),
+        SegmentInput(index=3, text="List item three."),
+        # 表格：td/th 本身不产生块，单元格内 <p> 是块（表格结构保留）。
+        SegmentInput(index=4, text="Cell paragraph."),
+        # 引用：blockquote 是一个块（内部嵌套段落由外层整块代表）。
+        SegmentInput(index=5, text="Quoted line one. Quoted line two."),
+    ]
+
+    states = run(service.generate("e1.fix143", blocks))
+    assert [s.status for s in states] == ["success"] * 6
+    for i, state in enumerate(states):
+        assert state.index == i
+        assert state.translated_text == f"第{i}块译文。\n第二行结构内容。"
+
+    # 只读 lookup：pair 仍按块号原样回挂（多行译文不被重排/拼接）。
+    again = run(service.lookup("e1.fix143", blocks))
+    for i, state in enumerate(again):
+        assert state.status == "success"
+        assert state.index == i
+        assert state.translated_text == f"第{i}块译文。\n第二行结构内容。"
+
+    # 落库事实：每行 (block_index, source_text, translated_text) 一一
+    # 对应——右侧块拿到右侧 pair，无任何跨块串写。
+    rows = run(
+        db.fetch_all(
+            "SELECT block_index, source_text, translated_text FROM "
+            "ai_translation_segments WHERE entry_ref = ? ORDER BY block_index",
+            ("e1.fix143",),
+        )
+    )
+    assert [r["block_index"] for r in rows] == [0, 1, 2, 3, 4, 5]
+    for row in rows:
+        i = row["block_index"]
+        assert row["source_text"].startswith(blocks[i].text[:10])
+        assert row["translated_text"] == f"第{i}块译文。\n第二行结构内容。"

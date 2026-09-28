@@ -316,13 +316,19 @@ def _get_secrets_store(request: Request) -> SecretsStore:
 
 
 def _get_segment_service(request: Request) -> SegmentTranslationService:
-    """Block-aligned translation (bilingual views); purpose='translation'."""
+    """Block-aligned translation (bilingual views); purpose='translation'.
+
+    FIX-141: settings come from the SAME purpose-aware view the provider
+    factory resolves — one runtime config source. The plain global store
+    here made the bilingual path key cache rows (and gate configuration)
+    on the global model while the provider factory actually executed the
+    translation-purpose profile."""
     return _cached_on_app_state(
         request,
         "segment_translation_service",
         lambda: SegmentTranslationService(
             db=request.app.state.db,
-            settings_store=_get_ai_settings_store(request),
+            settings_store=_purpose_settings(request, "translation"),
             provider_factory=_provider_factory_for(request, "translation"),
             secrets=request.app.state.secrets_store,
         ),

@@ -143,3 +143,58 @@ def test_f23_empty_output_rejected(client):
         pass
     else:
         raise AssertionError("empty output should raise")
+
+
+def test_f23_title_cache_ignores_glossary_bump_but_keys_model_and_prompt(
+    client,
+):
+    """FIX-144（验证另一半口径）：标题翻译的 prompt 不附带术语表，因此
+    术语写操作**不得**让它失效；而 model + prompt_version 保持键入
+    （换模型必须重新翻译）。两条断言共同钉住「键维度 = prompt 实际
+    依赖」这一单一口径。"""
+    from lumirss.glossary import bump_glossary_version
+
+    provider = _FakeProvider(["Translated Title", "另一个模型的标题"])
+    service = _service()
+    entry_ref = "e1.MDAwNjU5ZTA3YWFlZTI0ZA"
+
+    first = run(
+        service.translate(
+            _FakeAdapter("Stable Title"),
+            _FakeAiSettings(),
+            _ok(provider),
+            entry_ref,
+            "en",
+        )
+    )
+    assert first["cached"] is False and provider.calls == 1
+
+    # 术语写操作：标题缓存必须原样命中（prompt 无术语表维度）。
+    run(bump_glossary_version(app.state.db))
+    hit = run(
+        service.translate(
+            _FakeAdapter("Stable Title"),
+            _FakeAiSettings(),
+            _ok(provider),
+            entry_ref,
+            "en",
+        )
+    )
+    assert hit["cached"] is True and provider.calls == 1
+
+    # 换模型：缓存身份含 model → 重新翻译，绝不复用旧模型结果。
+    class _OtherModelSettings(_FakeAiSettings):
+        async def load(self):
+            return {"ai.base_url": "http://ai.local", "ai.model": "other-model"}
+
+    other = run(
+        service.translate(
+            _FakeAdapter("Stable Title"),
+            _OtherModelSettings(),
+            _ok(provider),
+            entry_ref,
+            "en",
+        )
+    )
+    assert other["cached"] is False and provider.calls == 2
+    assert other["model"] == "other-model"

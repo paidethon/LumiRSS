@@ -12,6 +12,9 @@ from lumirss.ai_profiles import (
 )
 from lumirss.ai_settings import (
     KEY_BASE_URL,
+    KEY_LIBRETRANSLATE_CHECKED_AT,
+    KEY_LIBRETRANSLATE_DIAGNOSTIC,
+    KEY_LIBRETRANSLATE_STATUS,
     KEY_LIBRETRANSLATE_URL,
     KEY_MODEL,
     KEY_PROVIDER,
@@ -65,6 +68,14 @@ async def _ai_settings_json(
         "translationLanguage": values[KEY_TRANSLATION_LANGUAGE],
         "translationEngine": values[KEY_TRANSLATION_ENGINE],
         "libretranslateUrl": values[KEY_LIBRETRANSLATE_URL],
+        # FIX-142：实际能力状态（最近一次有界探测）；untested = 从未探测。
+        # 配置存在 ≠ 可用；stale 由 checkedAt 如实暴露。
+        "libretranslateStatus": values[KEY_LIBRETRANSLATE_STATUS]
+        or "untested",
+        "libretranslateCheckedAt": values[KEY_LIBRETRANSLATE_CHECKED_AT]
+        or None,
+        "libretranslateDiagnostic": values[KEY_LIBRETRANSLATE_DIAGNOSTIC]
+        or None,
         "quotaWindow": values[KEY_QUOTA_WINDOW],
         "quotaMaxCalls": int(values[KEY_QUOTA_MAX_CALLS] or "0"),
         "libretranslateKeyConfigured": bool(
@@ -253,6 +264,8 @@ class LibreTranslateTestResult(BaseModel):
 
     status: Literal["ok", "failed"]
     message: str | None = None
+    # FIX-142：探测时间随响应返回（与设置视图中的 checkedAt 同源）。
+    checkedAt: str | None = None
 
 
 @router.post(
@@ -260,22 +273,39 @@ class LibreTranslateTestResult(BaseModel):
     response_model=LibreTranslateTestResult,
 )
 async def test_libretranslate(request: Request) -> dict[str, object]:
-    """Probe the configured LibreTranslate server (GET /languages)."""
-    values = await _get_ai_settings_store(request).load()
+    """Bounded capability probe (GET /languages) — FIX-142.
+
+    The outcome is PERSISTED so the settings view can report an ACTUAL
+    capability state (ok/failed + checkedAt + diagnostic) instead of a
+    config-exists-only "enabled". A stale state stays honest through its
+    checkedAt; a GET never probes (no hidden upstream calls)."""
+    store = _get_ai_settings_store(request)
+    values = await store.load()
     base = values[KEY_LIBRETRANSLATE_URL]
     if not base:
-        return {"status": "failed", "message": "LibreTranslate 服务地址未配置。"}
-    try:
-        response = await request.app.state.http_client.get(
-            f"{base}/languages", timeout=10.0
-        )
-        response.raise_for_status()
-        languages = response.json()
-        if not isinstance(languages, list):
-            raise ValueError("unexpected payload")
-        return {"status": "ok", "message": f"连接成功（{len(languages)} 种语言）。"}
-    except Exception:
-        return {"status": "failed", "message": "连接失败：BFF 无法访问该地址或服务未就绪。"}
+        status, message = "failed", "LibreTranslate 服务地址未配置。"
+    else:
+        try:
+            response = await request.app.state.http_client.get(
+                f"{base}/languages", timeout=10.0
+            )
+            response.raise_for_status()
+            languages = response.json()
+            if not isinstance(languages, list):
+                raise ValueError("unexpected payload")
+            status = "ok"
+            message = f"连接成功（{len(languages)} 种语言）。"
+        except Exception:
+            status = "failed"
+            message = "连接失败：BFF 无法访问该地址或服务未就绪。"
+    checked_at = await store.record_libretranslate_probe(
+        status=status, diagnostic=message
+    )
+    return {
+        "status": status,
+        "message": message,
+        "checkedAt": checked_at,
+    }
 
 
 @router.get("/api/v1/settings/ai/profiles", response_model=list[AiProfile])

@@ -353,3 +353,78 @@ def test_model_change_between_resolve_and_generate_supersedes_old_run(tmp_path):
         db.fetch_one("SELECT * FROM ai_translations WHERE entry_ref = ?", (VALID_REF,))
     )
     assert row is None
+
+
+# ---- FIX-144: 术语表版本是整篇翻译缓存身份的一部分 ----
+
+
+def test_glossary_version_bump_invalidates_cached_translation(tmp_path):
+    """FIX-144: the whole-article (page-level) translation attaches the
+    LIVE glossary block to its prompt, so its cache identity must include
+    the glossary version — otherwise a glossary edit keeps serving the
+    OLD translation (stale result misattributed to the new glossary).
+    The per-block bilingual path already keys on glossary_version
+    (FIX-305); this pins the same keying on the page-level path."""
+    from lumirss.glossary import bump_glossary_version
+
+    provider = FakeProvider()
+    db, _adapter, _fake, service = wire(tmp_path, provider=provider)
+    configure(db)
+
+    first = run(service.generate_translation(VALID_REF))
+    assert first.status == "success"
+    assert provider.calls == 1
+
+    # 术语写操作推进 glossary_version（与 0083 分段缓存同一语义）。
+    run(bump_glossary_version(db))
+
+    second = run(service.generate_translation(VALID_REF))
+    assert second.cached is False
+    assert provider.calls == 2  # 旧缓存结果未被误复用，重新翻译
+
+    # 同一版本内重复生成 → 精确缓存命中（零新增 provider 调用）。
+    third = run(service.generate_translation(VALID_REF))
+    assert third.cached is True
+    assert provider.calls == 2
+
+
+def test_glossary_drift_between_resolve_and_generate_supersedes(tmp_path):
+    """FIX-144: a glossary write landing between identity resolution and
+    the generation step must supersede the run (same FIX-304 honesty) —
+    the executed prompt's glossary must equal the version the row is
+    keyed under."""
+    from lumirss.ai_provider import AiUpstreamError
+    from lumirss.glossary import bump_glossary_version
+
+    class BumpingStore:
+        """load() #1 正常（identity resolve）；_generate 内第二次 load 后
+        推进术语表版本。"""
+
+        def __init__(self, inner, db) -> None:
+            self._inner = inner
+            self._db = db
+            self.loads = 0
+
+        async def load(self):
+            self.loads += 1
+            values = await self._inner.load()
+            if self.loads >= 2:
+                await bump_glossary_version(self._db)
+            return values
+
+    provider = FakeProvider()
+    db, adapter, _fake, service = wire(tmp_path, provider=provider)
+    configure(db)
+    service = TranslationService(
+        db=db,
+        adapter=adapter,
+        settings_store=BumpingStore(AiSettingsStore(db), db),
+        provider_factory=_async_provider(provider),
+    )
+    with pytest.raises(AiUpstreamError):
+        run(service.generate_translation(VALID_REF))
+    assert provider.calls == 0  # 零 provider 调用、零落行
+    row = run(
+        db.fetch_one("SELECT * FROM ai_translations WHERE entry_ref = ?", (VALID_REF,))
+    )
+    assert row is None
