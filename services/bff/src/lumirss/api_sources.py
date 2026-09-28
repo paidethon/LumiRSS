@@ -25,6 +25,7 @@ Guardrails (03-report §13/§14):
 import hashlib
 import json
 import secrets as _secrets
+import time
 import urllib.parse
 from dataclasses import dataclass
 from typing import Any
@@ -38,6 +39,7 @@ from lumirss.clip_fetch import (
     ClipForbidden,
     validate_hop,
 )
+from lumirss.entry_intake import TIME_FLAG_FUTURE, classify_published_at
 from lumirss.util import constant_time_equals, utc_now
 
 _MAX_JSON_BYTES = 2 * 1024 * 1024
@@ -365,6 +367,78 @@ async def fetch_json(
 
 # -- Atom generation --------------------------------------------------------
 
+# FIX-238/FIX-239: same far-future tolerance as the N034 projection
+# classifier (entry_intake) — one threshold, two sides of the pipeline.
+_FUTURE_TOLERANCE_SECONDS = 24 * 3600
+
+
+def _is_far_future(value: str, *, now_epoch: float) -> bool:
+    """True when a normalized RFC 3339 value is beyond the tolerance."""
+    return bool(
+        classify_published_at(value, now_epoch=now_epoch) & TIME_FLAG_FUTURE
+    )
+
+
+def _entry_timing(
+    mapped_published: object,
+    *,
+    stable_fallback: str | None,
+    now_epoch: float,
+) -> tuple[str | None, str]:
+    """``(published, updated)`` for one converted entry (FIX-238/FIX-239).
+
+    Explicit ordering-time contract for Lumi-generated Atom feeds:
+
+    - ``published`` is emitted ONLY for a declared date that parses AND is
+      not far-future (> now + 24h). A missing or far-future declared date
+      is marked by the ABSENT ``<published>`` element (the missing-date
+      marker at the conversion boundary) — FreshRSS then derives the
+      entry time from ``<updated>`` alone.
+    - ``updated`` is REQUIRED by Atom and IS the ordering timestamp:
+        * declared date inside the tolerance window → that date verbatim;
+        * far-future declared date → the stable fallback. Forwarding the
+          declared value would park the entry in the future forever and
+          starve the normal timeline (FIX-239), so it is intentionally
+          capped: the entry orders by its stable registration anchor;
+        * missing/unparseable → the same stable fallback. It must NEVER
+          be the moving feed ``<updated>``: that value advances with
+          every content change, so FreshRSS would re-surface the same
+          dateless entry on every refresh cycle (FIX-238).
+    - ``stable_fallback`` is the source's persisted ``created_at`` — the
+      first-registration moment, fixed for the source's lifetime, so the
+      pinned timestamp never moves after first ingest. None (preview,
+      pre-creation) degrades to the conversion moment, which is what the
+      source's ``created_at`` will be seconds later.
+    """
+    normalized = rfc3339(mapped_published)
+    fallback = stable_fallback or utc_now()
+    if normalized is None:
+        return None, fallback
+    if _is_far_future(normalized, now_epoch=now_epoch):
+        return None, fallback
+    return normalized, normalized
+
+
+def _credible_published_candidates(
+    items: list[dict[str, Any]], *, now_epoch: float
+) -> list[str]:
+    """Normalized entry timestamps that may drive the feed clock.
+
+    Far-future declared dates are skipped (not clamped): clamping to the
+    conversion moment would move the feed ``<updated>`` on every pull and
+    break the byte-identical-content → stable-ETag contract."""
+    candidates: list[str] = []
+    for item in items:
+        value = rfc3339(item.get("published"))
+        if value is not None and not _is_far_future(value, now_epoch=now_epoch):
+            candidates.append(value)
+    return candidates
+
+
+def stable_entry_fallback(record: ApiSourceRecord) -> str:
+    """The stable per-source timestamp anchor (``created_at``)."""
+    return rfc3339(record.created_at) or record.created_at
+
 
 def _entry_id(source_uuid: str, item: dict[str, Any]) -> str:
     raw = str(item.get("id"))
@@ -373,16 +447,22 @@ def _entry_id(source_uuid: str, item: dict[str, Any]) -> str:
 
 
 def compute_feed_updated(
-    items: list[dict[str, Any]], prior: str | None, fallback: str
+    items: list[dict[str, Any]],
+    prior: str | None,
+    fallback: str,
+    *,
+    now_epoch: float | None = None,
 ) -> str:
     """Monotonic, content-derived feed timestamp (canonical RFC 3339 UTC).
 
-    Newest entry ``published`` (when it parses), clamped against the
-    persisted prior value so ``updated`` never moves backwards when items
-    age out. Falls back to the source's creation time — never wall-clock —
-    so identical content always renders a byte-identical feed (stable
-    ETag, reliable 304)."""
-    candidates = [rfc3339(item.get("published")) for item in items]
+    Newest credible entry ``published`` (parsed AND not far-future — a
+    single future-dated item must not push the feed clock into the
+    future, FIX-239), clamped against the persisted prior value so
+    ``updated`` never moves backwards when items age out. Falls back to
+    the source's creation time — never wall-clock — so identical content
+    always renders a byte-identical feed (stable ETag, reliable 304)."""
+    epoch = time.time() if now_epoch is None else now_epoch
+    candidates = _credible_published_candidates(items, now_epoch=epoch)
     candidates.append(rfc3339(prior))
     return newest_rfc3339(candidates) or rfc3339(fallback) or utc_now()
 
@@ -393,25 +473,36 @@ def generate_atom(
     feed_updated: str,
     self_base: str,
     max_entries: int = _MAX_ITEMS,
+    *,
+    now_epoch: float | None = None,
 ) -> str:
     """RFC 4287 feed via the shared renderer (stable ids, stdlib escaping).
 
-    Entries get a REQUIRED <updated>: the mapped published timestamp when
-    valid, else the stable feed fallback. Authorship is satisfied at feed
-    level (the source name); rel=self is an absolute IRI under the
-    docker-internal base."""
+    Entries get a REQUIRED <updated> resolved by :func:`_entry_timing`
+    (FIX-238: dateless entries pin to the source's stable created_at,
+    never the moving feed clock; FIX-239: far-future declared dates are
+    capped). Authorship is satisfied at feed level (the source name);
+    rel=self is an absolute IRI under the docker-internal base."""
     feed_self = f"{self_base}{atom_path(source.uuid, source.secret)}"
-    entries = [
-        AtomEntry(
-            entry_id=_entry_id(source.uuid, item),
-            title=str(item.get("title") or "(无标题)"),
-            updated=rfc3339(item.get("published")) or feed_updated,
-            link=str(item["url"]) if item.get("url") else None,
-            published=rfc3339(item.get("published")),
-            content_html=str(item.get("body") or ""),
+    epoch = time.time() if now_epoch is None else now_epoch
+    stable_fallback = stable_entry_fallback(source)
+    entries = []
+    for item in items[:max_entries]:
+        published, updated = _entry_timing(
+            item.get("published"),
+            stable_fallback=stable_fallback,
+            now_epoch=epoch,
         )
-        for item in items[:max_entries]
-    ]
+        entries.append(
+            AtomEntry(
+                entry_id=_entry_id(source.uuid, item),
+                title=str(item.get("title") or "(无标题)"),
+                updated=updated,
+                link=str(item["url"]) if item.get("url") else None,
+                published=published,
+                content_html=str(item.get("body") or ""),
+            )
+        )
     return render_feed(
         feed_id=f"urn:lumirss:apisource:{source.uuid}",
         title=source.name,
@@ -434,27 +525,40 @@ _CONTENT_EXCERPT_LENGTH = 200
 _PREVIEW_UUID = "preview"
 
 
-def preview_atom_entries(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def preview_atom_entries(
+    items: list[dict[str, Any]],
+    *,
+    stable_fallback: str | None = None,
+) -> list[dict[str, Any]]:
     """First ≤3 mapped items in their FINAL Atom-rendered shape.
 
     Uses the exact same id derivation / title fallback / timestamp
-    normalization / content pipeline as :func:`generate_atom`, so what
-    the operator previews is what FreshRSS will ingest. Returns
-    structured dicts (id/title/link/published/contentExcerpt) instead of
-    XML — bounded, no writes anywhere."""
+    contract (:func:`_entry_timing` — FIX-238/239) as :func:`generate_atom`,
+    so what the operator previews is what FreshRSS will ingest. Without a
+    persisted source there is no ``created_at`` yet, so ``stable_fallback``
+    defaults to None and dateless/capped entries resolve to the conversion
+    moment — which is what the created source's ``created_at`` will be.
+    Returns structured dicts (id/title/link/published/contentExcerpt)
+    instead of XML — bounded, no writes anywhere."""
+    now_epoch = time.time()
+    # Same normalization as stable_entry_fallback so preview and ingest
+    # render byte-identical timestamps for the same input.
+    fallback = rfc3339(stable_fallback) if stable_fallback else None
     entries: list[dict[str, Any]] = []
-    feed_updated = newest_rfc3339(
-        [rfc3339(item.get("published")) for item in items[:_PREVIEW_ATOM_LIMIT]]
-    ) or utc_now()
     for item in items[:_PREVIEW_ATOM_LIMIT]:
         body = str(item.get("body") or "")
+        published, updated = _entry_timing(
+            item.get("published"),
+            stable_fallback=fallback,
+            now_epoch=now_epoch,
+        )
         entries.append(
             {
                 "id": _entry_id(_PREVIEW_UUID, item),
                 "title": str(item.get("title") or "(无标题)"),
                 "link": str(item["url"]) if item.get("url") else None,
-                "published": rfc3339(item.get("published")),
-                "updated": rfc3339(item.get("published")) or feed_updated,
+                "published": published,
+                "updated": updated,
                 "contentExcerpt": body[:_CONTENT_EXCERPT_LENGTH],
             }
         )
