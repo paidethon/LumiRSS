@@ -16,7 +16,10 @@ members from the admin console; each invitee activates their own account
 `/activate`), and every account's subscriptions, reading state, library,
 AI settings and FreshRSS binding are fully isolated (control DB + per-user
 DBs, server-derived identity — see docs/decisions/
-0005-invite-multi-account.md). There is no public registration.
+0005-invite-multi-account.md). Onboarding is invite-based by default;
+public registration exists only as an optional instance policy that
+stays OFF unless an admin explicitly enables it (see docs/decisions/
+0006-public-registration.md).
 
 Feature status lives in one place: [docs/ROADMAP.md](docs/ROADMAP.md)
 (implemented / next / deferred). Do not copy feature inventories into
@@ -24,10 +27,10 @@ agent prompts or docs — link instead.
 
 NOT implemented — do not describe these as existing: web clipping browser
 extension, Obsidian write-back (the vault stays read-only), MCP surface,
-PWA push / background sync, public registration / multi-tenant tenancy.
-LumiRSS is small-scale invite-only by design (the operator's own
-deployment, members they personally invited); public-internet hardening
-and multi-tenancy guarantees remain out of scope. All data-protection
+PWA push / background sync, multi-tenant tenancy.
+LumiRSS is small-scale by design (the operator's own deployment, members
+they personally invited); public-internet hardening and multi-tenancy
+guarantees remain out of scope. All data-protection
 rules below (secrets never to the browser, DOMPurify boundary, no Docker
 socket, per-account isolation) still apply exactly as written.
 
@@ -67,6 +70,9 @@ Non-RSS source → RSSHub → FreshRSS
 apps/web/             React Web / PWA (TypeScript, Vite, Tailwind v4)
 services/bff/         FastAPI BFF (Python)
 docs/                 documentation (see docs/README.md)
+e2e/                  production-like e2e stack (compose + smoke fixtures)
+scripts/              repo maintenance scripts (version check, freshrss_pool.sh)
+tests/                deploy/CLI integration tests (shell)
 tools/                progress dashboard
 docker-compose.yml    FreshRSS + RSSHub dev services
 ```
