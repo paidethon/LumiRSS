@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import secrets as _secrets
 
+import pytest
 from fastapi.testclient import TestClient
 
 import lumirss.middleware as middleware
@@ -522,3 +523,207 @@ def test_fix027_rotating_xff_cannot_evade_login_budget(monkeypatch, tmp_path):
             middleware.register_login_failure(peer_a)
         assert not middleware.login_attempts_allowed(peer_a)
         assert middleware.login_attempts_allowed(peer_b)
+
+
+# ---------------------------------------------------------------------------
+# FIX-029 — 2FA/通行密钥失败、取消与钟差场景不得锁死账户，且不降低
+# 已有认证强度。TOTP 按 RFC 6238 自定合理策略接受 ±1 个 30s 窗口
+# （并拒绝 ±2）；失败尝试只烧一次性 pending token/挑战行，绝不产生
+# 账户级锁状态；放弃的 WebAuthn ceremony 留下的挑战行 TTL 自清、
+# 不阻塞后续正常登录。
+
+
+def test_fix029_totp_accepts_adjacent_window_rejects_two_away():
+    import time as _time
+    from datetime import UTC, datetime
+
+    import pyotp
+
+    import lumirss.totp as totp_core
+
+    secret = pyotp.random_base32()
+    totp_obj = pyotp.TOTP(
+        secret, digits=totp_core.TOTP_DIGITS, interval=totp_core.TOTP_STEPS
+    )
+
+    def code_at(epoch: int) -> str:
+        return totp_obj.at(datetime.fromtimestamp(epoch, tz=UTC))
+
+    base = int(_time.time()) // totp_core.TOTP_STEPS * totp_core.TOTP_STEPS
+    step = totp_core.TOTP_STEPS
+    # 当前窗口 / +1 / -1（客户端钟快或钟慢一个窗口）都接受，
+    # 且返回被接受的 slice 供防重放记账。
+    assert totp_core.match_timeslice(secret, code_at(base), now=base) == base // step
+    assert (
+        totp_core.match_timeslice(secret, code_at(base + step), now=base)
+        == base // step + 1
+    )
+    assert (
+        totp_core.match_timeslice(secret, code_at(base - step), now=base)
+        == base // step - 1
+    )
+    # ±2 窗口之外：拒绝（不放宽既有认证强度）。
+    assert totp_core.match_timeslice(secret, code_at(base + 2 * step), now=base) is None
+    assert totp_core.match_timeslice(secret, code_at(base - 2 * step), now=base) is None
+
+
+@pytest.fixture()
+def totp_clock(monkeypatch):
+    """Pin lumirss.totp._now so enable/login slices are deterministic."""
+    import time as _time
+
+    import lumirss.totp as totp_core
+
+    t0 = int(_time.time()) // totp_core.TOTP_STEPS * totp_core.TOTP_STEPS
+    monkeypatch.setattr(totp_core, "_now", lambda: t0)
+    return t0
+
+
+def _enable_totp(client: TestClient, *, at: int) -> str:
+    from _virtual_authenticator import totp_at
+
+    setup = client.post("/api/v1/auth/totp/setup", json={})
+    assert setup.status_code == 200, setup.text
+    secret = setup.json()["secret"]
+    enabled = client.post("/api/v1/auth/totp/enable", json={"code": totp_at(secret, at)})
+    assert enabled.status_code == 200, enabled.text
+    return secret
+
+
+def test_fix029_repeated_totp_failures_do_not_wedge_account(
+    monkeypatch, tmp_path, totp_clock
+):
+    import lumirss.totp as totp_core
+    from _virtual_authenticator import totp_at
+
+    db_path = _session_env(monkeypatch, tmp_path)
+    password = _fake("pw-")
+    with TestClient(app, base_url="http://lumirss.test") as client:
+        _set_owner_password(db_path, password)
+        assert _login(client, password=password).status_code == 200
+        secret = _enable_totp(client, at=totp_clock)
+        login_slice = totp_clock + totp_core.TOTP_STEPS
+
+        def wrong_code() -> str:
+            expected = totp_at(secret, login_slice)
+            return str((int(expected) + 1) % 1_000_000).zfill(6)
+
+        # 两轮「密码步 → 错误验证码 + 同 token 复用」：每轮只烧一次性
+        # pending token（4 次失败，恰在共享暴力破解预算内）。
+        for _ in range(2):
+            challenge = _login(client, password=password)
+            assert challenge.status_code == 200
+            pending = challenge.json()["pendingToken"]
+            bad = client.post(
+                "/api/v1/auth/totp/verify",
+                json={"pendingToken": pending, "code": wrong_code()},
+            )
+            assert bad.status_code == 401
+            # 同一 pending token 复用也无效（一次性语义未变）。
+            replay = client.post(
+                "/api/v1/auth/totp/verify",
+                json={"pendingToken": pending, "code": wrong_code()},
+            )
+            assert replay.status_code == 401
+            assert replay.json()["error"]["type"] == "pending_token_invalid"
+        # 三次错误验证码 + 一次 pending token 重放，全部被拒且只烧
+        # 一次性材料（共享暴力破解预算 4/5，尚可完成一次正确登录）。
+        # 失败没有产生任何账户级锁状态：TOTP 仍开启、恢复码仍在。
+        status = client.get("/api/v1/auth/totp")
+        assert status.status_code == 200
+        assert status.json()["enabled"] is True
+        assert status.json()["recoveryCodesRemaining"] == 8
+        # 正确验证码 + 新 pending token → 立即恢复完整登录（不锁死）。
+        challenge = _login(client, password=password)
+        good = client.post(
+            "/api/v1/auth/totp/verify",
+            json={
+                "pendingToken": challenge.json()["pendingToken"],
+                "code": totp_at(secret, login_slice),
+            },
+        )
+        assert good.status_code == 200, good.text
+        assert good.json()["authenticated"] is True
+        assert client.get("/api/v1/settings").status_code == 200
+
+
+def test_fix029_aborted_webauthn_ceremony_does_not_block_retry(
+    monkeypatch, tmp_path
+):
+    from _virtual_authenticator import VirtualAuthenticator
+
+    db_path = _session_env(monkeypatch, tmp_path)
+    password = _fake("pw-")
+    origin = "http://lumirss.test"
+    with TestClient(app, base_url=origin) as client:
+        _set_owner_password(db_path, password)
+        assert _login(client, password=password).status_code == 200
+        options = client.post("/api/v1/auth/passkeys/options", json={})
+        assert options.status_code == 200
+        authenticator = VirtualAuthenticator(origin=origin, rp_id="lumirss.test")
+        registration = authenticator.make_registration(options.json()["challenge"])
+        done = client.post(
+            "/api/v1/auth/passkeys",
+            json={"label": "钥匙", "challenge": options.json()["challenge"], **registration},
+        )
+        assert done.status_code == 200, done.text
+        client.post("/api/v1/auth/logout")
+
+        def fresh_options():
+            payload = client.post(
+                "/api/v1/auth/passkeys/login/options", json={"username": "owner"}
+            )
+            assert payload.status_code == 200
+            return payload.json()
+
+        # ceremony ①：取了 options 后用户放弃（挑战行残留，TTL 自清）。
+        fresh_options()
+        # ceremony ②：签名验证失败（坏签名）。
+        payload = fresh_options()
+        assertion = authenticator.make_assertion(
+            payload["challenge"], corrupt_signature=True
+        )
+        failed = client.post(
+            "/api/v1/auth/passkeys/login",
+            json={"username": "owner", "challenge": payload["challenge"], **assertion},
+        )
+        assert failed.status_code == 401
+        assert failed.json()["error"]["type"] == "invalid_credentials"
+        # ceremony ③：全新 options + 有效断言 → 立即成功（无锁死、
+        # 无需任何解锁步骤），会话可用。
+        payload = fresh_options()
+        assertion = authenticator.make_assertion(payload["challenge"])
+        ok = client.post(
+            "/api/v1/auth/passkeys/login",
+            json={"username": "owner", "challenge": payload["challenge"], **assertion},
+        )
+        assert ok.status_code == 200, ok.text
+        assert ok.json()["authenticated"] is True
+        assert client.get("/api/v1/settings").status_code == 200
+        # 再来一轮失败→成功：凭据没有被任何失败状态楔住（计数器单调
+        # 语义只约束克隆，不约束失败重试）。
+        payload = fresh_options()
+        assertion = authenticator.make_assertion(
+            payload["challenge"], corrupt_signature=True
+        )
+        assert (
+            client.post(
+                "/api/v1/auth/passkeys/login",
+                json={
+                    "username": "owner",
+                    "challenge": payload["challenge"],
+                    **assertion,
+                },
+            ).status_code
+            == 401
+        )
+        payload = fresh_options()
+        assertion = authenticator.make_assertion(payload["challenge"])
+        again = client.post(
+            "/api/v1/auth/passkeys/login",
+            json={"username": "owner", "challenge": payload["challenge"], **assertion},
+        )
+        assert again.status_code == 200, again.text
+        listing = client.get("/api/v1/auth/passkeys")
+        assert listing.status_code == 200
+        assert len(listing.json()) == 1  # 凭据状态完好，未被标记/移除
