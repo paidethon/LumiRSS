@@ -565,3 +565,43 @@ def test_upstream_429_http_date_retry_after_bounds_next_run(client):
         assert 60 <= waited <= 240, waited  # ≈120s，绝非 3600s 兜底
     finally:
         routes.fetch_json = original
+
+
+# --- FIX-242 基线核验：条件请求状态按来源身份隔离 ---------------------------
+#
+# Lumi BFF 对上游从不发 If-None-Match/If-Modified-Since（条件 GET 由
+# FreshRSS 对 Lumi 的 Atom 发起）；BFF 侧唯一持久化的 validator 是
+# api_sources 行内 etag，键为来源 uuid —— 同一 endpoint 的两个来源
+# 天然不共享条件请求状态。此处核验该隔离真实成立。
+
+
+def test_conditional_get_state_is_scoped_per_source(source_db):
+    from lumirss.api_source_store import ApiSourceStore
+
+    store = ApiSourceStore(source_db)
+    first = _run(
+        store.create(
+            name="源A",
+            endpoint="https://api.example.com/x",
+            items_expr="[*]",
+            field_map={"id": "id", "title": "name"},
+        )
+    )
+    second = _run(
+        store.create(
+            name="源B",
+            endpoint="https://api.example.com/x",
+            items_expr="[*]",
+            field_map={"id": "id", "title": "name"},
+        )
+    )
+    assert first.uuid != second.uuid  # 同 URL 仍是两个来源身份
+    _run(store.mark_success(first.uuid, '"etag-a"', "<atom-a/>", "2026-09-28T00:00:00Z"))
+    fresh_second = _run(store.get(second.uuid))
+    assert fresh_second.etag is None  # A 的 validator 不泄漏给 B
+    assert fresh_second.atom_body is None
+    _run(store.mark_success(second.uuid, '"etag-b"', "<atom-b/>", "2026-09-28T01:00:00Z"))
+    still_first = _run(store.get(first.uuid))
+    updated_second = _run(store.get(second.uuid))
+    assert still_first.etag == '"etag-a"'  # 各自独立、互不覆盖
+    assert updated_second.etag == '"etag-b"'
