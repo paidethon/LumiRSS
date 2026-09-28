@@ -457,7 +457,35 @@ PY
 }
 
 # ---------------------------------------------------------------------------
+# FIX-195 升级锁：同一台机器同时触发两次 ./lumirss update（双击/手动重试
+# 撞上定时任务）绝不允许并发迁移或互相覆盖释放目录。用 flock(2) 独占锁：
+# - 原子性由内核保证（不带 mkdir 锁的 TOCTOU 竞态）；
+# - 崩溃/断电后 fd 随进程关闭、锁自动释放——不存在需要人工清理的"陈旧
+#   锁文件"，下一次运行直接可取（文件里只是 pid 提示，不是锁本身）；
+# - deploy 与 update 共用这把锁（二者都会重建容器、改写 .env.prod）。
+UPDATE_LOCK_FILE=".update.lock"
+
+acquire_update_lock() {
+  if ! command -v flock >/dev/null 2>&1; then
+    # Ubuntu 22.04/24.04 必带 util-linux；缺了就如实降级并提示，不静默。
+    warn "flock not available — concurrent update/deploy runs cannot be prevented (install util-linux)."
+    return 0
+  fi
+  exec 9>>"$UPDATE_LOCK_FILE" || { err "cannot open lock file $UPDATE_LOCK_FILE"; exit 1; }
+  if ! flock -n 9; then
+    local owner
+    owner="$(cat "$UPDATE_LOCK_FILE" 2>/dev/null || echo '?')"
+    err "another lumirss deploy/update is already running (holder pid: ${owner}; lock: $(pwd)/$UPDATE_LOCK_FILE)."
+    err "Concurrent runs could interleave migrations or clobber the release directory — refusing this run."
+    err "If no update is actually running, its lock was already released by the OS — simply retry."
+    exit 1
+  fi
+  # 持有者记录仅用于上面的报错提示；写入失败不影响锁的效力。
+  printf '%s\n' "$$" > "$UPDATE_LOCK_FILE" 2>/dev/null || true
+}
+
 cmd_deploy() {
+  acquire_update_lock   # FIX-195: 与 update 互斥（重建容器/写 .env.prod 的两个入口）
   preflight
   if ((LOW_MEMORY == 1)); then apply_low_memory_preset; fi
   if [[ -n "$AUTH_MODE_ARG" ]]; then apply_auth_mode "$AUTH_MODE_ARG"; fi
@@ -504,6 +532,7 @@ cmd_deploy() {
 }
 
 cmd_update() {
+  acquire_update_lock   # FIX-195: 第二个并发 run 在任何备份/拉取/迁移之前快速失败
   require_env_file
   preflight
   # N196: every stage is reported (running → ok/failed) into

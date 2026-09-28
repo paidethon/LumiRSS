@@ -1084,6 +1084,82 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+echo "== 21. FIX-195: concurrent update is refused fast; crash-leftover lock is takeable =="
+sb="$(new_sandbox)"
+stub_dir="$(mktemp -d)"
+lock1_log="$(mktemp)"; lock2_log="$(mktemp)"
+lock_mark="$(mktemp)"
+cat > "$stub_dir/docker" <<'STUB'
+#!/bin/sh
+cmd="$1"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  info) exit 0;;
+  run) exit 0;;
+  inspect) echo healthy;;
+  ps) exit 0;;
+  compose)
+    # COMPOSE_ARGS precede the subcommand, so match on the whole arg string.
+    case "$*" in
+      *" config"*) echo '{"name": "lumirss-prod", "services": {"bff": {"image": "python:3.12-slim"}}}';;
+      *" pull"*)
+        # widen the window: run #1 holds the update lock inside this pull
+        [ -n "${LUMIRSS_TEST_LOCK_MARK:-}" ] && printf 'pull-started\n' > "$LUMIRSS_TEST_LOCK_MARK"
+        sleep 6
+        echo " Pulled";;
+      *) exit 0;;
+    esac;;
+  *) exit 0;;
+esac
+STUB
+chmod +x "$stub_dir/docker"
+(cd "$sb" && cp -f .env.prod.example .env.prod \
+  && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_LOCK_MARK="$lock_mark" \
+     LUMIRSS_BACKUP_DIR="$sb/backups1" ./lumirss update > "$lock1_log" 2>&1) &
+upd1_pid=$!
+for _ in $(seq 1 100); do [[ -s "$lock_mark" ]] && break; sleep 0.1; done
+if [[ -s "$lock_mark" ]]; then
+  ok "run #1 reached the pull stage (lock held)"
+else
+  bad "run #1 never reached the pull stage (test harness broken)"
+fi
+lock2_rc=0
+t0="$(date +%s%N)"
+(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_BACKUP_DIR="$sb/backups2" \
+   ./lumirss update > "$lock2_log" 2>&1) || lock2_rc=$?
+t1="$(date +%s%N)"
+lock2_ms=$(( (t1 - t0) / 1000000 ))
+assert_eq "run #2 refuses while run #1 holds the lock (non-zero exit)" "1" "$lock2_rc"
+assert_contains "refusal is explicit about the concurrent holder" "already running" "$(cat "$lock2_log")"
+assert_contains "refusal names the lock file" ".update.lock" "$(cat "$lock2_log")"
+if [[ "$lock2_ms" -lt 4000 ]]; then
+  ok "run #2 failed fast (${lock2_ms} ms, no backup/pull executed)"
+else
+  bad "run #2 did not fail fast (${lock2_ms} ms)"
+fi
+if grep -qE "docker compose .*(pull|up)" "$lock2_log"; then
+  bad "run #2 got past the lock"
+else
+  ok "run #2 never reached backup/pull/migration (no compose calls in its log)"
+fi
+[[ ! -e "$sb/backups2" ]] \
+  && ok "run #2 produced no backup (refused before the backup stage)" \
+  || bad "run #2 performed work before hitting the lock"
+upd1_rc=0
+wait "$upd1_pid" 2>/dev/null || upd1_rc=$?
+assert_eq "run #1 completes normally after run #2 was refused" "0" "$upd1_rc"
+assert_contains "run #1 reports completion" "update complete" "$(cat "$lock1_log")"
+
+# Crash-leftover: the lock FILE may survive a killed run (SIGKILL cannot run
+# cleanup), but flock(2) releases with the process — a bare leftover file
+# must be takeable, not sticky.
+printf '999999\n' > "$sb/.update.lock"
+stale_rc=0
+(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_BACKUP_DIR="$sb/backups3" \
+   ./lumirss update > "$lock1_log" 2>&1) || stale_rc=$?
+assert_eq "update succeeds with a leftover lock file from a dead run" "0" "$stale_rc"
+rm -rf "$sb" "$stub_dir" "$lock1_log" "$lock2_log" "$lock_mark"
+
+# ---------------------------------------------------------------------------
 echo
 echo "deploy-lifecycle tests: $PASS passed, $FAIL failed"
 if [[ "$FAIL" -gt 0 ]]; then exit 1; fi
