@@ -1259,7 +1259,7 @@ function EntriesList() {
                                 selectScope({ kind: 'rss-feed', feedUrl: group.feedUrl })
                               }
                             }}
-                            className="shrink-0 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] px-1.5 py-0.5 text-[11px] normal-case transition-colors duration-[var(--lumi-motion-fast)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)] disabled:cursor-not-allowed disabled:opacity-50 enabled:hover:bg-[var(--lumi-surface-hover)] enabled:hover:text-[var(--lumi-text-secondary)]"
+                            className="shrink-0 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] px-1.5 py-0.5 text-[11px] normal-case transition-colors duration-[var(--lumi-motion-fast)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)] disabled:cursor-not-allowed disabled:bg-transparent disabled:text-[var(--lumi-text-disabled)] enabled:hover:bg-[var(--lumi-surface-hover)] enabled:hover:text-[var(--lumi-text-secondary)]"
                           >
                             只看此来源
                           </button>
@@ -1323,7 +1323,7 @@ function EntriesList() {
               type="button"
               onClick={() => setSelectedRefs(new Set(entries.map((e) => e.entryRef)))}
               disabled={batchRunning}
-              className="min-h-11 rounded-[var(--lumi-radius-md)] px-2 py-1 text-xs text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-11 rounded-[var(--lumi-radius-md)] px-2 py-1 text-xs text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)] disabled:cursor-not-allowed disabled:bg-transparent disabled:text-[var(--lumi-text-disabled)]"
             >
               全选已加载
             </button>
@@ -1331,7 +1331,7 @@ function EntriesList() {
               type="button"
               onClick={() => setSelectedRefs(new Set())}
               disabled={selectedRefs.size === 0 || batchRunning}
-              className="min-h-11 rounded-[var(--lumi-radius-md)] px-2 py-1 text-xs text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-11 rounded-[var(--lumi-radius-md)] px-2 py-1 text-xs text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)] disabled:cursor-not-allowed disabled:bg-transparent disabled:text-[var(--lumi-text-disabled)]"
             >
               清除
             </button>
@@ -1341,7 +1341,7 @@ function EntriesList() {
               data-testid="ask-batch-open"
               disabled={selectedRefs.size === 0}
               onClick={() => setAskOpen(true)}
-              className="min-h-11 rounded-[var(--lumi-radius-md)] px-2.5 py-1 text-xs font-medium text-[var(--lumi-accent-text)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-11 rounded-[var(--lumi-radius-md)] px-2.5 py-1 text-xs font-medium text-[var(--lumi-accent-text)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)] disabled:cursor-not-allowed disabled:bg-transparent disabled:text-[var(--lumi-text-disabled)]"
             >
               基于所选提问
             </button>
@@ -1352,7 +1352,11 @@ function EntriesList() {
                 data-testid={`batch-${kind}`}
                 disabled={batchRunning || overLimit || selectedRefs.size === 0}
                 onClick={() => void runBatch(kind, [...selectedRefs])}
-                className="min-h-11 rounded-[var(--lumi-radius-md)] bg-[var(--lumi-accent-soft)] px-2.5 py-1 text-xs font-medium text-[var(--lumi-accent-text)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-accent-soft)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)] disabled:cursor-not-allowed disabled:opacity-50"
+                {/* FIX-291：禁用语义仅作用一次。accent-soft 本身是 rgba 淡底
+                 * （自带透明度），再叠 disabled:opacity-50 = 双重透明——淡底
+                 * 几乎消失、文字对比被乘两次。禁用时收敛到单一 token：
+                 * 去掉淡底 + text-disabled（无额外 alpha）。 */}
+                className="min-h-11 rounded-[var(--lumi-radius-md)] bg-[var(--lumi-accent-soft)] px-2.5 py-1 text-xs font-medium text-[var(--lumi-accent-text)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-accent-soft)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)] disabled:cursor-not-allowed disabled:bg-transparent disabled:text-[var(--lumi-text-disabled)]"
               >
                 {BATCH_LABELS[kind]}
               </button>
