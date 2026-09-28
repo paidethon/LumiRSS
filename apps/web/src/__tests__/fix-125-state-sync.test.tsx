@@ -21,13 +21,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useEntryStateMutation } from '../api/queries'
 import type { EntryListItem } from '../api/types'
 
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  })
-}
-
 function item(ref: string, overrides: Partial<EntryListItem> = {}): EntryListItem {
   return {
     entryRef: ref,
