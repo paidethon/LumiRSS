@@ -396,3 +396,129 @@ def test_fix023_demoted_admin_next_admin_call_is_403(monkeypatch, tmp_path):
         probe = client.get("/api/v1/auth/session", headers=alice_headers)
         assert probe.status_code == 200
         assert probe.json()["role"] == "member"
+
+
+# ---------------------------------------------------------------------------
+# FIX-024 — Cookie 属性与真实反代 HTTPS 拓扑一致：生产默认 Secure
+# （LUMIRSS_SESSION_SECURE_COOKIES 默认 True → __Host- 前缀 + Secure，
+# __Host- 的 Path=/ 无 Domain 约束全部满足）；纯 HTTP 开发经文档化
+# env 显式退出且保留 HttpOnly/SameSite=Strict；清除 Cookie 与签发对称。
+
+
+def test_fix024_cookie_flags_secure_default_and_clear_symmetry(monkeypatch):
+    from lumirss.config import LumiSettings
+    from lumirss.middleware import build_session_cookie, clear_session_cookie
+
+    monkeypatch.delenv("LUMIRSS_SESSION_SECURE_COOKIES", raising=False)
+    # 生产（HTTPS 反代，rss.oouo.top via Caddy）：默认即安全形态。
+    assert LumiSettings().LUMIRSS_SESSION_SECURE_COOKIES is True
+    secure_set = build_session_cookie("tok", 60)
+    assert secure_set.startswith("__Host-lumirss_session=")
+    for attribute in ("Path=/", "HttpOnly", "SameSite=Strict", "Secure"):
+        assert attribute in secure_set
+    assert "Domain=" not in secure_set  # __Host- 约束：不得带 Domain
+    secure_clear = clear_session_cookie()
+    assert secure_clear.startswith("__Host-lumirss_session=")
+    for attribute in ("Path=/", "HttpOnly", "SameSite=Strict", "Secure", "Max-Age=0"):
+        assert attribute in secure_clear
+    # 开发（纯 HTTP vite 代理）：文档化 env 退出 → 无 Secure/__Host-，
+    # 其余防护属性保持。
+    monkeypatch.setenv("LUMIRSS_SESSION_SECURE_COOKIES", "false")
+    plain_set = build_session_cookie("tok", 60)
+    assert plain_set.startswith("lumirss_session=")
+    assert "Secure" not in plain_set
+    assert "HttpOnly" in plain_set and "SameSite=Strict" in plain_set
+    plain_clear = clear_session_cookie()
+    assert plain_clear.startswith("lumirss_session=")
+    assert "Secure" not in plain_clear
+    assert "HttpOnly" in plain_clear and "SameSite=Strict" in plain_clear
+
+
+# ---------------------------------------------------------------------------
+# FIX-025 — 跨站写请求防护：真实跨站 form-post 形状（表单编码、无任何
+# 自定义头、外域 Origin）必须被拒——会话内写与公开写路径（登录 CSRF）
+# 都过 Origin 闸门。SameSite=Strict 是浏览器侧第二层（传输层不模拟，
+# 其属性存在性由 FIX-024 断言）；这里验证的是服务端强制边界。
+
+
+def test_fix025_cross_site_form_post_writes_refused(monkeypatch, tmp_path):
+    db_path = _session_env(monkeypatch, tmp_path)
+    password = _fake("pw-")
+    with TestClient(app, base_url="http://lumirss.test") as client:
+        _set_owner_password(db_path, password)
+        headers = _cookie_headers(_login(client, password=password))
+        evil = {"Origin": "https://evil.example"}
+        # 会话内写：application/x-www-form-urlencoded + 外域 Origin。
+        attack = client.post(
+            "/api/v1/auth/logout", data="x=1", headers={**headers, **evil}
+        )
+        assert attack.status_code == 403
+        assert attack.json()["error"]["type"] == "csrf_rejected"
+        # 会话没有被这次攻击登出（写未发生）。
+        assert (
+            client.get("/api/v1/auth/sessions", headers=headers).status_code == 200
+        )
+        # 登录 CSRF：公开写路径同样被拒。
+        login_csrf = client.post(
+            "/api/v1/auth/login",
+            data="username=owner&password=x",
+            headers=evil,
+        )
+        assert login_csrf.status_code == 403
+        assert login_csrf.json()["error"]["type"] == "csrf_rejected"
+        # text/plain 形态同样拒绝（判定依据是 Origin，不是内容类型）。
+        plain = client.post(
+            "/api/v1/auth/login",
+            content="x",
+            headers={**evil, "content-type": "text/plain"},
+        )
+        assert plain.status_code == 403
+        # 同源表单写不受影响（False positive=0）。
+        ok = client.post(
+            "/api/v1/auth/logout",
+            data="x=1",
+            headers={**headers, "Origin": "http://lumirss.test"},
+        )
+        assert ok.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# FIX-027 — 登录限流分桶与 Retry-After：浏览器重试风暴或任意转发头
+# 不能绕过/转桶。TestClient 的 peer 非可信代理网段 → X-Forwarded-For
+# 一律忽略（生产契约：仅可信代理 peer 采纳最后一跳）。
+
+
+def test_fix027_rotating_xff_cannot_evade_login_budget(monkeypatch, tmp_path):
+    db_path = _session_env(monkeypatch, tmp_path)
+    password = _fake("pw-")
+    with TestClient(app, base_url="http://lumirss.test") as client:
+        _set_owner_password(db_path, password)
+        # 每次失败都换一个伪造 XFF：预算仍只记一个桶。
+        for i in range(middleware.LOGIN_FAILURE_LIMIT):
+            response = client.post(
+                "/api/v1/auth/login",
+                json={"username": "owner", "password": _fake("wrong-")},
+                headers={"X-Forwarded-For": f"203.0.113.{i}"},
+            )
+            assert response.status_code == 401
+        # 换全新 XFF 继续（重试风暴）：仍 429，且 Retry-After 数值诚实
+        #（1..窗口秒）。
+        still = client.post(
+            "/api/v1/auth/login",
+            json={"username": "owner", "password": _fake("wrong-")},
+            headers={"X-Forwarded-For": "198.51.100.254"},
+        )
+        assert still.status_code == 429
+        assert still.json()["error"]["type"] == "rate_limited"
+        retry_after = int(still.headers["Retry-After"])
+        assert 1 <= retry_after <= middleware.LOGIN_FAILURE_WINDOW_S
+        # 正确密码同样被限（不能靠换头越过预算）。
+        assert _login(client, password=password).status_code == 429
+        # 单元口径：真实 peer 变化才换桶——不同客户端互不锁死。
+        middleware._login_failures.clear()
+        peer_a = {"client": ("203.0.113.7", 1000), "headers": []}
+        peer_b = {"client": ("203.0.113.8", 1000), "headers": []}
+        for _ in range(middleware.LOGIN_FAILURE_LIMIT):
+            middleware.register_login_failure(peer_a)
+        assert not middleware.login_attempts_allowed(peer_a)
+        assert middleware.login_attempts_allowed(peer_b)
