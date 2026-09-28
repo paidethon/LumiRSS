@@ -201,3 +201,44 @@ def test_download_to_connection_error_is_safe(tmp_path):
     with pytest.raises(WebDavError) as exc:
         run(client.download_to("/x.backup", tmp_path / "out.backup"))
     assert "boom" not in str(exc.value)
+
+
+# --- FIX-243 基线核验：凭据绝不跨主机转发 -----------------------------------
+#
+# WebDAV 是唯一「带凭据 + 手动重定向循环」的抓取路径：validate_hop 在
+# 发送前拒绝跨源跳，所以新域连请求都收不到（更不用说 Authorization）。
+# 其余凭据发送方（FreshRSS 适配器 / AI provider / TTS）的 httpx 客户端
+# 均为默认 follow_redirects=False，3xx 原样返回、不追随。
+
+
+def test_same_origin_redirect_keeps_authorization():
+    calls: list[tuple[str, str | None]] = []
+
+    def handler(request):
+        calls.append((request.url.host, request.headers.get("Authorization")))
+        if request.url.path == "/old":
+            return httpx.Response(301, headers={"Location": "https://dav.example.com/new"})
+        return httpx.Response(200)
+
+    client = _client(handler)
+    data = run(client.get("/old"))
+    assert data == b""
+    # 两跳都带同一 Basic 凭据（同源跳转凭据照常随行）。
+    assert [host for host, _auth in calls] == ["dav.example.com", "dav.example.com"]
+    assert all(auth and auth.startswith("Basic ") for _host, auth in calls)
+
+
+def test_cross_origin_redirect_never_sends_credentials_to_new_host():
+    foreign: list[tuple[str, str | None]] = []
+
+    def handler(request):
+        if request.url.host != "dav.example.com":
+            foreign.append((str(request.url), request.headers.get("Authorization")))
+            return httpx.Response(200)
+        return httpx.Response(302, headers={"Location": "https://evil.example.com/x"})
+
+    client = _client(handler)
+    with pytest.raises(WebDavError):
+        run(client.get("/x"))
+    # 跨源跳在发送前被拒：新域零请求，凭据无从泄露。
+    assert foreign == []
