@@ -146,11 +146,21 @@ def iter_stream_objects(
 
 
 def category_of_first(item: dict) -> tuple[str | None, str | None]:
-    """categories[0] = FreshRSS 单分类（greader 模型）；形状异常 → 无分类.
+    """categories[0] = FreshRSS 单分类（greader 模型）→ 稳定 (id, label)。
 
-    Shared by the entry adapter's subscription parsing and the control
-    adapter's subscription listing — same upstream shape, same lenient
-    degradation to "no category".
+    FIX-234 明确缺省映射（id 是稳定 key，``user/-/label/<名>``）：
+
+    - id 在、label 缺/空白 → label 回退为 id 的 label 段（与
+      tag/list 构造 label 的规则一致）——订阅关系往返保留；
+    - label 在、id 缺/形状异常 → id 按 label 段规则合成——同一条
+      稳定 key，绝不产生「没有 id 的分类」；
+    - label 段为空（``user/-/label/``）→ 不是可用分类 → (None, None)，
+      绝不让客户端把空名/缺失值渲染成「undefined」分类。
+
+    形状异常（categories 非 list / 元素非 dict / 两字段都不可用）降级为
+    无分类。Shared by the entry adapter's subscription parsing and the
+    control adapter's subscription listing — same upstream shape, same
+    lenient degradation to "no category".
     """
     categories = item.get("categories")
     if not isinstance(categories, list) or not categories:
@@ -160,9 +170,20 @@ def category_of_first(item: dict) -> tuple[str | None, str | None]:
         return None, None
     raw_id = first.get("id")
     raw_label = first.get("label")
-    category_id = raw_id if isinstance(raw_id, str) and raw_id else None
-    category_label = raw_label if isinstance(raw_label, str) and raw_label else None
-    return category_id, category_label
+    category_id = raw_id if isinstance(raw_id, str) and raw_id.strip() else None
+    category_label = (
+        raw_label if isinstance(raw_label, str) and raw_label.strip() else None
+    )
+    if category_id is not None:
+        label_part = category_id.removeprefix(CATEGORY_PREFIX)
+        if not label_part.strip():
+            return None, None  # 空 label 段：不是可用分类
+        if category_label is None:
+            category_label = label_part
+        return category_id, category_label
+    if category_label is not None:
+        return f"{CATEGORY_PREFIX}{category_label}", category_label
+    return None, None
 
 # Block-level tags that produce a line break in contentText.
 _BLOCK_TAGS = frozenset(

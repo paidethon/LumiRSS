@@ -229,9 +229,12 @@ class FreshRSSControlAdapter:
                 CATEGORY_PREFIX
             ):
                 raise UpstreamError("FreshRSS tag/list folder has an unexpected id.")
-            categories.append(
-                Category(category_id=category_id, label=category_id[len(CATEGORY_PREFIX):])
-            )
+            # FIX-234：label 段为空的 folder（user/-/label/）不是可用
+            # 分类——跳过，绝不产出空名/undefined 名分类。
+            label = category_id[len(CATEGORY_PREFIX):]
+            if not label.strip():
+                continue
+            categories.append(Category(category_id=category_id, label=label))
         return categories
 
     async def subscribe(
