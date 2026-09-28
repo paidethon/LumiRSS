@@ -86,8 +86,10 @@ function useInfiniteSentinel(
 }
 
 /** P1.3 列表滚动锚点：离开/滚动时保存，挂载/换范围后数据到达时恢复
- * （rAF 节流保存；恢复对 scrollHeight 有要求，等一拍重试）。 */
-function useListScrollAnchor(
+ * （rAF 节流保存；恢复对 scrollHeight 有要求，等一拍重试）。
+ * FIX-124：切范围/视图后容器是同一 DOM 节点——新范围无锚点时必须显式
+ * 回顶，否则上一范围的 scrollTop 原样带入新列表（旧位置×新内容错位）。 */
+export function useListScrollAnchor(
   containerRef: React.RefObject<HTMLDivElement | null>,
   anchorKey: string,
   loadedCount: number,
@@ -97,7 +99,13 @@ function useListScrollAnchor(
     if (container === null) return
     const restore = (attempt: number) => {
       const target = loadListAnchor(anchorKey)
-      if (target === null || target === 0) return
+      if (target === null || target === 0) {
+        // FIX-124：该范围本次会话从未滚动（无锚点）→ 回顶，不保留
+        // 上一范围的滚动位置。若用户已在本范围滚动，锚点必已保存，
+        // 不会走到这里。
+        container.scrollTop = 0
+        return
+      }
       if (container.scrollHeight > target || attempt > 20) {
         container.scrollTop = target
       } else {
