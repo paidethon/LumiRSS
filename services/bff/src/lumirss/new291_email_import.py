@@ -294,6 +294,8 @@ class EmailMaterialStore:
         source_maps = await SourceMapStore(self._db).addr_map()
         rules = rules or []
         imported: list[dict[str, Any]] = []
+        skipped: list[dict[str, Any]] = []
+        conflicts: list[dict[str, Any]] = []
         failed: list[dict[str, Any]] = []
         for index, file in enumerate(files):
             filename = str(file.get("filename") or f"邮件-{index + 1}.eml")
@@ -311,6 +313,37 @@ class EmailMaterialStore:
                 parsed, rules,
                 persisted_label=source_maps.get(parsed["from_addr"].lower(), ""),
             )
+            # NEW-298：重复识别复核 —— 同 ID 同正文跳过；同 ID 不同正文
+            # 进冲突队列等用户决定，绝不静默覆盖/双写。
+            from lumirss.new298_email_duplicates import (
+                find_duplicate,
+                record_conflict,
+            )
+
+            duplicate = await find_duplicate(self._db, parsed)
+            if duplicate == "skip":
+                skipped.append(
+                    {
+                        "filename": filename,
+                        "messageId": parsed["message_id"],
+                        "reason": "相同 Message-ID 且正文一致，已存在。",
+                    }
+                )
+                continue
+            if isinstance(duplicate, dict):
+                conflict_id = await record_conflict(
+                    self._db, parsed, filename, str(duplicate["existing_id"])
+                )
+                conflicts.append(
+                    {
+                        "conflictId": conflict_id,
+                        "filename": filename,
+                        "messageId": parsed["message_id"],
+                        "existingId": str(duplicate["existing_id"]),
+                        "reason": "相同 Message-ID 但正文不同，进入冲突队列。",
+                    }
+                )
+                continue
             material_id = await insert_material(
                 self._db,
                 {**parsed, "subject": applied["subject"]},
@@ -334,6 +367,8 @@ class EmailMaterialStore:
         return {
             "imported": imported,
             "failed": failed,
+            "skipped": skipped,
+            "conflicts": conflicts,
             "honestyNote": HONESTY_NOTE,
         }
 
