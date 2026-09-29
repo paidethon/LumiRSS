@@ -9,7 +9,7 @@
 """
 
 
-from new2xx_ab import seed_entry  # noqa: F811
+from new2xx_ab import ab_env, seed_entry  # noqa: F401,F811
 
 
 def test_speed_default_and_custom(ab_env):  # noqa: F811

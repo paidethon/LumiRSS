@@ -122,8 +122,9 @@ class QueueTopicStore:
         topics = []
         for topic, members in by_topic.items():
             positions = sorted(member["position"] for member in members)
+            # 相邻位置差（positions[1:] 恒比 positions 短一，strict 必须 False）
             min_gap = (
-                min(b - a for a, b in zip(positions, positions[1:], strict=True))
+                min(b - a for a, b in zip(positions, positions[1:], strict=False))
                 if len(positions) > 1
                 else None
             )

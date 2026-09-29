@@ -11,7 +11,7 @@
 
 from fastapi.testclient import TestClient
 
-from new2xx_ab import seed_entry  # noqa: F811
+from new2xx_ab import ab_env, seed_entry  # noqa: F401,F811
 
 
 def _upsert(client: TestClient, headers: dict, ref: str, thought: str, hint: str | None = None):

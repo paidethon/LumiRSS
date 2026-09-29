@@ -10,7 +10,7 @@
 
 from datetime import UTC, datetime, timedelta
 
-from new2xx_ab import seed_entry  # noqa: F811
+from new2xx_ab import ab_env, seed_entry  # noqa: F401,F811
 
 
 def _iso(delta_seconds: int) -> str:

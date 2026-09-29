@@ -10,7 +10,7 @@
 - stage 分批阅读：必须由用户指定时段；已有时段归属的跳过如实计数。
 """
 
-
+from new2xx_ab import ab_env  # noqa: F401,F811
 
 
 class FakeStateAdapter:
