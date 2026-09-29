@@ -35,8 +35,8 @@ function mockRoute(
   routes.push({ match: matcher, respond: responder })
 }
 
-function get(url: string, body: unknown): void {
-  mockRoute((u) => u === url, () => jsonResponse(body))
+function get(url: string, body: unknown, status = 200): void {
+  mockRoute((u) => u === url, () => jsonResponse(body, status))
 }
 
 /** 展开态下的公共 GET 面：每个测试自带，避免未 mock 路由 404 干扰。 */

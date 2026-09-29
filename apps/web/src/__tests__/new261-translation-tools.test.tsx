@@ -144,7 +144,7 @@ describe('NEW-261..270 翻译工作流工具组合', () => {
     )
     mockRoute(
       (url, init) => url === '/api/v1/glossary/conflicts/choice' && init?.method === 'POST',
-      (url, init) => {
+      (_url, init) => {
         const body = JSON.parse(String(init?.body))
         return jsonResponse({ ...body, updatedAt: 't3' })
       },
@@ -230,7 +230,7 @@ describe('NEW-261..270 翻译工作流工具组合', () => {
     mockRoute(
       (url, init) =>
         url === '/api/v1/entries/entry-abc/translation/segments/0/feedback' && init?.method === 'POST',
-      (url, init) => {
+      (_url, init) => {
         const item = {
           id: 'tf-2',
           entryRef: 'entry-abc',
@@ -308,7 +308,7 @@ describe('NEW-261..270 翻译工作流工具组合', () => {
     )
     mockRoute(
       (url, init) => url === '/api/v1/translation/budget/settings' && init?.method === 'PUT',
-      (url, init) => jsonResponse({ ...JSON.parse(String(init?.body)), updatedAt: 't1' }),
+      (_url, init) => jsonResponse({ ...JSON.parse(String(init?.body)), updatedAt: 't1' }),
     )
     mockRoute(
       (url, init) => url === '/api/v1/translation/budget/estimate' && init?.method === 'POST',
@@ -354,14 +354,14 @@ describe('NEW-261..270 翻译工作流工具组合', () => {
     mockRoute(
       (url, init) =>
         url === '/api/v1/entries/entry-abc/translation/priority-queue' && init?.method === 'PUT',
-      (url, init) => {
+      (_url, init) => {
         queueIndexes = JSON.parse(String(init?.body)).indexes
         return jsonResponse({ queue: queueIndexes.map((index) => ({ index, addedAt: 't1' })) })
       },
     )
     mockRoute(
       (url, init) => url === '/api/v1/entries/entry-abc/translation/priority-queue/run' && init?.method === 'POST',
-      (url, init) => {
+      (_url, init) => {
         const body = JSON.parse(String(init?.body)) as { blocks: { index: number }[] }
         // BFF 契约：只翻「队列 ∩ 提交块集合」，queuedCount = 交集数。
         const sent = body.blocks.filter((block) => queueIndexes.includes(block.index))
@@ -492,7 +492,7 @@ describe('NEW-261..270 翻译工作流工具组合', () => {
     )
     mockRoute(
       (url, init) => url === '/api/v1/translation/language-overrides' && init?.method === 'PUT',
-      (url, init) => jsonResponse({ ...JSON.parse(String(init?.body)), createdAt: 't0', updatedAt: 't1' }),
+      (_url, init) => jsonResponse({ ...JSON.parse(String(init?.body)), createdAt: 't0', updatedAt: 't1' }),
     )
     renderTools()
     await waitFor(() => expect(screen.getByText(/当前生效识别语言：自动识别（无更正）/)).toBeTruthy())
@@ -535,7 +535,7 @@ describe('NEW-261..270 翻译工作流工具组合', () => {
     mockRoute(
       (url, init) =>
         url === '/api/v1/entries/entry-abc/translation/completeness/fill' && init?.method === 'POST',
-      (url, init) => {
+      (_url, init) => {
         filled = true
         const body = JSON.parse(String(init?.body)) as { blocks: unknown[] }
         return jsonResponse({

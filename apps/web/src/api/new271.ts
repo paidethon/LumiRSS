@@ -85,7 +85,6 @@ export interface AiInputPreview {
 export function previewAiInput(
   entryRef: string,
   body: { purpose: 'summary' | 'conversation'; maxChars?: number; note?: string; question?: string },
-  signal?: AbortSignal,
 ): Promise<AiInputPreview> {
   return sendJson(`${API_BASE}/entries/${encodeURIComponent(entryRef)}/ai-input-preview`, 'POST', body)
 }

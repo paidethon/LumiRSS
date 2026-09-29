@@ -14,7 +14,7 @@ import {
   type PrivacyDiff,
   type PrivacyFilterView,
 } from '../../api/new271'
-import { NoteText, StatusLine, buttonClass, errorText, inputClass } from './panel'
+import { NoteText, StatusLine, buttonClass, errorText } from './panel'
 
 export function PrivacyFilterPanel({ entryRef }: { entryRef: string }) {
   const [view, setView] = useState<PrivacyFilterView | null>(null)

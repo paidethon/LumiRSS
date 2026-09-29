@@ -40,7 +40,7 @@ function mockRoute(
 function lastCall(url: string): RequestInit {
   const call = fetchCalls.filter((c) => c.url === url).at(-1)
   expect(call, `expected a fetch call to ${url}`).toBeDefined()
-  return call.init ?? {}
+  return call?.init ?? {}
 }
 
 /** 展开控制台组合 + 指定子工具（两级情境展开）。 */
@@ -320,7 +320,7 @@ describe('NEW-271..280 AI 任务控制台（New271AiControlTools）', () => {
   it('NEW-277 用途约束：保存 PUT allowedPurposes；purpose-options 给出被阻断提示', async () => {
     mockRoute(
       (url) => url.endsWith('/purpose-constraints') && url.includes('prof-1'),
-      (url, init) => {
+      (_url, init) => {
         if (init?.method === 'PUT') return jsonResponse({ profileId: 'prof-1', profileLabel: '本地模型', allowedPurposes: ['summary'], purposes: ['summary', 'chat'] })
         return jsonResponse({ error: { type: 'constraint_not_found', message: '无' } }, 404)
       },
