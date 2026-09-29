@@ -17,6 +17,7 @@
 import { useMemo, useState } from 'react'
 import { Suspense, lazy } from 'react'
 const InboxRulesPanelLazy = lazy(() => import('../InboxRulesPanel'))
+const New219InboxOpsPanel = lazy(() => import('../new211/New219InboxOpsPanel'))
 import {
   Copy,
   Inbox as InboxIcon,
@@ -370,6 +371,8 @@ function InboxCard({ itemRef }: { itemRef: string }) {
 
 export default function InboxPage() {
   const [createOpen, setCreateOpen] = useState(false)
+  // NEW-219/220：内容整理工作台（批量归档 / 处理记录）。
+  const [inboxOpsOpen, setInboxOpsOpen] = useState(false)
   const items = useInboxItems()
   const {
     data,
@@ -394,6 +397,9 @@ export default function InboxPage() {
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-base font-semibold text-[var(--lumi-text-primary)]">收件箱</h1>
           <div className="ml-auto flex items-center gap-1.5">
+            <Button size="sm" onClick={() => setInboxOpsOpen(true)}>
+              整理工具
+            </Button>
             <Button variant="primary" size="sm" onClick={() => setCreateOpen(true)}>
               <Plus aria-hidden className="size-4" />
               新建连接器
@@ -409,6 +415,18 @@ export default function InboxPage() {
         <Suspense fallback={null}>
           <InboxRulesPanelLazy />
         </Suspense>
+
+        {/* NEW-219/220：批量归档 + 处理记录（整理轨迹台账）。 */}
+        {inboxOpsOpen && (
+          <Suspense fallback={null}>
+            <div
+              className="mt-3 flex min-h-96 flex-col rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-3"
+              aria-label="内容整理工具"
+            >
+              <New219InboxOpsPanel onClose={() => setInboxOpsOpen(false)} />
+            </div>
+          </Suspense>
+        )}
 
         {/* 条目 / 诚实状态 */}
         {isPending ? (

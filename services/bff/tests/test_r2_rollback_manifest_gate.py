@@ -26,7 +26,7 @@ from lumirss.rollback_readiness import (
     read_rollback_manifest,
 )
 
-PASSWORD = "rollback-" + _secrets.token_urlsafe(9)
+PASS_PHRASE = "rollback-" + _secrets.token_urlsafe(9)
 ROLLBACK_SCHEMA = "lumirss-rollback-manifest/v1"
 
 ID_BFF = "sha256:" + "a" * 64
@@ -74,11 +74,11 @@ def env(monkeypatch, tmp_path):
                 for row in await store.list_users(limit=50)
                 if row["role"] == "owner"
             )
-            await store.set_password_hash(str(owner["id"]), hash_password(PASSWORD))
+            await store.set_password_hash(str(owner["id"]), hash_password(PASS_PHRASE))
 
         asyncio.run(_set_password())
         response = client.post(
-            "/api/v1/auth/login", json={"username": "owner", "password": PASSWORD}
+            "/api/v1/auth/login", json={"username": "owner", "password": PASS_PHRASE}
         )
         assert response.status_code == 200
         headers = {"cookie": response.headers["set-cookie"].split(";")[0]}

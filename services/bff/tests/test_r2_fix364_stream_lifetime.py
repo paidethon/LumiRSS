@@ -21,14 +21,18 @@ research_pack_zip）在 BytesIO 上构建并整体物化为 bytes，附件下载
 
 import hashlib
 import io
-import random
+import hashlib
 import time
 import zipfile
 
 
 def _deterministic_payload(size: int, seed: int) -> bytes:
     # %PDF- 头满足 FIX-322 附件内容嗅探（.pdf 必须带魔法字节）。
-    return b"%PDF-1.4\n" + random.Random(seed).randbytes(size)
+    # 确定性字节流由 sha256 派生（可复现校验和所需），不使用随机数源。
+    stream = hashlib.sha256(f"lumi-fix364-{seed}".encode()).digest()
+    while len(stream) < size:
+        stream += hashlib.sha256(stream[-32:]).digest()
+    return b"%PDF-1.4\n" + stream[:size]
 
 
 def _bridge_list(client, name: str) -> dict:

@@ -15,7 +15,7 @@
  *   颜色；token 不可解析时（headless/测试）用同色系十六进制兜底。
  * - loading Skeleton / empty / error+重试 三态齐备。 */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { GraphViewsToolbar } from '../GraphViewsToolbar'
 import { GraphPathFinder } from '../GraphPathFinder'
 import { AlertCircle, Loader2, MoreVertical, Pencil, RefreshCw, Trash2, Waypoints } from 'lucide-react'
@@ -30,6 +30,7 @@ import {
 import type { GraphNode, TagSummary } from '../../api/client'
 import { resolveAndOpen } from '../../lib/open-item'
 import { TagMergeDialog } from '../TagMergeDialog'
+const New211TagOpsPanel = lazy(() => import('../new211/New211TagOpsPanel'))
 import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
 import { EmptyState } from '../ui/EmptyState'
@@ -211,6 +212,8 @@ export default function GraphPage() {
   const [manageMode, setManageMode] = useState<'rename' | 'delete' | null>(null)
   // pool #16：合并标签对话框开关。
   const [mergeOpen, setMergeOpen] = useState(false)
+  // NEW-211..215：标签整理工作台（合并向导/改名影响/互斥组/同义词/清理台）。
+  const [tagOpsOpen, setTagOpsOpen] = useState(false)
 
   const nodes = useMemo(() => graph.data?.nodes ?? [], [graph.data])
   const nodeRefs = useMemo(() => new Set(nodes.map((n) => n.ref)), [nodes])
@@ -330,6 +333,13 @@ export default function GraphPage() {
           <h3 id="graph-tags-heading" className="text-sm font-semibold text-[var(--lumi-text-secondary)]">
             标签列表（非图形等价路径）
           </h3>
+          <button
+            type="button"
+            onClick={() => setTagOpsOpen(true)}
+            className="rounded-[var(--lumi-radius-md)] px-2 py-1 text-xs text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+          >
+            标签整理
+          </button>
           {(tags.data?.items.length ?? 0) >= 2 && (
             <button
               type="button"
@@ -628,6 +638,19 @@ export default function GraphPage() {
           tagList={tags.data?.items ?? []}
           onClose={() => setMergeOpen(false)}
         />
+      )}
+      {/* NEW-211..215：标签整理工作台。 */}
+      {tagOpsOpen && (
+        <Dialog
+          open
+          onClose={() => setTagOpsOpen(false)}
+          title="标签整理"
+          panelClassName="max-w-2xl"
+        >
+          <Suspense fallback={<Skeleton className="h-40" />}>
+            <New211TagOpsPanel onClose={() => setTagOpsOpen(false)} />
+          </Suspense>
+        </Dialog>
       )}
     </div>
   )
