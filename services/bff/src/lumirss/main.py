@@ -150,6 +150,7 @@ from lumirss.routers import (
     new297_email_import_rules,
     new298_email_duplicates,
     new299_email_unsubscribe,
+    new300_email_export,
     obsidian,
     operations,
     opml,
@@ -644,5 +645,6 @@ app.include_router(new296_email_attachments.router)
 app.include_router(new297_email_import_rules.router)
 app.include_router(new298_email_duplicates.router)
 app.include_router(new299_email_unsubscribe.router)
+app.include_router(new300_email_export.router)
 
 register_error_handlers(app)
