@@ -105,6 +105,7 @@ from lumirss.routers import (
     new273_template_trials,
     new274_citation_checks,
     new275_batch_approvals,
+    new276_task_replays,
     obsidian,
     operations,
     opml,
@@ -551,5 +552,6 @@ app.include_router(new272_ai_drafts.router)
 app.include_router(new273_template_trials.router)
 app.include_router(new274_citation_checks.router)
 app.include_router(new275_batch_approvals.router)
+app.include_router(new276_task_replays.router)
 
 register_error_handlers(app)
