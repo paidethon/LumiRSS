@@ -180,6 +180,16 @@ from lumirss.routers import (
     new318_image_picker,
     new319_reextract,
     new320_replacement_links,
+    new321_tag_mapping,
+    new322_link_report,
+    new323_sync_approval,
+    new324_annotation_export,
+    new325_root_profiles,
+    new326_portable_bundle,
+    new327_property_columns,
+    new328_conflict_inbox,
+    new329_disconnect,
+    new330_relocation,
     obsidian,
     operations,
     opml,
@@ -708,5 +718,17 @@ app.include_router(new317_clip_merge.router)
 app.include_router(new318_image_picker.router)
 app.include_router(new319_reextract.router)
 app.include_router(new320_replacement_links.router)
+# NEW-321..330 Obsidian 与本地资料互通（Vault 只读不变；映射/审批/打包/
+# 列映射/冲突/断开/重定位全部作用于 Lumi 侧导入层与档案）
+app.include_router(new321_tag_mapping.router)
+app.include_router(new322_link_report.router)
+app.include_router(new323_sync_approval.router)
+app.include_router(new324_annotation_export.router)
+app.include_router(new325_root_profiles.router)
+app.include_router(new326_portable_bundle.router)
+app.include_router(new327_property_columns.router)
+app.include_router(new328_conflict_inbox.router)
+app.include_router(new329_disconnect.router)
+app.include_router(new330_relocation.router)
 
 register_error_handlers(app)
