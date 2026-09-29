@@ -385,11 +385,20 @@ def _provider_factory_for(request: Request, purpose: str):
     """
 
     async def factory(base_url: str, model: str):
-        effective = await _get_ai_profile_store(request).effective_config(
+        profile_store = _get_ai_profile_store(request)
+        effective = await profile_store.effective_config(
             purpose,
             await _get_ai_settings_store(request).load(),
             LumiSettings().AI_API_KEY.get_secret_value(),
         )
+        # NEW-277：配置档用途约束在 provider 构建点强制执行——映射档被
+        # 约束且不允许该用途 → 409 ai_purpose_not_allowed（绝不静默换
+        # 模型；可选替代见 GET /api/v1/ai/purpose-options）。default 兜底
+        # 不可约束，未映射用途行为不变。
+        if effective.source == "profile" and effective.profile_id:
+            from lumirss.new277_purpose_constraints import assert_purpose_allowed
+
+            await assert_purpose_allowed(request.app.state.db, profile_store, purpose)
         from lumirss.ai_provider import build_provider
 
         return build_provider(
