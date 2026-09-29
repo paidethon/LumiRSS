@@ -122,6 +122,9 @@ class ApiSourceRecord:
     max_runs_per_hour: int = 4
     respect_retry_after: bool = True
     next_allowed_run: str | None = None
+    # NEW-306: schema-drift write pause (required-field drift).
+    write_paused: bool = False
+    pause_reason: str | None = None
 
     def to_dict(self, *, with_secret: bool = False) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -135,6 +138,8 @@ class ApiSourceRecord:
             "lastSuccessAt": self.last_success_at,
             "lastError": self.last_error,
             "createdAt": self.created_at,
+            "writePaused": self.write_paused,
+            "pauseReason": self.pause_reason,
         }
         if with_secret:
             payload["secret"] = self.secret

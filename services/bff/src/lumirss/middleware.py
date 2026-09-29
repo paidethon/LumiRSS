@@ -132,6 +132,9 @@ class NoStoreCacheMiddleware:
 MAIL_INGEST_BODY_LIMIT = 10 * 1024 * 1024
 _MAIL_INGEST_PREFIX = "/api/mail/ingest/"
 _INBOX_INGEST_PREFIX = "/api/v1/inbox/ingest/"
+# NEW-303：webhook 接收收件箱（bearer 归属 + HMAC 验签，同为机器到
+# 机器 —— 会话/内部令牌层放行到路由边界，与 inbox ingest 同待遇）。
+_WEBHOOK_INGEST_PREFIX = "/api/v1/webhooks/ingest/"
 
 
 def _bearer_machine_path(path: str, headers) -> bool:
@@ -140,8 +143,10 @@ def _bearer_machine_path(path: str, headers) -> bool:
     token/session layers defer these requests to the route boundary."""
     if not any(key == b"authorization" for key, _ in headers or []):
         return False
-    return path.startswith(_MAIL_INGEST_PREFIX) or path.startswith(
-        _INBOX_INGEST_PREFIX
+    return (
+        path.startswith(_MAIL_INGEST_PREFIX)
+        or path.startswith(_INBOX_INGEST_PREFIX)
+        or path.startswith(_WEBHOOK_INGEST_PREFIX)
     )
 
 

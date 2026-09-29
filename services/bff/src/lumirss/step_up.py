@@ -37,6 +37,9 @@ STEP_UP_OPERATIONS: tuple[str, ...] = (
     "user_active",
     "user_password_reset",
     "user_quota_set",
+    # NEW-304：webhook 签名钥轮换（实例级操作，target = 操作管理员本人
+    # id —— 作用域仍逐字绑定，令牌不能转投其他敏感操作）。
+    "webhook_key_rotation",
 )
 
 STEP_UP_OP_PATTERN = "^(?:" + "|".join(STEP_UP_OPERATIONS) + ")$"

@@ -141,6 +141,16 @@ from lumirss.routers import (
     new278_privacy_filters,
     new279_answer_adoptions,
     new280_quota_buckets,
+    new301_mapping_samples,
+    new302_pagination_probe,
+    new303_webhook_inbox,
+    new304_webhook_keys,
+    new305_dead_letters,
+    new306_schema_pause,
+    new307_intake_quota,
+    new308_outbound,
+    new309_deliveries,
+    new310_transfer,
     obsidian,
     operations,
     opml,
@@ -626,5 +636,16 @@ app.include_router(new277_purpose_constraints.router)
 app.include_router(new278_privacy_filters.router)
 app.include_router(new279_answer_adoptions.router)
 app.include_router(new280_quota_buckets.router)
+# NEW-301..310 API 来源、Webhook 与自动接入（r2 N301 组；路由各自独立成文件）
+app.include_router(new301_mapping_samples.router)
+app.include_router(new302_pagination_probe.router)
+app.include_router(new303_webhook_inbox.router)
+app.include_router(new304_webhook_keys.router)
+app.include_router(new305_dead_letters.router)
+app.include_router(new306_schema_pause.router)
+app.include_router(new307_intake_quota.router)
+app.include_router(new308_outbound.router)
+app.include_router(new309_deliveries.router)
+app.include_router(new310_transfer.router)
 
 register_error_handlers(app)
