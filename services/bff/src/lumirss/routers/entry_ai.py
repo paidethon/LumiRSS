@@ -693,10 +693,11 @@ async def generate_summary_tracked(
     if disabled_denial is not None:
         return disabled_denial
     # F064：配额事前拦截（预占失败 → 429，上游零请求）。
+    # NEW-280：summary 用途的分桶额度先于全局配额。
     from lumirss.ai_quota import quota_denial
     from lumirss.ai_summary import STATUS_FAILED
 
-    denial = await quota_denial(request)
+    denial = await quota_denial(request, purpose="summary")
     if denial is not None:
         await _record_ai_task(
             request,
@@ -894,6 +895,8 @@ class ConversationQuestion(BaseModel):
     question: str = Field(min_length=1, max_length=MAX_QUESTION_CHARS)
     # F025：可选输入范围（512–50000 字符；None = 现行为）。
     maxChars: int | None = Field(default=None, ge=512, le=50000)
+    # NEW-271：随上下文一并发送的用户笔记（预览中删减后的显式输入）。
+    note: str | None = Field(default=None, max_length=2000)
 
     @field_validator("question")
     @classmethod
@@ -954,10 +957,10 @@ async def send_conversation_message(
     disabled_denial = await _ai_disabled_denial(request, entry_ref)
     if disabled_denial is not None:
         return disabled_denial
-    # F064：配额事前拦截。
+    # F064：配额事前拦截。NEW-280：chat 用途的分桶额度先于全局配额。
     from lumirss.ai_quota import quota_denial
 
-    denial = await quota_denial(request)
+    denial = await quota_denial(request, purpose="chat")
     if denial is not None:
         await _record_ai_task(
             request,
@@ -968,10 +971,20 @@ async def send_conversation_message(
             error_type="quota_exceeded",
         )
         return denial
+    # NEW-278：用户显式勾选的隐私排除字段在发送路径真实生效。
+    from lumirss.new278_privacy_filters import PrivacyFilterStore
+
+    exclusions = await PrivacyFilterStore(request.app.state.db).exclusion_set()
     service = _get_conversation_service(request)
     started = _time.monotonic()
     try:
-        state = await service.send_message(entry_ref, body.question, max_chars=body.maxChars)
+        state = await service.send_message(
+            entry_ref,
+            body.question,
+            max_chars=body.maxChars,
+            note=body.note,
+            exclude=exclusions,
+        )
     except Exception as exc:
         await _record_ai_task(
             request,
