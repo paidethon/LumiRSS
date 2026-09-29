@@ -358,11 +358,13 @@ class SearchIndexService:
         has_summary: bool | None = None,
         expand_synonyms: bool = False,
         synonym_map: dict | None = None,
+        author: str | None = None,
     ) -> dict:
         """One page of hits, newest first, with a safe plain-text excerpt.
 
         F29 高级条件（可选）：``intitle`` 仅标题词条；``phrase`` 精确
         短语；``exclude`` 排除词条（全部 whitespace-split、有界）。
+        NEW-364：``author`` 作者过滤（进 cursor scope，翻页不漂移）。
         """
         await self._db.migrate()
         terms = split_terms(query)
@@ -417,6 +419,7 @@ class SearchIndexService:
             phrase=clean_phrase or None,
             exclude_terms=exclude_terms or None,
             has_summary=has_summary,
+            author=author,
         )
         has_more = len(rows) > limit
         primary_rows = rows[:limit]
@@ -442,6 +445,7 @@ class SearchIndexService:
                     keyset=None,
                     limit=250,
                     has_summary=has_summary,
+                    author=author,
                 )
                 for row in expansion_rows:
                     item_id = str(row["item_id"])
