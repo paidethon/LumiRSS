@@ -1,0 +1,441 @@
+{
+  "schema": "lumirss-r2-tools/v1",
+  "research_date": "2026-09-28",
+  "note": "来源已做网页核查，未在用户 ZCode 安装或调用。stars 是仓库关注量，不是用户数；发布状态和许可需安装前按锁定版本复核。",
+  "skills": [
+    {
+      "id": "SKILL-01",
+      "name": "systematic-debugging",
+      "install_alias": "lumi2-systematic-debugging",
+      "repo": "obra/superpowers",
+      "source": "https://github.com/obra/superpowers/blob/main/skills/systematic-debugging/SKILL.md",
+      "purpose": "定位根因、最小复现；用于账户、备份和状态竞态，不随机改十处。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "SKILL-02",
+      "name": "test-driven-development",
+      "install_alias": "lumi2-test-driven-development",
+      "repo": "obra/superpowers",
+      "source": "https://github.com/obra/superpowers/blob/main/skills/test-driven-development/SKILL.md",
+      "purpose": "为真实缺陷建立失败→修复→通过的证据；不得删除已有代码来表演 TDD。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "SKILL-03",
+      "name": "verification-before-completion",
+      "install_alias": "lumi2-verification-before-completion",
+      "repo": "obra/superpowers",
+      "source": "https://github.com/obra/superpowers/blob/main/skills/verification-before-completion/SKILL.md",
+      "purpose": "每次宣告通过前检查当前提交上的真实测试、退出码与产物。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "SKILL-04",
+      "name": "using-git-worktrees",
+      "install_alias": "lumi2-using-git-worktrees",
+      "repo": "obra/superpowers",
+      "source": "https://github.com/obra/superpowers/blob/main/skills/using-git-worktrees/SKILL.md",
+      "purpose": "接管现有 fix-a/b/c，建立文件所有权与隔离测试目录，不复制秘密。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "SKILL-05",
+      "name": "dispatching-parallel-agents",
+      "install_alias": "lumi2-dispatching-parallel-agents",
+      "repo": "obra/superpowers",
+      "source": "https://github.com/obra/superpowers/blob/main/skills/dispatching-parallel-agents/SKILL.md",
+      "purpose": "只并行独立任务；由主协调者派发并收集实际句柄。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "SKILL-06",
+      "name": "requesting-code-review",
+      "install_alias": "lumi2-requesting-code-review",
+      "repo": "obra/superpowers",
+      "source": "https://github.com/obra/superpowers/blob/main/skills/requesting-code-review/SKILL.md",
+      "purpose": "按真实 diff 提交独立审查；连同同目录 code-reviewer.md 等引用资源安装。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "SKILL-07",
+      "name": "tailwind-design-system",
+      "install_alias": "lumi2-tailwind-design-system",
+      "repo": "wshobson/agents",
+      "source": "https://github.com/wshobson/agents/blob/main/plugins/frontend-mobile-development/skills/tailwind-design-system/SKILL.md",
+      "purpose": "统一 Tailwind 4 令牌、组件尺寸、状态与主题；沿用 Base UI。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "SKILL-08",
+      "name": "react-state-management",
+      "install_alias": "lumi2-react-state-management",
+      "repo": "wshobson/agents",
+      "source": "https://github.com/wshobson/agents/blob/main/plugins/frontend-mobile-development/skills/react-state-management/SKILL.md",
+      "purpose": "清楚区分 TanStack Query 服务状态与 Zustand 界面状态。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "SKILL-09",
+      "name": "e2e-testing-patterns",
+      "install_alias": "lumi2-e2e-testing-patterns",
+      "repo": "wshobson/agents",
+      "source": "https://github.com/wshobson/agents/blob/main/plugins/developer-essentials/skills/e2e-testing-patterns/SKILL.md",
+      "purpose": "消除 J2/J4 数据依赖和契约漂移，隔离账号与测试资源。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "SKILL-10",
+      "name": "python-testing-patterns",
+      "install_alias": "lumi2-python-testing-patterns",
+      "repo": "wshobson/agents",
+      "source": "https://github.com/wshobson/agents/blob/main/plugins/python-development/skills/python-testing-patterns/SKILL.md",
+      "purpose": "FastAPI、SQLite、后台任务的异步集成与失败注入测试。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "SKILL-11",
+      "name": "vite",
+      "install_alias": "lumi2-vite",
+      "repo": "antfu/skills",
+      "source": "https://github.com/antfu/skills/blob/main/skills/vite/SKILL.md",
+      "purpose": "检查项目实际 Vite 版本、分包和资产路径；不强制升级框架。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "SKILL-12",
+      "name": "vitest",
+      "install_alias": "lumi2-vitest",
+      "repo": "antfu/skills",
+      "source": "https://github.com/antfu/skills/blob/main/skills/vitest/SKILL.md",
+      "purpose": "组件与状态测试，检查空测试集、假计时器及未 await 的断言。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "SKILL-13",
+      "name": "performance",
+      "install_alias": "lumi2-performance",
+      "repo": "addyosmani/web-quality-skills",
+      "source": "https://github.com/addyosmani/web-quality-skills/blob/main/skills/performance/SKILL.md",
+      "purpose": "采集列表、正文与管理页的真实性能剖析，减少无效渲染。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "SKILL-14",
+      "name": "core-web-vitals",
+      "install_alias": "lumi2-core-web-vitals",
+      "repo": "addyosmani/web-quality-skills",
+      "source": "https://github.com/addyosmani/web-quality-skills/blob/main/skills/core-web-vitals/SKILL.md",
+      "purpose": "测量交互、加载与布局稳定性；实验室结果不得冒充真实用户分位数。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "SKILL-15",
+      "name": "differential-review",
+      "install_alias": "lumi2-differential-review",
+      "repo": "trailofbits/skills",
+      "source": "https://github.com/trailofbits/skills/blob/master/plugins/differential-review/skills/differential-review/SKILL.md",
+      "purpose": "审查账户和部署变更带来的安全回归。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "SKILL-16",
+      "name": "variant-analysis",
+      "install_alias": "lumi2-variant-analysis",
+      "repo": "trailofbits/skills",
+      "source": "https://github.com/trailofbits/skills/blob/master/plugins/variant-analysis/skills/variant-analysis/SKILL.md",
+      "purpose": "从一个实际漏洞追踪同类调用点，但同一根因不拆成多个计数。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "SKILL-17",
+      "name": "sharp-edges",
+      "install_alias": "lumi2-sharp-edges",
+      "repo": "trailofbits/skills",
+      "source": "https://github.com/trailofbits/skills/blob/master/plugins/sharp-edges/skills/sharp-edges/SKILL.md",
+      "purpose": "发现容易误用的配置/API；用简明边界替代层层兜底。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "SKILL-18",
+      "name": "property-based-testing",
+      "install_alias": "lumi2-property-based-testing",
+      "repo": "trailofbits/skills",
+      "source": "https://github.com/trailofbits/skills/blob/master/plugins/property-based-testing/skills/property-based-testing/SKILL.md",
+      "purpose": "验证分页、权限、标识、导入和迁移的不变量。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "SKILL-19",
+      "name": "api-design-principles",
+      "install_alias": "lumi2-api-design-principles",
+      "repo": "wshobson/agents",
+      "source": "https://github.com/wshobson/agents/blob/main/plugins/backend-development/skills/api-design-principles/SKILL.md",
+      "purpose": "收敛契约、状态码和资源归属；不再复制第二套 API。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "SKILL-20",
+      "name": "doc-coauthoring",
+      "install_alias": "lumi2-doc-coauthoring",
+      "repo": "anthropics/skills",
+      "source": "https://github.com/anthropics/skills/blob/main/skills/doc-coauthoring/SKILL.md",
+      "purpose": "以当前代码收集事实、精简并做新读者测试；授权明确时不重复提问。",
+      "status": "researched",
+      "pinned_revision": null
+    }
+  ],
+  "agents": [
+    {
+      "id": "AGENT-01",
+      "name": "frontend-developer",
+      "install_alias": "lumi2-frontend-developer",
+      "source": "https://github.com/msitarzewski/agency-agents/blob/main/engineering/engineering-frontend-developer.md",
+      "purpose": "前端实现与性能；负责分配到的组件域，不写公共台账。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "AGENT-02",
+      "name": "ui-designer",
+      "install_alias": "lumi2-ui-designer",
+      "source": "https://github.com/msitarzewski/agency-agents/blob/main/design/design-ui-designer.md",
+      "purpose": "视觉方案与令牌；提交真实页面前后图，不只交设计建议。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "AGENT-03",
+      "name": "ux-architect",
+      "install_alias": "lumi2-ux-architect",
+      "source": "https://github.com/msitarzewski/agency-agents/blob/main/design/design-ux-architect.md",
+      "purpose": "登录、管理和移动导航的信息结构；保持默认界面克制。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "AGENT-04",
+      "name": "backend-architect",
+      "install_alias": "lumi2-backend-architect",
+      "source": "https://github.com/msitarzewski/agency-agents/blob/main/engineering/engineering-backend-architect.md",
+      "purpose": "FastAPI/FreshRSS/SQLite 的模块边界、迁移和任务调度。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "AGENT-05",
+      "name": "appsec-engineer",
+      "install_alias": "lumi2-appsec-engineer",
+      "source": "https://github.com/msitarzewski/agency-agents/blob/main/security/security-appsec-engineer.md",
+      "purpose": "A/B 数据隔离、认证、上传和第三方工具的授权审查。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "AGENT-06",
+      "name": "devops-automator",
+      "install_alias": "lumi2-devops-automator",
+      "source": "https://github.com/msitarzewski/agency-agents/blob/main/engineering/engineering-devops-automator.md",
+      "purpose": "CI 产物、升级 CLI、备份恢复；生产写入由主协调者串行授权。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "AGENT-07",
+      "name": "api-tester",
+      "install_alias": "lumi2-api-tester",
+      "source": "https://github.com/msitarzewski/agency-agents/blob/main/testing/testing-api-tester.md",
+      "purpose": "真实 BFF/FreshRSS 集成、权限矩阵与错误契约；不得只测 mock。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "AGENT-08",
+      "name": "evidence-collector",
+      "install_alias": "lumi2-evidence-collector",
+      "source": "https://github.com/msitarzewski/agency-agents/blob/main/testing/testing-evidence-collector.md",
+      "purpose": "独立浏览器验收、截图和复现步骤；不以截图数量代替交互验证。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "AGENT-09",
+      "name": "reality-checker",
+      "install_alias": "lumi2-reality-checker",
+      "source": "https://github.com/msitarzewski/agency-agents/blob/main/testing/testing-reality-checker.md",
+      "purpose": "独立核验用户结果、去重与正式发布条件；不能审查自己编写的代码。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "AGENT-10",
+      "name": "technical-writer",
+      "install_alias": "lumi2-technical-writer",
+      "source": "https://github.com/msitarzewski/agency-agents/blob/main/engineering/engineering-technical-writer.md",
+      "purpose": "全量文档处置、稳定导航、命令验真和新读者理解测试。",
+      "status": "researched",
+      "pinned_revision": null
+    }
+  ],
+  "mcps": [
+    {
+      "id": "MCP-01",
+      "name": "github",
+      "install_alias": "lumi2-github",
+      "display": "GitHub 官方 MCP",
+      "source": "https://github.com/github/github-mcp-server",
+      "docs": "https://github.com/github/github-mcp-server/blob/main/docs/server-configuration.md",
+      "setup": "现有安全认证 + 本地固定版本 stdio，或已有受支持 OAuth 的官方远端；只读 repos/pull_requests/actions 等必要工具。",
+      "acceptance": "查明本轮提交是否在主分支、必需 CI 是否针对同 SHA 通过、Release 附件是否真实存在。",
+      "boundary": "不新建或明文落盘 PAT；没有可用授权只阻塞此服务，不阻塞本地修复；不调用 secrets、删除仓库或改保护规则。",
+      "maturity": "官方产品；仓库约 33.2k stars，非用户数。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "MCP-02",
+      "name": "serena",
+      "install_alias": "lumi2-serena",
+      "display": "Serena",
+      "source": "https://github.com/oraios/serena",
+      "docs": "https://oraios.github.io/serena/02-usage/020_running.html",
+      "setup": "按官方 Quick Start 锁 commit，在隔离的本项目受控源码视图中使用 LSP；只开放项目所需工具。",
+      "acceptance": "定位 AdminScreen、认证依赖和调度器的符号引用，支持有依据的拆分并用类型检查验证。",
+      "boundary": "禁止挂载 home、.ssh 和生产数据；项目排除规则不是安全沙箱；需要 OS/容器边界。GPL-3.0-or-later / SolidLSP MIT 分组件核验。",
+      "maturity": "社区代码工具；仓库约 29.8k stars。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "MCP-03",
+      "name": "git",
+      "install_alias": "lumi2-git",
+      "display": "Git 参考 MCP",
+      "source": "https://github.com/modelcontextprotocol/servers/tree/main/src/git",
+      "docs": "https://raw.githubusercontent.com/modelcontextprotocol/servers/main/src/git/README.md",
+      "setup": "固定 mcp-server-git 与兼容 MCP SDK 版本，隔离环境中只暴露本项目的只读状态、diff、log、show 工具。",
+      "acceptance": "检查三个旧 worktree 的真实修改、提交关系及合入状态，不重复生成已经完成的补丁。",
+      "boundary": "不把 --repository 当作足够权限边界；禁止 reset/checkout/commit 等写工具，经原生 Git 由协调者合入。",
+      "maturity": "官方参考实现，README 明示早期开发；不称为生产就绪。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "MCP-04",
+      "name": "semgrep",
+      "install_alias": "lumi2-semgrep",
+      "display": "Semgrep 当前内置 MCP",
+      "source": "https://github.com/semgrep/semgrep",
+      "docs": "https://docs.semgrep.dev/cli-reference",
+      "setup": "固定当前 semgrep 二进制，用 semgrep mcp；依据实际 --help 配置本地扫描与关闭不必要 metrics。",
+      "acceptance": "对权限、路径、SQL、模板和 shell 变更扫描，再人工复核并写真实回归测试。",
+      "boundary": "禁止安装已归档 semgrep/mcp 旧服务；不接远端上传扫描，不输出秘密命中原文，不采用 --config auto 偷发项目地址。",
+      "maturity": "核心项目约 16.8k stars；MCP 已迁入主项目，许可证按组件和规则核验。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "MCP-05",
+      "name": "markitdown",
+      "install_alias": "lumi2-markitdown",
+      "display": "MarkItDown MCP",
+      "source": "https://github.com/microsoft/markitdown/tree/main/packages/markitdown-mcp",
+      "docs": "https://raw.githubusercontent.com/microsoft/markitdown/main/packages/markitdown-mcp/README.md",
+      "setup": "固定 markitdown-mcp，stdio 沙箱运行，只挂载合成或已脱敏的转换样本目录。",
+      "acceptance": "对导入/导出的 HTML、EML 等公开测试样本生成 Markdown 对照，检查文字和来源字段是否丢失。",
+      "boundary": "convert_to_markdown 能读 file URI；必须隔离文件权限和网络，不能仅靠提示词。不得读取私钥、生产备份或用户私人文档。",
+      "maturity": "Microsoft 项目约 187.3k stars；MCP 子包的实际用户数未知。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "MCP-06",
+      "name": "eslint",
+      "install_alias": "lumi2-eslint",
+      "display": "ESLint 官方 MCP",
+      "source": "https://eslint.org/docs/latest/use/mcp",
+      "docs": "https://eslint.org/docs/latest/use/mcp",
+      "setup": "固定 @eslint/mcp；放开发工具隔离目录，按需要补充项目现有 oxlint 未覆盖的少量检查。",
+      "acceptance": "审查 React Hooks、组件约束等实际缺口，输出可定位违规与修复；没有缺口则记录证据，不造 lint 任务。",
+      "boundary": "不得把现有 pnpm lint 从 oxlint 全量换成 ESLint，不引入互相矛盾的两套格式化规则。",
+      "maturity": "官方提供 MCP；不把 ESLint 总采用率宣称为 MCP 用户数。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "MCP-07",
+      "name": "storybook",
+      "install_alias": "lumi2-storybook",
+      "display": "Storybook 官方 MCP",
+      "source": "https://storybook.js.org/docs/ai/mcp/overview",
+      "docs": "https://storybook.js.org/docs/ai/mcp/overview",
+      "setup": "开发环境使用兼容版本 @storybook/addon-mcp，在现有或最小隔离 React/Vite 组件工作台启用，固定依赖。",
+      "acceptance": "读取真实 Base UI 包装组件的属性，建立登录表单、按钮、弹窗、用户表格的状态样本，并运行交互检查。",
+      "boundary": "官方能力仍为 preview；禁止称稳定版。只供开发，不进生产镜像；与重型 E2E 轮换资源，不为其改成 Next/Radix。",
+      "maturity": "Storybook 官方集成，MCP 明示 preview；API 兼容需现场验证。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "MCP-08",
+      "name": "gitmcp",
+      "install_alias": "lumi2-gitmcp",
+      "display": "GitMCP",
+      "source": "https://github.com/idosal/git-mcp",
+      "docs": "https://github.com/idosal/git-mcp/blob/main/README.md",
+      "setup": "使用项目公开文档的官方 GitMCP 端点；一个服务实例按需查询公共上游，不按仓库数量重复计 MCP。",
+      "acceptance": "研究 FreshRSS 或成熟开源实现的准确接口与文档，把结论关联一个复用或兼容性任务。",
+      "boundary": "仅检索公开上游，不提交私人代码、生产日志、用户资料或认证信息；远端滚动服务记录工具 schema 与访问时间，不能虚报锁定版本。",
+      "maturity": "社区远端文档工具；仓库约 8.4k stars。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "MCP-09",
+      "name": "microsoft-learn",
+      "install_alias": "lumi2-microsoft-learn",
+      "display": "Microsoft Learn MCP",
+      "source": "https://learn.microsoft.com/en-us/training/support/mcp",
+      "docs": "https://learn.microsoft.com/en-us/training/support/mcp-developer-reference",
+      "setup": "官方 Streamable HTTP：https://learn.microsoft.com/api/mcp；无需新增认证，按初始化发现实际工具。",
+      "acceptance": "核查 WSL、Windows/Edge/PWA 开发与测试边界；不能把桌面 WebKit 测试冒充真实 iPhone 测试。",
+      "boundary": "只查公开文档，不发送本机路径、凭据或浏览历史；不因为使用该工具就添加 Azure 基础设施。",
+      "maturity": "官方公开文档服务；不需要 API key。",
+      "status": "researched",
+      "pinned_revision": null
+    },
+    {
+      "id": "MCP-10",
+      "name": "memory",
+      "install_alias": "lumi2-memory",
+      "display": "本地 Memory 参考 MCP",
+      "source": "https://github.com/modelcontextprotocol/servers/tree/main/src/memory",
+      "docs": "https://raw.githubusercontent.com/modelcontextprotocol/servers/main/src/memory/README.md",
+      "setup": "固定 @modelcontextprotocol/server-memory，在受忽略且隔离的脱敏目录存储小型任务关系索引。",
+      "acceptance": "保存 task ID→模块→证据路径→依赖关系，用于上下文压缩后找回准确位置，实际演示一次恢复查询。",
+      "boundary": "只能作为可重建索引，权威台账仍唯一；禁止存用户原文、私钥、Cookie、令牌或完整聊天。不得用于伪造长期后台执行。",
+      "maturity": "官方参考实现，非生产数据存储方案。",
+      "status": "researched",
+      "pinned_revision": null
+    }
+  ]
+}

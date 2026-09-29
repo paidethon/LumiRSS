@@ -157,6 +157,32 @@ from lumirss.mail_imap import ImapNotConfigured
 from lumirss.media_failures import MediaFailureInvalid
 from lumirss.middleware import RequestBodyTooLarge
 from lumirss.mute_windows import MuteWindowsInvalid
+from lumirss.new221_time_slots import (
+    SlotInvalid,
+    SlotItemConflict,
+    SlotItemNotFound,
+    SlotNotFound,
+)
+from lumirss.new222_queue_prereqs import PrereqInvalid, PrereqNotFound
+from lumirss.new223_workload import WorkloadInvalid
+from lumirss.new224_reading_reminders import ReminderInvalid, ReminderNotFound
+from lumirss.new225_backlog_wizard import WizardConflict, WizardInvalid
+from lumirss.new226_queue_capacity import (
+    CapacityCandidateNotFound,
+    CapacityInvalid,
+)
+from lumirss.new227_section_plans import (
+    PlanConflict,
+    PlanInvalid,
+    PlanNotFound,
+    PlanSectionNotFound,
+)
+from lumirss.new228_interruption_notes import (
+    InterruptionNoteInvalid,
+    InterruptionNoteNotFound,
+)
+from lumirss.new229_reading_pacts import PactInvalid, PactNotFound
+from lumirss.new230_queue_topics import TopicInvalid
 from lumirss.note_sections import NoteSectionsInvalid
 from lumirss.obsidian import (
     NoteNotFound,
@@ -417,6 +443,29 @@ _ERROR_RESPONSES = {
     QueueItemDone: (409, "queue_item_done"),
     QueueSnapshotNotFound: (404, "queue_snapshot_not_found"),
     QueueSnapshotLimit: (400, "queue_snapshot_limit"),
+    # NEW-221..230 队列和阅读计划的用户决策（稳定错误信封）
+    SlotInvalid: (422, "invalid_queue_slot"),
+    SlotNotFound: (404, "queue_slot_not_found"),
+    SlotItemNotFound: (404, "queue_slot_item_not_found"),
+    SlotItemConflict: (409, "queue_slot_item_conflict"),
+    PrereqInvalid: (422, "invalid_queue_prereq"),
+    PrereqNotFound: (404, "queue_prereq_not_found"),
+    WorkloadInvalid: (422, "invalid_workload"),
+    ReminderInvalid: (422, "invalid_reading_reminder"),
+    ReminderNotFound: (404, "reading_reminder_not_found"),
+    WizardInvalid: (422, "invalid_backlog_wizard"),
+    WizardConflict: (409, "backlog_wizard_conflict"),
+    CapacityInvalid: (422, "invalid_queue_capacity"),
+    CapacityCandidateNotFound: (404, "queue_capacity_candidate_not_found"),
+    PlanInvalid: (422, "invalid_section_plan"),
+    PlanNotFound: (404, "section_plan_not_found"),
+    PlanSectionNotFound: (404, "section_plan_section_not_found"),
+    PlanConflict: (409, "section_plan_conflict"),
+    InterruptionNoteInvalid: (422, "invalid_interruption_note"),
+    InterruptionNoteNotFound: (404, "interruption_note_not_found"),
+    PactInvalid: (422, "invalid_reading_pact"),
+    PactNotFound: (404, "reading_pact_not_found"),
+    TopicInvalid: (422, "invalid_queue_topic"),
     # E1: N036/N037 刷新日志 + 恢复窗口
     RecoveryNotFound: (404, "recovery_not_found"),
     RecoveryAlreadyConsumed: (409, "recovery_already_consumed"),
@@ -791,6 +840,29 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(BatchLogNotFound)
     @app.exception_handler(BatchAlreadyUndone)
     @app.exception_handler(QueueRevisionConflict)
+    # NEW-221..230 队列和阅读计划的用户决策
+    @app.exception_handler(SlotInvalid)
+    @app.exception_handler(SlotNotFound)
+    @app.exception_handler(SlotItemNotFound)
+    @app.exception_handler(SlotItemConflict)
+    @app.exception_handler(PrereqInvalid)
+    @app.exception_handler(PrereqNotFound)
+    @app.exception_handler(WorkloadInvalid)
+    @app.exception_handler(ReminderInvalid)
+    @app.exception_handler(ReminderNotFound)
+    @app.exception_handler(WizardInvalid)
+    @app.exception_handler(WizardConflict)
+    @app.exception_handler(CapacityInvalid)
+    @app.exception_handler(CapacityCandidateNotFound)
+    @app.exception_handler(PlanInvalid)
+    @app.exception_handler(PlanNotFound)
+    @app.exception_handler(PlanSectionNotFound)
+    @app.exception_handler(PlanConflict)
+    @app.exception_handler(InterruptionNoteInvalid)
+    @app.exception_handler(InterruptionNoteNotFound)
+    @app.exception_handler(PactInvalid)
+    @app.exception_handler(PactNotFound)
+    @app.exception_handler(TopicInvalid)
     # N019 来源接入说明卡 / N018 撤销台账 / N020 关注级别
     @app.exception_handler(AccessCardInvalid)
     @app.exception_handler(OpmlImportLogNotFound)

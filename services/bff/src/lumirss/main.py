@@ -81,6 +81,16 @@ from lumirss.routers import (
     new218_reference_check,
     new219_archive_batches,
     new220_triage_journal,
+    new221_time_slots,
+    new222_queue_prereqs,
+    new223_workload,
+    new224_reading_reminders,
+    new225_backlog_wizard,
+    new226_queue_capacity,
+    new227_section_plans,
+    new228_interruption_notes,
+    new229_reading_pacts,
+    new230_queue_topics,
     obsidian,
     operations,
     opml,
@@ -501,5 +511,16 @@ app.include_router(new217_sort_recipes.router)
 app.include_router(new218_reference_check.router)
 app.include_router(new219_archive_batches.router)
 app.include_router(new220_triage_journal.router)
+# NEW-221..230 队列和阅读计划的用户决策（r3 阅读队列家族延伸）
+app.include_router(new221_time_slots.router)
+app.include_router(new222_queue_prereqs.router)
+app.include_router(new223_workload.router)
+app.include_router(new224_reading_reminders.router)
+app.include_router(new225_backlog_wizard.router)
+app.include_router(new226_queue_capacity.router)
+app.include_router(new227_section_plans.router)
+app.include_router(new228_interruption_notes.router)
+app.include_router(new229_reading_pacts.router)
+app.include_router(new230_queue_topics.router)
 
 register_error_handlers(app)
