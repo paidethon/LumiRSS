@@ -92,12 +92,12 @@ class ApiSourceStore:
 
     async def get(self, source_uuid: str) -> ApiSourceRecord | None:
         await self._db.migrate()
-        row = await self._db.fetch_one("SELECT uuid, name, endpoint, items_expr, field_map, enabled, secret, etag, last_status, last_success_at, last_error, created_at, atom_body, feed_updated, pagination, confirmed_schema, schema_drift, max_runs_per_hour, respect_retry_after, next_allowed_run FROM api_sources WHERE uuid = ?", (source_uuid,))
+        row = await self._db.fetch_one("SELECT uuid, name, endpoint, items_expr, field_map, enabled, secret, etag, last_status, last_success_at, last_error, created_at, atom_body, feed_updated, pagination, confirmed_schema, schema_drift, max_runs_per_hour, respect_retry_after, next_allowed_run, write_paused, pause_reason FROM api_sources WHERE uuid = ?", (source_uuid,))
         return _record_from_row(row) if row is not None else None
 
     async def list_sources(self) -> list[ApiSourceRecord]:
         await self._db.migrate()
-        rows = await self._db.fetch_all("SELECT uuid, name, endpoint, items_expr, field_map, enabled, secret, etag, last_status, last_success_at, last_error, created_at, atom_body, feed_updated, pagination, confirmed_schema, schema_drift, max_runs_per_hour, respect_retry_after, next_allowed_run FROM api_sources ORDER BY created_at ASC, uuid ASC")
+        rows = await self._db.fetch_all("SELECT uuid, name, endpoint, items_expr, field_map, enabled, secret, etag, last_status, last_success_at, last_error, created_at, atom_body, feed_updated, pagination, confirmed_schema, schema_drift, max_runs_per_hour, respect_retry_after, next_allowed_run, write_paused, pause_reason FROM api_sources ORDER BY created_at ASC, uuid ASC")
         return [_record_from_row(row) for row in rows if row is not None]
 
     async def update(
@@ -177,6 +177,15 @@ class ApiSourceStore:
         await self._db.execute(
             "UPDATE api_sources SET schema_drift = ? WHERE uuid = ?",
             (json.dumps(drift, ensure_ascii=False, separators=(",", ":")), source_uuid),
+        )
+
+    async def set_write_paused(
+        self, source_uuid: str, paused: bool, reason: str | None
+    ) -> None:
+        """NEW-306: schema-drift write pause（必要字段漂移 → 暂停写入）。"""
+        await self._db.execute(
+            "UPDATE api_sources SET write_paused = ?, pause_reason = ? WHERE uuid = ?",
+            (1 if paused else 0, reason, source_uuid),
         )
 
     async def delete(self, source_uuid: str) -> bool:
@@ -354,6 +363,8 @@ def _record_from_row(row: sqlite3.Row) -> ApiSourceRecord:
         max_runs_per_hour=int(row["max_runs_per_hour"] or 4),
         respect_retry_after=bool(row["respect_retry_after"]),
         next_allowed_run=row["next_allowed_run"],
+        write_paused=bool(row["write_paused"]),
+        pause_reason=row["pause_reason"],
     )
 
 

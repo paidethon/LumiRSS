@@ -635,6 +635,61 @@ async def serve_atom(source_uuid: str, secret: str, request: Request) -> Respons
     drift = diff_schema(record.confirmed_schema, observe_schema(items))
     if drift is not None:
         await store.mark_drift(record.uuid, drift)
+    # NEW-306: 必要字段漂移（或已处于暂停）→ 暂停写入：last-known-good
+    # 继续服务（诚实 stale），坏结构不静默流入。恢复只能走
+    # POST /schema-resume（用户确认新映射 + 受控探测 + 重新确认基线）。
+    from lumirss.new306_schema_pause import evaluate_required_drift, pause_reason_text
+
+    pause_payload = evaluate_required_drift(record.confirmed_schema, items)
+    if pause_payload is not None or record.write_paused:
+        if pause_payload is not None:
+            reason = pause_reason_text(pause_payload)
+            await store.set_write_paused(record.uuid, True, reason)
+        else:
+            reason = record.pause_reason or "该来源处于写暂停（结构变更未确认）。"
+        await store.mark_error(
+            record.uuid,
+            "schema_paused",
+            reason,
+            success_witness=record.last_success_at,
+        )
+        if record.atom_body:
+            return _stale_atom_response(record, request)
+        return Response(
+            status_code=502,
+            media_type="application/xml",
+            content="<error>schema paused</error>",
+        )
+    # NEW-307: 每日条目配额 —— 原子预占；到限只发布剩余名额，超出
+    # 计入 pending（待处理计数），用户在 intake-quota 快照里调整。
+    from lumirss.new307_intake_quota import IntakeQuotaStore
+
+    quota_store = IntakeQuotaStore(request.app.state.db)
+    quota_row = await request.app.state.db.fetch_one(
+        "SELECT source_uuid FROM api_intake_quota WHERE source_uuid = ?",
+        (record.uuid,),
+    )
+    if quota_row is not None:
+        claim = await quota_store.claim(record.uuid, len(items))
+        if claim["granted"] < len(items):
+            if claim["granted"] == 0:
+                # 一条都发不出去：绝不用空 feed 顶替好内容 —— 有
+                # last-good 继续诚实 stale，没有则 502。
+                await store.mark_error(
+                    record.uuid,
+                    "quota_limited",
+                    f"已达每日条目配额（{claim['maxItemsPerDay']}），"
+                    f"{claim['pending']} 条待处理；请调整配额或等待次日窗口。",
+                    success_witness=record.last_success_at,
+                )
+                if record.atom_body:
+                    return _stale_atom_response(record, request)
+                return Response(
+                    status_code=502,
+                    media_type="application/xml",
+                    content="<error>intake quota exhausted</error>",
+                )
+            items = items[: claim["granted"]]
     pagination = parse_pagination(record.pagination)
     max_entries = int(pagination.get("max_items", 100)) if pagination.get("mode", "none") != "none" else 100
     feed_updated = compute_feed_updated(
