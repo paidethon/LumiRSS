@@ -148,7 +148,8 @@ function DryRunBox() {
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') void run()
+            // FIX-012：输入法组合中的 Enter 仅提交候选词，不触发试跑。
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) void run()
           }}
           placeholder="样本值"
           aria-label="试跑样本值"

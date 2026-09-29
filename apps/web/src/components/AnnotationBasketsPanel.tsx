@@ -166,7 +166,9 @@ export function AnnotationBasketsPanel({ selectedIds }: { selectedIds: Set<strin
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && name.trim() !== '') createMutation.mutate()
+            // FIX-012：中文命名篮子时按 Enter 是确认候选词，不得提前建篮。
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing && name.trim() !== '')
+              createMutation.mutate()
           }}
           placeholder="新篮名称"
           aria-label="新篮名称"

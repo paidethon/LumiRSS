@@ -868,7 +868,8 @@ export default function SearchPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') commit(input)
+                // FIX-012：中文输入搜索词时按 Enter 是确认候选词，不触发搜索。
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing) commit(input)
               }}
               data-shortcut-target="search-input"
               placeholder="搜索文章标题、正文或作者…"
@@ -1515,7 +1516,12 @@ export default function SearchPage() {
                   autoFocus
                   onChange={(e) => setRenameDraft(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && renameDraft.trim() !== '') {
+                    // FIX-012：中文重命名时按 Enter 是确认候选词，不提交重命名。
+                    if (
+                      e.key === 'Enter' &&
+                      !e.nativeEvent.isComposing &&
+                      renameDraft.trim() !== ''
+                    ) {
                       renameView.mutate({ id: saved.id, name: renameDraft.trim() })
                       setRenamingId(null)
                     }

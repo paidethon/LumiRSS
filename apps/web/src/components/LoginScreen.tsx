@@ -346,8 +346,12 @@ export default function LoginScreen() {
                 />
                 <button
                   type="button"
+                  // FIX-014：mousedown preventDefault——点击不夺走密码框焦点
+                  // （移动端键盘不收起、光标不丢），也绝不触发表单提交。
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={() => setReveal((v) => !v)}
                   aria-label={reveal ? '隐藏密码' : '显示密码'}
+                  aria-pressed={reveal}
                   className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-[var(--lumi-radius-md)] text-[var(--lumi-text-tertiary)] transition-colors duration-[var(--lumi-motion-fast)] hover:text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
                 >
                   {reveal ? (

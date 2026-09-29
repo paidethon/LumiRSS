@@ -65,7 +65,8 @@ export function SearchWhyMissedPanel({
           value={entryRef}
           onChange={(e) => setEntryRef(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') run(entryRef)
+            // FIX-012：输入法组合中的 Enter 仅提交候选词，不触发复跑。
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) run(entryRef)
           }}
           placeholder="粘贴 entryRef…"
           aria-label="条目引用（entryRef）"
