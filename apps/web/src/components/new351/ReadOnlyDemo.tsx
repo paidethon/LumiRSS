@@ -11,7 +11,7 @@
  */
 
 import { useState } from 'react'
-import { BookOpen, Lock, Settings2, X } from 'lucide-react'
+import { BookOpen, Lock, PlayCircle, Settings2, X } from 'lucide-react'
 import ArticleContent from '../ArticleContent'
 import { Button } from '../ui/Button'
 import { cx } from '../ui/cx'
@@ -167,6 +167,35 @@ export function ReadOnlyDemo({ onExit }: { onExit: () => void }) {
           </ul>
         </div>
       )}
+    </div>
+  )
+}
+
+/** 设置页入口（通用 → 演示模式）：会话级开关，退出即卸载零残留。 */
+export function ReadOnlyDemoSetting() {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="flex items-center justify-between gap-4 py-3">
+      <div className="min-w-0">
+        <p className="text-sm font-medium leading-tight text-[var(--lumi-text-primary)]">
+          只读演示模式
+        </p>
+        <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+          用隔离合成数据体验阅读与管理界面；不需要真实账户或生产截图，
+          不会改动任何真实数据。
+        </p>
+      </div>
+      <Button
+        variant="secondary"
+        size="sm"
+        className="min-h-11 shrink-0"
+        data-testid="n360-open-demo"
+        onClick={() => setOpen(true)}
+      >
+        <PlayCircle aria-hidden className="size-4" />
+        打开演示
+      </Button>
+      {open && <ReadOnlyDemo onExit={() => setOpen(false)} />}
     </div>
   )
 }

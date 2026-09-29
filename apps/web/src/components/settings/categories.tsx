@@ -113,6 +113,11 @@ import { PrivacySharingCenter } from '../new341/PrivacySharingCenter'
 import { SourceAliasSettings } from '../SourceAliasSettings'
 // N067：触控操作练习区（手势重映射的安全练习台账）
 import { GesturePracticeSettings } from '../GesturePracticeSettings'
+// NEW-351/352：阅读手势训练（合成文章演练 + 启用选择）；外接键盘阅读模式。
+import ReadingGestureTraining from '../new351/ReadingGestureTraining'
+import KeyboardReadingModePanel from '../new351/KeyboardReadingModePanel'
+// NEW-360：只读演示模式（隔离合成数据；设置入口 + 全屏浮层）。
+import { ReadOnlyDemoSetting } from '../new351/ReadOnlyDemo'
 // N069：选词词典来源配置（用户自选端点；未配置零外发）
 import { DictSourceSettings } from './DictSourceSettings'
 
@@ -518,6 +523,10 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         // N067：手势练习区入口（同一 card-swipe 调度器；动作只记台账）
         { type: 'title', value: '手势' },
         { type: 'custom', node: <GesturePracticeSettings /> },
+        // NEW-351：阅读手势训练（合成文章演练侧滑返回；启用选择读写既有设置）
+        { type: 'custom', node: <ReadingGestureTraining /> },
+        // NEW-360：只读演示模式（合成数据；会话级，退出零残留）
+        { type: 'custom', node: <ReadOnlyDemoSetting /> },
         {
           type: 'toggle',
           label: '启动时仅看未读',
@@ -543,6 +552,12 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         {
           type: 'custom',
           node: <ShortcutsSettingsSection />,
+        },
+        // NEW-352：外接键盘阅读模式（当前页命令目录 + 会话级启用 + 只显示不执行的按键测试）。
+        { type: 'title', value: '外接键盘' },
+        {
+          type: 'custom',
+          node: <KeyboardReadingModePanel />,
         },
         { type: 'title', value: '多步快捷操作' },
         {

@@ -26,7 +26,8 @@ const PARAGRAPHS_PER_CHAPTER_VIEW = 200
 
 export interface PositionCalibrationPanelProps {
   entryRef: string
-  toc: TocEntry[]
+  /** 目录（可选；缺省时章节名来自段落收集时的标题文本）。 */
+  toc?: TocEntry[]
   getArticle: () => HTMLElement | null
   getScroller: () => HTMLElement | null
   onClose: () => void
@@ -34,7 +35,7 @@ export interface PositionCalibrationPanelProps {
 
 export function PositionCalibrationPanel({
   entryRef,
-  toc,
+  toc = [],
   getArticle,
   getScroller,
   onClose,

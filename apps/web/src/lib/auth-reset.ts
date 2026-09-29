@@ -24,6 +24,10 @@ import { clearAllDrafts } from './draft-store'
 import { clearSearchHistoryOnLogout } from './search-history'
 import { clearRecentReads } from './recent-reads'
 import { clearReadingPositions } from './reading-position'
+// NEW-355/359：单篇媒体预算决策与本机撤销栈都是设备本地个人数据——
+// 换账号统一清（防串号，与 reading-position 同一纪律）。
+import { clearOfflineUndoStack } from './offline-undo-stack'
+import { clearLinkLater } from './link-actions'
 import { resetAnnotationsForAccountSwitch } from './annotations'
 import { clearRecap } from './session-recap'
 import { clearReadingPath } from './reading-path'
@@ -71,6 +75,8 @@ export function resetAccountState(
   clearSearchHistoryOnLogout() // lumirss-search-history (+暂停标记)
   clearRecentReads() // lumirss-recent-reads
   clearReadingPositions() // lumirss-reading-positions
+  clearOfflineUndoStack() // lumirss-offline-undo（NEW-359）
+  clearLinkLater() // lumirss-link-later（NEW-358 稍后打开——本机阅读足迹）
 
   // 4b. FIX-062：审计补齐的按账号积累足迹——批注离线缓存（含服务端
   //     同步标记复位）、阅读会话回顾、阅读路径、来源别名离线缓存、

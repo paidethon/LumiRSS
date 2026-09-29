@@ -265,7 +265,15 @@ function FormulaFocusView({ tex, display }: { tex: string; display: boolean }) {
  * - 表格展开：过宽表格（scrollWidth > clientWidth + 24 或手动
  *   data-table-wide 标记，jsdom 无布局的测试注入点）包「展开查看」
  *   按钮，点击在灯箱面板中完整查看（横向可滚、保留语义表格）。 */
-export default function ArticleContent({ detail }: { detail: EntryDetail }) {
+/** NEW-355：单篇媒体预算的强制覆盖（'hidden' = 本篇图片/媒体一律占位，
+ * 与全局 readerImageMode 解耦；undefined = 跟随全局）。 */
+export default function ArticleContent({
+  detail,
+  forceImageMode,
+}: {
+  detail: EntryDetail
+  forceImageMode?: 'hidden'
+}) {
   const conversion = useAppSettings((s) => s.settings.readerChineseConversion)
   const bionic = useAppSettings((s) => s.settings.readerBionic)
   const codeHighlight = useAppSettings((s) => s.settings.readerCodeHighlight)
@@ -276,7 +284,8 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
   // F22 省流：hidden 模式下图片在进入 DOM 前摘掉 src（不发请求）；
   // imagesAllowed 是单篇覆盖（点「加载图片」后恢复本篇的真实地址）。
   // Reader 按 entryRef 重挂载（既定架构），覆盖状态天然不跨文章泄漏。
-  const imageMode = useAppSettings((s) => s.settings.readerImageMode)
+  const globalImageMode = useAppSettings((s) => s.settings.readerImageMode)
+  const imageMode = forceImageMode ?? globalImageMode
   // F009：默认不加载远程图片（本地/快照资源不受影响；单图点击恢复）
   const blockRemote = useAppSettings((s) => s.settings.readerBlockRemoteImages)
   // N066：按源媒体策略（设备本地 localStorage 映射；'manual' = 图片/视频/

@@ -25,6 +25,8 @@ export interface MediaBudgetPanelProps {
   /** 清洗后的正文 HTML（仅用于统计图片占位；不再发起任何请求）。 */
   contentHtml: string | null
   enclosures: Array<{ href: string; type?: string | null }>
+  /** 策略变化回调（宿主据此即时执行延后管线/隐藏播放器）。 */
+  onDecisionChange?: (mode: MediaBudgetMode) => void
   onClose: () => void
 }
 
@@ -37,7 +39,7 @@ export function collectImageSrcs(html: string | null): string[] {
     .filter((src) => src !== '')
 }
 
-export function MediaBudgetPanel({ entryRef, contentHtml, enclosures, onClose }: MediaBudgetPanelProps) {
+export function MediaBudgetPanel({ entryRef, contentHtml, enclosures, onDecisionChange, onClose }: MediaBudgetPanelProps) {
   const [mode, setMode] = useState<MediaBudgetMode>(
     () => readMediaBudgetDecision(entryRef)?.mode ?? 'ask',
   )
@@ -49,6 +51,7 @@ export function MediaBudgetPanel({ entryRef, contentHtml, enclosures, onClose }:
   const choose = (next: MediaBudgetMode) => {
     setMode(next)
     writeMediaBudgetDecision(entryRef, next)
+    onDecisionChange?.(next)
   }
 
   return (
