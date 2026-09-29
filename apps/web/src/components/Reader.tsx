@@ -96,6 +96,11 @@ const ReaderPager = lazy(() =>
 const ArticleLinksPanel = lazy(() => import('./ArticleLinksPanel'))
 const ItemRelationsPanel = lazy(() => import('./ItemRelationsPanel'))
 const DigestUsagePanel = lazy(() => import('./DigestUsagePanel'))
+// Bundle guard：N241..250 原文版本与溯源工具组非首读必需（折叠态零查询）——
+// lazy 分包，与修订面板同一模式。
+const New241SourceTools = lazy(() =>
+  import('./new241/New241SourceTools').then((m) => ({ default: m.New241SourceTools })),
+)
 const QuizPanel = lazy(() => import('./QuizPanel').then((m) => ({ default: m.QuizPanel })))
 const KnowledgeCardsPanel = lazy(() => import('./KnowledgeCardsPanel').then((m) => ({ default: m.KnowledgeCardsPanel })))
 const SearchHitsChip = lazy(() => import('./SearchHitsChip').then((m) => ({ default: m.SearchHitsChip })))
@@ -952,6 +957,10 @@ const handleScroll = useCallback(() => {
         {/* N031：修订记录（内容哈希变化的摄取历史；无修订不渲染入口） */}
         <Suspense fallback={null}>
           <EntryRevisionsPanel key={`revisions-${detail.entryRef}`} entryRef={detail.entryRef} />
+        </Suspense>
+        {/* N241..250：原文版本、溯源与证据工具组（折叠态零查询；展开后子面板才挂载） */}
+        <Suspense fallback={null}>
+          <New241SourceTools key={`source-tools-${detail.entryRef}`} entryRef={detail.entryRef} />
         </Suspense>
         {/* F29：来源相关笔记反向入口（无笔记引用时零渲染） */}
         <Suspense fallback={null}>
