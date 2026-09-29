@@ -47,6 +47,11 @@ _MAX_TAG_LENGTH = 50
 _MAX_TITLE_LENGTH = 500
 _MAX_WIKILINKS = 100
 _MAX_BODY_LENGTH = 20000
+# NEW-327：frontmatter 属性投影上限（键值均字符串化、有界）——列表列
+# 映射的数据源。绝不回写文件，原格式保持不变。
+_MAX_PROPERTIES = 20
+_MAX_PROPERTY_KEY = 50
+_MAX_PROPERTY_VALUE = 200
 # N138：文件级诊断列表每类最多列出的路径数（超出 → truncated 标志）。
 _MAX_LISTED_PATHS = 50
 
@@ -236,6 +241,38 @@ def _frontmatter_tags(meta_tags: Any) -> list[str]:
     return []
 
 
+def _frontmatter_properties(post: Any) -> dict[str, str]:
+    """NEW-327：frontmatter 顶层标量字段 → 有界属性投影（键/值字符串化）。
+
+    只读投影：值非标量（嵌套 dict 等）如实跳过；``tags`` 不进属性（有
+    自己的域）。绝不回写文件——原 frontmatter 格式保持不变。"""
+    metadata = getattr(post, "metadata", None)
+    if not isinstance(metadata, dict):
+        return {}
+    props: dict[str, str] = {}
+    for key, value in metadata.items():
+        if not isinstance(key, str) or key == "tags":
+            continue
+        clean_key = key.strip()[:_MAX_PROPERTY_KEY]
+        if not clean_key:
+            continue
+        if isinstance(value, bool):
+            text = "true" if value else "false"
+        elif isinstance(value, (int, float)):
+            text = str(value)
+        elif isinstance(value, str):
+            text = value.strip()
+        elif isinstance(value, (list, tuple)):
+            text = ", ".join(str(item) for item in value if item)
+        else:
+            continue  # 嵌套结构等非标量：诚实跳过，不臆造字符串
+        if text:
+            props[clean_key] = text[:_MAX_PROPERTY_VALUE]
+        if len(props) >= _MAX_PROPERTIES:
+            break
+    return props
+
+
 def parse_note(resolved_path: Path, root: Path) -> dict[str, Any] | None:
     """One file → projection payload (frontmatter + wikilinks + text).
 
@@ -301,11 +338,45 @@ def parse_note(resolved_path: Path, root: Path) -> dict[str, Any] | None:
             "wikilinks": wikilinks[:_MAX_WIKILINKS],
             "wikilink_raws": wikilink_raws[:_MAX_WIKILINKS],
             "body_text": text[:_MAX_BODY_LENGTH],
+            "properties": _frontmatter_properties(post),
             "truncated": 1 if truncated else 0,
         }
     except Exception:  # noqa: BLE001 — FIX-333：单文件异常 = 单文件降级
         _logger.debug("parse_note degraded per-file", exc_info=True)
         return None
+
+
+@dataclass(frozen=True)
+class ScanPlan:
+    """NEW-323：一次扫描的差异计划（walk + parse + 与投影对比的结果）。
+
+    计划阶段零写入——``rescan()`` 是唯一的应用者，同步审批预览直接消费
+    同一个计划，保证「预览看到的差异」与「确认后应用的差异」同一口径。"""
+
+    root: Path
+    new_uuids: list[tuple[str, dict[str, Any]]]
+    updates: list[tuple[str, dict[str, Any], str]]  # (uuid, note, kind)
+    removed_uuids: list[str]
+    removed_paths: list[str]
+    added: int
+    changed: int
+    removed: int
+    renames: int
+    unchanged: int
+    truncated_notes: int
+    skipped: int
+    scan_files: dict[str, Any]
+
+    def counts(self) -> dict[str, int]:
+        return {
+            "added": self.added,
+            "changed": self.changed,
+            "removed": self.removed,
+            "renames": self.renames,
+            "unchanged": self.unchanged,
+            "skipped": self.skipped,
+            "truncatedNotes": self.truncated_notes,
+        }
 
 
 class ObsidianService:
@@ -386,22 +457,13 @@ class ObsidianService:
             # polling so a late mount self-heals.
             return None
 
-    async def rescan(self) -> dict[str, Any]:
-        """Full scan: incremental fingerprint short-circuit; renames
-        adopted only when unambiguous; one transaction per batch."""
-        from lumirss.db_tx import transaction
-
+    async def _plan(self) -> ScanPlan:
+        """Diff computation shared by rescan() and the NEW-323 sync
+        approval preview: walk + parse + compare against the projection.
+        Strictly read-only — the apply phase below is the only writer, so
+        a preview can never mutate the mirror."""
         vault_path = await self.get_vault_path()
-        started = utc_now()
-        try:
-            root = canonical_vault_root(vault_path)
-        except (VaultUnreachable, VaultPermissionDenied) as exc:
-            await self._db.migrate()
-            await self._db.execute(
-                "UPDATE obsidian_settings SET last_error = ? WHERE id = 1",
-                (str(exc)[:500],),
-            )
-            raise
+        root = canonical_vault_root(vault_path)
         loop_files, skipped_paths, skipped = await _to_thread(
             _iter_markdown_files, root
         )
@@ -479,17 +541,69 @@ class ObsidianService:
             truncated_notes += int(note["truncated"])
         removed_uuids = [known[rel]["item_uuid"] for rel in removed_paths]
         removed += len(removed_uuids)
-        removed_paths_list = sorted(removed_paths)
+        scan_files = build_scan_files_report(
+            added=added_paths,
+            changed=changed_paths,
+            removed=sorted(removed_paths),
+            skipped=skipped_paths,
+        )
+        return ScanPlan(
+            root=root,
+            new_uuids=new_uuids,
+            updates=updates,
+            removed_uuids=removed_uuids,
+            removed_paths=sorted(removed_paths),
+            added=added,
+            changed=changed,
+            removed=removed,
+            renames=renames,
+            unchanged=unchanged,
+            truncated_notes=truncated_notes,
+            skipped=skipped,
+            scan_files=scan_files,
+        )
+
+    async def sync_preview(self) -> dict[str, Any]:
+        """NEW-323 同步审批预览：与 rescan 同一差异计划，但【零写入】——
+        镜像（obsidian_notes 投影）在用户确认之前绝不更新。新增/修改/
+        删除清单来自真实 walk + parse，不是上次的缓存报告。"""
+        started = utc_now()
+        plan = await self._plan()
+        result: dict[str, Any] = plan.counts()
+        result["elapsedMs"] = _elapsed_ms(started)
+        result["vaultPath"] = str(plan.root)
+        result["files"] = plan.scan_files
+        return result
+
+    async def rescan(self) -> dict[str, Any]:
+        """Full scan: incremental fingerprint short-circuit; renames
+        adopted only when unambiguous; one transaction per batch.
+
+        NEW-323：拆成 _plan()（零写入差异计算）+ 本方法的应用阶段——
+        应用是唯一写镜像的路径，审批预览复用同一计划口径。"""
+        from lumirss.db_tx import transaction
+
+        started = utc_now()
+        try:
+            plan = await self._plan()
+        except (VaultUnreachable, VaultPermissionDenied) as exc:
+            await self._db.migrate()
+            await self._db.execute(
+                "UPDATE obsidian_settings SET last_error = ? WHERE id = 1",
+                (str(exc)[:500],),
+            )
+            raise
+        plan_scan_files = plan.scan_files
 
         def apply(connection) -> None:  # noqa: ANN001 — raw sqlite3 connection
             now = utc_now()
-            for item_uuid, note in new_uuids:
+            for item_uuid, note in plan.new_uuids:
                 connection.execute(
                     "INSERT INTO library_items (uuid, kind, created_at) VALUES (?, 'obsidian_note', ?)",
                     (item_uuid, now),
                 )
                 connection.execute(
-                    "INSERT INTO obsidian_notes (item_uuid, rel_path, fingerprint, content_hash, title, tags, wikilinks, wikilink_raws, body_text, truncated, indexed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO obsidian_notes (item_uuid, rel_path, fingerprint, content_hash, title, tags, wikilinks, wikilink_raws, body_text, truncated, properties_json, indexed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         item_uuid,
                         note["rel_path"],
@@ -501,6 +615,7 @@ class ObsidianService:
                         json.dumps(note["wikilink_raws"], ensure_ascii=False),
                         note["body_text"],
                         note["truncated"],
+                        json.dumps(note["properties"], ensure_ascii=False),
                         now,
                     ),
                 )
@@ -511,9 +626,9 @@ class ObsidianService:
                     title=note["title"],
                     body=note["body_text"][:4000],
                 )
-            for item_uuid, note, _kind in updates:
+            for item_uuid, note, _kind in plan.updates:
                 connection.execute(
-                    "UPDATE obsidian_notes SET rel_path = ?, fingerprint = ?, content_hash = ?, title = ?, tags = ?, wikilinks = ?, wikilink_raws = ?, body_text = ?, truncated = ?, indexed_at = ? WHERE item_uuid = ?",
+                    "UPDATE obsidian_notes SET rel_path = ?, fingerprint = ?, content_hash = ?, title = ?, tags = ?, wikilinks = ?, wikilink_raws = ?, body_text = ?, truncated = ?, properties_json = ?, indexed_at = ? WHERE item_uuid = ?",
                     (
                         note["rel_path"],
                         note["fingerprint"],
@@ -524,6 +639,7 @@ class ObsidianService:
                         json.dumps(note["wikilink_raws"], ensure_ascii=False),
                         note["body_text"],
                         note["truncated"],
+                        json.dumps(note["properties"], ensure_ascii=False),
                         now,
                         item_uuid,
                     ),
@@ -535,7 +651,7 @@ class ObsidianService:
                     title=note["title"],
                     body=note["body_text"][:4000],
                 )
-            for item_uuid in removed_uuids:
+            for item_uuid in plan.removed_uuids:
                 connection.execute(
                     "DELETE FROM library_items WHERE uuid = ?", (item_uuid,)
                 )
@@ -544,32 +660,25 @@ class ObsidianService:
                 )
             connection.execute(
                 "UPDATE obsidian_settings SET last_scan_at = ?, last_error = NULL, last_scan_files_json = ? WHERE id = 1",
-                (utc_now(), json.dumps(scan_files_payload, ensure_ascii=False)),
+                (utc_now(), json.dumps(plan_scan_files, ensure_ascii=False)),
             )
-
-        scan_files_payload = build_scan_files_report(
-            added=added_paths,
-            changed=changed_paths,
-            removed=removed_paths_list,
-            skipped=skipped_paths,
-        )
 
         await transaction(self._db, apply)
         elapsed_ms = _elapsed_ms(started)
         report = ScanReport(
-            added=added,
-            changed=changed,
-            removed=removed,
-            renames=renames,
-            unchanged=unchanged,
-            skipped=skipped,
-            truncated_notes=truncated_notes,
+            added=plan.added,
+            changed=plan.changed,
+            removed=plan.removed,
+            renames=plan.renames,
+            unchanged=plan.unchanged,
+            skipped=plan.skipped,
+            truncated_notes=plan.truncated_notes,
             elapsed_ms=elapsed_ms,
         )
         result = report.to_dict()
-        result["vaultPath"] = str(root)
+        result["vaultPath"] = str(plan.root)
         # N138：文件级诊断（本批列表随报告返回 + 已持久化为「最近一次」）。
-        result["files"] = scan_files_payload
+        result["files"] = plan_scan_files
         # F080：重建反向链接索引（尽力而为；失败不影响 rescan 结果）
         import contextlib as _contextlib
 
@@ -615,7 +724,7 @@ class ObsidianService:
         """
         await self._db.migrate()
         row = await self._db.fetch_one(
-            "SELECT item_uuid, rel_path, title, tags, wikilinks, body_text, truncated, indexed_at FROM obsidian_notes WHERE item_uuid = ?",
+            "SELECT item_uuid, rel_path, title, tags, wikilinks, body_text, truncated, properties_json, indexed_at FROM obsidian_notes WHERE item_uuid = ?",
             (item_uuid,),
         )
         if row is None:
@@ -626,6 +735,10 @@ class ObsidianService:
         # mistune is pure-Python CPU: a large note rendered inline would
         # stall the event loop for every concurrent request.
         html = await _to_thread(mistune.html, body_text) if body_text else ""
+        try:
+            properties = json.loads(str(row["properties_json"] or "{}"))
+        except json.JSONDecodeError:
+            properties = {}
         return {
             "ref": f"library:{row['item_uuid']}",
             "relPath": str(row["rel_path"]),
@@ -635,6 +748,7 @@ class ObsidianService:
             "bodyText": body_text,
             "contentHtml": html,
             "truncated": bool(row["truncated"]),
+            "properties": properties if isinstance(properties, dict) else {},
             "indexedAt": str(row["indexed_at"]),
         }
 
