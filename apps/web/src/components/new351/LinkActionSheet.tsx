@@ -37,7 +37,6 @@ export function LinkActionSheet({ url, onClose }: LinkActionSheetProps) {
   const selectSection = useReaderUi((s) => s.selectSection)
   const [copied, setCopied] = useState<'plain' | 'clean' | null>(null)
   const [laterItems, setLaterItems] = useState<LinkLaterItem[]>(() => readLinkLater())
-  const [clipStaged, setClipStaged] = useState(false)
   const copyTimer = useRef<number | undefined>(undefined)
 
   useEffect(() => () => window.clearTimeout(copyTimer.current), [])
@@ -77,7 +76,6 @@ export function LinkActionSheet({ url, onClose }: LinkActionSheetProps) {
     // 已授权剪藏操作 = 一次性预填交接（与 PWA Share Target 同一通道）；
     // 抓取只发生在剪藏页用户显式确认后——此处绝不发起远端预览请求。
     if (stageClipPrefill(url)) {
-      setClipStaged(true)
       selectSection('clips')
       onClose()
     }
@@ -215,8 +213,8 @@ export function LinkActionGesture({ containerRef }: { containerRef: React.RefObj
     let timer: number | null = null
     let suppressClick: string | null = null
 
-    const resolveAnchor = (target: EventTarget | null): { anchor: Element; url: string } | null => {
-      const anchor = (target as HTMLElement | null)?.closest('a[href]')
+    const resolveAnchor = (target: EventTarget | null): { anchor: HTMLElement; url: string } | null => {
+      const anchor = ((target as HTMLElement | null)?.closest('a[href]') ?? null) as HTMLElement | null
       if (anchor === null) return null
       const href = anchor.getAttribute('href')
       if (href === null) return null
