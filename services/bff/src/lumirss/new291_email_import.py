@@ -169,14 +169,17 @@ async def insert_material(
 
     供本模块导入流水线与后续冲突解决（NEW-298）共用同一条写入路径。
     """
+    from lumirss.new292_email_threads import assign_thread_on_import
+
     material_id = f"eml-{uuid.uuid4().hex[:20]}"
     now = utc_now()
+    thread_id, link_mode = await assign_thread_on_import(db, parsed)
     await db.execute(
         "INSERT INTO email_materials (id, message_id, subject, from_name,"
         " from_addr, to_addrs, date_hdr, snippet, body_text, body_html,"
         " headers_json, attachments_json, tags_json, body_digest, raw_bytes,"
-        " source_label, import_kind, created_at)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " source_label, import_kind, thread_id, link_mode, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             material_id,
             parsed["message_id"],
@@ -195,6 +198,8 @@ async def insert_material(
             int(parsed["raw_bytes"]),
             source_label,
             import_kind,
+            thread_id,
+            link_mode,
             now,
         ),
     )
@@ -293,8 +298,8 @@ class EmailMaterialStore:
         limit = max(1, min(limit, 200))
         rows = await self._db.fetch_all(
             "SELECT id, message_id, subject, from_name, from_addr, to_addrs,"
-            " date_hdr, snippet, source_label, tags_json, attachments_json,"
-            " raw_bytes, created_at FROM email_materials"
+            " date_hdr, snippet, source_label, thread_id, link_mode, tags_json,"
+            " attachments_json, raw_bytes, created_at FROM email_materials"
             " ORDER BY created_at DESC, id DESC LIMIT ?",
             (limit,),
         )
@@ -317,6 +322,8 @@ class EmailMaterialStore:
             "date": str(row["date_hdr"]),
             "snippet": str(row["snippet"]),
             "sourceLabel": str(row["source_label"]),
+            "threadId": str(row["thread_id"] or ""),
+            "linkMode": str(row["link_mode"] or "none"),
             "tags": json.loads(str(row["tags_json"] or "[]")),
             "attachments": json.loads(str(row["attachments_json"] or "[]")),
             "rawBytes": int(row["raw_bytes"]),

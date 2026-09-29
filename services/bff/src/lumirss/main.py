@@ -142,6 +142,7 @@ from lumirss.routers import (
     new279_answer_adoptions,
     new280_quota_buckets,
     new291_email_import,
+    new292_email_threads,
     obsidian,
     operations,
     opml,
@@ -628,5 +629,6 @@ app.include_router(new278_privacy_filters.router)
 app.include_router(new279_answer_adoptions.router)
 app.include_router(new280_quota_buckets.router)
 app.include_router(new291_email_import.router)
+app.include_router(new292_email_threads.router)
 
 register_error_handlers(app)
