@@ -146,6 +146,7 @@ from lumirss.routers import (
     new293_email_quotes,
     new294_email_source_maps,
     new295_email_masks,
+    new296_email_attachments,
     obsidian,
     operations,
     opml,
@@ -636,5 +637,6 @@ app.include_router(new292_email_threads.router)
 app.include_router(new293_email_quotes.router)
 app.include_router(new294_email_source_maps.router)
 app.include_router(new295_email_masks.router)
+app.include_router(new296_email_attachments.router)
 
 register_error_handlers(app)
