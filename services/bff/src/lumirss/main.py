@@ -109,6 +109,7 @@ from lumirss.routers import (
     new276_task_replays,
     new277_purpose_constraints,
     new278_privacy_filters,
+    new279_answer_adoptions,
     new280_quota_buckets,
     obsidian,
     operations,
@@ -560,6 +561,7 @@ app.include_router(new275_batch_approvals.router)
 app.include_router(new276_task_replays.router)
 app.include_router(new277_purpose_constraints.router)
 app.include_router(new278_privacy_filters.router)
+app.include_router(new279_answer_adoptions.router)
 app.include_router(new280_quota_buckets.router)
 
 register_error_handlers(app)
