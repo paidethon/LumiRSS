@@ -50,9 +50,17 @@ def normalize_message_id(raw: str | None) -> str:
     return (raw or "").strip().strip("<>").strip()
 
 
-def _bounded_headers(msg: Any) -> dict[str, str]:
+def _bounded_headers(msg: Any, raw: bytes) -> dict[str, str]:
+    try:
+        items = list(msg.items())
+    except Exception:  # noqa: BLE001 — 畸形头部让 items() 惰性解析炸掉
+        try:
+            compat = BytesParser(policy=policy.compat32).parsebytes(raw)
+            items = [(k, str(v)) for k, v in compat.items()]
+        except Exception:  # noqa: BLE001
+            return {}
     headers: dict[str, str] = {}
-    for key, value in msg.items():
+    for key, value in items:
         if len(headers) >= _MAX_HEADERS:
             break
         try:
@@ -94,6 +102,23 @@ def _iter_attachments(msg: Any) -> list[Any]:
         return []
 
 
+def _safe_header_str(msg: Any, raw: bytes, name: str) -> str:
+    """头部取值永不炸：policy.default 的结构化头部遇到恶意/畸形值可能
+    在 str() 时抛错（如 Message-ID 为 «<<a@b>>» 时 IndexError）——
+    回退到 compat32 的原始文本视图，再不行给空串。"""
+    try:
+        return str(msg[name] or "")
+    except Exception:  # noqa: BLE001 — 不可信内容，绝不毁导入
+        try:
+            compat = BytesParser(policy=policy.compat32).parsebytes(raw)
+            value = compat.get(name)
+            if isinstance(value, str):
+                return value
+        except Exception:  # noqa: BLE001
+            pass
+        return ""
+
+
 def parse_eml(raw: bytes) -> dict[str, Any]:
     """把一份 EML 字节解析为资料条目字段（纯函数，不落库）。
 
@@ -108,11 +133,12 @@ def parse_eml(raw: bytes) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001 — 解析器异常归一为导入失败
         raise EmailImportInvalid(f"无法解析为邮件：{exc}") from exc
 
-    subject = str(msg["Subject"] or "")
-    from_name, from_addr = parseaddr(str(msg["From"] or ""))
-    message_id = normalize_message_id(str(msg["Message-ID"] or ""))
+    subject = _safe_header_str(msg, raw, "Subject")[:500]
+    from_header = _safe_header_str(msg, raw, "From")
+    from_name, from_addr = parseaddr(from_header)
+    message_id = normalize_message_id(_safe_header_str(msg, raw, "Message-ID"))
     body_text, body_html = _body_parts(msg)
-    headers = _bounded_headers(msg)
+    headers = _bounded_headers(msg, raw)
     if not headers:
         # 没有任何头部 = 随手存的文本，不是邮件（诚实拒绝，不硬造条目）。
         raise EmailImportInvalid("文件里没有邮件头部，不是一封可识别的邮件。")
@@ -141,11 +167,11 @@ def parse_eml(raw: bytes) -> dict[str, Any]:
     snippet = " ".join(body_text.split())[:_SNIPPET_CHARS]
     return {
         "message_id": message_id,
-        "subject": subject[:500],
+        "subject": subject,
         "from_name": from_name[:200],
         "from_addr": from_addr[:320],
-        "to_addrs": str(msg["To"] or "")[:2000],
-        "date_hdr": str(msg["Date"] or "")[:200],
+        "to_addrs": _safe_header_str(msg, raw, "To")[:2000],
+        "date_hdr": _safe_header_str(msg, raw, "Date")[:200],
         "snippet": snippet,
         "body_text": body_text,
         "body_html": body_html,
@@ -252,16 +278,21 @@ class EmailMaterialStore:
     def __init__(self, db: Database) -> None:
         self._db = db
 
-    async def import_files(self, raw_files: Any) -> dict[str, Any]:
+    async def import_files(
+        self, raw_files: Any, rules: list[dict[str, Any]] | None = None
+    ) -> dict[str, Any]:
         """导入一批 EML 文件；逐文件给出 imported/failed 结果。
 
         单文件解析失败只影响该文件（failed 里如实给原因），不毁整批。
+        rules（NEW-297）与预览共用同一条 apply_rules 变换路径。
         """
         files = _clean_files(raw_files)
         await self._db.migrate()
         from lumirss.new294_email_source_maps import SourceMapStore
+        from lumirss.new297_email_import_rules import apply_rules
 
         source_maps = await SourceMapStore(self._db).addr_map()
+        rules = rules or []
         imported: list[dict[str, Any]] = []
         failed: list[dict[str, Any]] = []
         for index, file in enumerate(files):
@@ -276,21 +307,26 @@ class EmailMaterialStore:
             except EmailImportInvalid as exc:
                 failed.append({"filename": filename, "reason": str(exc)})
                 continue
+            applied = apply_rules(
+                parsed, rules,
+                persisted_label=source_maps.get(parsed["from_addr"].lower(), ""),
+            )
             material_id = await insert_material(
                 self._db,
-                parsed,
-                source_label=source_maps.get(parsed["from_addr"].lower(), ""),
+                {**parsed, "subject": applied["subject"]},
+                tags=applied["tags"],
+                source_label=applied["sourceLabel"],
             )
             imported.append(
                 {
                     "id": material_id,
                     "filename": filename,
-                    "subject": parsed["subject"],
+                    "subject": applied["subject"],
+                    "tags": applied["tags"],
+                    "sourceLabel": applied["sourceLabel"],
+                    "sourceOrigin": applied["sourceOrigin"],
                     "fromAddr": parsed["from_addr"],
                     "snippet": parsed["snippet"],
-                    "sourceLabel": source_maps.get(
-                        parsed["from_addr"].lower(), ""
-                    ),
                     "attachments": parsed["attachments"],
                     "messageId": parsed["message_id"],
                 }

@@ -29,6 +29,7 @@ class EmailImportBody(BaseModel):
     model_config = {"extra": "forbid"}
 
     files: list[ImportFile]
+    rules: list[dict] | None = None  # NEW-297：本批导入规则（预览同路径）
 
 
 def _error(status: int, error_type: str, message: str) -> JSONResponse:
@@ -43,7 +44,7 @@ async def post_email_import(payload: EmailImportBody, request: Request) -> Respo
     store = EmailMaterialStore(request.app.state.db)
     try:
         result = await store.import_files(
-            [file.model_dump() for file in payload.files]
+            [file.model_dump() for file in payload.files], rules=payload.rules
         )
     except EmailImportInvalid as exc:
         return _error(422, "email_import_invalid", str(exc))
