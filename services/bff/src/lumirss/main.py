@@ -101,6 +101,16 @@ from lumirss.routers import (
     new238_layer_migration,
     new239_conflicts,
     new240_attachments,
+    new241_article_versions,
+    new242_source_timeline,
+    new243_raw_fields,
+    new244_link_recheck,
+    new245_citation_fields,
+    new246_citation_chain,
+    new247_content_watch,
+    new248_detrack,
+    new249_licenses,
+    new250_evidence,
     obsidian,
     operations,
     opml,
@@ -543,5 +553,16 @@ app.include_router(new237_quote_cards.router)
 app.include_router(new238_layer_migration.router)
 app.include_router(new239_conflicts.router)
 app.include_router(new240_attachments.router)
+# NEW-241..250 原文版本、溯源与证据（r2 N241 组；路由各自独立成文件）
+app.include_router(new241_article_versions.router)
+app.include_router(new242_source_timeline.router)
+app.include_router(new243_raw_fields.router)
+app.include_router(new244_link_recheck.router)
+app.include_router(new245_citation_fields.router)
+app.include_router(new246_citation_chain.router)
+app.include_router(new247_content_watch.router)
+app.include_router(new248_detrack.router)
+app.include_router(new249_licenses.router)
+app.include_router(new250_evidence.router)
 
 register_error_handlers(app)
