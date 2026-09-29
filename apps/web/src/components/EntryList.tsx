@@ -13,6 +13,8 @@ const DuplicateWarningToast = lazy(() => import('./DuplicateWarningToast').then(
 const ReadingPathPanel = lazy(() => import('./ReadingPathPanel').then((m) => ({ default: m.ReadingPathPanel })))
 // NEW-221..230 阅读决策面板（队列/计划的用户决策工具区）
 const ReadingDecisionsPanel = lazy(() => import('./new2xx/ReadingDecisionsPanel').then((m) => ({ default: m.ReadingDecisionsPanel })))
+// NEW-331..340 共读空间协作工具（显式共享面；空间/成员/会议/审批/分歧等）
+const SpaceGovernanceTools = lazy(() => import('./new331/SpaceGovernanceTools').then((m) => ({ default: m.SpaceGovernanceTools })))
 const CompareRead = lazy(() => import('./CompareRead'))
 import {
   useEntries,
@@ -501,6 +503,8 @@ function EntriesList() {
   const [backlogOpen, setBacklogOpen] = useState(false)
   // NEW-221..230：阅读决策面板开关（分时段/依赖/工作量/预约/向导/容量/章节/便签/约定/主题）
   const [decisionsOpen, setDecisionsOpen] = useState(false)
+  // NEW-331..340：共读空间协作工具开关（空间/成员/会议/审批/通知/讨论/分歧/摘要/附件/模板/归档）
+  const [spaceToolsOpen, setSpaceToolsOpen] = useState(false)
   const openEntry = (entryRef: string) => selectEntry(entryRef)
   // F016：对照阅读（恰好选中 2 条时可用；关闭恢复原列表）
   const [compareRefs, setCompareRefs] = useState<[string, string] | null>(null)
@@ -983,6 +987,12 @@ function EntriesList() {
           <ReadingDecisionsPanel onClose={() => setDecisionsOpen(false)} />
         </Suspense>
       )}
+      {/* NEW-331..340：共读空间协作工具（情境展开组合面板；折叠零请求） */}
+      {spaceToolsOpen && (
+        <Suspense fallback={null}>
+          <SpaceGovernanceTools />
+        </Suspense>
+      )}
       {/* N050：阅读路径面板（设备本地；恢复/停用/清空） */}
       {readingPathOpen && (
         <Suspense fallback={null}>
@@ -1079,6 +1089,21 @@ function EntriesList() {
           )}
         >
           阅读决策
+        </button>
+        {/* NEW-331..340：共读空间协作入口（显式共享面；私人阅读状态不进入空间视图） */}
+        <button
+          type="button"
+          aria-pressed={spaceToolsOpen}
+          onClick={() => setSpaceToolsOpen((v) => !v)}
+          className={cx(
+            'mr-auto flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] px-2.5 py-1 text-xs transition-colors duration-[var(--lumi-motion-fast)]',
+            'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+            spaceToolsOpen
+              ? 'bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
+              : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-secondary)]',
+          )}
+        >
+          共读空间
         </button>
         {timelineOrder === 'oldest' && (
           <p

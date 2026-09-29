@@ -190,6 +190,17 @@ from lumirss.routers import (
     new328_conflict_inbox,
     new329_disconnect,
     new330_relocation,
+    new331_meetings,
+    new331_spaces,
+    new332_contributions,
+    new333_version_notices,
+    new334_member_expiry,
+    new335_disagreements,
+    new336_discussions,
+    new337_activity,
+    new338_attachment_shares,
+    new339_space_templates,
+    new340_space_archive,
     obsidian,
     operations,
     opml,
@@ -730,5 +741,19 @@ app.include_router(new327_property_columns.router)
 app.include_router(new328_conflict_inbox.router)
 app.include_router(new329_disconnect.router)
 app.include_router(new330_relocation.router)
+# NEW-331..340 共读空间的协作秩序（控制库显式共享面；非成员一律 404
+# 不泄露存在性，成员越权管理者动作 403，归档空间写动作 409 只读；
+# 私人阅读状态绝不自动进入空间视图；无 AI / 无上游网络）
+app.include_router(new331_spaces.router)
+app.include_router(new331_meetings.router)
+app.include_router(new332_contributions.router)
+app.include_router(new333_version_notices.router)
+app.include_router(new334_member_expiry.router)
+app.include_router(new335_disagreements.router)
+app.include_router(new336_discussions.router)
+app.include_router(new337_activity.router)
+app.include_router(new338_attachment_shares.router)
+app.include_router(new339_space_templates.router)
+app.include_router(new340_space_archive.router)
 
 register_error_handlers(app)
