@@ -150,6 +150,16 @@ from lumirss.routers import (
     new288_topics,
     new289_eml,
     new290_corrections,
+    new291_email_import,
+    new292_email_threads,
+    new293_email_quotes,
+    new294_email_source_maps,
+    new295_email_masks,
+    new296_email_attachments,
+    new297_email_import_rules,
+    new298_email_duplicates,
+    new299_email_unsubscribe,
+    new300_email_export,
     obsidian,
     operations,
     opml,
@@ -647,5 +657,15 @@ app.include_router(new288_topics.router)
 app.include_router(new290_corrections.router)
 app.include_router(new289_eml.router)
 app.include_router(new281_briefings.router)
+app.include_router(new291_email_import.router)
+app.include_router(new292_email_threads.router)
+app.include_router(new293_email_quotes.router)
+app.include_router(new294_email_source_maps.router)
+app.include_router(new295_email_masks.router)
+app.include_router(new296_email_attachments.router)
+app.include_router(new297_email_import_rules.router)
+app.include_router(new298_email_duplicates.router)
+app.include_router(new299_email_unsubscribe.router)
+app.include_router(new300_email_export.router)
 
 register_error_handlers(app)
