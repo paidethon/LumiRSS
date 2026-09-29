@@ -111,6 +111,16 @@ from lumirss.routers import (
     new248_detrack,
     new249_licenses,
     new250_evidence,
+    new251_research,
+    new252_hypotheses,
+    new253_counterexamples,
+    new254_project_glossary,
+    new255_timeline,
+    new256_decisions,
+    new257_gaps,
+    new258_outline,
+    new259_conclusion_history,
+    new260_share_preview,
     obsidian,
     operations,
     opml,
@@ -564,5 +574,17 @@ app.include_router(new247_content_watch.router)
 app.include_router(new248_detrack.router)
 app.include_router(new249_licenses.router)
 app.include_router(new250_evidence.router)
+# NEW-251..260 研究项目组：问题拆分/假设/反例/术语/时间线/决策/缺口/
+# 大纲/结论历史/分享脱敏预览（全部 per-user 本地表，无 AI / 无上游网络）
+app.include_router(new251_research.router)
+app.include_router(new252_hypotheses.router)
+app.include_router(new253_counterexamples.router)
+app.include_router(new254_project_glossary.router)
+app.include_router(new255_timeline.router)
+app.include_router(new256_decisions.router)
+app.include_router(new257_gaps.router)
+app.include_router(new258_outline.router)
+app.include_router(new259_conclusion_history.router)
+app.include_router(new260_share_preview.router)
 
 register_error_handlers(app)
