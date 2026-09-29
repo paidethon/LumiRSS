@@ -28,6 +28,7 @@ import {
 import type { Annotation, ReadingQuestion, ReviewQueueItem } from '../api/client'
 import { dateTimeFormatter } from '../lib/date-format'
 import { AnnotationBasketsPanel } from './AnnotationBasketsPanel'
+import { New231AnnotationTools } from './new231/New231AnnotationTools'
 import { AnnotationMigrateDialog } from './AnnotationMigrateDialog'
 import { Button } from './ui/Button'
 import { EmptyState } from './ui/EmptyState'
@@ -202,6 +203,8 @@ export function AnnotationsManager() {
         <>
           {/* N072：精选篮（创建/选择/加入/导出；成员可回跳原文） */}
           <AnnotationBasketsPanel selectedIds={selectedIds} />
+          {/* NEW-231..240 标注侧工具（汇总/回复提醒/批注层/重锚/迁移/引用卡） */}
+          <New231AnnotationTools selectedIds={selectedIds} />
           <input
             type="search"
             value={keyword}
