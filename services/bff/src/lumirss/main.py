@@ -61,6 +61,16 @@ from lumirss.routers import (
     lumi_export,
     lumi_notes,
     mail,
+    new211_merge_wizard,
+    new212_rename_impact,
+    new213_tag_groups,
+    new214_tag_synonyms,
+    new215_tag_cleanup,
+    new216_collection_snapshots,
+    new217_sort_recipes,
+    new218_reference_check,
+    new219_archive_batches,
+    new220_triage_journal,
     obsidian,
     operations,
     opml,
@@ -459,5 +469,16 @@ app.include_router(library_w5.router)
 app.include_router(workspace_w5.router)
 # N198 版本功能导览（成员可读；adminOnly 条目服务端角色过滤）
 app.include_router(whats_new.router)
+# NEW-211..220 标签、集合与内容整理（全部本地表，无 AI / 无上游网络）
+app.include_router(new211_merge_wizard.router)
+app.include_router(new212_rename_impact.router)
+app.include_router(new213_tag_groups.router)
+app.include_router(new214_tag_synonyms.router)
+app.include_router(new215_tag_cleanup.router)
+app.include_router(new216_collection_snapshots.router)
+app.include_router(new217_sort_recipes.router)
+app.include_router(new218_reference_check.router)
+app.include_router(new219_archive_batches.router)
+app.include_router(new220_triage_journal.router)
 
 register_error_handlers(app)

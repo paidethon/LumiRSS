@@ -77,6 +77,7 @@ import {
 import { WorkspaceBoardView } from '../WorkspaceBoard'
 import { WorkspaceOutlinePanel } from '../WorkspaceOutlinePanel'
 const WorkspaceCompare = lazy(() => import('../WorkspaceCompare'))
+const New216CollectionOpsPanel = lazy(() => import('../new211/New216CollectionOpsPanel'))
 const WorkspaceMoveDialog = lazy(() => import('../WorkspaceMoveDialog'))
 import {
   ArchivedBar,
@@ -1055,6 +1056,8 @@ export default function WorkspacesPage() {
   const [moveGroupTarget, setMoveGroupTarget] = useState<ResolvedItem | null>(null)
   // N113：移动到分节 Dialog 目标。
   const [moveSectionTarget, setMoveSectionTarget] = useState<ResolvedItem | null>(null)
+  // NEW-216..218：集合整理工具（快照差异 / 排序配方 / 引用检查）。
+  const [collectionOpsOpen, setCollectionOpsOpen] = useState(false)
   // N109：本工作区内检索（严格限定成员范围；空 = 不搜，不发请求）。
   const [searchText, setSearchText] = useState('')
   const search = useWorkspaceSearch(effectiveSelectedId, searchText)
@@ -1397,6 +1400,7 @@ export default function WorkspacesPage() {
                     重命名
                   </>
                 ) },
+                { key: 'collection-ops', content: '集合整理工具（快照/排序/引用）' },
                 { key: 'export', content: '导出研究包（Markdown）' },
                 { key: 'export-zip', content: '导出研究包（ZIP，含快照）' },
                 { key: 'save-template', content: '保存为模板' },
@@ -1415,6 +1419,7 @@ export default function WorkspacesPage() {
               ]}
               onSelect={(key) => {
                 if (key === 'rename') setRenameOpen(true)
+                if (key === 'collection-ops') setCollectionOpsOpen(true)
                 if (key === 'delete') setDeleteOpen(true)
                 if (key === 'save-template') setSaveTemplateOpen(true)
                 if (key === 'export-zip') setZipExportOpen(true)
@@ -1852,6 +1857,19 @@ export default function WorkspacesPage() {
           item={moveSectionTarget}
           onClose={() => setMoveSectionTarget(null)}
         />
+      )}
+      {/* NEW-216..218：集合整理工作台（快照差异/排序配方/引用检查）。 */}
+      {collectionOpsOpen && (
+        <Dialog
+          open
+          onClose={() => setCollectionOpsOpen(false)}
+          title="集合整理工具"
+          panelClassName="max-w-2xl"
+        >
+          <Suspense fallback={<Skeleton className="h-40" />}>
+            <New216CollectionOpsPanel onClose={() => setCollectionOpsOpen(false)} />
+          </Suspense>
+        </Dialog>
       )}
     </div>
   )
