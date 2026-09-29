@@ -222,7 +222,12 @@ def test_api_completeness_roundtrip(client, tmp_path):
     history = client.get(
         f"/api/v1/entries/{ref}/translation/completeness/reports"
     ).json()["reports"]
-    assert [r["id"] for r in history] == [second["id"], first["id"]]
+    # 两份快照可能落在同一秒（utc_now 秒级精度），同秒内次序不保证；
+    # 集合与 filled 值如实断言
+    assert len(history) == 2
+    assert {r["id"] for r in history} == {first["id"], second["id"]}
+    filled_row = next(r for r in history if r["id"] == second["id"])
+    assert filled_row["filled"] == 2
 
     bad = client.post(
         f"/api/v1/entries/{ref}/translation/completeness/report", json={"blocks": []}
