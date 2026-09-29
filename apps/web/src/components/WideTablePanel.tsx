@@ -204,7 +204,7 @@ export function WideTablePanel({ table }: { table: HTMLTableElement }) {
                 placeholder=">"
                 aria-label={`筛选 大于 ${header[col] || col + 1}`}
                 onChange={(e) => setFilter(col, 'gt', e.target.value)}
-                className="h-7 w-14 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-1.5 text-xs"
+                className="min-h-7 w-14 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-1.5 text-xs"
               />
               <input
                 type="text"
@@ -212,7 +212,7 @@ export function WideTablePanel({ table }: { table: HTMLTableElement }) {
                 placeholder="<"
                 aria-label={`筛选 小于 ${header[col] || col + 1}`}
                 onChange={(e) => setFilter(col, 'lt', e.target.value)}
-                className="h-7 w-14 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-1.5 text-xs"
+                className="min-h-7 w-14 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-1.5 text-xs"
               />
             </span>
           ))}

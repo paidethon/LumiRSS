@@ -1308,7 +1308,8 @@ function FunnelSection() {
                 className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-2 text-center"
                 data-testid={`funnel-${card.key}`}
               >
-                <p className="text-lg font-semibold text-[var(--lumi-text-primary)]">{funnel.data.totals[card.key]}</p>
+                {/* FIX-086：等宽数字——计数刷新时数字不横向跳动。 */}
+                <p className="text-lg font-semibold tabular-nums text-[var(--lumi-text-primary)]">{funnel.data.totals[card.key]}</p>
                 <p className="text-xs text-[var(--lumi-text-tertiary)]">{card.label}</p>
               </div>
             ))}
@@ -1552,7 +1553,8 @@ function CapacitySection() {
                 className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-2 text-center"
                 data-testid={`capacity-${card.key}`}
               >
-                <p className="text-lg font-semibold text-[var(--lumi-text-primary)]">{card.value}</p>
+                {/* FIX-086：等宽数字——计数刷新时数字不横向跳动。 */}
+                <p className="text-lg font-semibold tabular-nums text-[var(--lumi-text-primary)]">{card.value}</p>
                 <p className="text-xs text-[var(--lumi-text-tertiary)]">{card.label}</p>
               </div>
             ))}
@@ -1970,7 +1972,8 @@ function SystemRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline justify-between gap-3 py-1">
       <span className="shrink-0 text-xs text-[var(--lumi-text-tertiary)]">{label}</span>
-      <span className="min-w-0 truncate text-sm font-medium text-[var(--lumi-text-primary)]">{value}</span>
+      {/* FIX-086：等宽数字——存储/会话计数刷新时数值列稳定。 */}
+      <span className="min-w-0 truncate text-sm font-medium tabular-nums text-[var(--lumi-text-primary)]">{value}</span>
     </div>
   )
 }
@@ -2076,7 +2079,8 @@ function SystemSection() {
                   </span>
                   <span className="flex shrink-0 items-center gap-2">
                     {service.latencyMs !== null && (
-                      <span className="text-xs text-[var(--lumi-text-tertiary)]">{service.latencyMs} ms</span>
+                      // FIX-086：等宽数字——延迟数值刷新时不跳动。
+                      <span className="text-xs tabular-nums text-[var(--lumi-text-tertiary)]">{service.latencyMs} ms</span>
                     )}
                     {/* N194：探针时间 + 过期态（检测早于 5 分钟 → 可能过期，
                         取代正常徽标；不再把旧探测结果伪装成「正常」）。 */}
