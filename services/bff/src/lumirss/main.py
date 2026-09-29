@@ -180,6 +180,16 @@ from lumirss.routers import (
     new318_image_picker,
     new319_reextract,
     new320_replacement_links,
+    new341_access_log,
+    new342_third_party_requests,
+    new343_sensitive_marks,
+    new344_share_links,
+    new345_share_link_limits,
+    new346_device_trust,
+    new347_authorization_center,
+    new348_data_residency,
+    new349_privacy_review,
+    new350_deletion_receipts,
     obsidian,
     operations,
     opml,
@@ -708,5 +718,17 @@ app.include_router(new317_clip_merge.router)
 app.include_router(new318_image_picker.router)
 app.include_router(new319_reextract.router)
 app.include_router(new320_replacement_links.router)
+
+# NEW-341..350 隐私、会话与可理解的授权（本组 10 项）
+app.include_router(new341_access_log.router)
+app.include_router(new342_third_party_requests.router)
+app.include_router(new343_sensitive_marks.router)
+app.include_router(new344_share_links.router)
+app.include_router(new345_share_link_limits.router)
+app.include_router(new346_device_trust.router)
+app.include_router(new347_authorization_center.router)
+app.include_router(new348_data_residency.router)
+app.include_router(new349_privacy_review.router)
+app.include_router(new350_deletion_receipts.router)
 
 register_error_handlers(app)
