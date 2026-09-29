@@ -10,7 +10,7 @@
 - stage 分批阅读：必须由用户指定时段；已有时段归属的跳过如实计数。
 """
 
-from new2xx_ab import ab_env  # noqa: F401,F811
+from new2xx_ab import ab_env, seed_entry  # noqa: F401,F811
 
 
 class FakeStateAdapter:
@@ -35,18 +35,16 @@ class FakeSearch:
             self.read_refs.append(entry_ref)
 
 
-def _plant_fakes(ab_env) -> FakeStateAdapter:
+def _plant_fakes(ab_env) -> FakeStateAdapter:  # noqa: F811
     fake = FakeStateAdapter()
     ab_env["app"].state.freshrss_adapter = fake
     ab_env["app"].state.search_service = FakeSearch(ab_env["app"])
     return fake
 
 
-def _seed_old(ab_env, who: str, item_id: str, feed: str, *, read=0, starred=0):
-    from new2xx_ab import seed_entry as _seed
-
+def _seed_old(ab_env, who: str, item_id: str, feed: str, *, read=0, starred=0):  # noqa: F811
     # seed_entry 固定 feed_url；这里直接扩展：插入后改 feed_url。
-    ref = _seed(ab_env, who, item_id, title=item_id, read=read)
+    ref = seed_entry(ab_env, who, item_id, title=item_id, read=read)
     import asyncio
 
     from lumirss.user_scope import user_context
@@ -63,7 +61,7 @@ def _seed_old(ab_env, who: str, item_id: str, feed: str, *, read=0, starred=0):
     return ref
 
 
-def _old_published(ab_env, who: str, ref: str, published_at: str) -> None:
+def _old_published(ab_env, who: str, ref: str, published_at: str) -> None:  # noqa: F811
     import asyncio
 
     from lumirss.user_scope import user_context
