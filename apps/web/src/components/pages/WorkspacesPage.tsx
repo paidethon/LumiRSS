@@ -76,6 +76,7 @@ import {
 } from '../../api/client'
 import { WorkspaceBoardView } from '../WorkspaceBoard'
 import { WorkspaceOutlinePanel } from '../WorkspaceOutlinePanel'
+import { New251ResearchTools } from '../new251/New251ResearchTools'
 const WorkspaceCompare = lazy(() => import('../WorkspaceCompare'))
 const New216CollectionOpsPanel = lazy(() => import('../new211/New216CollectionOpsPanel'))
 const WorkspaceMoveDialog = lazy(() => import('../WorkspaceMoveDialog'))
@@ -1858,6 +1859,10 @@ export default function WorkspacesPage() {
           onClose={() => setMoveSectionTarget(null)}
         />
       )}
+      {/* NEW-251..260：研究项目工具组（问题拆分/假设/反例/术语/时间线/
+          决策/缺口/大纲/结论史/分享预览）。独立项目主线（research_projects），
+          不依赖所选工作区；折叠态零查询，展开后才选/建项目并挂载子面板。 */}
+      <New251ResearchTools />
       {/* NEW-216..218：集合整理工作台（快照差异/排序配方/引用检查）。 */}
       {collectionOpsOpen && (
         <Dialog
