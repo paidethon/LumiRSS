@@ -18,7 +18,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, ListTree, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ListTree, PanelBottomClose, X } from 'lucide-react'
 import type { TocEntry } from '../lib/article-toc'
 import {
   applyChapterVisibility,
@@ -27,6 +27,11 @@ import {
   notifyChapterChange,
 } from '../lib/article-chapters'
 import { scrollBehavior } from '../lib/reduced-motion'
+import {
+  dockBandLabel,
+  dockCurrentIndex,
+  dockNeighbor,
+} from '../lib/toc-dock'
 
 /** ArticleContent 定位段落成功后派发（detail.element = 目标块）。 */
 const PARA_NAVIGATE_EVENT = 'lumi:para-navigate'
@@ -52,6 +57,8 @@ export function ArticleToc({ toc }: { toc: TocEntry[] }) {
   // F074：滚动跟随的当前章节（非章节模式下高亮目录项；章节模式的
   // activeId 优先——两者语义不同，不互相覆盖）。
   const [followId, setFollowId] = useState<string | null>(null)
+  // NEW-357：目录停靠（紧凑导航带；退出后恢复正常阅读区域）。
+  const [docked, setDocked] = useState(false)
 
   const activeIndex = activeId === null ? -1 : toc.findIndex((entry) => entry.id === activeId)
 
@@ -112,15 +119,17 @@ export function ArticleToc({ toc }: { toc: TocEntry[] }) {
     return () => document.removeEventListener(PARA_NAVIGATE_EVENT, onParaNavigate)
   }, [chapterMode, activeId, enterChapter])
 
-  // Escape 退出章节（浮动条按钮外的键盘路径）。
+  // Escape 退出章节 / 停靠（浮动条按钮外的键盘路径）。
   useEffect(() => {
-    if (activeId === null) return
+    if (activeId === null && !docked) return
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') exitChapter()
+      if (event.key !== 'Escape') return
+      if (activeId !== null) exitChapter()
+      else setDocked(false)
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [activeId, exitChapter])
+  }, [activeId, docked, exitChapter])
 
   // F074：滚动跟随高亮（非章节模式）。rAF 节流的 scroll 监听：当前章 =
   // 越过跟随线的最后一个标题；滚到底强制最后一章（短尾章不悬空）。
@@ -179,25 +188,46 @@ export function ArticleToc({ toc }: { toc: TocEntry[] }) {
       >
         <summary className="flex cursor-pointer select-none items-center justify-between gap-2 text-sm font-medium text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]">
           <span>目录（{toc.length}）</span>
-          <button
-            type="button"
-            aria-pressed={chapterMode}
-            data-lumi-chapter-toggle=""
-            onClick={(event) => {
-              // 按钮不触发 details 折叠；再次点击开关 = 关闭并退出章节
-              event.preventDefault()
-              event.stopPropagation()
-              if (chapterMode || activeId !== null) {
-                exitChapter()
-              } else {
-                setChapterMode(true)
-              }
-            }}
-            className={cxChapterToggle(chapterMode)}
-          >
-            <ListTree aria-hidden className="size-3.5" />
-            章节模式
-          </button>
+          <span className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              aria-pressed={chapterMode}
+              data-lumi-chapter-toggle=""
+              onClick={(event) => {
+                // 按钮不触发 details 折叠；再次点击开关 = 关闭并退出章节
+                event.preventDefault()
+                event.stopPropagation()
+                if (chapterMode || activeId !== null) {
+                  exitChapter()
+                } else {
+                  setChapterMode(true)
+                }
+              }}
+              className={cxChapterToggle(chapterMode)}
+            >
+              <ListTree aria-hidden className="size-3.5" />
+              章节模式
+            </button>
+            {/* NEW-357：停靠为紧凑导航带（收起面板，随滚动的当前章可见） */}
+            <button
+              type="button"
+              aria-pressed={docked}
+              data-lumi-toc-dock-toggle=""
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                setDocked((v) => {
+                  const next = !v
+                  if (next && rootRef.current !== null) rootRef.current.open = false
+                  return next
+                })
+              }}
+              className={cxChapterToggle(docked)}
+            >
+              <PanelBottomClose aria-hidden className="size-3.5" />
+              停靠
+            </button>
+          </span>
         </summary>
         <ul className="mt-2 flex flex-col gap-0.5 border-t border-[var(--lumi-border)] pt-2">
           {toc.map((entry) => (
@@ -231,6 +261,69 @@ export function ArticleToc({ toc }: { toc: TocEntry[] }) {
           ))}
         </ul>
       </details>
+      {/* NEW-357：目录停靠导航带（紧凑；当前章随滚动变化可见；章节
+          模式激活时让位给其浮动章节导航——两种浮带不同时叠加） */}
+      {docked && activeEntry === null && (
+        <div
+          data-lumi-toc-dock=""
+          role="navigation"
+          aria-label="目录停靠导航"
+          className="fixed inset-x-3 bottom-4 z-30 mx-auto flex max-w-md items-center justify-between gap-1.5 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] bg-[var(--lumi-surface-elevated)] p-1.5 shadow-[var(--lumi-shadow-popover)] max-lg:bottom-[max(1rem,var(--safe-bottom))]"
+        >
+          <button
+            type="button"
+            aria-label="上一章"
+            data-lumi-toc-dock-prev=""
+            disabled={dockNeighbor(toc, followId, -1) === null}
+            onClick={() => {
+              const prev = dockNeighbor(toc, followId, -1)
+              if (prev !== null) {
+                document
+                  .getElementById(prev.id)
+                  ?.scrollIntoView({ block: 'start', behavior: scrollBehavior() })
+              }
+            }}
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)] disabled:cursor-default disabled:opacity-40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+          >
+            <ChevronLeft aria-hidden className="size-5" />
+          </button>
+          <span
+            aria-live="polite"
+            data-lumi-toc-dock-title=""
+            className="min-w-0 flex-1 truncate text-center text-xs text-[var(--lumi-text-secondary)]"
+          >
+            {followId === null
+              ? `目录（${toc.length} 章）`
+              : dockBandLabel(dockCurrentIndex(toc, followId), toc.length, toc[dockCurrentIndex(toc, followId)]!.text)}
+          </span>
+          <button
+            type="button"
+            aria-label="下一章"
+            data-lumi-toc-dock-next=""
+            disabled={dockNeighbor(toc, followId, 1) === null}
+            onClick={() => {
+              const next = dockNeighbor(toc, followId, 1)
+              if (next !== null) {
+                document
+                  .getElementById(next.id)
+                  ?.scrollIntoView({ block: 'start', behavior: scrollBehavior() })
+              }
+            }}
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)] disabled:cursor-default disabled:opacity-40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+          >
+            <ChevronRight aria-hidden className="size-5" />
+          </button>
+          <button
+            type="button"
+            aria-label="退出停靠"
+            data-lumi-toc-dock-exit=""
+            onClick={() => setDocked(false)}
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+          >
+            <X aria-hidden className="size-5" />
+          </button>
+        </div>
+      )}
       {/* 浮动章节导航（进入章节后出现；44px 触控目标 + 键盘可达） */}
       {activeEntry !== null && (
         <div
