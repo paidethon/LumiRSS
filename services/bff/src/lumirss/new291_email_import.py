@@ -259,6 +259,9 @@ class EmailMaterialStore:
         """
         files = _clean_files(raw_files)
         await self._db.migrate()
+        from lumirss.new294_email_source_maps import SourceMapStore
+
+        source_maps = await SourceMapStore(self._db).addr_map()
         imported: list[dict[str, Any]] = []
         failed: list[dict[str, Any]] = []
         for index, file in enumerate(files):
@@ -273,7 +276,11 @@ class EmailMaterialStore:
             except EmailImportInvalid as exc:
                 failed.append({"filename": filename, "reason": str(exc)})
                 continue
-            material_id = await insert_material(self._db, parsed)
+            material_id = await insert_material(
+                self._db,
+                parsed,
+                source_label=source_maps.get(parsed["from_addr"].lower(), ""),
+            )
             imported.append(
                 {
                     "id": material_id,
@@ -281,6 +288,9 @@ class EmailMaterialStore:
                     "subject": parsed["subject"],
                     "fromAddr": parsed["from_addr"],
                     "snippet": parsed["snippet"],
+                    "sourceLabel": source_maps.get(
+                        parsed["from_addr"].lower(), ""
+                    ),
                     "attachments": parsed["attachments"],
                     "messageId": parsed["message_id"],
                 }
