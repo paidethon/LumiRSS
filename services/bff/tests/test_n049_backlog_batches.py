@@ -50,21 +50,6 @@ def _seed(app, item_id, *, feed_url, published_at, read=0, starred=0, title="t")
 def _seed_batch(app):
     """feed A：2 条旧（30-90 天桶）；feed B：1 条旧 + 1 条加星（保护）。
 
-<<<<<<< HEAD
-    日期相对 now 生成（FIX-389 域）：固定日期会随真实时间漂移跨桶边界
-    （本测试曾因 07-01 种子自然老化跨过 90 天线而转红）。桶边界 30/90 天
-    两侧各留 ≥10 天余量。"""
-    def _iso(days_ago: int) -> str:
-        return (
-            datetime.now(UTC) - timedelta(days=days_ago)
-        ).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-    _seed(app, "g1", feed_url="https://a.example/rss", published_at=_iso(60))
-    _seed(app, "g2", feed_url="https://a.example/rss", published_at=_iso(45))
-    _seed(app, "g3", feed_url="https://b.example/rss", published_at=_iso(75))
-    _seed(app, "g4", feed_url="https://b.example/rss", published_at=_iso(70), starred=1)
-    _seed(app, "g5", feed_url="https://a.example/rss", published_at=_iso(5))  # 太新
-=======
     相对 now 播种（禁固定日历日期：会随时间漂移出桶——2026-09 起
     固定日期正好压上 90 天桶界）；距 30/90 桶界均留 ≥15 天余量。"""
     _seed(app, "g1", feed_url="https://a.example/rss", published_at=_days_ago(75))
@@ -72,7 +57,6 @@ def _seed_batch(app):
     _seed(app, "g3", feed_url="https://b.example/rss", published_at=_days_ago(45))
     _seed(app, "g4", feed_url="https://b.example/rss", published_at=_days_ago(75), starred=1)
     _seed(app, "g5", feed_url="https://a.example/rss", published_at=_days_ago(5))  # 太新
->>>>>>> feat/r2-n271
 
 
 def test_n049_grouping_by_source_and_age(client):
