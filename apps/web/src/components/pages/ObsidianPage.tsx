@@ -41,6 +41,7 @@ import { sanitizeArticleHtml } from '../../lib/sanitize-article-html'
 import { NoteLinksPanel } from '../NoteLinksPanel'
 import ObsidianDevicesSection from '../obsidian/ObsidianDevicesSection'
 import ObsidianHandoffLogSection from '../obsidian/ObsidianHandoffLogSection'
+import { New321InterconnectTools } from '../new321/New321InterconnectTools'
 import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
 import { EmptyState } from '../ui/EmptyState'
@@ -490,6 +491,10 @@ export default function ObsidianPage() {
       )}
       <ObsidianDevicesSection envRootConfigured={data.envRootConfigured === true} />
       <ObsidianHandoffLogSection />
+      {/* NEW-321..330 与本地资料互通（Vault 只读不变；情境展开，折叠零查询） */}
+      <div className="px-3 pb-3">
+        <New321InterconnectTools />
+      </div>
     </div>
   )
 }
