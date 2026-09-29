@@ -141,6 +141,15 @@ from lumirss.routers import (
     new278_privacy_filters,
     new279_answer_adoptions,
     new280_quota_buckets,
+    new281_briefings,
+    new283_window,
+    new284_diagnostics,
+    new285_feed,
+    new286_recipes,
+    new287_provenance,
+    new288_topics,
+    new289_eml,
+    new290_corrections,
     obsidian,
     operations,
     opml,
@@ -626,5 +635,17 @@ app.include_router(new277_purpose_constraints.router)
 app.include_router(new278_privacy_filters.router)
 app.include_router(new279_answer_adoptions.router)
 app.include_router(new280_quota_buckets.router)
+# NEW-281..290 日报、简报与周期阅读（用户自组简报管线；静态路径路由
+# ——window/generate/attempts/feed/recipes/suggestions/topics——必须在
+# new281 的 /{issue_id} 之前注册，否则会被期次动态段吞掉）
+app.include_router(new283_window.router)
+app.include_router(new284_diagnostics.router)
+app.include_router(new285_feed.router)
+app.include_router(new286_recipes.router)
+app.include_router(new287_provenance.router)
+app.include_router(new288_topics.router)
+app.include_router(new290_corrections.router)
+app.include_router(new289_eml.router)
+app.include_router(new281_briefings.router)
 
 register_error_handlers(app)
