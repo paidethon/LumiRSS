@@ -118,7 +118,8 @@ export function CodeReaderPanel({ pre }: { pre: HTMLPreElement }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') {
+            // FIX-012：中文输入法组合中按 Enter 是「确认候选词」，不是查找。
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
               e.preventDefault()
               step(e.shiftKey ? -1 : 1)
             }
@@ -126,7 +127,7 @@ export function CodeReaderPanel({ pre }: { pre: HTMLPreElement }) {
           placeholder="搜索代码"
           aria-label="搜索代码"
           data-testid="code-reader-search"
-          className="h-8 w-36 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 text-xs text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+          className="min-h-8 w-36 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 text-xs text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
         />
         <span aria-live="polite" data-testid="code-reader-match-count" className="min-w-16 text-xs tabular-nums text-[var(--lumi-text-secondary)]">
           {query.trim() === '' ? '' : matches.length === 0 ? '无结果' : `${safeCurrent + 1}/${matches.length} 处命中`}

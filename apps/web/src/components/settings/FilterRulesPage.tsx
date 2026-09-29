@@ -180,7 +180,8 @@ export function FilterRulesSection() {
               setError(null)
             }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') addRule()
+              // FIX-012：中文输入规则内容时按 Enter 是确认候选词，不得提前加规则。
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) addRule()
             }}
             placeholder={type === 'keyword' ? '如：推广 / 广告 / 赞助' : '如：^(?=.*(广告))'}
             className="mt-2 w-full rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2.5 py-1.5 text-sm text-[var(--lumi-text-primary)]"

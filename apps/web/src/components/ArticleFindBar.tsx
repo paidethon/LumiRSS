@@ -105,7 +105,8 @@ export default function ArticleFindBar({ open, onClose, getRoot }: ArticleFindBa
           if (e.key === 'Escape') {
             e.stopPropagation()
             close()
-          } else if (e.key === 'Enter') {
+          } else if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+            // FIX-012：输入法组合中的 Enter 仅提交候选词，不跳转命中。
             e.preventDefault()
             goto(e.shiftKey ? -1 : 1)
           }

@@ -130,7 +130,8 @@ function CreateRelationDialog({
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
+                  // FIX-012：输入法组合中的 Enter 仅提交候选词，不触发搜索。
+                  if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
                     event.preventDefault()
                     void runSearch()
                   }
