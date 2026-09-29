@@ -276,9 +276,6 @@ export function PaginationProbePanel(props: {
     }
   }
 
-  const suspicious =
-    result !== null && (result.gapPages > 0 || result.duplicatePages > 0)
-
   const contractWarning =
     result !== null &&
     (result.gapPages > 0 || result.duplicatePages > 0)
@@ -385,7 +382,7 @@ export function SchemaPausePanel(props: {
     setNotice('')
     try {
       const done = await new306Api.resume(props.sourceUuid)
-      if (done.resensed === true) {
+      if (done.resumed === true) {
         setNotice("已恢复发布；新结构基线已确认。")
       } else {
         setNotice("该来源未处于写暂停。")

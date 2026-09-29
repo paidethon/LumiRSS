@@ -17,7 +17,7 @@ import {
   MappingSamplePanel,
   PaginationProbePanel,
   SchemaPausePanel,
-  SourceScope,
+  type SourceScope,
   SourcePicker,
 } from './parts-a'
 import {

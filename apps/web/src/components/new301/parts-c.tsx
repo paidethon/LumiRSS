@@ -29,11 +29,6 @@ function Feedback(props: { notice: string; error: string }): ReactElement {
   )
 }
 
-function itemsOf<T>(response: { items?: T[] } | null): T[] {
-  if (response === null || response.items === undefined) return []
-  return Array.isArray(response.items) ? response.items : []
-}
-
 // ---- NEW-308 外发 Webhook 事件订阅 -------------------------------------------
 
 const EVENT_LABELS: Record<string, string> = {
@@ -48,7 +43,6 @@ export function OutSubscriptionPanel(): ReactElement {
   const [eventType, setEventType] = useState('entry.starred')
   const [targetUrl, setTargetUrl] = useState('')
   const [verifyToken, setVerifyToken] = useState('')
-  const [pendingId, setPendingId] = useState<number | null>(null)
   const [createdOnce, setCreatedOnce] = useState<{
     secret: string
     verifyToken: string
@@ -79,7 +73,6 @@ export function OutSubscriptionPanel(): ReactElement {
     try {
       const made = await new308Api.create(sub_eventValue(), targetUrl)
       setCreatedOnce({ secret: made.secret, verifyToken: verifyToken })
-      setPendingId(made.id)
       setTargetUrl('')
       await refresh()
       setNotice('订阅已创建（待验证）；秘密与验证令牌仅本次显示。')

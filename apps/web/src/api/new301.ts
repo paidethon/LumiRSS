@@ -114,7 +114,7 @@ export const new301Api = {
     fieldMap: Record<string, string>,
   ) =>
     sendJson<{ items: Record<string, unknown>[]; totalAvailable: number }>(
-      sampleUrl(uuid, sampleId) + '/preview',
+      sampleIdUrl(uuid, sampleId) + '/preview',
       'POST',
       { fieldMap },
     ),

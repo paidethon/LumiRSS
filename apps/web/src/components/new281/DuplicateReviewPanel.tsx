@@ -4,7 +4,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { fetchFollowups } from '../../api/new281'
-import { ErrorLine, NoteText, StatusLine } from './parts'
+import { errorText, NoteText, StatusLine } from './parts'
 
 export function DuplicateReviewPanel() {
   const followups = useQuery({
@@ -19,7 +19,7 @@ export function DuplicateReviewPanel() {
         <strong>仅列后续</strong>（不进正文，出现在下面的后续清单，之后任何一期重新收录即从清单消失）、
         <strong>跳过</strong>（明确不要）。缺决定的提交会被 409 拦截。
       </NoteText>
-      {followups.isError && <ErrorLine error={followups.error} />}
+      {followups.isError && <StatusLine tone="error">{errorText(followups.error)}</StatusLine>}
       {followups.data && followups.data.count === 0 && (
         <StatusLine tone="info">后续清单为空——没有待跟进的 defer 条目。</StatusLine>
       )}

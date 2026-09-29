@@ -4,7 +4,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   getQuoteSegments,
-  getThread,
   linkThread,
   markQuoteReviewed,
   type QuoteSegmentsView,

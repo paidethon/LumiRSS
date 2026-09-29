@@ -9,7 +9,6 @@ import {
   new305Api,
   type DeadLetterRow,
   type InboxRow,
-  type WebhookEndpointRow,
   type WebhookKeyRow,
 } from '../../api/new301'
 import {
@@ -30,13 +29,6 @@ function Feedback(props: { notice: string; error: string }): ReactElement {
   )
 }
 
-function asRowList<T>(
-  value: { items?: T[] } | null | undefined,
-): T[] {
-  if (value === null || value.items === undefined) return []
-  return Array.isArray(value.items) ? (value.items as T[]) : []
-}
-
 // ---- NEW-303 接收端点 + 待确认收件箱 ----------------------------------------
 
 export function WebhookInboxPanel(): ReactElement {
@@ -46,7 +38,6 @@ export function WebhookInboxPanel(): ReactElement {
     secret: string
     ingestPath: string
   } | null>(null)
-  const [endpoints, setEndpoints] = useState<WebhookEndpointRow[]>([])
   const [rows, setRows] = useState<InboxRow[]>([])
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
@@ -55,8 +46,6 @@ export function WebhookInboxPanel(): ReactElement {
   const refresh = useCallback(async () => {
     setError('')
     try {
-      const listed = await new303Api.listEndpoints()
-      setEndpoints(listed.items)
       const box = await new303Api.inbox()
       setRows(box.items)
     } catch (err) {
