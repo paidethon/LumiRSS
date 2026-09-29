@@ -214,11 +214,20 @@ class SegmentTranslationService:
         """glossary_version：缓存身份组成部分（术语写操作推进它）。"""
         return await get_glossary_version(self._db)
 
-    async def _protected_map(self, blocks) -> dict[int, list[str]]:
-        """N083：protect=1 且命中源段文本的术语（index → 术语列表）。"""
+    async def _protected_map(self, entry_ref, blocks) -> dict[int, list[str]]:
+        """N083：protect=1 且命中源段文本的术语（index → 术语列表）。
+
+        NEW-267：本篇的「当前任务例外」术语不再列入保护 —— 只影响其
+        后的新生成；既有缓存译文原样展示（不悄悄改变）。"""
         from lumirss.glossary_hits import load_protected_terms
 
         terms = await load_protected_terms(self._db)
+        if terms:
+            from lumirss.new267_protect_exceptions import excluded_terms
+
+            excluded = await excluded_terms(self._db, entry_ref)
+            if excluded:
+                terms = [t for t in terms if t["term"] not in excluded]
         if not terms:
             return {}
         result: dict[int, list[str]] = {}
@@ -331,7 +340,7 @@ class SegmentTranslationService:
         engine = settings[KEY_TRANSLATION_ENGINE]
         provider, model = engine_identity(engine, settings)
         cache_version = await self._cache_version()
-        protected_map = await self._protected_map(clean)
+        protected_map = await self._protected_map(entry_ref, clean)
         marks = await marked_blocks(self._db, entry_ref)
         states: list[SegmentState] = []
         for block in clean:
@@ -380,7 +389,7 @@ class SegmentTranslationService:
         provider, model = engine_identity(engine, settings)
         language = settings[KEY_TRANSLATION_LANGUAGE]
         cache_version = await self._cache_version()
-        protected_map = await self._protected_map(clean)
+        protected_map = await self._protected_map(entry_ref, clean)
         marks = await marked_blocks(self._db, entry_ref)
 
         # F062：修订索引（默认重新生成跳过已修订段；显式覆盖时先撤销）。
