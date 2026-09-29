@@ -103,6 +103,7 @@ from lumirss.routers import (
     new240_attachments,
     new261_glossary_choices,
     new262_revision_decisions,
+    new263_quality_feedback,
     obsidian,
     operations,
     opml,
@@ -547,5 +548,6 @@ app.include_router(new239_conflicts.router)
 app.include_router(new240_attachments.router)
 app.include_router(new261_glossary_choices.router)
 app.include_router(new262_revision_decisions.router)
+app.include_router(new263_quality_feedback.router)
 
 register_error_handlers(app)
