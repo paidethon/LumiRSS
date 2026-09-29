@@ -304,10 +304,14 @@ class TranslationService(CachedAiArtifactService):
             else "Target language: English (en)."
         )
         # F029：术语表命中以受控格式附加进 prompt（与预览端点同一函数
-        # 产出；术语表为空 → 空串，行为不变）。
-        from lumirss.glossary_hits import attach_glossary_block
+        # 产出；术语表为空 → 空串，行为不变）。NEW-261：术语读取走
+        # 生效译法解析（来源/项目选择生效；同词多义不再按列表顺序偶然
+        # 决定哪条译法进 prompt）。
+        from lumirss.new261_glossary_conflicts import (
+            attach_effective_glossary_block,
+        )
 
-        glossary_block = await attach_glossary_block(self._db, content)
+        glossary_block = await attach_effective_glossary_block(self._db, content)
         glossary_part = f"\n\n{glossary_block}" if glossary_block else ""
         user_prompt = (
             f"{language_instruction}\n\n"

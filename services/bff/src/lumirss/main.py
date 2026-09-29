@@ -121,6 +121,16 @@ from lumirss.routers import (
     new258_outline,
     new259_conclusion_history,
     new260_share_preview,
+    new261_glossary_choices,
+    new262_revision_decisions,
+    new263_quality_feedback,
+    new264_capability_probes,
+    new265_budget,
+    new266_priority_queue,
+    new267_protect_exceptions,
+    new268_quote_exports,
+    new269_language_overrides,
+    new270_completeness_reports,
     obsidian,
     operations,
     opml,
@@ -586,5 +596,15 @@ app.include_router(new257_gaps.router)
 app.include_router(new258_outline.router)
 app.include_router(new259_conclusion_history.router)
 app.include_router(new260_share_preview.router)
+app.include_router(new261_glossary_choices.router)
+app.include_router(new262_revision_decisions.router)
+app.include_router(new263_quality_feedback.router)
+app.include_router(new264_capability_probes.router)
+app.include_router(new265_budget.router)
+app.include_router(new266_priority_queue.router)
+app.include_router(new267_protect_exceptions.router)
+app.include_router(new268_quote_exports.router)
+app.include_router(new269_language_overrides.router)
+app.include_router(new270_completeness_reports.router)
 
 register_error_handlers(app)

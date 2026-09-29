@@ -68,6 +68,7 @@ import {
 import ArticleContent from './ArticleContent'
 import { Button } from './ui/Button'
 import { TranslationScopeBar } from './TranslationScopeBar'
+import { New261TranslationTools } from './new261/New261TranslationTools'
 import { cx } from './ui/cx'
 import {
   collectChapterRanges,
@@ -559,6 +560,15 @@ export default function ReaderTranslation({
       {/* F029：术语命中（折叠列表：术语/译法/次数；按需加载）。
           N083：blocks 在手时逐块定位（命中附带块位置）。 */}
       <GlossaryHitsPanel entryRef={detail.entryRef} blocks={active ? blocks : null} />
+      {/* NEW-261..270：翻译质量与个人语言工作流（情境展开：折叠态零查询） */}
+      {active && serverEngine && (
+        <New261TranslationTools
+          entryRef={detail.entryRef}
+          segments={segmentList}
+          blocks={blocks}
+          feedUrl={detail.feedUrl ?? null}
+        />
+      )}
     </div>
   )
 }
