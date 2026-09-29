@@ -1,8 +1,9 @@
 """NEW-343 敏感资料标记路由。
 
-- GET    /api/v1/me/ai-send-blocks                  本人标记清单
-- PUT    /api/v1/me/ai-send-blocks/{entry_ref}      设置/更新标记（可带原因）
-- DELETE /api/v1/me/ai-send-blocks/{entry_ref}      解除标记
+- GET    /api/v1/privacy/ai-send-blocks                  本人标记清单
+- POST   /api/v1/privacy/ai-send-blocks/{entry_ref}      设置/更新标记（幂等 upsert，
+      可带原因；me 面不引入 PUT/PATCH —— FIX-046 同一口径）
+- DELETE /api/v1/privacy/ai-send-blocks/{entry_ref}      解除标记
 
 发送路径的真实拦截在 entry_ai.py 的四条 AI 发送路径（摘要/对话/
 翻译分段/对照）统一调用 new343.ai_send_block_denial。
@@ -48,7 +49,7 @@ class MarkBody(BaseModel):
     reason: str | None = Field(default=None, max_length=200)
 
 
-@router.get("/api/v1/me/ai-send-blocks", response_model=None)
+@router.get("/api/v1/privacy/ai-send-blocks", response_model=None)
 async def list_marks(request: Request) -> JSONResponse:
     user_id = await _require_user(request)
     if user_id is None:
@@ -65,8 +66,8 @@ async def list_marks(request: Request) -> JSONResponse:
     )
 
 
-@router.put("/api/v1/me/ai-send-blocks/{entry_ref}", response_model=None)
-async def put_mark(entry_ref: str, body: MarkBody, request: Request) -> JSONResponse:
+@router.post("/api/v1/privacy/ai-send-blocks/{entry_ref}", response_model=None)
+async def post_mark(entry_ref: str, body: MarkBody, request: Request) -> JSONResponse:
     user_id = await _require_user(request)
     if user_id is None:
         return JSONResponse(
@@ -91,7 +92,7 @@ async def put_mark(entry_ref: str, body: MarkBody, request: Request) -> JSONResp
     return JSONResponse(payload, headers={"Cache-Control": "no-store"})
 
 
-@router.delete("/api/v1/me/ai-send-blocks/{entry_ref}", response_model=None)
+@router.delete("/api/v1/privacy/ai-send-blocks/{entry_ref}", response_model=None)
 async def delete_mark(entry_ref: str, request: Request) -> JSONResponse:
     user_id = await _require_user(request)
     if user_id is None:

@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 from new2xx_ab import ab_env  # noqa: F401 — pytest 夹具注册
 
-TRUST_PATH = "/api/v1/me/device-trust"
+TRUST_PATH = "/api/v1/privacy/device-trust"
 
 
 def _member_password() -> str:

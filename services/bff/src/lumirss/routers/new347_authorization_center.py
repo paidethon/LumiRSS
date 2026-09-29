@@ -1,8 +1,8 @@
 """NEW-347 单项授权撤销中心路由。
 
-- GET  /api/v1/me/authorizations                      凭据面清单（无令牌材料）
-- POST /api/v1/me/authorizations/{kind}/{ref}/revoke  逐项真实撤销
-- GET  /api/v1/me/authorizations/events               撤销留痕
+- GET  /api/v1/privacy/authorizations                      凭据面清单（无令牌材料）
+- POST /api/v1/privacy/authorizations/{kind}/{ref}/revoke  逐项真实撤销
+- GET  /api/v1/privacy/authorizations/events               撤销留痕
 """
 
 from fastapi import APIRouter, Request
@@ -29,7 +29,7 @@ async def _require_user(request: Request) -> str | None:
     return await _current_user_id(request)
 
 
-@router.get("/api/v1/me/authorizations", response_model=None)
+@router.get("/api/v1/privacy/authorizations", response_model=None)
 async def list_authorizations(request: Request) -> JSONResponse:
     user_id = await _require_user(request)
     if user_id is None:
@@ -43,7 +43,7 @@ async def list_authorizations(request: Request) -> JSONResponse:
     return JSONResponse(payload, headers={"Cache-Control": "no-store"})
 
 
-@router.get("/api/v1/me/authorizations/events", response_model=None)
+@router.get("/api/v1/privacy/authorizations/events", response_model=None)
 async def authorization_events(request: Request, limit: int = 50) -> JSONResponse:
     user_id = await _require_user(request)
     if user_id is None:
@@ -59,7 +59,7 @@ async def authorization_events(request: Request, limit: int = 50) -> JSONRespons
     )
 
 
-@router.post("/api/v1/me/authorizations/{kind}/{ref}/revoke", response_model=None)
+@router.post("/api/v1/privacy/authorizations/{kind}/{ref}/revoke", response_model=None)
 async def revoke_authorization(kind: str, ref: str, request: Request) -> JSONResponse:
     user_id = await _require_user(request)
     if user_id is None:

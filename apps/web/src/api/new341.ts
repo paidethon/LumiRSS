@@ -87,7 +87,7 @@ export interface AccessLog {
   bounded: boolean
 }
 
-export const getAccessLog = () => getJson<AccessLog>(`${API_BASE}/me/access-log`)
+export const getAccessLog = () => getJson<AccessLog>(`${API_BASE}/privacy/access-log`)
 
 // ---- NEW-342 第三方请求清单 --------------------------------------------------
 
@@ -126,14 +126,14 @@ export interface SensitiveMark {
 }
 
 export const listAiSendBlocks = () =>
-  getJson<{ items: SensitiveMark[]; note: string }>(`${API_BASE}/me/ai-send-blocks`)
+  getJson<{ items: SensitiveMark[]; note: string }>(`${API_BASE}/privacy/ai-send-blocks`)
 
 export async function putAiSendBlock(entryRef: string, reason?: string): Promise<void> {
-  await sendJson(`${API_BASE}/me/ai-send-blocks/${entryRef}`, 'PUT', { reason: reason ?? null })
+  await sendJson(`${API_BASE}/privacy/ai-send-blocks/${entryRef}`, 'POST', { reason: reason ?? null })
 }
 
 export async function deleteAiSendBlock(entryRef: string): Promise<void> {
-  await sendJson(`${API_BASE}/me/ai-send-blocks/${entryRef}`, 'DELETE')
+  await sendJson(`${API_BASE}/privacy/ai-send-blocks/${entryRef}`, 'DELETE')
 }
 
 // ---- NEW-344/345 共享链接（范围 + 次数上限） ----------------------------------
@@ -173,7 +173,7 @@ export interface ShareLinkAccess {
 }
 
 export const listShareLinks = () =>
-  getJson<{ items: ShareLink[]; note: string }>(`${API_BASE}/me/share-links`)
+  getJson<{ items: ShareLink[]; note: string }>(`${API_BASE}/privacy/share-links`)
 
 export async function createShareLink(body: {
   title: string
@@ -182,27 +182,27 @@ export async function createShareLink(body: {
   excerptChars?: number
   maxUses?: number | null
 }): Promise<ShareLinkCreated> {
-  return sendJson<ShareLinkCreated>(`${API_BASE}/me/share-links`, 'POST', body)
+  return sendJson<ShareLinkCreated>(`${API_BASE}/privacy/share-links`, 'POST', body)
 }
 
 export const previewShareLink = (id: number) =>
-  getJson<ShareLinkPreview>(`${API_BASE}/me/share-links/${id}/preview`)
+  getJson<ShareLinkPreview>(`${API_BASE}/privacy/share-links/${id}/preview`)
 
 export async function revokeShareLink(id: number): Promise<void> {
-  await sendJson(`${API_BASE}/me/share-links/${id}/revoke`, 'POST')
+  await sendJson(`${API_BASE}/privacy/share-links/${id}/revoke`, 'POST')
 }
 
 export async function setShareLinkLimit(id: number, maxUses: number | null): Promise<void> {
-  await sendJson(`${API_BASE}/me/share-links/${id}`, 'PATCH', { maxUses })
+  await sendJson(`${API_BASE}/privacy/share-links/${id}/limit`, 'POST', { maxUses })
 }
 
 export async function topupShareLink(id: number, addUses: number): Promise<void> {
-  await sendJson(`${API_BASE}/me/share-links/${id}/topup`, 'POST', { addUses })
+  await sendJson(`${API_BASE}/privacy/share-links/${id}/topup`, 'POST', { addUses })
 }
 
 export const listShareLinkAccesses = (id: number) =>
   getJson<{ items: ShareLinkAccess[]; note: string }>(
-    `${API_BASE}/me/share-links/${id}/accesses`,
+    `${API_BASE}/privacy/share-links/${id}/accesses`,
   )
 
 // ---- NEW-346 设备信任期限 ----------------------------------------------------
@@ -225,14 +225,14 @@ export interface DeviceTrustStatus {
 }
 
 export const getDeviceTrust = () =>
-  getJson<DeviceTrustStatus>(`${API_BASE}/me/device-trust`)
+  getJson<DeviceTrustStatus>(`${API_BASE}/privacy/device-trust`)
 
 export async function grantDeviceTrust(password: string, hours: number): Promise<void> {
-  await sendJson(`${API_BASE}/me/device-trust`, 'POST', { password, hours })
+  await sendJson(`${API_BASE}/privacy/device-trust`, 'POST', { password, hours })
 }
 
 export async function revokeDeviceTrust(): Promise<void> {
-  await sendJson(`${API_BASE}/me/device-trust`, 'DELETE')
+  await sendJson(`${API_BASE}/privacy/device-trust`, 'DELETE')
 }
 
 // ---- NEW-347 单项授权撤销中心 ------------------------------------------------
@@ -252,10 +252,10 @@ export interface AuthorizationInventory {
 }
 
 export const listAuthorizations = () =>
-  getJson<AuthorizationInventory>(`${API_BASE}/me/authorizations`)
+  getJson<AuthorizationInventory>(`${API_BASE}/privacy/authorizations`)
 
 export async function revokeAuthorization(kind: string, ref: string): Promise<void> {
-  await sendJson(`${API_BASE}/me/authorizations/${kind}/${ref}/revoke`, 'POST')
+  await sendJson(`${API_BASE}/privacy/authorizations/${kind}/${ref}/revoke`, 'POST')
 }
 
 // ---- NEW-348 数据驻留说明 ----------------------------------------------------
@@ -318,14 +318,14 @@ export interface DeletionReceipt {
 }
 
 export const getDeletionPreview = () =>
-  getJson<DeletionPreview>(`${API_BASE}/me/deletion/preview`)
+  getJson<DeletionPreview>(`${API_BASE}/privacy/deletion/preview`)
 
 export async function confirmDeletion(
   password: string,
   confirmText: string,
 ): Promise<{ receipt: DeletionReceipt; retained: string[] }> {
-  return sendJson(`${API_BASE}/me/deletion/confirm`, 'POST', { password, confirmText })
+  return sendJson(`${API_BASE}/privacy/deletion/confirm`, 'POST', { password, confirmText })
 }
 
 export const listDeletionReceipts = () =>
-  getJson<{ items: DeletionReceipt[] }>(`${API_BASE}/me/deletion/receipts`)
+  getJson<{ items: DeletionReceipt[] }>(`${API_BASE}/privacy/deletion/receipts`)

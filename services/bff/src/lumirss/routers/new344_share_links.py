@@ -1,10 +1,10 @@
 """NEW-344 共享链接使用范围路由 + 公开访问路由。
 
-- POST /api/v1/me/share-links            创建（scope=titles/excerpt/full；
+- POST /api/v1/privacy/share-links            创建（scope=titles/excerpt/full；
       full 需设备信任在有效期内——NEW-346 消费点）；明文 token 一次性
-- GET  /api/v1/me/share-links            本人清单（绝无 token 材料）
-- GET  /api/v1/me/share-links/{id}/preview   外部访问者视角预览（同一渲染）
-- POST /api/v1/me/share-links/{id}/revoke    撤销
+- GET  /api/v1/privacy/share-links            本人清单（绝无 token 材料）
+- GET  /api/v1/privacy/share-links/{id}/preview   外部访问者视角预览（同一渲染）
+- POST /api/v1/privacy/share-links/{id}/revoke    撤销
 - GET  /shares/{token}                 公开免登录（token 错/撤销 → 404）
 
 per-user：A 的链接 B 看不到、撤不掉；公开路由经 machine_user_context
@@ -67,7 +67,7 @@ class CreateBody(BaseModel):
     maxUses: int | None = Field(default=None, ge=1, le=100000)
 
 
-@router.post("/api/v1/me/share-links", response_model=None)
+@router.post("/api/v1/privacy/share-links", response_model=None)
 async def create_share_link(body: CreateBody, request: Request) -> JSONResponse:
     user_id = await _require_user(request)
     if user_id is None:
@@ -88,7 +88,7 @@ async def create_share_link(body: CreateBody, request: Request) -> JSONResponse:
                 403,
                 "device_trust_required",
                 "发布「完整授权正文」是敏感操作：请先在当前设备完成"
-                " POST /api/v1/me/device-trust（密码复核）。",
+                " POST /api/v1/privacy/device-trust（密码复核）。",
                 purpose=TRUST_PURPOSE_FULL_SHARE,
             )
     try:
@@ -112,7 +112,7 @@ async def create_share_link(body: CreateBody, request: Request) -> JSONResponse:
     return JSONResponse(created, status_code=201, headers={"Cache-Control": "no-store"})
 
 
-@router.get("/api/v1/me/share-links", response_model=None)
+@router.get("/api/v1/privacy/share-links", response_model=None)
 async def list_share_links(request: Request) -> JSONResponse:
     user_id = await _require_user(request)
     if user_id is None:
@@ -127,7 +127,7 @@ async def list_share_links(request: Request) -> JSONResponse:
     )
 
 
-@router.get("/api/v1/me/share-links/{link_id}/preview", response_model=None)
+@router.get("/api/v1/privacy/share-links/{link_id}/preview", response_model=None)
 async def preview_share_link(link_id: int, request: Request) -> JSONResponse:
     """外部访问者将看到的确切载荷（同一渲染函数；不计次不留痕）。"""
     user_id = await _require_user(request)
@@ -147,7 +147,7 @@ async def preview_share_link(link_id: int, request: Request) -> JSONResponse:
     return JSONResponse(payload, headers={"Cache-Control": "no-store"})
 
 
-@router.post("/api/v1/me/share-links/{link_id}/revoke", response_model=None)
+@router.post("/api/v1/privacy/share-links/{link_id}/revoke", response_model=None)
 async def revoke_share_link(link_id: int, request: Request) -> JSONResponse:
     user_id = await _require_user(request)
     if user_id is None:

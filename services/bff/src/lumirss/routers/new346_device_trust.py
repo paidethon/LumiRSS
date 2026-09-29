@@ -1,8 +1,8 @@
 """NEW-346 设备信任期限路由。
 
-- POST   /api/v1/me/device-trust   密码复核 → 授予/续期当前设备信任
-- GET    /api/v1/me/device-trust   当前设备状态 + 全部授予清单
-- DELETE /api/v1/me/device-trust   吊销当前设备（?fingerprint= 吊销任意）
+- POST   /api/v1/privacy/device-trust   密码复核 → 授予/续期当前设备信任
+- GET    /api/v1/privacy/device-trust   当前设备状态 + 全部授予清单
+- DELETE /api/v1/privacy/device-trust   吊销当前设备（?fingerprint= 吊销任意）
 
 硬边界（测试断言）：授予绝不创建/延长 auth_sessions —— 服务端会话
 的过期时间原样不动。仅 session 模式（basic 模式无账户语义）。
@@ -67,7 +67,7 @@ def _password_verifier(request: Request, user_id: str, password: str):
     return verify
 
 
-@router.post("/api/v1/me/device-trust", response_model=None)
+@router.post("/api/v1/privacy/device-trust", response_model=None)
 async def post_device_trust(body: TrustBody, request: Request) -> JSONResponse:
     user_id = await _require_user(request)
     if user_id is None:
@@ -89,7 +89,7 @@ async def post_device_trust(body: TrustBody, request: Request) -> JSONResponse:
     return JSONResponse(result, headers={"Cache-Control": "no-store"})
 
 
-@router.get("/api/v1/me/device-trust", response_model=None)
+@router.get("/api/v1/privacy/device-trust", response_model=None)
 async def get_device_trust(request: Request) -> JSONResponse:
     user_id = await _require_user(request)
     if user_id is None:
@@ -112,7 +112,7 @@ async def get_device_trust(request: Request) -> JSONResponse:
     )
 
 
-@router.delete("/api/v1/me/device-trust", response_model=None)
+@router.delete("/api/v1/privacy/device-trust", response_model=None)
 async def delete_device_trust(request: Request, fingerprint: str | None = None) -> JSONResponse:
     user_id = await _require_user(request)
     if user_id is None:

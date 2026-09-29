@@ -1,8 +1,9 @@
 """NEW-345 共享链接次数上限路由。
 
-- PATCH /api/v1/me/share-links/{id}     设置/更改使用上限（null = 不限）
-- POST  /api/v1/me/share-links/{id}/topup    手动续额（只加不上减）
-- GET   /api/v1/me/share-links/{id}/accesses 访问留痕（含被拒的访问）
+- POST  /api/v1/privacy/share-links/{id}/limit   设置/更改使用上限（null = 不限；
+      me 面不引入 PUT/PATCH —— FIX-046 同一口径）
+- POST  /api/v1/privacy/share-links/{id}/topup    手动续额（只加不上减）
+- GET   /api/v1/privacy/share-links/{id}/accesses 访问留痕（含被拒的访问）
 """
 
 from fastapi import APIRouter, Request
@@ -48,7 +49,7 @@ class TopupBody(BaseModel):
     addUses: int
 
 
-@router.patch("/api/v1/me/share-links/{link_id}", response_model=None)
+@router.post("/api/v1/privacy/share-links/{link_id}/limit", response_model=None)
 async def set_share_link_limit(
     link_id: int, body: MaxUsesBody, request: Request
 ) -> JSONResponse:
@@ -86,7 +87,7 @@ async def set_share_link_limit(
     )
 
 
-@router.post("/api/v1/me/share-links/{link_id}/topup", response_model=None)
+@router.post("/api/v1/privacy/share-links/{link_id}/topup", response_model=None)
 async def topup_share_link(
     link_id: int, body: TopupBody, request: Request
 ) -> JSONResponse:
@@ -103,7 +104,7 @@ async def topup_share_link(
         return _error(422, "share_link_invalid", str(exc))
 
 
-@router.get("/api/v1/me/share-links/{link_id}/accesses", response_model=None)
+@router.get("/api/v1/privacy/share-links/{link_id}/accesses", response_model=None)
 async def share_link_accesses(
     link_id: int, request: Request, limit: int = 100
 ) -> JSONResponse:

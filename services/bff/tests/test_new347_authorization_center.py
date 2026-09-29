@@ -3,7 +3,7 @@
 
 from new2xx_ab import ab_env  # noqa: F401 — pytest 夹具注册
 
-AUTHZ_PATH = "/api/v1/me/authorizations"
+AUTHZ_PATH = "/api/v1/privacy/authorizations"
 
 
 def _enable_briefing(env, who):
@@ -20,7 +20,7 @@ def _create_share_link(env, who):
 
     seed_entry(env, who, "n347-item", title="清单条目")
     created = env["client"].post(
-        "/api/v1/me/share-links",
+        "/api/v1/privacy/share-links",
         json={
             "title": "授权中心链接",
             "scope": "titles",

@@ -3,9 +3,9 @@
 
 from new2xx_ab import PASSWORD, ab_env, seed_entry  # noqa: F401 — pytest 夹具注册
 
-PREVIEW_PATH = "/api/v1/me/deletion/preview"
-CONFIRM_PATH = "/api/v1/me/deletion/confirm"
-RECEIPTS_PATH = "/api/v1/me/deletion/receipts"
+PREVIEW_PATH = "/api/v1/privacy/deletion/preview"
+CONFIRM_PATH = "/api/v1/privacy/deletion/confirm"
+RECEIPTS_PATH = "/api/v1/privacy/deletion/receipts"
 
 
 def _setup_a_shared_copies(env):
@@ -17,7 +17,7 @@ def _setup_a_shared_copies(env):
     from lumirss.entryref import encode_entry_ref
 
     created = client.post(
-        "/api/v1/me/share-links",
+        "/api/v1/privacy/share-links",
         json={
             "title": "将被撤销",
             "scope": "titles",
@@ -102,7 +102,7 @@ def test_new350_confirm_processes_and_receipt(ab_env):  # noqa: F811
     # 共享链接立即失效；旧会话被吊销（旧 cookie 401）。
     assert client.get(f"/shares/{share_token}").status_code == 404
     assert (
-        client.get("/api/v1/me/access-log", headers=ab_env["a"]).status_code == 401
+        client.get("/api/v1/privacy/access-log", headers=ab_env["a"]).status_code == 401
     )
 
     # 停用后连登录都被如实拦下（403 account_deactivated 携带宽限期

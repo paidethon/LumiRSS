@@ -4,7 +4,7 @@ full 需设备信任（NEW-346 消费点）/撤销与 A/B 隔离。（零真实�
 
 from new2xx_ab import ab_env, seed_entry  # noqa: F401 — pytest 夹具注册
 
-LINKS_PATH = "/api/v1/me/share-links"
+LINKS_PATH = "/api/v1/privacy/share-links"
 def _seed_two_entries(env) -> list[str]:
     from lumirss.entryref import encode_entry_ref
 

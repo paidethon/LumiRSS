@@ -1,6 +1,6 @@
 """NEW-341 个人数据访问记录路由。
 
-- GET /api/v1/me/access-log?limit=  本人被共享入口访问的最小事件
+- GET /api/v1/privacy/access-log?limit=  本人被共享入口访问的最小事件
   + 记录范围 + 「无法记录」边界的如实说明。
 """
 
@@ -21,7 +21,7 @@ async def _require_user(request: Request) -> str | None:
     return await _current_user_id(request)
 
 
-@router.get("/api/v1/me/access-log", response_model=None)
+@router.get("/api/v1/privacy/access-log", response_model=None)
 async def get_access_log(request: Request, limit: int = 50) -> JSONResponse:
     user_id = await _require_user(request)
     if user_id is None:

@@ -64,7 +64,7 @@ def test_new349_withdraw_share_link_with_ref(ab_env):  # noqa: F811
 
     seed_entry(ab_env, "a", "n349-item", title="向导条目")
     created = client.post(
-        "/api/v1/me/share-links",
+        "/api/v1/privacy/share-links",
         json={
             "title": "向导链接",
             "scope": "titles",

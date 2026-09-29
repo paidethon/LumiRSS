@@ -10,7 +10,7 @@ from new2xx_ab import ab_env  # noqa: F401 — pytest 夹具注册
 def test_new341_empty_log_states_boundaries(ab_env):  # noqa: F811
     """空记录也如实返回记录范围与「无法记录」边界（不冒充有日志）。"""
     client = ab_env["client"]
-    response = client.get("/api/v1/me/access-log", headers=ab_env["a"])
+    response = client.get("/api/v1/privacy/access-log", headers=ab_env["a"])
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["items"] == []
@@ -33,24 +33,24 @@ def test_new341_briefing_feed_access_recorded_and_isolated(ab_env):  # noqa: F81
     fetched = client.get(f"/feeds/briefings/{token}.atom")
     assert fetched.status_code == 200, fetched.text
 
-    a_log = client.get("/api/v1/me/access-log", headers=ab_env["a"]).json()
+    a_log = client.get("/api/v1/privacy/access-log", headers=ab_env["a"]).json()
     assert any(item["purpose"] == "briefing_feed" for item in a_log["items"])
     assert any(item["purposeLabel"] == "个人简报 RSS 订阅" for item in a_log["items"])
 
-    b_log = client.get("/api/v1/me/access-log", headers=ab_env["b"]).json()
+    b_log = client.get("/api/v1/privacy/access-log", headers=ab_env["b"]).json()
     assert b_log["items"] == []
 
     # 错 token → 404 不泄露存在性，也不留痕。
     missing = client.get("/feeds/briefings/deadbeefdead.atom")
     assert missing.status_code == 404
-    a_log2 = client.get("/api/v1/me/access-log", headers=ab_env["a"]).json()
+    a_log2 = client.get("/api/v1/privacy/access-log", headers=ab_env["a"]).json()
     assert len(a_log2["items"]) == len(a_log["items"])
 
 
 def test_new341_limit_is_bounded(ab_env):  # noqa: F811
     client = ab_env["client"]
     response = client.get(
-        "/api/v1/me/access-log?limit=99999", headers=ab_env["a"]
+        "/api/v1/privacy/access-log?limit=99999", headers=ab_env["a"]
     )
     assert response.status_code == 200
 

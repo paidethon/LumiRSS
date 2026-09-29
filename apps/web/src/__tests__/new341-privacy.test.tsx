@@ -73,7 +73,7 @@ afterEach(() => {
 describe('NEW-341..350 隐私与授权中心（Web 入口）', () => {
   it('折叠态零请求；展开 NEW-341 后拉取访问记录并如实展示无法记录的边界', async () => {
     mockRoute(
-      (url) => url === '/api/v1/me/access-log',
+      (url) => url === '/api/v1/privacy/access-log',
       () =>
         jsonResponse({
           items: [
@@ -85,9 +85,9 @@ describe('NEW-341..350 隐私与授权中心（Web 入口）', () => {
         }),
     )
     renderWithQuery(<PrivacyAuthorizationCenter />)
-    expect(callsTo('/api/v1/me/access-log')).toHaveLength(0)
+    expect(callsTo('/api/v1/privacy/access-log')).toHaveLength(0)
     expand(/隐私与授权中心（/, 'n341-access-log')
-    await waitFor(() => expect(callsTo('/api/v1/me/access-log')).toHaveLength(1))
+    await waitFor(() => expect(callsTo('/api/v1/privacy/access-log')).toHaveLength(1))
     expect(await screen.findByText(/个人简报 RSS 订阅/)).toBeTruthy()
     expect(screen.getByText(/无法记录：FreshRSS/)).toBeTruthy()
     expect(screen.getByText(/绝不记录访问者 IP/)).toBeTruthy()
@@ -129,11 +129,11 @@ describe('NEW-341..350 隐私与授权中心（Web 入口）', () => {
 
   it('NEW-343 标记列表 + 提交「不发送至外部 AI」标记（PUT 真实调用）', async () => {
     mockRoute(
-      (url, init) => url === '/api/v1/me/ai-send-blocks' && (init?.method ?? 'GET') === 'GET',
+      (url, init) => url === '/api/v1/privacy/ai-send-blocks' && (init?.method ?? 'GET') === 'GET',
       () => jsonResponse({ items: [{ entryRef: 'rss:abc', reason: '医疗记录', createdAt: 'T0' }], note: 'n' }),
     )
     mockRoute(
-      (url, init) => url === '/api/v1/me/ai-send-blocks/rss:def' && init?.method === 'PUT',
+      (url, init) => url === '/api/v1/privacy/ai-send-blocks/rss:def' && init?.method === 'POST',
       () => jsonResponse({ entryRef: 'rss:def', reason: '含个人敏感信息，不发送至外部 AI。' }),
     )
     renderWithQuery(<PrivacyAuthorizationCenter />)
@@ -144,7 +144,7 @@ describe('NEW-341..350 隐私与授权中心（Web 入口）', () => {
     fireEvent.change(inputs[1], { target: { value: '医疗记录' } })
     fireEvent.click(screen.getByRole('button', { name: /标记为「不发送至外部 AI」/ }))
     await waitFor(() => {
-      const put = callsTo('/api/v1/me/ai-send-blocks/rss:def')
+      const put = callsTo('/api/v1/privacy/ai-send-blocks/rss:def')
       expect(put).toHaveLength(1)
       expect(JSON.parse(String(put[0]?.init?.body))).toEqual({ reason: '医疗记录' })
     })
@@ -152,11 +152,11 @@ describe('NEW-341..350 隐私与授权中心（Web 入口）', () => {
 
   it('NEW-344 创建共享链接：明文 token 仅此一次展示（scope=full 提示需设备信任）', async () => {
     mockRoute(
-      (url, init) => url === '/api/v1/me/share-links' && (init?.method ?? 'GET') === 'GET',
+      (url, init) => url === '/api/v1/privacy/share-links' && (init?.method ?? 'GET') === 'GET',
       () => jsonResponse({ items: [], note: '清单不含任何 token 材料；scope 创建后不可变。' }),
     )
     mockRoute(
-      (url, init) => url === '/api/v1/me/share-links' && init?.method === 'POST',
+      (url, init) => url === '/api/v1/privacy/share-links' && init?.method === 'POST',
       () =>
         jsonResponse(
           {
@@ -188,7 +188,7 @@ describe('NEW-341..350 隐私与授权中心（Web 入口）', () => {
 
   it('NEW-345 访问记录展开拉取（含被拒访问）', async () => {
     mockRoute(
-      (url) => url === '/api/v1/me/share-links',
+      (url) => url === '/api/v1/privacy/share-links',
       () =>
         jsonResponse({
           items: [
@@ -208,7 +208,7 @@ describe('NEW-341..350 隐私与授权中心（Web 入口）', () => {
         }),
     )
     mockRoute(
-      (url) => url === '/api/v1/me/share-links/3/accesses',
+      (url) => url === '/api/v1/privacy/share-links/3/accesses',
       () =>
         jsonResponse({
           items: [
@@ -227,7 +227,7 @@ describe('NEW-341..350 隐私与授权中心（Web 入口）', () => {
 
   it('NEW-346 设备信任状态 + 授予调用（密码字段 type=password）', async () => {
     mockRoute(
-      (url) => url === '/api/v1/me/device-trust',
+      (url) => url === '/api/v1/privacy/device-trust',
       () =>
         jsonResponse({
           currentDevice: { deviceFingerprint: 'abcd1234', deviceLabel: 'Chrome/Linux', trusted: false, trustedUntil: null },
@@ -243,7 +243,7 @@ describe('NEW-341..350 隐私与授权中心（Web 入口）', () => {
     fireEvent.change(passwordInput, { target: { value: 'pw' } })
     fireEvent.click(screen.getByRole('button', { name: '授予 / 续期' }))
     await waitFor(() => {
-      const posted = callsTo('/api/v1/me/device-trust').filter(
+      const posted = callsTo('/api/v1/privacy/device-trust').filter(
         (call) => call.init?.method === 'POST',
       )
       expect(posted).toHaveLength(1)
@@ -253,7 +253,7 @@ describe('NEW-341..350 隐私与授权中心（Web 入口）', () => {
 
   it('NEW-347 授权清单逐项展示撤销影响 + 撤销调用；绝不显示 token 材料', async () => {
     mockRoute(
-      (url) => url === '/api/v1/me/authorizations',
+      (url) => url === '/api/v1/privacy/authorizations',
       () =>
         jsonResponse({
           items: [
@@ -274,7 +274,7 @@ describe('NEW-341..350 隐私与授权中心（Web 入口）', () => {
     expect(await screen.findByText(/撤销影响/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '撤销' }))
     await waitFor(() => {
-      expect(callsTo('/api/v1/me/authorizations/briefing_feed/default/revoke')).toHaveLength(1)
+      expect(callsTo('/api/v1/privacy/authorizations/briefing_feed/default/revoke')).toHaveLength(1)
     })
   })
 
@@ -318,7 +318,7 @@ describe('NEW-341..350 隐私与授权中心（Web 入口）', () => {
 
   it('NEW-350 预览展示类别计数与共享副本规则；DELETE 未输入前确认禁用', async () => {
     mockRoute(
-      (url) => url === '/api/v1/me/deletion/preview',
+      (url) => url === '/api/v1/privacy/deletion/preview',
       () =>
         jsonResponse({
           categories: { entries: 12, aiTaskLogs: 0 },
@@ -330,7 +330,7 @@ describe('NEW-341..350 隐私与授权中心（Web 入口）', () => {
     expand(/共享与删除控制（/, 'n350-deletion')
     await screen.findByText(/不在 Lumi 删除范围内/)
     await waitFor(() => {
-      expect(callsTo('/api/v1/me/deletion/preview')).toHaveLength(1)
+      expect(callsTo('/api/v1/privacy/deletion/preview')).toHaveLength(1)
     })
     const confirmButton = screen.getByRole('button', { name: /确认注销并执行处理/ })
     expect((confirmButton as HTMLButtonElement).disabled).toBe(true)

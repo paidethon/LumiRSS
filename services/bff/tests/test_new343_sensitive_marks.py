@@ -8,7 +8,7 @@ import pytest
 
 from new2xx_ab import ab_env, seed_entry  # noqa: F401 — pytest 夹具注册
 
-BLOCKS_PATH = "/api/v1/me/ai-send-blocks"
+BLOCKS_PATH = "/api/v1/privacy/ai-send-blocks"
 
 
 def _ref_for(env, who: str, item_id: str) -> str:
@@ -27,7 +27,7 @@ def test_new343_put_get_list_and_validation(ab_env):  # noqa: F811
     assert listed.json()["items"] == []
     assert "不经过 Lumi" in listed.json()["note"]
 
-    marked = client.put(
+    marked = client.post(
         f"{BLOCKS_PATH}/{ref}",
         json={"reason": "含个人身份信息"},
         headers=ab_env["a"],
@@ -38,11 +38,11 @@ def test_new343_put_get_list_and_validation(ab_env):  # noqa: F811
     got = client.get(BLOCKS_PATH, headers=ab_env["a"]).json()["items"]
     assert len(got) == 1 and got[0]["entryRef"] == ref
 
-    too_long = client.put(
+    too_long = client.post(
         f"{BLOCKS_PATH}/{ref}", json={"reason": "x" * 201}, headers=ab_env["a"]
     )
     assert too_long.status_code == 422
-    bad_ref = client.put(f"{BLOCKS_PATH}/not-a-ref", json={}, headers=ab_env["a"])
+    bad_ref = client.post(f"{BLOCKS_PATH}/not-a-ref", json={}, headers=ab_env["a"])
     assert bad_ref.status_code == 400
 
 
@@ -51,7 +51,7 @@ def test_new343_summary_task_blocked_at_backend(ab_env):  # noqa: F811
     阻止发生在配额/provider 之前（无 provider 配置也稳定 403）。"""
     client = ab_env["client"]
     ref = _ref_for(ab_env, "a", "n343-item-2")
-    client.put(
+    client.post(
         f"{BLOCKS_PATH}/{ref}", json={"reason": "医疗记录"}, headers=ab_env["a"]
     )
     summary = client.post(f"/api/v1/entries/{ref}/summary", headers=ab_env["a"])
@@ -65,7 +65,7 @@ def test_new343_summary_task_blocked_at_backend(ab_env):  # noqa: F811
 def test_new343_conversation_and_translation_blocked(ab_env):  # noqa: F811
     client = ab_env["client"]
     ref = _ref_for(ab_env, "a", "n343-item-3")
-    client.put(f"{BLOCKS_PATH}/{ref}", json={}, headers=ab_env["a"])
+    client.post(f"{BLOCKS_PATH}/{ref}", json={}, headers=ab_env["a"])
 
     conversation = client.post(
         f"/api/v1/entries/{ref}/conversation/messages",
@@ -93,7 +93,7 @@ def test_new343_clear_unblocks_and_isolation(ab_env):  # noqa: F811
     from lumirss.entryref import encode_entry_ref
 
     ref = encode_entry_ref(item_id)
-    client.put(f"{BLOCKS_PATH}/{ref}", json={"reason": "私密"}, headers=ab_env["a"])
+    client.post(f"{BLOCKS_PATH}/{ref}", json={"reason": "私密"}, headers=ab_env["a"])
 
     # B 未标记：不被拦（错误不再是 ai_send_blocked——无 provider 时是别的错误）。
     b_summary = client.post(f"/api/v1/entries/{ref}/summary", headers=ab_env["b"])

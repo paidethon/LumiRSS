@@ -1,9 +1,9 @@
 """NEW-350 个人数据删除范围预览与处理回执路由。
 
-- GET  /api/v1/me/deletion/preview   逐类别真实计数 + 共享副本处理规则
-- POST /api/v1/me/deletion/confirm   密码 + confirmText 复核 → 真实执行
+- GET  /api/v1/privacy/deletion/preview   逐类别真实计数 + 共享副本处理规则
+- POST /api/v1/privacy/deletion/confirm   密码 + confirmText 复核 → 真实执行
                                     → 实际处理回执（已发生事实）
-- GET  /api/v1/me/deletion/receipts  本人回执清单
+- GET  /api/v1/privacy/deletion/receipts  本人回执清单
 
 确认会：撤销简报 feed / 逐条撤销共享链接 / 停用 API 来源 / 撤销外发
 webhook / 删除日报 feed token / 清本人活动记录（AI 任务日志 + 搜索
@@ -54,7 +54,7 @@ class ConfirmBody(BaseModel):
     confirmText: str
 
 
-@router.get("/api/v1/me/deletion/preview", response_model=None)
+@router.get("/api/v1/privacy/deletion/preview", response_model=None)
 async def get_deletion_preview(request: Request) -> JSONResponse:
     user_id = await _require_user(request)
     if user_id is None:
@@ -70,7 +70,7 @@ async def get_deletion_preview(request: Request) -> JSONResponse:
     )
 
 
-@router.post("/api/v1/me/deletion/confirm", response_model=None)
+@router.post("/api/v1/privacy/deletion/confirm", response_model=None)
 async def confirm_deletion(body: ConfirmBody, request: Request) -> JSONResponse:
     user_id = await _require_user(request)
     if user_id is None:
@@ -196,7 +196,7 @@ async def confirm_deletion(body: ConfirmBody, request: Request) -> JSONResponse:
     return response
 
 
-@router.get("/api/v1/me/deletion/receipts", response_model=None)
+@router.get("/api/v1/privacy/deletion/receipts", response_model=None)
 async def get_deletion_receipts(request: Request, limit: int = 10) -> JSONResponse:
     user_id = await _require_user(request)
     if user_id is None:

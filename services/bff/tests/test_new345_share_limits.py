@@ -5,7 +5,7 @@ import asyncio
 
 from new2xx_ab import ab_env, seed_entry  # noqa: F401 — pytest 夹具注册
 
-LINKS_PATH = "/api/v1/me/share-links"
+LINKS_PATH = "/api/v1/privacy/share-links"
 
 
 def _make_link(env, *, max_uses=None):
@@ -80,8 +80,8 @@ def test_new345_set_limit_and_ab_isolation(ab_env):  # noqa: F811
     client = ab_env["client"]
     link = _make_link(ab_env)  # 不限
     # B 看不到也改不了 A 的链接。
-    b_patch = ab_env["client"].patch(
-        f"{LINKS_PATH}/{link['id']}",
+    b_patch = ab_env["client"].post(
+        f"{LINKS_PATH}/{link['id']}/limit",
         json={"maxUses": 1},
         headers=ab_env["b"],
     )
@@ -89,20 +89,20 @@ def test_new345_set_limit_and_ab_isolation(ab_env):  # noqa: F811
     b_list = ab_env["client"].get(LINKS_PATH, headers=ab_env["b"]).json()["items"]
     assert all(item["id"] != link["id"] for item in b_list)
 
-    patched = client.patch(
-        f"{LINKS_PATH}/{link['id']}", json={"maxUses": 5}, headers=ab_env["a"]
+    patched = client.post(
+        f"{LINKS_PATH}/{link['id']}/limit", json={"maxUses": 5}, headers=ab_env["a"]
     )
     assert patched.status_code == 200
     assert patched.json()["maxUses"] == 5
 
-    unlimited = client.patch(
-        f"{LINKS_PATH}/{link['id']}", json={"maxUses": None}, headers=ab_env["a"]
+    unlimited = client.post(
+        f"{LINKS_PATH}/{link['id']}/limit", json={"maxUses": None}, headers=ab_env["a"]
     )
     assert unlimited.status_code == 200
     assert unlimited.json()["maxUses"] is None
 
-    bad = client.patch(
-        f"{LINKS_PATH}/{link['id']}", json={"maxUses": 0}, headers=ab_env["a"]
+    bad = client.post(
+        f"{LINKS_PATH}/{link['id']}/limit", json={"maxUses": 0}, headers=ab_env["a"]
     )
     assert bad.status_code == 422
 
