@@ -118,6 +118,52 @@ describe('NEW-231..240 标注侧工具（New231AnnotationTools）', () => {
     expect(JSON.parse(String(call?.init?.body))).toEqual({ annotationIds: ['a-1'] })
   })
 
+  it('NEW-238 迁移先预览（零写入）再应用；正文与文章身份不在请求里', async () => {
+    mockRoute(
+      (url, init) => url === '/api/v1/annotation-layers' && (!init?.method || init.method === 'GET'),
+      () =>
+        jsonResponse({
+          items: [
+            { id: 'L1', name: '考据层', createdAt: 't', itemCount: 1 },
+            { id: 'L2', name: '待办层', createdAt: 't', itemCount: 0 },
+          ],
+        }),
+    )
+    mockRoute(
+      (url) => url === '/api/v1/annotation-layers/migrate/preview',
+      () =>
+        jsonResponse({
+          fromLayerId: 'L1',
+          toLayerId: 'L2',
+          fromLayer: '考据层',
+          toLayer: '待办层',
+          items: [
+            { annotationId: 'a-1', entryRef: 'e-1', excerpt: '要迁的摘录', color: 'yellow', fromLayer: '考据层', toLayer: '待办层' },
+          ],
+          count: 1,
+        }),
+    )
+    mockRoute(
+      (url) => url === '/api/v1/annotation-layers/migrate/apply',
+      () => jsonResponse({ moved: ['a-1'], skipped: [], count: 1 }),
+    )
+    renderWithQuery(<New231AnnotationTools selectedIds={new Set(['a-1'])} />)
+    const fromSelect = await screen.findByLabelText('来源层')
+    const toSelect = screen.getByLabelText('目标层')
+    await screen.findAllByText('待办层') // 等层列表渲染出 option（来源/目标两处）再切换
+    fireEvent.change(fromSelect, { target: { value: 'L1' } })
+    fireEvent.change(toSelect, { target: { value: 'L2' } })
+    fireEvent.click(screen.getByText('预览迁移'))
+    await waitFor(() => expect(screen.getByText(/预览，未写入/)).toBeTruthy())
+    expect(screen.getByText(/要迁的摘录/)).toBeTruthy()
+    fireEvent.click(screen.getByText('确认迁移'))
+    await waitFor(() => expect(screen.getByText(/已迁移 1 条；原文章身份未改动。/)).toBeTruthy())
+    const previewCall = fetchCalls.find((c) => c.url === '/api/v1/annotation-layers/migrate/preview')
+    const applyCall = fetchCalls.find((c) => c.url === '/api/v1/annotation-layers/migrate/apply')
+    expect(JSON.parse(String(previewCall?.init?.body))).toEqual({ fromLayerId: 'L1', toLayerId: 'L2', annotationIds: ['a-1'] })
+    expect(JSON.parse(String(applyCall?.init?.body))).toEqual({ fromLayerId: 'L1', toLayerId: 'L2', annotationIds: ['a-1'] })
+  })
+
   it('NEW-237 预览卡片展示 markdown 与来源索引；未知 id 诚实上报', async () => {
     mockRoute(
       (url) => url === '/api/v1/annotation-cards/preview',
