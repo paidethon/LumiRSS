@@ -5910,6 +5910,622 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/new201/takeover/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Takeover Apply
+         * @description 执行确认过的动作：新建订阅（不重复）/ 已有订阅继承目录。
+         *
+         *     逐项汇报：任何单项失败不阻断其他项（上游无事务，诚实逐项回报）；
+         *     台账落一行（含逐项结果）。subscribe 带 categoryLabel 时按导出的
+         *     分类标签建类归位（move_to_new_category = FreshRSS 唯一
+         *     create-category 通道）。
+         */
+        post: operations["takeover_apply_api_v1_new201_takeover_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/new201/takeover/batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Takeover Batches
+         * @description 接管台账（新→旧，≤50；含逐项结果摘要）。
+         */
+        get: operations["list_takeover_batches_api_v1_new201_takeover_batches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/new201/takeover/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Takeover Preview
+         * @description 把导出映射到现有订阅：新建/已订（绝不重复订阅）/无效三类。
+         */
+        post: operations["takeover_preview_api_v1_new201_takeover_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/new202/observations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Observations
+         * @description 观察列表（默认 active；带事实面与 expired 标注）。
+         */
+        get: operations["list_observations_api_v1_new202_observations_get"];
+        put?: never;
+        /**
+         * Create Observation
+         * @description 为来源设置停更观察期（同一来源同时至多一条 active → 409）。
+         */
+        post: operations["create_observation_api_v1_new202_observations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/new202/observations/{observation_id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close Observation
+         * @description 到期复核收尾：continue（保留订阅）或 unsubscribed（决定停订；
+         *     实际退订走既有退订端点，本端点只记录决定）。
+         */
+        post: operations["close_observation_api_v1_new202_observations__observation_id__close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/new202/observations/{observation_id}/extend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Extend Observation
+         * @description 继续观察：到期日 = max(now, endsAt) + days。
+         */
+        post: operations["extend_observation_api_v1_new202_observations__observation_id__extend_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/new203/views": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Views
+         * @description 视图列表（可按来源过滤）。
+         */
+        get: operations["list_views_api_v1_new203_views_get"];
+        put?: never;
+        /**
+         * Create View
+         * @description 创建个人分流视图（同 feed 同名 → 409）。
+         */
+        post: operations["create_view_api_v1_new203_views_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/new203/views/{view_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete View */
+        delete: operations["delete_view_api_v1_new203_views__view_id__delete"];
+        options?: never;
+        head?: never;
+        /** Patch View */
+        patch: operations["patch_view_api_v1_new203_views__view_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/new203/views/{view_id}/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get View Entries
+         * @description 视图条目（读取侧投影过滤；同一抓取任务/条目身份不变）。
+         */
+        get: operations["get_view_entries_api_v1_new203_views__view_id__entries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/new204/choices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Mirror Choices
+         * @description 抉择台账（新→旧，≤20）。
+         */
+        get: operations["list_mirror_choices_api_v1_new204_choices_get"];
+        put?: never;
+        /**
+         * Record Mirror Choice
+         * @description 记录抉择台账（比对后用户确认选用哪边；订阅走既有端点）。
+         */
+        post: operations["record_mirror_choice_api_v1_new204_choices_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/new204/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compare Mirrors
+         * @description 并排比对两个候选 feed 的最近条目覆盖（只读；一侧失败不掩盖另一侧）。
+         */
+        post: operations["compare_mirrors_api_v1_new204_compare_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/new205/retention/dry-run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dry Run Retention
+         * @description 预演：保留多少收藏/标注/书签、回收多少普通缓存（只读零写入）。
+         */
+        post: operations["dry_run_retention_api_v1_new205_retention_dry_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/new205/retention/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable Retention
+         * @description 确认启用：策略落库 + 立即裁剪本地投影（starred 恒排除）+ 台账。
+         *
+         *     FreshRSS 零调用（投影可再生成；真实删除需在原生界面执行）。
+         */
+        post: operations["enable_retention_api_v1_new205_retention_enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/new206/calendar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Feed Calendar
+         * @description 按真实发表日期的来源月历（只读；无发文与资料缺失严格区分）。
+         */
+        get: operations["get_feed_calendar_api_v1_new206_calendar_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/new207/rsshub-form/{route_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Form Schema
+         * @description 表单 schema（依据 Lumi 自有路由目录；离线零网络）。
+         */
+        get: operations["get_form_schema_api_v1_new207_rsshub_form__route_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/new207/rsshub-form/{route_id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Form
+         * @description 验证后添加：校验 → 生成订阅地址（服务端拼装）→ 确认即订阅。
+         *
+         *     - 表单未过校验 → 422 rsshub_form_invalid（errors 逐参数）；
+         *     - 未显式 confirmed → 422 confirmation_required；
+         *     - RSSHUB base 未配置 → 422 rsshub_not_configured（服务端配置缺失）；
+         *     - 已订阅同 URL → 409 already_subscribed（上游冲突也归并到这里）。
+         */
+        post: operations["apply_form_api_v1_new207_rsshub_form__route_id__apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/new207/rsshub-form/{route_id}/uses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Form Uses
+         * @description 该路由的添加台账（脱敏参数；新→旧，≤50）。
+         */
+        get: operations["list_form_uses_api_v1_new207_rsshub_form__route_id__uses_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/new207/rsshub-form/{route_id}/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Validate Form Params
+         * @description 逐参数校验（required/pattern/unknown；离线，不取样本）。
+         */
+        post: operations["validate_form_params_api_v1_new207_rsshub_form__route_id__validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/new208/reminders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Reminders
+         * @description 提醒列表（按到期日升序；带 overdue/due_soon/later 分桶）。
+         */
+        get: operations["list_reminders_api_v1_new208_reminders_get"];
+        put?: never;
+        /**
+         * Create Reminder
+         * @description 登记来源访问凭据的到期日（提醒元数据；无凭据字段可填）。
+         */
+        post: operations["create_reminder_api_v1_new208_reminders_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/new208/reminders/{reminder_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss Reminder
+         * @description dismiss / 重新激活（set 语义；dismissed=true 静默，false 复原）。
+         */
+        post: operations["dismiss_reminder_api_v1_new208_reminders__reminder_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/new208/reminders/{reminder_id}/renew": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Renew Reminder
+         * @description 续期：更新到期日（dismissed 行重新激活；计数 +1）。
+         */
+        post: operations["renew_reminder_api_v1_new208_reminders__reminder_id__renew_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/new209/bin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Bin
+         * @description 回收箱列表（kept + restored；discard 行需显式 include）。
+         */
+        get: operations["list_bin_api_v1_new209_bin_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/new209/bin/{row_id}/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Discard Bin Row
+         * @description 显式放弃（kept → discarded；行保留作审计，不再可恢复）。
+         */
+        post: operations["discard_bin_row_api_v1_new209_bin__row_id__discard_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/new209/bin/{row_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Bin Row
+         * @description 按捕获的配置重新订阅（新代次），行转 restored。
+         *
+         *     分类恢复策略：原 category_id 仍在 → 直接归位；分类已不存在 →
+         *     按 category_label 重建（move_to_new_category）并如实标注。
+         */
+        post: operations["restore_bin_row_api_v1_new209_bin__row_id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/new209/unsubscribe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unsubscribe To Bin
+         * @description 退订进回收箱：解析订阅 → 捕获配置 → 上游退订 → 落箱。
+         *
+         *     上游不可用/订阅不存在时不落箱、不退订（无半途状态）。
+         */
+        post: operations["unsubscribe_to_bin_api_v1_new209_unsubscribe_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/new210/pauses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Pause Plans
+         * @description 计划列表（新→旧，≤200；含 activeNow 判定）。
+         */
+        get: operations["list_pause_plans_api_v1_new210_pauses_get"];
+        put?: never;
+        /**
+         * Create Pause Plan
+         * @description 为来源设置停机计划（立即或定时开始；恢复时间 / 开放式二选一）。
+         */
+        post: operations["create_pause_plan_api_v1_new210_pauses_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/new210/pauses/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Active Pauses
+         * @description 当前生效的暂停来源（去重 URL 列表；机器可读消费点）。
+         */
+        get: operations["list_active_pauses_api_v1_new210_pauses_active_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/new210/pauses/{plan_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Pause Plan
+         * @description 删除一条（任意状态的）计划行（housekeeping；默认路径是取消）。
+         */
+        delete: operations["delete_pause_plan_api_v1_new210_pauses__plan_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/new210/pauses/{plan_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Pause Plan
+         * @description 取消计划（set 语义 active → cancelled；绝不删除行）。
+         */
+        post: operations["cancel_pause_plan_api_v1_new210_pauses__plan_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/obsidian/block-refs": {
         parameters: {
             query?: never;
@@ -13878,6 +14494,59 @@ export interface components {
              */
             moved: number;
         };
+        /** BinList */
+        BinList: {
+            /** Items */
+            items: components["schemas"]["BinRowView"][];
+            /** Note */
+            note: string;
+        };
+        /** BinRowView */
+        BinRowView: {
+            /** Categoryid */
+            categoryId: string | null;
+            /** Categorylabel */
+            categoryLabel: string | null;
+            /** Createdat */
+            createdAt: string;
+            /** Discardedat */
+            discardedAt: string | null;
+            /**
+             * Expired
+             * @default false
+             */
+            expired: boolean;
+            /** Feedurl */
+            feedUrl: string;
+            /** Id */
+            id: string;
+            /** Keepdays */
+            keepDays: number;
+            /** Purgeafter */
+            purgeAfter: string;
+            /** Restoredat */
+            restoredAt: string | null;
+            /** Restoredstreamid */
+            restoredStreamId: string | null;
+            /** Status */
+            status: string;
+            /** Streamid */
+            streamId: string;
+            /** Title */
+            title: string | null;
+            /** Unsubscribedat */
+            unsubscribedAt: string;
+        };
+        /**
+         * BinUnsubscribeRequest
+         * @description POST /api/v1/new209/unsubscribe body。
+         */
+        BinUnsubscribeRequest: {
+            /** Keepdays */
+            keepDays: number;
+            /** Subscriptionref */
+            subscriptionRef: string;
+        };
         /**
          * BoardColumn
          * @description F085 看板一列（前 50 条 + 真实总数）。
@@ -14185,6 +14854,45 @@ export interface components {
              * @default rss
              */
             type: string;
+        };
+        /** CalendarDay */
+        CalendarDay: {
+            /** Count */
+            count: number;
+            /** Date */
+            date: string;
+            /** Sample */
+            sample: components["schemas"]["CalendarDaySample"][];
+        };
+        /** CalendarDaySample */
+        CalendarDaySample: {
+            /** Entryref */
+            entryRef: string;
+            /** Publishedat */
+            publishedAt: string;
+            /** Title */
+            title: string;
+        };
+        /** CalendarView */
+        CalendarView: {
+            /** Basis */
+            basis: string;
+            /** Coverage */
+            coverage: string;
+            /** Days */
+            days: components["schemas"]["CalendarDay"][];
+            /** Feedurl */
+            feedUrl: string;
+            /** Fetchpaused */
+            fetchPaused: boolean;
+            /** Month */
+            month: string;
+            /** Note */
+            note: string;
+            /** Outofwindowrows */
+            outOfWindowRows: number;
+            /** Totalentries */
+            totalEntries: number;
         };
         /** CardCandidate */
         CardCandidate: {
@@ -15412,6 +16120,33 @@ export interface components {
             siteUrl?: string | null;
             /** Title */
             title: string;
+        };
+        /**
+         * FormApplyRequest
+         * @description POST /api/v1/new207/rsshub-form/{routeId}/apply body（验证后添加）。
+         */
+        FormApplyRequest: {
+            /**
+             * Confirmed
+             * @default false
+             */
+            confirmed: boolean;
+            /** Params */
+            params?: {
+                [key: string]: string;
+            };
+            /** Title */
+            title?: string | null;
+        };
+        /**
+         * FormValidateRequest
+         * @description POST /api/v1/new207/rsshub-form/{routeId}/validate body（离线）。
+         */
+        FormValidateRequest: {
+            /** Params */
+            params?: {
+                [key: string]: string;
+            };
         };
         /**
          * FreshRssNativeUrl
@@ -17156,6 +17891,57 @@ export interface components {
             trashed: boolean;
         };
         /**
+         * MirrorChoiceRequest
+         * @description POST /api/v1/new204/choices body（比对后确认选用哪边）。
+         */
+        MirrorChoiceRequest: {
+            /** Note */
+            note?: string | null;
+            /** Picked */
+            picked: string;
+            /** Urla */
+            urlA: string;
+            /** Urlb */
+            urlB: string;
+        };
+        /**
+         * MirrorCompareRequest
+         * @description POST /api/v1/new204/compare body（两个候选 feed URL）。
+         */
+        MirrorCompareRequest: {
+            /** Urla */
+            urlA: string;
+            /** Urlb */
+            urlB: string;
+        };
+        /** MirrorCompareResponse */
+        MirrorCompareResponse: {
+            /** Comparison */
+            comparison: {
+                [key: string]: unknown;
+            } | null;
+            /** Note */
+            note: string;
+            sideA: components["schemas"]["MirrorSideSummary"];
+            sideB: components["schemas"]["MirrorSideSummary"];
+        };
+        /** MirrorSideSummary */
+        MirrorSideSummary: {
+            /**
+             * Comparedentries
+             * @default []
+             */
+            comparedEntries: {
+                [key: string]: unknown;
+            }[];
+            /** Entrycount */
+            entryCount?: number | null;
+            /** Error */
+            error?: string | null;
+            /** Title */
+            title?: string | null;
+        };
+        /**
          * NoteImportFile
          * @description F020：一个待入库的 Markdown 文件。
          */
@@ -17242,6 +18028,95 @@ export interface components {
             truncated: boolean;
             /** Wikilinks */
             wikilinks?: string[] | null;
+        };
+        /**
+         * ObservationClose
+         * @description POST /api/v1/new202/observations/{id}/close body。
+         */
+        ObservationClose: {
+            /**
+             * Resolution
+             * @enum {string}
+             */
+            resolution: "continue" | "unsubscribed";
+        };
+        /**
+         * ObservationCreate
+         * @description POST /api/v1/new202/observations body。
+         */
+        ObservationCreate: {
+            /** Days */
+            days: number;
+            /** Feedurl */
+            feedUrl: string;
+            /** Note */
+            note?: string | null;
+        };
+        /**
+         * ObservationExtend
+         * @description POST /api/v1/new202/observations/{id}/extend body。
+         */
+        ObservationExtend: {
+            /** Days */
+            days: number;
+        };
+        /** ObservationList */
+        ObservationList: {
+            /** Items */
+            items: components["schemas"]["ObservationView"][];
+            /** Servertime */
+            serverTime: string;
+        };
+        /** ObservationView */
+        ObservationView: {
+            /** Basis */
+            basis?: string | null;
+            /** Closedat */
+            closedAt: string | null;
+            /** Createdat */
+            createdAt: string;
+            /** Endsat */
+            endsAt: string;
+            /**
+             * Expired
+             * @default false
+             */
+            expired: boolean;
+            /** Feedurl */
+            feedUrl: string;
+            /** Fetchhealth */
+            fetchHealth?: string | null;
+            /**
+             * Fetchpaused
+             * @default false
+             */
+            fetchPaused: boolean;
+            /** Id */
+            id: string;
+            /** Lastpostat */
+            lastPostAt?: string | null;
+            /** Note */
+            note: string | null;
+            /** Notefromserver */
+            noteFromServer?: string | null;
+            /**
+             * Postssincestart
+             * @default 0
+             */
+            postsSinceStart: number;
+            /**
+             * Projectionrows
+             * @default 0
+             */
+            projectionRows: number;
+            /** Resolution */
+            resolution: string | null;
+            /** Startedat */
+            startedAt: string;
+            /** Status */
+            status: string;
+            /** Verdict */
+            verdict?: string | null;
         };
         /**
          * ObsidianBlockRef
@@ -18197,6 +19072,65 @@ export interface components {
             newPassword: string;
             /** Totpcode */
             totpCode?: string | null;
+        };
+        /** PauseActiveList */
+        PauseActiveList: {
+            /** Checkedat */
+            checkedAt: string;
+            /** Feedurls */
+            feedUrls: string[];
+            /** Note */
+            note: string;
+        };
+        /**
+         * PausePlanCreate
+         * @description POST /api/v1/new210/pauses body。
+         */
+        PausePlanCreate: {
+            /** Endat */
+            endAt?: string | null;
+            /** Feedurl */
+            feedUrl: string;
+            /**
+             * Openended
+             * @default false
+             */
+            openEnded: boolean;
+            /** Reason */
+            reason?: string | null;
+            /** Startat */
+            startAt?: string | null;
+        };
+        /** PausePlanList */
+        PausePlanList: {
+            /** Items */
+            items: components["schemas"]["PausePlanView"][];
+            /** Note */
+            note: string;
+        };
+        /** PausePlanView */
+        PausePlanView: {
+            /**
+             * Activenow
+             * @default false
+             */
+            activeNow: boolean;
+            /** Cancelledat */
+            cancelledAt: string | null;
+            /** Createdat */
+            createdAt: string;
+            /** Endat */
+            endAt: string | null;
+            /** Feedurl */
+            feedUrl: string;
+            /** Id */
+            id: string;
+            /** Reason */
+            reason: string | null;
+            /** Startat */
+            startAt: string;
+            /** Status */
+            status: string;
         };
         /**
          * PoolAddBody
@@ -19770,6 +20704,65 @@ export interface components {
             stale: boolean;
         };
         /**
+         * ReminderCreate
+         * @description POST /api/v1/new208/reminders body。
+         *
+         *     刻意**没有**凭据值字段（extra=forbid）——凭据正文属于既有
+         *     write-only 边界，本端点只登记「什么时候到期」。
+         */
+        ReminderCreate: {
+            /** Expireson */
+            expiresOn: string;
+            /** Feedurl */
+            feedUrl: string;
+            /** Note */
+            note?: string | null;
+            /** Sourcelabel */
+            sourceLabel?: string | null;
+        };
+        /** ReminderList */
+        ReminderList: {
+            /** Items */
+            items: components["schemas"]["ReminderView"][];
+            /** Note */
+            note: string;
+            /** Today */
+            today: string;
+        };
+        /**
+         * ReminderRenew
+         * @description POST /api/v1/new208/reminders/{id}/renew body（只换到期日）。
+         */
+        ReminderRenew: {
+            /** Expireson */
+            expiresOn: string;
+        };
+        /** ReminderView */
+        ReminderView: {
+            /** Bucket */
+            bucket?: string | null;
+            /** Createdat */
+            createdAt: string;
+            /** Expireson */
+            expiresOn: string;
+            /** Feedurl */
+            feedUrl: string;
+            /** Id */
+            id: string;
+            /** Note */
+            note: string | null;
+            /** Renewedcount */
+            renewedCount: number;
+            /** Sourcelabel */
+            sourceLabel: string | null;
+            /** Status */
+            status: string;
+            /** Updateentry */
+            updateEntry?: string | null;
+            /** Updatedat */
+            updatedAt: string;
+        };
+        /**
          * RemoteBackup
          * @description One backup archive on WebDAV (flat name + size, no secret values).
          */
@@ -20053,6 +21046,31 @@ export interface components {
              * @default false
              */
             prune: boolean;
+        };
+        /**
+         * RetentionDryRunRequest
+         * @description POST /api/v1/new205/retention/dry-run body（只读）。
+         */
+        RetentionDryRunRequest: {
+            /** Days */
+            days: number;
+            /** Feedurl */
+            feedUrl: string;
+        };
+        /**
+         * RetentionEnableRequest
+         * @description POST /api/v1/new205/retention/enable body（确认语义在服务端强制）。
+         */
+        RetentionEnableRequest: {
+            /**
+             * Confirmed
+             * @default false
+             */
+            confirmed: boolean;
+            /** Days */
+            days: number;
+            /** Feedurl */
+            feedUrl: string;
         };
         /**
          * RetentionNotice
@@ -21913,6 +22931,21 @@ export interface components {
             /** Sources */
             sources: components["schemas"]["SourceRegistryEntry"][];
         };
+        /** SourceView */
+        SourceView: {
+            /** Createdat */
+            createdAt: string;
+            /** Feedurl */
+            feedUrl: string;
+            /** Field */
+            field: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Value */
+            value: string;
+        };
         /**
          * StagedSource
          * @description One staging-pool row (never a subscription, never counts unread).
@@ -22328,6 +23361,56 @@ export interface components {
         TagSuggestionsResponse: {
             /** Suggestions */
             suggestions: string[];
+        };
+        /**
+         * TakeoverApplyItem
+         * @description 单个确认动作：subscribe（新 feed）| move（已有 feed 继承目录）。
+         */
+        TakeoverApplyItem: {
+            /** Action */
+            action: string;
+            /** Categorylabel */
+            categoryLabel?: string | null;
+            /** Feedurl */
+            feedUrl: string;
+            /** Title */
+            title?: string | null;
+        };
+        /**
+         * TakeoverApplyRequest
+         * @description POST /api/v1/new201/takeover/apply body（逐项确认过的动作表）。
+         */
+        TakeoverApplyRequest: {
+            /** Items */
+            items: components["schemas"]["TakeoverApplyItem"][];
+            /** Label */
+            label?: string | null;
+        };
+        /** TakeoverBatchList */
+        TakeoverBatchList: {
+            /** Items */
+            items: components["schemas"]["TakeoverBatchView"][];
+        };
+        /** TakeoverBatchView */
+        TakeoverBatchView: {
+            /** Createdat */
+            createdAt: string;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string | null;
+            /** Summary */
+            summary: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * TakeoverPreviewRequest
+         * @description POST /api/v1/new201/takeover/preview body（OPML 原文；只读）。
+         */
+        TakeoverPreviewRequest: {
+            /** Opml */
+            opml: string;
         };
         /**
          * TaskRecord
@@ -22751,6 +23834,43 @@ export interface components {
             onlyB: string[];
         };
         /**
+         * ViewCreate
+         * @description POST /api/v1/new203/views body。
+         */
+        ViewCreate: {
+            /** Feedurl */
+            feedUrl: string;
+            /** Field */
+            field: string;
+            /** Name */
+            name: string;
+            /** Value */
+            value: string;
+        };
+        /** ViewEntries */
+        ViewEntries: {
+            /** Basis */
+            basis: string;
+            /** Entries */
+            entries: components["schemas"]["ViewEntry"][];
+            /** Note */
+            note: string;
+            view: components["schemas"]["SourceView"];
+        };
+        /** ViewEntry */
+        ViewEntry: {
+            /** Author */
+            author: string;
+            /** Entryref */
+            entryRef: string;
+            /** Publishedat */
+            publishedAt: string;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+        };
+        /**
          * ViewFeedTokenResult
          * @description F061：启用/轮换私有 Atom 订阅的响应。
          *
@@ -22765,6 +23885,23 @@ export interface components {
              * @default true
              */
             hasFeedToken: boolean;
+        };
+        /** ViewList */
+        ViewList: {
+            /** Items */
+            items: components["schemas"]["SourceView"][];
+        };
+        /**
+         * ViewPatch
+         * @description PATCH /api/v1/new203/views/{id} body（局部更新）。
+         */
+        ViewPatch: {
+            /** Field */
+            field?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Value */
+            value?: string | null;
         };
         /**
          * VolumeDailyBucket
@@ -33846,6 +34983,1100 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    takeover_apply_api_v1_new201_takeover_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TakeoverApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_takeover_batches_api_v1_new201_takeover_batches_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TakeoverBatchList"];
+                };
+            };
+        };
+    };
+    takeover_preview_api_v1_new201_takeover_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TakeoverPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_observations_api_v1_new202_observations_get: {
+        parameters: {
+            query?: {
+                status?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObservationList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_observation_api_v1_new202_observations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObservationCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObservationView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    close_observation_api_v1_new202_observations__observation_id__close_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                observation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObservationClose"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObservationView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    extend_observation_api_v1_new202_observations__observation_id__extend_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                observation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObservationExtend"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObservationView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_views_api_v1_new203_views_get: {
+        parameters: {
+            query?: {
+                feedUrl?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_view_api_v1_new203_views_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ViewCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_view_api_v1_new203_views__view_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                view_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_view_api_v1_new203_views__view_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                view_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ViewPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_view_entries_api_v1_new203_views__view_id__entries_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                view_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewEntries"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_mirror_choices_api_v1_new204_choices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    record_mirror_choice_api_v1_new204_choices_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MirrorChoiceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compare_mirrors_api_v1_new204_compare_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MirrorCompareRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MirrorCompareResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dry_run_retention_api_v1_new205_retention_dry_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetentionDryRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enable_retention_api_v1_new205_retention_enable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetentionEnableRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_feed_calendar_api_v1_new206_calendar_get: {
+        parameters: {
+            query: {
+                feedUrl: string;
+                month: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_form_schema_api_v1_new207_rsshub_form__route_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_form_api_v1_new207_rsshub_form__route_id__apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FormApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_form_uses_api_v1_new207_rsshub_form__route_id__uses_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    validate_form_params_api_v1_new207_rsshub_form__route_id__validate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FormValidateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_reminders_api_v1_new208_reminders_get: {
+        parameters: {
+            query?: {
+                includeDismissed?: boolean;
+                upcomingDays?: number;
+                today?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReminderList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_reminder_api_v1_new208_reminders_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReminderCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReminderView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_reminder_api_v1_new208_reminders__reminder_id__dismiss_post: {
+        parameters: {
+            query?: {
+                dismissed?: boolean;
+            };
+            header?: never;
+            path: {
+                reminder_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReminderView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    renew_reminder_api_v1_new208_reminders__reminder_id__renew_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reminder_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReminderRenew"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReminderView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_bin_api_v1_new209_bin_get: {
+        parameters: {
+            query?: {
+                includeDiscarded?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BinList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_bin_row_api_v1_new209_bin__row_id__discard_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                row_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BinRowView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_bin_row_api_v1_new209_bin__row_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                row_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BinRowView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unsubscribe_to_bin_api_v1_new209_unsubscribe_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BinUnsubscribeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BinRowView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_pause_plans_api_v1_new210_pauses_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PausePlanList"];
+                };
+            };
+        };
+    };
+    create_pause_plan_api_v1_new210_pauses_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PausePlanCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PausePlanView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_active_pauses_api_v1_new210_pauses_active_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PauseActiveList"];
+                };
+            };
+        };
+    };
+    delete_pause_plan_api_v1_new210_pauses__plan_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_pause_plan_api_v1_new210_pauses__plan_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PausePlanView"];
                 };
             };
             /** @description Validation Error */

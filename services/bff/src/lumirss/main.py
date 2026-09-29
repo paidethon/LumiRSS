@@ -61,6 +61,16 @@ from lumirss.routers import (
     lumi_export,
     lumi_notes,
     mail,
+    new201_takeover,
+    new202_observation,
+    new203_views,
+    new204_mirror,
+    new205_retention,
+    new206_calendar,
+    new207_rsshub_form,
+    new208_credential,
+    new209_recycle,
+    new210_pause,
     obsidian,
     operations,
     opml,
@@ -459,5 +469,16 @@ app.include_router(library_w5.router)
 app.include_router(workspace_w5.router)
 # N198 版本功能导览（成员可读；adminOnly 条目服务端角色过滤）
 app.include_router(whats_new.router)
+# NEW-201..210 来源运维工作台（订阅的组织、维护与可控接入）
+app.include_router(new201_takeover.router)
+app.include_router(new202_observation.router)
+app.include_router(new203_views.router)
+app.include_router(new204_mirror.router)
+app.include_router(new205_retention.router)
+app.include_router(new206_calendar.router)
+app.include_router(new207_rsshub_form.router)
+app.include_router(new208_credential.router)
+app.include_router(new209_recycle.router)
+app.include_router(new210_pause.router)
 
 register_error_handlers(app)

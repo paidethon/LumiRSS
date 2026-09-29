@@ -5614,6 +5614,175 @@
     "title": "BatchMoveResult",
     "type": "object"
    },
+   "BinList": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/BinRowView"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "note": {
+      "title": "Note",
+      "type": "string"
+     }
+    },
+    "required": [
+     "items",
+     "note"
+    ],
+    "title": "BinList",
+    "type": "object"
+   },
+   "BinRowView": {
+    "properties": {
+     "categoryId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Categoryid"
+     },
+     "categoryLabel": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Categorylabel"
+     },
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "discardedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Discardedat"
+     },
+     "expired": {
+      "default": false,
+      "title": "Expired",
+      "type": "boolean"
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "keepDays": {
+      "title": "Keepdays",
+      "type": "integer"
+     },
+     "purgeAfter": {
+      "title": "Purgeafter",
+      "type": "string"
+     },
+     "restoredAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Restoredat"
+     },
+     "restoredStreamId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Restoredstreamid"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "streamId": {
+      "title": "Streamid",
+      "type": "string"
+     },
+     "title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     },
+     "unsubscribedAt": {
+      "title": "Unsubscribedat",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "feedUrl",
+     "streamId",
+     "title",
+     "categoryId",
+     "categoryLabel",
+     "keepDays",
+     "unsubscribedAt",
+     "purgeAfter",
+     "status",
+     "restoredAt",
+     "restoredStreamId",
+     "discardedAt",
+     "createdAt"
+    ],
+    "title": "BinRowView",
+    "type": "object"
+   },
+   "BinUnsubscribeRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/new209/unsubscribe body。",
+    "properties": {
+     "keepDays": {
+      "maximum": 365.0,
+      "minimum": 1.0,
+      "title": "Keepdays",
+      "type": "integer"
+     },
+     "subscriptionRef": {
+      "minLength": 1,
+      "title": "Subscriptionref",
+      "type": "string"
+     }
+    },
+    "required": [
+     "subscriptionRef",
+     "keepDays"
+    ],
+    "title": "BinUnsubscribeRequest",
+    "type": "object"
+   },
    "BoardColumn": {
     "description": "F085 看板一列（前 50 条 + 真实总数）。",
     "properties": {
@@ -6282,6 +6451,111 @@
      "feed_url"
     ],
     "title": "BundleSourceEntry",
+    "type": "object"
+   },
+   "CalendarDay": {
+    "properties": {
+     "count": {
+      "title": "Count",
+      "type": "integer"
+     },
+     "date": {
+      "title": "Date",
+      "type": "string"
+     },
+     "sample": {
+      "items": {
+       "$ref": "#/components/schemas/CalendarDaySample"
+      },
+      "title": "Sample",
+      "type": "array"
+     }
+    },
+    "required": [
+     "date",
+     "count",
+     "sample"
+    ],
+    "title": "CalendarDay",
+    "type": "object"
+   },
+   "CalendarDaySample": {
+    "properties": {
+     "entryRef": {
+      "title": "Entryref",
+      "type": "string"
+     },
+     "publishedAt": {
+      "title": "Publishedat",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "entryRef",
+     "title",
+     "publishedAt"
+    ],
+    "title": "CalendarDaySample",
+    "type": "object"
+   },
+   "CalendarView": {
+    "properties": {
+     "basis": {
+      "title": "Basis",
+      "type": "string"
+     },
+     "coverage": {
+      "title": "Coverage",
+      "type": "string"
+     },
+     "days": {
+      "items": {
+       "$ref": "#/components/schemas/CalendarDay"
+      },
+      "title": "Days",
+      "type": "array"
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "fetchPaused": {
+      "title": "Fetchpaused",
+      "type": "boolean"
+     },
+     "month": {
+      "title": "Month",
+      "type": "string"
+     },
+     "note": {
+      "title": "Note",
+      "type": "string"
+     },
+     "outOfWindowRows": {
+      "title": "Outofwindowrows",
+      "type": "integer"
+     },
+     "totalEntries": {
+      "title": "Totalentries",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "feedUrl",
+     "month",
+     "days",
+     "totalEntries",
+     "coverage",
+     "outOfWindowRows",
+     "fetchPaused",
+     "basis",
+     "note"
+    ],
+    "title": "CalendarView",
     "type": "object"
    },
    "CardCandidate": {
@@ -9340,6 +9614,53 @@
      "alreadySubscribed"
     ],
     "title": "FeedPreviewResult",
+    "type": "object"
+   },
+   "FormApplyRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/new207/rsshub-form/{routeId}/apply body（验证后添加）。",
+    "properties": {
+     "confirmed": {
+      "default": false,
+      "title": "Confirmed",
+      "type": "boolean"
+     },
+     "params": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "title": "Params",
+      "type": "object"
+     },
+     "title": {
+      "anyOf": [
+       {
+        "maxLength": 300,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     }
+    },
+    "title": "FormApplyRequest",
+    "type": "object"
+   },
+   "FormValidateRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/new207/rsshub-form/{routeId}/validate body（离线）。",
+    "properties": {
+     "params": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "title": "Params",
+      "type": "object"
+     }
+    },
+    "title": "FormValidateRequest",
     "type": "object"
    },
    "FreshRssNativeUrl": {
@@ -13210,6 +13531,148 @@
     "title": "MergeResult",
     "type": "object"
    },
+   "MirrorChoiceRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/new204/choices body（比对后确认选用哪边）。",
+    "properties": {
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "picked": {
+      "title": "Picked",
+      "type": "string"
+     },
+     "urlA": {
+      "minLength": 1,
+      "title": "Urla",
+      "type": "string"
+     },
+     "urlB": {
+      "minLength": 1,
+      "title": "Urlb",
+      "type": "string"
+     }
+    },
+    "required": [
+     "urlA",
+     "urlB",
+     "picked"
+    ],
+    "title": "MirrorChoiceRequest",
+    "type": "object"
+   },
+   "MirrorCompareRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/new204/compare body（两个候选 feed URL）。",
+    "properties": {
+     "urlA": {
+      "minLength": 1,
+      "title": "Urla",
+      "type": "string"
+     },
+     "urlB": {
+      "minLength": 1,
+      "title": "Urlb",
+      "type": "string"
+     }
+    },
+    "required": [
+     "urlA",
+     "urlB"
+    ],
+    "title": "MirrorCompareRequest",
+    "type": "object"
+   },
+   "MirrorCompareResponse": {
+    "properties": {
+     "comparison": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Comparison"
+     },
+     "note": {
+      "title": "Note",
+      "type": "string"
+     },
+     "sideA": {
+      "$ref": "#/components/schemas/MirrorSideSummary"
+     },
+     "sideB": {
+      "$ref": "#/components/schemas/MirrorSideSummary"
+     }
+    },
+    "required": [
+     "sideA",
+     "sideB",
+     "comparison",
+     "note"
+    ],
+    "title": "MirrorCompareResponse",
+    "type": "object"
+   },
+   "MirrorSideSummary": {
+    "properties": {
+     "comparedEntries": {
+      "default": [],
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "title": "Comparedentries",
+      "type": "array"
+     },
+     "entryCount": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Entrycount"
+     },
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     },
+     "title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     }
+    },
+    "title": "MirrorSideSummary",
+    "type": "object"
+   },
    "NoteImportFile": {
     "description": "F020：一个待入库的 Markdown 文件。",
     "properties": {
@@ -13407,6 +13870,247 @@
      "indexedAt"
     ],
     "title": "NoteView",
+    "type": "object"
+   },
+   "ObservationClose": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/new202/observations/{id}/close body。",
+    "properties": {
+     "resolution": {
+      "enum": [
+       "continue",
+       "unsubscribed"
+      ],
+      "title": "Resolution",
+      "type": "string"
+     }
+    },
+    "required": [
+     "resolution"
+    ],
+    "title": "ObservationClose",
+    "type": "object"
+   },
+   "ObservationCreate": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/new202/observations body。",
+    "properties": {
+     "days": {
+      "maximum": 180.0,
+      "minimum": 7.0,
+      "title": "Days",
+      "type": "integer"
+     },
+     "feedUrl": {
+      "minLength": 1,
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "note": {
+      "anyOf": [
+       {
+        "maxLength": 200,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     }
+    },
+    "required": [
+     "feedUrl",
+     "days"
+    ],
+    "title": "ObservationCreate",
+    "type": "object"
+   },
+   "ObservationExtend": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/new202/observations/{id}/extend body。",
+    "properties": {
+     "days": {
+      "maximum": 180.0,
+      "minimum": 7.0,
+      "title": "Days",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "days"
+    ],
+    "title": "ObservationExtend",
+    "type": "object"
+   },
+   "ObservationList": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/ObservationView"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "serverTime": {
+      "title": "Servertime",
+      "type": "string"
+     }
+    },
+    "required": [
+     "items",
+     "serverTime"
+    ],
+    "title": "ObservationList",
+    "type": "object"
+   },
+   "ObservationView": {
+    "properties": {
+     "basis": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Basis"
+     },
+     "closedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Closedat"
+     },
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "endsAt": {
+      "title": "Endsat",
+      "type": "string"
+     },
+     "expired": {
+      "default": false,
+      "title": "Expired",
+      "type": "boolean"
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "fetchHealth": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Fetchhealth"
+     },
+     "fetchPaused": {
+      "default": false,
+      "title": "Fetchpaused",
+      "type": "boolean"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "lastPostAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lastpostat"
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "noteFromServer": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Notefromserver"
+     },
+     "postsSinceStart": {
+      "default": 0,
+      "title": "Postssincestart",
+      "type": "integer"
+     },
+     "projectionRows": {
+      "default": 0,
+      "title": "Projectionrows",
+      "type": "integer"
+     },
+     "resolution": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Resolution"
+     },
+     "startedAt": {
+      "title": "Startedat",
+      "type": "string"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "verdict": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Verdict"
+     }
+    },
+    "required": [
+     "id",
+     "feedUrl",
+     "note",
+     "startedAt",
+     "endsAt",
+     "status",
+     "resolution",
+     "closedAt",
+     "createdAt"
+    ],
+    "title": "ObservationView",
     "type": "object"
    },
    "ObsidianBlockRef": {
@@ -15285,6 +15989,181 @@
      "newPassword"
     ],
     "title": "PasswordChangeRequest",
+    "type": "object"
+   },
+   "PauseActiveList": {
+    "properties": {
+     "checkedAt": {
+      "title": "Checkedat",
+      "type": "string"
+     },
+     "feedUrls": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Feedurls",
+      "type": "array"
+     },
+     "note": {
+      "title": "Note",
+      "type": "string"
+     }
+    },
+    "required": [
+     "feedUrls",
+     "checkedAt",
+     "note"
+    ],
+    "title": "PauseActiveList",
+    "type": "object"
+   },
+   "PausePlanCreate": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/new210/pauses body。",
+    "properties": {
+     "endAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Endat"
+     },
+     "feedUrl": {
+      "minLength": 1,
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "openEnded": {
+      "default": false,
+      "title": "Openended",
+      "type": "boolean"
+     },
+     "reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reason"
+     },
+     "startAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Startat"
+     }
+    },
+    "required": [
+     "feedUrl"
+    ],
+    "title": "PausePlanCreate",
+    "type": "object"
+   },
+   "PausePlanList": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/PausePlanView"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "note": {
+      "title": "Note",
+      "type": "string"
+     }
+    },
+    "required": [
+     "items",
+     "note"
+    ],
+    "title": "PausePlanList",
+    "type": "object"
+   },
+   "PausePlanView": {
+    "properties": {
+     "activeNow": {
+      "default": false,
+      "title": "Activenow",
+      "type": "boolean"
+     },
+     "cancelledAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Cancelledat"
+     },
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "endAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Endat"
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reason"
+     },
+     "startAt": {
+      "title": "Startat",
+      "type": "string"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "feedUrl",
+     "reason",
+     "startAt",
+     "endAt",
+     "status",
+     "cancelledAt",
+     "createdAt"
+    ],
+    "title": "PausePlanView",
     "type": "object"
    },
    "PoolAddBody": {
@@ -18860,6 +19739,181 @@
     "title": "RelationView",
     "type": "object"
    },
+   "ReminderCreate": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/new208/reminders body。\n\n刻意**没有**凭据值字段（extra=forbid）——凭据正文属于既有\nwrite-only 边界，本端点只登记「什么时候到期」。",
+    "properties": {
+     "expiresOn": {
+      "minLength": 1,
+      "title": "Expireson",
+      "type": "string"
+     },
+     "feedUrl": {
+      "minLength": 1,
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "sourceLabel": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sourcelabel"
+     }
+    },
+    "required": [
+     "feedUrl",
+     "expiresOn"
+    ],
+    "title": "ReminderCreate",
+    "type": "object"
+   },
+   "ReminderList": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/ReminderView"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "note": {
+      "title": "Note",
+      "type": "string"
+     },
+     "today": {
+      "title": "Today",
+      "type": "string"
+     }
+    },
+    "required": [
+     "items",
+     "today",
+     "note"
+    ],
+    "title": "ReminderList",
+    "type": "object"
+   },
+   "ReminderRenew": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/new208/reminders/{id}/renew body（只换到期日）。",
+    "properties": {
+     "expiresOn": {
+      "minLength": 1,
+      "title": "Expireson",
+      "type": "string"
+     }
+    },
+    "required": [
+     "expiresOn"
+    ],
+    "title": "ReminderRenew",
+    "type": "object"
+   },
+   "ReminderView": {
+    "properties": {
+     "bucket": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Bucket"
+     },
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "expiresOn": {
+      "title": "Expireson",
+      "type": "string"
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "renewedCount": {
+      "title": "Renewedcount",
+      "type": "integer"
+     },
+     "sourceLabel": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sourcelabel"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "updateEntry": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Updateentry"
+     },
+     "updatedAt": {
+      "title": "Updatedat",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "feedUrl",
+     "sourceLabel",
+     "expiresOn",
+     "note",
+     "status",
+     "renewedCount",
+     "createdAt",
+     "updatedAt"
+    ],
+    "title": "ReminderView",
+    "type": "object"
+   },
    "RemoteBackup": {
     "description": "One backup archive on WebDAV (flat name + size, no secret values).",
     "properties": {
@@ -19491,6 +20545,53 @@
      "feedUrl"
     ],
     "title": "RetentionApplyRequest",
+    "type": "object"
+   },
+   "RetentionDryRunRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/new205/retention/dry-run body（只读）。",
+    "properties": {
+     "days": {
+      "title": "Days",
+      "type": "integer"
+     },
+     "feedUrl": {
+      "minLength": 1,
+      "title": "Feedurl",
+      "type": "string"
+     }
+    },
+    "required": [
+     "feedUrl",
+     "days"
+    ],
+    "title": "RetentionDryRunRequest",
+    "type": "object"
+   },
+   "RetentionEnableRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/new205/retention/enable body（确认语义在服务端强制）。",
+    "properties": {
+     "confirmed": {
+      "default": false,
+      "title": "Confirmed",
+      "type": "boolean"
+     },
+     "days": {
+      "title": "Days",
+      "type": "integer"
+     },
+     "feedUrl": {
+      "minLength": 1,
+      "title": "Feedurl",
+      "type": "string"
+     }
+    },
+    "required": [
+     "feedUrl",
+     "days"
+    ],
+    "title": "RetentionEnableRequest",
     "type": "object"
    },
    "RetentionNotice": {
@@ -23781,6 +24882,44 @@
     "title": "SourceRegistryResponse",
     "type": "object"
    },
+   "SourceView": {
+    "properties": {
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "field": {
+      "title": "Field",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "value": {
+      "title": "Value",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "feedUrl",
+     "name",
+     "field",
+     "value",
+     "createdAt"
+    ],
+    "title": "SourceView",
+    "type": "object"
+   },
    "StagedSource": {
     "description": "One staging-pool row (never a subscription, never counts unread).",
     "properties": {
@@ -24747,6 +25886,149 @@
     "title": "TagSuggestionsResponse",
     "type": "object"
    },
+   "TakeoverApplyItem": {
+    "additionalProperties": false,
+    "description": "单个确认动作：subscribe（新 feed）| move（已有 feed 继承目录）。",
+    "properties": {
+     "action": {
+      "title": "Action",
+      "type": "string"
+     },
+     "categoryLabel": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Categorylabel"
+     },
+     "feedUrl": {
+      "minLength": 1,
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     }
+    },
+    "required": [
+     "action",
+     "feedUrl"
+    ],
+    "title": "TakeoverApplyItem",
+    "type": "object"
+   },
+   "TakeoverApplyRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/new201/takeover/apply body（逐项确认过的动作表）。",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/TakeoverApplyItem"
+      },
+      "maxItems": 200,
+      "minItems": 1,
+      "title": "Items",
+      "type": "array"
+     },
+     "label": {
+      "anyOf": [
+       {
+        "maxLength": 100,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Label"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "TakeoverApplyRequest",
+    "type": "object"
+   },
+   "TakeoverBatchList": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/TakeoverBatchView"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "TakeoverBatchList",
+    "type": "object"
+   },
+   "TakeoverBatchView": {
+    "properties": {
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "label": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Label"
+     },
+     "summary": {
+      "additionalProperties": true,
+      "title": "Summary",
+      "type": "object"
+     }
+    },
+    "required": [
+     "id",
+     "label",
+     "summary",
+     "createdAt"
+    ],
+    "title": "TakeoverBatchView",
+    "type": "object"
+   },
+   "TakeoverPreviewRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/new201/takeover/preview body（OPML 原文；只读）。",
+    "properties": {
+     "opml": {
+      "minLength": 1,
+      "title": "Opml",
+      "type": "string"
+     }
+    },
+    "required": [
+     "opml"
+    ],
+    "title": "TakeoverPreviewRequest",
+    "type": "object"
+   },
    "TaskRecord": {
     "description": "F35：一条后台任务记录（备份/日报/邮件摘要）。",
     "properties": {
@@ -25573,6 +26855,104 @@
     "title": "ViewCompareResult",
     "type": "object"
    },
+   "ViewCreate": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/new203/views body。",
+    "properties": {
+     "feedUrl": {
+      "minLength": 1,
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "field": {
+      "title": "Field",
+      "type": "string"
+     },
+     "name": {
+      "maxLength": 60,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+     },
+     "value": {
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Value",
+      "type": "string"
+     }
+    },
+    "required": [
+     "feedUrl",
+     "name",
+     "field",
+     "value"
+    ],
+    "title": "ViewCreate",
+    "type": "object"
+   },
+   "ViewEntries": {
+    "properties": {
+     "basis": {
+      "title": "Basis",
+      "type": "string"
+     },
+     "entries": {
+      "items": {
+       "$ref": "#/components/schemas/ViewEntry"
+      },
+      "title": "Entries",
+      "type": "array"
+     },
+     "note": {
+      "title": "Note",
+      "type": "string"
+     },
+     "view": {
+      "$ref": "#/components/schemas/SourceView"
+     }
+    },
+    "required": [
+     "view",
+     "entries",
+     "basis",
+     "note"
+    ],
+    "title": "ViewEntries",
+    "type": "object"
+   },
+   "ViewEntry": {
+    "properties": {
+     "author": {
+      "title": "Author",
+      "type": "string"
+     },
+     "entryRef": {
+      "title": "Entryref",
+      "type": "string"
+     },
+     "publishedAt": {
+      "title": "Publishedat",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "url": {
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "entryRef",
+     "title",
+     "author",
+     "publishedAt",
+     "url"
+    ],
+    "title": "ViewEntry",
+    "type": "object"
+   },
    "ViewFeedTokenResult": {
     "description": "F061：启用/轮换私有 Atom 订阅的响应。\n\n``atomPath`` 是带 secret 的完整路径，仅在此响应中出现一次；\n之后只显示\"已隐藏，可轮换\"。",
     "properties": {
@@ -25590,6 +26970,67 @@
      "atomPath"
     ],
     "title": "ViewFeedTokenResult",
+    "type": "object"
+   },
+   "ViewList": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/SourceView"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "ViewList",
+    "type": "object"
+   },
+   "ViewPatch": {
+    "additionalProperties": false,
+    "description": "PATCH /api/v1/new203/views/{id} body（局部更新）。",
+    "properties": {
+     "field": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Field"
+     },
+     "name": {
+      "anyOf": [
+       {
+        "maxLength": 60,
+        "minLength": 1,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Name"
+     },
+     "value": {
+      "anyOf": [
+       {
+        "maxLength": 120,
+        "minLength": 1,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Value"
+     }
+    },
+    "title": "ViewPatch",
     "type": "object"
    },
    "VolumeDailyBucket": {
@@ -40301,6 +41742,1419 @@
      }
     },
     "summary": "Request Deactivation"
+   }
+  },
+  "/api/v1/new201/takeover/apply": {
+   "post": {
+    "description": "执行确认过的动作：新建订阅（不重复）/ 已有订阅继承目录。\n\n逐项汇报：任何单项失败不阻断其他项（上游无事务，诚实逐项回报）；\n台账落一行（含逐项结果）。subscribe 带 categoryLabel 时按导出的\n分类标签建类归位（move_to_new_category = FreshRSS 唯一\ncreate-category 通道）。",
+    "operationId": "takeover_apply_api_v1_new201_takeover_apply_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TakeoverApplyRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "title": "Response Takeover Apply Api V1 New201 Takeover Apply Post"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Takeover Apply"
+   }
+  },
+  "/api/v1/new201/takeover/batches": {
+   "get": {
+    "description": "接管台账（新→旧，≤50；含逐项结果摘要）。",
+    "operationId": "list_takeover_batches_api_v1_new201_takeover_batches_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TakeoverBatchList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Takeover Batches"
+   }
+  },
+  "/api/v1/new201/takeover/preview": {
+   "post": {
+    "description": "把导出映射到现有订阅：新建/已订（绝不重复订阅）/无效三类。",
+    "operationId": "takeover_preview_api_v1_new201_takeover_preview_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TakeoverPreviewRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "title": "Response Takeover Preview Api V1 New201 Takeover Preview Post"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Takeover Preview"
+   }
+  },
+  "/api/v1/new202/observations": {
+   "get": {
+    "description": "观察列表（默认 active；带事实面与 expired 标注）。",
+    "operationId": "list_observations_api_v1_new202_observations_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "status",
+      "required": false,
+      "schema": {
+       "default": "active",
+       "pattern": "^(active|closed|all)$",
+       "title": "Status",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ObservationList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Observations"
+   },
+   "post": {
+    "description": "为来源设置停更观察期（同一来源同时至多一条 active → 409）。",
+    "operationId": "create_observation_api_v1_new202_observations_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ObservationCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ObservationView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Observation"
+   }
+  },
+  "/api/v1/new202/observations/{observation_id}/close": {
+   "post": {
+    "description": "到期复核收尾：continue（保留订阅）或 unsubscribed（决定停订；\n实际退订走既有退订端点，本端点只记录决定）。",
+    "operationId": "close_observation_api_v1_new202_observations__observation_id__close_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "observation_id",
+      "required": true,
+      "schema": {
+       "title": "Observation Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ObservationClose"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ObservationView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Close Observation"
+   }
+  },
+  "/api/v1/new202/observations/{observation_id}/extend": {
+   "post": {
+    "description": "继续观察：到期日 = max(now, endsAt) + days。",
+    "operationId": "extend_observation_api_v1_new202_observations__observation_id__extend_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "observation_id",
+      "required": true,
+      "schema": {
+       "title": "Observation Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ObservationExtend"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ObservationView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Extend Observation"
+   }
+  },
+  "/api/v1/new203/views": {
+   "get": {
+    "description": "视图列表（可按来源过滤）。",
+    "operationId": "list_views_api_v1_new203_views_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "feedUrl",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Feedurl"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ViewList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Views"
+   },
+   "post": {
+    "description": "创建个人分流视图（同 feed 同名 → 409）。",
+    "operationId": "create_view_api_v1_new203_views_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ViewCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SourceView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create View"
+   }
+  },
+  "/api/v1/new203/views/{view_id}": {
+   "delete": {
+    "operationId": "delete_view_api_v1_new203_views__view_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "view_id",
+      "required": true,
+      "schema": {
+       "title": "View Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete View"
+   },
+   "patch": {
+    "operationId": "patch_view_api_v1_new203_views__view_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "view_id",
+      "required": true,
+      "schema": {
+       "title": "View Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ViewPatch"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SourceView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Patch View"
+   }
+  },
+  "/api/v1/new203/views/{view_id}/entries": {
+   "get": {
+    "description": "视图条目（读取侧投影过滤；同一抓取任务/条目身份不变）。",
+    "operationId": "get_view_entries_api_v1_new203_views__view_id__entries_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "view_id",
+      "required": true,
+      "schema": {
+       "title": "View Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "maximum": 50,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ViewEntries"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get View Entries"
+   }
+  },
+  "/api/v1/new204/choices": {
+   "get": {
+    "description": "抉择台账（新→旧，≤20）。",
+    "operationId": "list_mirror_choices_api_v1_new204_choices_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response List Mirror Choices Api V1 New204 Choices Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Mirror Choices"
+   },
+   "post": {
+    "description": "记录抉择台账（比对后用户确认选用哪边；订阅走既有端点）。",
+    "operationId": "record_mirror_choice_api_v1_new204_choices_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MirrorChoiceRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "title": "Response Record Mirror Choice Api V1 New204 Choices Post"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Record Mirror Choice"
+   }
+  },
+  "/api/v1/new204/compare": {
+   "post": {
+    "description": "并排比对两个候选 feed 的最近条目覆盖（只读；一侧失败不掩盖另一侧）。",
+    "operationId": "compare_mirrors_api_v1_new204_compare_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MirrorCompareRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MirrorCompareResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Compare Mirrors"
+   }
+  },
+  "/api/v1/new205/retention/dry-run": {
+   "post": {
+    "description": "预演：保留多少收藏/标注/书签、回收多少普通缓存（只读零写入）。",
+    "operationId": "dry_run_retention_api_v1_new205_retention_dry_run_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RetentionDryRunRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "title": "Response Dry Run Retention Api V1 New205 Retention Dry Run Post"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Dry Run Retention"
+   }
+  },
+  "/api/v1/new205/retention/enable": {
+   "post": {
+    "description": "确认启用：策略落库 + 立即裁剪本地投影（starred 恒排除）+ 台账。\n\nFreshRSS 零调用（投影可再生成；真实删除需在原生界面执行）。",
+    "operationId": "enable_retention_api_v1_new205_retention_enable_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RetentionEnableRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "title": "Response Enable Retention Api V1 New205 Retention Enable Post"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Enable Retention"
+   }
+  },
+  "/api/v1/new206/calendar": {
+   "get": {
+    "description": "按真实发表日期的来源月历（只读；无发文与资料缺失严格区分）。",
+    "operationId": "get_feed_calendar_api_v1_new206_calendar_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "feedUrl",
+      "required": true,
+      "schema": {
+       "minLength": 1,
+       "title": "Feedurl",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "month",
+      "required": true,
+      "schema": {
+       "minLength": 1,
+       "title": "Month",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CalendarView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Feed Calendar"
+   }
+  },
+  "/api/v1/new207/rsshub-form/{route_id}": {
+   "get": {
+    "description": "表单 schema（依据 Lumi 自有路由目录；离线零网络）。",
+    "operationId": "get_form_schema_api_v1_new207_rsshub_form__route_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "route_id",
+      "required": true,
+      "schema": {
+       "title": "Route Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "title": "Response Get Form Schema Api V1 New207 Rsshub Form  Route Id  Get"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Form Schema"
+   }
+  },
+  "/api/v1/new207/rsshub-form/{route_id}/apply": {
+   "post": {
+    "description": "验证后添加：校验 → 生成订阅地址（服务端拼装）→ 确认即订阅。\n\n- 表单未过校验 → 422 rsshub_form_invalid（errors 逐参数）；\n- 未显式 confirmed → 422 confirmation_required；\n- RSSHUB base 未配置 → 422 rsshub_not_configured（服务端配置缺失）；\n- 已订阅同 URL → 409 already_subscribed（上游冲突也归并到这里）。",
+    "operationId": "apply_form_api_v1_new207_rsshub_form__route_id__apply_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "route_id",
+      "required": true,
+      "schema": {
+       "title": "Route Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/FormApplyRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "title": "Response Apply Form Api V1 New207 Rsshub Form  Route Id  Apply Post"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Apply Form"
+   }
+  },
+  "/api/v1/new207/rsshub-form/{route_id}/uses": {
+   "get": {
+    "description": "该路由的添加台账（脱敏参数；新→旧，≤50）。",
+    "operationId": "list_form_uses_api_v1_new207_rsshub_form__route_id__uses_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "route_id",
+      "required": true,
+      "schema": {
+       "title": "Route Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response List Form Uses Api V1 New207 Rsshub Form  Route Id  Uses Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Form Uses"
+   }
+  },
+  "/api/v1/new207/rsshub-form/{route_id}/validate": {
+   "post": {
+    "description": "逐参数校验（required/pattern/unknown；离线，不取样本）。",
+    "operationId": "validate_form_params_api_v1_new207_rsshub_form__route_id__validate_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "route_id",
+      "required": true,
+      "schema": {
+       "title": "Route Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/FormValidateRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "title": "Response Validate Form Params Api V1 New207 Rsshub Form  Route Id  Validate Post"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Validate Form Params"
+   }
+  },
+  "/api/v1/new208/reminders": {
+   "get": {
+    "description": "提醒列表（按到期日升序；带 overdue/due_soon/later 分桶）。",
+    "operationId": "list_reminders_api_v1_new208_reminders_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "includeDismissed",
+      "required": false,
+      "schema": {
+       "default": false,
+       "title": "Includedismissed",
+       "type": "boolean"
+      }
+     },
+     {
+      "in": "query",
+      "name": "upcomingDays",
+      "required": false,
+      "schema": {
+       "default": 14,
+       "maximum": 90,
+       "minimum": 1,
+       "title": "Upcomingdays",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "today",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Today"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReminderList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Reminders"
+   },
+   "post": {
+    "description": "登记来源访问凭据的到期日（提醒元数据；无凭据字段可填）。",
+    "operationId": "create_reminder_api_v1_new208_reminders_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ReminderCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReminderView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Reminder"
+   }
+  },
+  "/api/v1/new208/reminders/{reminder_id}/dismiss": {
+   "post": {
+    "description": "dismiss / 重新激活（set 语义；dismissed=true 静默，false 复原）。",
+    "operationId": "dismiss_reminder_api_v1_new208_reminders__reminder_id__dismiss_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "reminder_id",
+      "required": true,
+      "schema": {
+       "title": "Reminder Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "dismissed",
+      "required": false,
+      "schema": {
+       "default": true,
+       "title": "Dismissed",
+       "type": "boolean"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReminderView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Dismiss Reminder"
+   }
+  },
+  "/api/v1/new208/reminders/{reminder_id}/renew": {
+   "post": {
+    "description": "续期：更新到期日（dismissed 行重新激活；计数 +1）。",
+    "operationId": "renew_reminder_api_v1_new208_reminders__reminder_id__renew_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "reminder_id",
+      "required": true,
+      "schema": {
+       "title": "Reminder Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ReminderRenew"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReminderView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Renew Reminder"
+   }
+  },
+  "/api/v1/new209/bin": {
+   "get": {
+    "description": "回收箱列表（kept + restored；discard 行需显式 include）。",
+    "operationId": "list_bin_api_v1_new209_bin_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "includeDiscarded",
+      "required": false,
+      "schema": {
+       "default": false,
+       "title": "Includediscarded",
+       "type": "boolean"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BinList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Bin"
+   }
+  },
+  "/api/v1/new209/bin/{row_id}/discard": {
+   "post": {
+    "description": "显式放弃（kept → discarded；行保留作审计，不再可恢复）。",
+    "operationId": "discard_bin_row_api_v1_new209_bin__row_id__discard_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "row_id",
+      "required": true,
+      "schema": {
+       "title": "Row Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BinRowView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Discard Bin Row"
+   }
+  },
+  "/api/v1/new209/bin/{row_id}/restore": {
+   "post": {
+    "description": "按捕获的配置重新订阅（新代次），行转 restored。\n\n分类恢复策略：原 category_id 仍在 → 直接归位；分类已不存在 →\n按 category_label 重建（move_to_new_category）并如实标注。",
+    "operationId": "restore_bin_row_api_v1_new209_bin__row_id__restore_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "row_id",
+      "required": true,
+      "schema": {
+       "title": "Row Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BinRowView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Restore Bin Row"
+   }
+  },
+  "/api/v1/new209/unsubscribe": {
+   "post": {
+    "description": "退订进回收箱：解析订阅 → 捕获配置 → 上游退订 → 落箱。\n\n上游不可用/订阅不存在时不落箱、不退订（无半途状态）。",
+    "operationId": "unsubscribe_to_bin_api_v1_new209_unsubscribe_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BinUnsubscribeRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BinRowView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Unsubscribe To Bin"
+   }
+  },
+  "/api/v1/new210/pauses": {
+   "get": {
+    "description": "计划列表（新→旧，≤200；含 activeNow 判定）。",
+    "operationId": "list_pause_plans_api_v1_new210_pauses_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PausePlanList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Pause Plans"
+   },
+   "post": {
+    "description": "为来源设置停机计划（立即或定时开始；恢复时间 / 开放式二选一）。",
+    "operationId": "create_pause_plan_api_v1_new210_pauses_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PausePlanCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PausePlanView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Pause Plan"
+   }
+  },
+  "/api/v1/new210/pauses/active": {
+   "get": {
+    "description": "当前生效的暂停来源（去重 URL 列表；机器可读消费点）。",
+    "operationId": "list_active_pauses_api_v1_new210_pauses_active_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PauseActiveList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Active Pauses"
+   }
+  },
+  "/api/v1/new210/pauses/{plan_id}": {
+   "delete": {
+    "description": "删除一条（任意状态的）计划行（housekeeping；默认路径是取消）。",
+    "operationId": "delete_pause_plan_api_v1_new210_pauses__plan_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "plan_id",
+      "required": true,
+      "schema": {
+       "title": "Plan Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Pause Plan"
+   }
+  },
+  "/api/v1/new210/pauses/{plan_id}/cancel": {
+   "post": {
+    "description": "取消计划（set 语义 active → cancelled；绝不删除行）。",
+    "operationId": "cancel_pause_plan_api_v1_new210_pauses__plan_id__cancel_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "plan_id",
+      "required": true,
+      "schema": {
+       "title": "Plan Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PausePlanView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Cancel Pause Plan"
    }
   },
   "/api/v1/obsidian/block-refs": {
