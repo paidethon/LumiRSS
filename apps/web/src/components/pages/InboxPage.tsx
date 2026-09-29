@@ -18,6 +18,10 @@ import { useMemo, useState } from 'react'
 import { Suspense, lazy } from 'react'
 const InboxRulesPanelLazy = lazy(() => import('../InboxRulesPanel'))
 const New219InboxOpsPanel = lazy(() => import('../new211/New219InboxOpsPanel'))
+// NEW-291..300：用户邮件资料工具组（EML 导入 / 会话 / 折叠 / 遮罩 / 导出…）
+const New291EmailToolsLazy = lazy(() =>
+  import('../new291/New291EmailTools').then((m) => ({ default: m.New291EmailTools })),
+)
 import {
   Copy,
   Inbox as InboxIcon,
@@ -414,6 +418,11 @@ export default function InboxPage() {
         {/* F022：归类规则（顺序/启停/编辑 + dry-run 样本试跑） */}
         <Suspense fallback={null}>
           <InboxRulesPanelLazy />
+        </Suspense>
+
+        {/* NEW-291..300：用户邮件资料工具组（情境展开，折叠零查询）。 */}
+        <Suspense fallback={null}>
+          <New291EmailToolsLazy />
         </Suspense>
 
         {/* NEW-219/220：批量归档 + 处理记录（整理轨迹台账）。 */}
