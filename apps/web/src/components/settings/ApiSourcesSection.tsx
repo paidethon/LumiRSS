@@ -39,6 +39,7 @@ import {
   useTestApiSourceCredentialMutation,
   useUpdateApiSourceMutation,
 } from '../../api/queries'
+import { New301IntakeTools } from '../new301/New301IntakeTools'
 import type {
   ApiSource,
   ApiSourcePaginationInput,
@@ -1204,6 +1205,10 @@ export function ApiSourcesSection() {
       )}
 
       <CreateApiSourceDialog open={createOpen} onClose={() => setCreateOpen(false)} />
+
+      {/* NEW-301..310 API 来源、Webhook 与自动接入工具台（情境展开，
+          折叠态零请求；实现见 components/new301/） */}
+      <New301IntakeTools />
     </div>
   )
 }
