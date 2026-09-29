@@ -108,6 +108,7 @@ from lumirss.routers import (
     new265_budget,
     new266_priority_queue,
     new267_protect_exceptions,
+    new269_language_overrides,
     obsidian,
     operations,
     opml,
@@ -557,5 +558,6 @@ app.include_router(new264_capability_probes.router)
 app.include_router(new265_budget.router)
 app.include_router(new266_priority_queue.router)
 app.include_router(new267_protect_exceptions.router)
+app.include_router(new269_language_overrides.router)
 
 register_error_handlers(app)

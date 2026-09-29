@@ -492,6 +492,12 @@ class SegmentTranslationService:
 
     # -- AI engine ---------------------------------------------------------
 
+    async def _resolved_source_language(self, entry_ref: str) -> str | None:
+        """NEW-269：该篇生效的语言识别更正（无更正 → None = 默认识别）。"""
+        from lumirss.new269_language_overrides import resolve_source_language
+
+        return await resolve_source_language(self._db, entry_ref)
+
     async def _generate_ai(self, entry_ref, missing, settings, language,
                            protected_map=None, protection_reports=None):
         protected_map = protected_map or {}
@@ -503,6 +509,8 @@ class SegmentTranslationService:
                 "AI is not configured. Set the API key on the server and "
                 "configure a base URL and model in AI settings."
             )
+        # NEW-269：识别更正只影响这一批生成的源语言指令（一次解析）。
+        source_language = await self._resolved_source_language(entry_ref)
         batches = self._batch(missing)
         provider = await self._provider_factory(
             settings[KEY_BASE_URL], settings[KEY_MODEL]
@@ -512,7 +520,7 @@ class SegmentTranslationService:
             async with self._batch_semaphore:
                 await self._run_ai_batch(
                     entry_ref, batch, settings, language, provider, protected_map,
-                    protection_reports,
+                    protection_reports, source_language,
                 )
 
         await asyncio.gather(*(run(batch) for batch in batches))
@@ -537,7 +545,8 @@ class SegmentTranslationService:
         return batches
 
     async def _run_ai_batch(self, entry_ref, batch, settings, language, provider,
-                            protected_map=None, protection_reports=None):
+                            protected_map=None, protection_reports=None,
+                            source_language=None):
         protected_map = protected_map or {}
         protection_reports = (
             protection_reports if protection_reports is not None else {}
@@ -549,6 +558,12 @@ class SegmentTranslationService:
             if language == "zh-CN"
             else "Target language: English (en)."
         )
+        # NEW-269：用户更正的源语言指令（无更正 → 不附加，行为不变）。
+        if source_language:
+            language_instruction += (
+                f" The source text's language is '{source_language}' — treat "
+                "it as the source language even if it appears otherwise."
+            )
         payload = "\n\n".join(
             _marker(b.index) + "\n" + text for b, text in normalized
         )
@@ -637,12 +652,15 @@ class SegmentTranslationService:
             raise SegmentTranslationUnavailable(
                 "Language '" + language + "' is not supported by LibreTranslate."
             )
+        # NEW-269：识别更正只影响这一批的 source 参数；无更正 → auto。
+        override = await self._resolved_source_language(entry_ref)
+        source = override.split("-")[0] if override else "auto"
         api_key = self._secrets.get(LIBRETRANSLATE_KEY_NAME) or ""
         for batch in self._batch(missing):
             normalized = [(b, normalize_block_text(b.text)) for b in batch]
             payload = {
                 "q": [text for _, text in normalized],
-                "source": "auto",
+                "source": source,
                 "target": target,
                 "format": "text",
             }
