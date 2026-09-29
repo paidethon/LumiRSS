@@ -99,7 +99,7 @@ export function Chip({
   return (
     <span
       className={cx(
-        'inline-flex items-center rounded-[var(--lumi-radius-full)] px-1.5 py-0.5 text-[10px] leading-none',
+        'inline-flex items-center rounded-[var(--lumi-radius-full)] px-1.5 py-0.5 text-xs leading-tight',
         tone === 'accent' && 'bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]',
         tone === 'warn' && 'bg-[var(--lumi-surface-hover)] text-[var(--lumi-warning)]',
         tone === 'neutral' && 'bg-[var(--lumi-surface-hover)] text-[var(--lumi-text-secondary)]',

@@ -114,17 +114,17 @@ function PausePanel() {
       </p>
       <Row>
         <Field label="来源 feed URL">
-          <input className={inputCls} value={feedUrl} onChange={(e) => setFeedUrl(e.target.value)} placeholder="https://…" />
+          <input aria-label="来源 feed URL" className={inputCls} value={feedUrl} onChange={(e) => setFeedUrl(e.target.value)} placeholder="https://…" />
         </Field>
         <Field label="恢复时间（可选）">
-          <input type="datetime-local" className={inputCls} value={endAt} onChange={(e) => setEndAt(e.target.value)} disabled={openEnded} />
+          <input aria-label="恢复时间" type="datetime-local" className={inputCls} value={endAt} onChange={(e) => setEndAt(e.target.value)} disabled={openEnded} />
         </Field>
         <label className="flex items-center gap-1 text-xs">
           <input type="checkbox" checked={openEnded} onChange={(e) => setOpenEnded(e.target.checked)} />
           开放式（直到取消）
         </label>
         <Field label="理由（可选）">
-          <input className={inputCls} value={reason} onChange={(e) => setReason(e.target.value)} />
+          <input aria-label="理由" className={inputCls} value={reason} onChange={(e) => setReason(e.target.value)} />
         </Field>
         <Button variant="primary" size="sm" disabled={!feedUrl || create.isPending} onClick={() => create.mutate()}>
           设置暂停
@@ -198,13 +198,13 @@ function CredentialPanel() {
       </p>
       <Row>
         <Field label="来源 feed URL">
-          <input className={inputCls} value={feedUrl} onChange={(e) => setFeedUrl(e.target.value)} />
+          <input aria-label="来源 feed URL" className={inputCls} value={feedUrl} onChange={(e) => setFeedUrl(e.target.value)} />
         </Field>
         <Field label="凭据到期日">
-          <input type="date" className={inputCls} value={expiresOn} onChange={(e) => setExpiresOn(e.target.value)} />
+          <input aria-label="凭据到期日" type="date" className={inputCls} value={expiresOn} onChange={(e) => setExpiresOn(e.target.value)} />
         </Field>
         <Field label="备注（找谁续）">
-          <input className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} />
+          <input aria-label="备注" className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
         <Button variant="primary" size="sm" disabled={!feedUrl || !expiresOn || create.isPending} onClick={() => create.mutate()}>
           登记提醒
@@ -340,10 +340,10 @@ function ObservationPanel() {
       </p>
       <Row>
         <Field label="来源 feed URL">
-          <input className={inputCls} value={feedUrl} onChange={(e) => setFeedUrl(e.target.value)} />
+          <input aria-label="来源 feed URL" className={inputCls} value={feedUrl} onChange={(e) => setFeedUrl(e.target.value)} />
         </Field>
         <Field label="观察天数（7-180）">
-          <input type="number" min={7} max={180} className={inputCls} value={days} onChange={(e) => setDays(Number(e.target.value))} />
+          <input aria-label="观察天数" type="number" min={7} max={180} className={inputCls} value={days} onChange={(e) => setDays(Number(e.target.value))} />
         </Field>
         <Button variant="primary" size="sm" disabled={!feedUrl || create.isPending} onClick={() => create.mutate()}>
           开始观察
@@ -398,10 +398,10 @@ function CalendarPanel({ onOpenEntry }: { onOpenEntry: (ref: string) => void }) 
     <div className="space-y-3">
       <Row>
         <Field label="来源 feed URL">
-          <input className={inputCls} value={feedUrl} onChange={(e) => setFeedUrl(e.target.value)} />
+          <input aria-label="来源 feed URL" className={inputCls} value={feedUrl} onChange={(e) => setFeedUrl(e.target.value)} />
         </Field>
         <Field label="月份">
-          <input type="month" className={inputCls} value={month} onChange={(e) => setMonth(e.target.value)} />
+          <input aria-label="月份" type="month" className={inputCls} value={month} onChange={(e) => setMonth(e.target.value)} />
         </Field>
         <Button variant="primary" size="sm" disabled={!feedUrl || !month} onClick={() => setSubmitted({ feedUrl, month })}>
           查看月历
@@ -477,20 +477,20 @@ function ViewsPanel({ onOpenEntry }: { onOpenEntry: (ref: string) => void }) {
       </p>
       <Row>
         <Field label="来源 feed URL">
-          <input className={inputCls} value={feedUrl} onChange={(e) => setFeedUrl(e.target.value)} />
+          <input aria-label="来源 feed URL" className={inputCls} value={feedUrl} onChange={(e) => setFeedUrl(e.target.value)} />
         </Field>
         <Field label="视图名">
-          <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} />
+          <input aria-label="视图名" className={inputCls} value={name} onChange={(e) => setName(e.target.value)} />
         </Field>
         <Field label="匹配列">
-          <select className={inputCls} value={field} onChange={(e) => setField(e.target.value)}>
+          <select aria-label="匹配列" className={inputCls} value={field} onChange={(e) => setField(e.target.value)}>
             <option value="title">标题</option>
             <option value="content">正文</option>
             <option value="author">作者</option>
           </select>
         </Field>
         <Field label="包含关键词">
-          <input className={inputCls} value={value} onChange={(e) => setValue(e.target.value)} />
+          <input aria-label="包含关键词" className={inputCls} value={value} onChange={(e) => setValue(e.target.value)} />
         </Field>
         <Button variant="primary" size="sm" disabled={!feedUrl || !name || !value || create.isPending} onClick={() => create.mutate()}>
           创建视图
@@ -554,10 +554,10 @@ function RetentionPanel() {
     <div className="space-y-3">
       <Row>
         <Field label="来源 feed URL">
-          <input className={inputCls} value={feedUrl} onChange={(e) => setFeedUrl(e.target.value)} />
+          <input aria-label="来源 feed URL" className={inputCls} value={feedUrl} onChange={(e) => setFeedUrl(e.target.value)} />
         </Field>
         <Field label="保留天数（7-3650）">
-          <input type="number" min={7} max={3650} className={inputCls} value={days} onChange={(e) => setDays(Number(e.target.value))} />
+          <input aria-label="保留天数" type="number" min={7} max={3650} className={inputCls} value={days} onChange={(e) => setDays(Number(e.target.value))} />
         </Field>
         <Button size="sm" variant="primary" disabled={!feedUrl || preview.isPending} onClick={() => preview.mutate()}>
           预演
@@ -633,7 +633,7 @@ function TakeoverPanel() {
   return (
     <div className="space-y-3">
       <Field label="粘贴旧实例导出的 OPML">
-        <textarea className={inputCls} rows={4} value={opml} onChange={(e) => setOpml(e.target.value)} />
+        <textarea aria-label="旧实例导出的 OPML 内容" className={inputCls} rows={4} value={opml} onChange={(e) => setOpml(e.target.value)} />
       </Field>
       <Button size="sm" variant="primary" disabled={!opml || preview.isPending} onClick={() => preview.mutate()}>
         预演映射
@@ -716,10 +716,10 @@ function MirrorPanel() {
     <div className="space-y-3">
       <Row>
         <Field label="候选 A URL">
-          <input className={inputCls} value={urlA} onChange={(e) => setUrlA(e.target.value)} />
+          <input aria-label="候选 A URL" className={inputCls} value={urlA} onChange={(e) => setUrlA(e.target.value)} />
         </Field>
         <Field label="候选 B URL">
-          <input className={inputCls} value={urlB} onChange={(e) => setUrlB(e.target.value)} />
+          <input aria-label="候选 B URL" className={inputCls} value={urlB} onChange={(e) => setUrlB(e.target.value)} />
         </Field>
         <Button size="sm" variant="primary" disabled={!urlA || !urlB || compare.isPending} onClick={() => compare.mutate()}>
           比对
@@ -785,6 +785,7 @@ function RssHubFormPanel() {
     <div className="space-y-3">
       <Field label="路由（来自 Lumi 目录）">
         <select
+          aria-label="路由"
           className={inputCls}
           value={routeId}
           onChange={(e) => {
@@ -808,6 +809,7 @@ function RssHubFormPanel() {
           {typedSchema.parameters.map((parameter) => (
             <Field key={parameter.key} label={`${parameter.label}${parameter.required ? '（必填）' : ''} — ${parameter.help}`}>
               <input
+                aria-label={`${parameter.label}参数值`}
                 className={inputCls}
                 value={values[parameter.key] ?? ''}
                 placeholder={parameter.example}

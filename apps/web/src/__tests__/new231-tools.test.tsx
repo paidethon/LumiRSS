@@ -21,6 +21,12 @@ function renderWithQuery(ui: React.ReactElement): void {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>)
+  // 工具组合默认折叠（情境展开，MASTER §6）：本套件全部断言都针对展开后
+  // 的子面板，渲染后立即展开（折叠行为本身由 aria-expanded 断言覆盖）。
+  const toggle = screen.queryByRole('button', {
+    name: /标注侧工具（|笔记侧工具（/,
+  })
+  if (toggle !== null) fireEvent.click(toggle)
 }
 
 const fetchCalls: { url: string; init?: RequestInit }[] = []

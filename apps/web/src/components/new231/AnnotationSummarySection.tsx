@@ -5,16 +5,9 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { annotationSummary } from '../../api/new231'
+import { ANNOTATION_DOT_COLORS } from '../AnnotationsManager'
 import { EmptyState } from '../ui/EmptyState'
 import { Skeleton } from '../ui/Skeleton'
-
-const COLOR_DOTS: Record<string, string> = {
-  yellow: 'bg-[var(--lumi-annotation-yellow,#facc15)]',
-  green: 'bg-[var(--lumi-annotation-green,#4ade80)]',
-  blue: 'bg-[var(--lumi-annotation-blue,#60a5fa)]',
-  red: 'bg-[var(--lumi-annotation-red,#f87171)]',
-  purple: 'bg-[var(--lumi-annotation-purple,#c084fc)]',
-}
 
 export function AnnotationSummarySection({ entryRef }: { entryRef?: string }) {
   const summary = useQuery({
@@ -47,7 +40,7 @@ export function AnnotationSummarySection({ entryRef }: { entryRef?: string }) {
 
       {summary.data?.entries.map((entry) => (
         <article key={entry.entryRef} className="flex flex-col gap-1 border-t border-[var(--lumi-border)] pt-2 first:border-t-0 first:pt-0">
-          <h4 className="text-xs font-medium text-[var(--lumi-text-primary)]">
+          <h4 className="text-sm font-medium text-[var(--lumi-text-primary)]">
             {entry.title || entry.entryRef}
             {entry.source ? <span className="font-normal text-[var(--lumi-text-tertiary)]"> · {entry.source}</span> : null}
           </h4>
@@ -56,7 +49,8 @@ export function AnnotationSummarySection({ entryRef }: { entryRef?: string }) {
               <li key={item.id} className="flex items-start gap-2 text-xs">
                 <span
                   aria-hidden
-                  className={`mt-1 size-2 shrink-0 rounded-full ${COLOR_DOTS[item.color] ?? COLOR_DOTS.yellow}`}
+                  className="mt-1 size-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: ANNOTATION_DOT_COLORS[item.color] ?? ANNOTATION_DOT_COLORS.yellow }}
                 />
                 <div className="min-w-0 flex-1">
                   <p className="text-[var(--lumi-text-primary)]">「{item.excerpt || '（无摘录）'}」</p>

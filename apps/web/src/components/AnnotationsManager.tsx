@@ -369,16 +369,19 @@ export function AnnotationsManager() {
   )
 }
 
-/** N073：批注色点（内容标注语义色，非主题 token；未知色 → 无色点）。 */
+/** N073：批注色点（内容标注语义色，非主题 token；未知色 → 无色点）。
+ * 色板单一定义——NEW-233 汇总阅读等消费方从这里导入，禁止另立
+ * 同名 CSS 变量伪令牌（FIX-071 守卫）。 */
+export const ANNOTATION_DOT_COLORS: Record<string, string> = {
+  yellow: '#eab308',
+  green: '#65a30d',
+  blue: '#2563eb',
+  red: '#dc2626',
+  purple: '#9333ea',
+}
+
 function colorDotStyle(color: string): CSSProperties | undefined {
-  const dot: Record<string, string> = {
-    yellow: '#eab308',
-    green: '#65a30d',
-    blue: '#2563eb',
-    red: '#dc2626',
-    purple: '#9333ea',
-  }
-  const value = dot[color]
+  const value = ANNOTATION_DOT_COLORS[color]
   return value === undefined ? undefined : { backgroundColor: value }
 }
 

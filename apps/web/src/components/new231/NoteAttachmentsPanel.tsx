@@ -76,7 +76,7 @@ export function NoteAttachmentsPanel({ noteId }: { noteId: string }) {
           ref={fileInputRef}
           type="file"
           className="hidden"
-          aria-hidden="true"
+          aria-label="选择要附加的文件"
           onChange={(event) => {
             const file = event.target.files?.[0]
             if (file) addMutation.mutate(file)
