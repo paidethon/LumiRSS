@@ -25,6 +25,7 @@ TASK_KINDS = (
     "cards",
     "compare",
     "ask_batch",
+    "draft",  # NEW-272 草稿生成（chat 通道，一次有界调用）
 )
 
 _MAX_ROWS = 500

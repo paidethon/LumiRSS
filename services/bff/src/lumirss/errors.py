@@ -183,6 +183,7 @@ from lumirss.new228_interruption_notes import (
 )
 from lumirss.new229_reading_pacts import PactInvalid, PactNotFound
 from lumirss.new230_queue_topics import TopicInvalid
+from lumirss.new277_purpose_constraints import AiPurposeNotAllowed
 from lumirss.note_sections import NoteSectionsInvalid
 from lumirss.obsidian import (
     NoteNotFound,
@@ -366,6 +367,8 @@ _ERROR_RESPONSES = {
     # 0015 AI settings
     InvalidAiSettings: (400, "invalid_ai_settings"),
     AiProfileNotFound: (404, "ai_profile_not_found"),
+    # NEW-277 用途约束：被限定档不允许该用途（改选模型是用户的选择）
+    AiPurposeNotAllowed: (409, "ai_purpose_not_allowed"),
     # 0017 portable app settings
     InvalidAppSettings: (400, "invalid_app_settings"),
     # 0021 multi-device settings conflicts
@@ -670,6 +673,7 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(AppSettingsConflict)
     @app.exception_handler(InvalidAiSettings)
     @app.exception_handler(AiProfileNotFound)
+    @app.exception_handler(AiPurposeNotAllowed)
     @app.exception_handler(AiNotConfigured)
     @app.exception_handler(AiAuthError)
     @app.exception_handler(AiModelError)

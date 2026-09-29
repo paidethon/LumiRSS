@@ -131,6 +131,16 @@ from lumirss.routers import (
     new268_quote_exports,
     new269_language_overrides,
     new270_completeness_reports,
+    new271_input_preview,
+    new272_ai_drafts,
+    new273_template_trials,
+    new274_citation_checks,
+    new275_batch_approvals,
+    new276_task_replays,
+    new277_purpose_constraints,
+    new278_privacy_filters,
+    new279_answer_adoptions,
+    new280_quota_buckets,
     obsidian,
     operations,
     opml,
@@ -606,5 +616,15 @@ app.include_router(new267_protect_exceptions.router)
 app.include_router(new268_quote_exports.router)
 app.include_router(new269_language_overrides.router)
 app.include_router(new270_completeness_reports.router)
+app.include_router(new271_input_preview.router)
+app.include_router(new272_ai_drafts.router)
+app.include_router(new273_template_trials.router)
+app.include_router(new274_citation_checks.router)
+app.include_router(new275_batch_approvals.router)
+app.include_router(new276_task_replays.router)
+app.include_router(new277_purpose_constraints.router)
+app.include_router(new278_privacy_filters.router)
+app.include_router(new279_answer_adoptions.router)
+app.include_router(new280_quota_buckets.router)
 
 register_error_handlers(app)

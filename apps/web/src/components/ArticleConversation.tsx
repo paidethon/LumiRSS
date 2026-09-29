@@ -17,6 +17,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AlertCircle, Loader2, MessageSquare, RefreshCw, SendHorizontal, X } from 'lucide-react'
 import type { ConversationMessage } from '../api/types'
 import { useEntryConversation, useSendConversationMessageMutation } from '../api/queries'
+import { New271AiControlTools } from './new271/New271AiControlTools'
 import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
 import QaTemplateBar from './QaTemplateBar'
@@ -181,6 +182,12 @@ export default function ArticleConversation({
           submit()
         }}
       >
+        {/* NEW-271..280：AI 任务控制台（输入预览/草稿对照/试跑/核验/审批/
+            重放诊断/用途约束/隐私过滤/结论采纳/配额分桶）。两级情境展开：
+            折叠态零渲染零查询，不打扰普通对话路径。 */}
+        <div className="mb-2">
+          <New271AiControlTools entryRef={entryRef} answerText={draft} />
+        </div>
         {/* F030：问答模板（选择填入 / 存为模板 / 管理；与文章无关） */}
         <QaTemplateBar draft={draft} onPick={(text) => setDraft(text)} />
         {send.isError && (

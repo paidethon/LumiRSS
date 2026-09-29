@@ -19,6 +19,11 @@ def run(coroutine):
     return asyncio.run(coroutine)
 
 
+def _days_ago(days: int) -> str:
+    """相对时间播种（禁固定日历日期）：离桶界留 ≥5 天余量防日期漂移。"""
+    return (datetime.now(UTC) - timedelta(days=days)).isoformat()
+
+
 class FakeStateAdapter:
     """记录 set_entry_state 调用（FreshRSS 侧断言用）。"""
 
@@ -45,6 +50,7 @@ def _seed(app, item_id, *, feed_url, published_at, read=0, starred=0, title="t")
 def _seed_batch(app):
     """feed A：2 条旧（30-90 天桶）；feed B：1 条旧 + 1 条加星（保护）。
 
+<<<<<<< HEAD
     日期相对 now 生成（FIX-389 域）：固定日期会随真实时间漂移跨桶边界
     （本测试曾因 07-01 种子自然老化跨过 90 天线而转红）。桶边界 30/90 天
     两侧各留 ≥10 天余量。"""
@@ -58,6 +64,15 @@ def _seed_batch(app):
     _seed(app, "g3", feed_url="https://b.example/rss", published_at=_iso(75))
     _seed(app, "g4", feed_url="https://b.example/rss", published_at=_iso(70), starred=1)
     _seed(app, "g5", feed_url="https://a.example/rss", published_at=_iso(5))  # 太新
+=======
+    相对 now 播种（禁固定日历日期：会随时间漂移出桶——2026-09 起
+    固定日期正好压上 90 天桶界）；距 30/90 桶界均留 ≥15 天余量。"""
+    _seed(app, "g1", feed_url="https://a.example/rss", published_at=_days_ago(75))
+    _seed(app, "g2", feed_url="https://a.example/rss", published_at=_days_ago(60))
+    _seed(app, "g3", feed_url="https://b.example/rss", published_at=_days_ago(45))
+    _seed(app, "g4", feed_url="https://b.example/rss", published_at=_days_ago(75), starred=1)
+    _seed(app, "g5", feed_url="https://a.example/rss", published_at=_days_ago(5))  # 太新
+>>>>>>> feat/r2-n271
 
 
 def test_n049_grouping_by_source_and_age(client):
@@ -86,8 +101,8 @@ def test_n049_grouping_by_source_and_age(client):
     )
     assert by_age.status_code == 200
     age_keys = {batch["key"]: batch["count"] for batch in by_age.json()["batches"]}
-    # g1(2026-07-01)≈86 天、g2≈56 天、g3≈72 天 → 30-90天 桶 3 条；
-    # 没有 90-365 / 365+ 的条目（空桶不出现）。
+    # g1≈75 天、g2≈60 天、g3≈45 天 → 30-90天 桶 3 条（相对 now 播种，
+    # 离桶界余量 ≥15 天，不会随日期漂移）；空桶不出现。
     assert age_keys == {"30-90天": 3}
 
     # 非法 groupBy → 422。

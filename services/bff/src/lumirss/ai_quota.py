@@ -22,13 +22,26 @@ _QUOTA_READ_SQL = "SELECT calls FROM ai_usage WHERE window_key = ?"
 
 
 class QuotaExceeded(Exception):
-    """本窗口名额已用尽（映射 429 quota_exceeded）。"""
+    """本窗口名额已用尽（映射 429 quota_exceeded）。
 
-    def __init__(self, retry_after: int, window_reset: str, used: int) -> None:
+    NEW-280：scope="bucket" 时是用途分桶超额（purpose/max_calls 附带，
+    响应引导用户去调整分桶而不是静默超额）。"""
+
+    def __init__(
+        self,
+        retry_after: int,
+        window_reset: str,
+        used: int,
+        *,
+        scope: str = "global",
+        purpose: str | None = None,
+    ) -> None:
         super().__init__(f"AI quota exceeded; retry after {retry_after}s.")
         self.retry_after = max(1, retry_after)
         self.window_reset = window_reset
         self.used = used
+        self.scope = scope
+        self.purpose = purpose
 
 
 @dataclass(frozen=True)
@@ -63,31 +76,35 @@ def window_bounds(now: datetime | None = None, window: str = "day") -> QuotaWind
     )
 
 
-async def claim_ai_call(db: Any, *, window: str, max_calls: int) -> QuotaWindow:
+async def claim_ai_call(
+    db: Any, *, window: str, max_calls: int, key_prefix: str = ""
+) -> QuotaWindow:
     """原子预占一个调用名额；超额 → QuotaExceeded。
 
     返回命中的窗口（调用方可记录口径）；BEGIN IMMEDIATE 保证并发下
-    恰好 max_calls 个请求能通过。"""
+    恰好 max_calls 个请求能通过。NEW-280：key_prefix 非空时计数键为
+    "prefix + 窗口键"（用途分桶与全局配额共用同一原子原语）。"""
     await db.migrate()
     bounds = window_bounds(window=window)
+    bucket_key = f"{key_prefix}{bounds.key}"
 
     def _claim(conn: Any) -> bool:
         # BEGIN IMMEDIATE 串行化写者：并发预占在同一写锁上排队，
         # 恰好 max_calls 个请求能通过（helper 成功后统一 COMMIT）。
         conn.execute("BEGIN IMMEDIATE")
-        row = conn.execute(_QUOTA_READ_SQL, (bounds.key,)).fetchone()
+        row = conn.execute(_QUOTA_READ_SQL, (bucket_key,)).fetchone()
         current = int(row["calls"]) if row is not None else 0
         if current >= max_calls:
             return False
         if row is None:
             conn.execute(
                 "INSERT INTO ai_usage (window_key, window_start, calls) VALUES (?, ?, 1)",
-                (bounds.key, bounds.start_iso),
+                (bucket_key, bounds.start_iso),
             )
         else:
             conn.execute(
                 "UPDATE ai_usage SET calls = calls + 1 WHERE window_key = ?",
-                (bounds.key,),
+                (bucket_key,),
             )
         return True
 
@@ -127,7 +144,7 @@ async def usage_snapshot(db: Any, window: str, max_calls: int) -> dict[str, Any]
     }
 
 
-async def quota_denial(request: Any) -> Any:
+async def quota_denial(request: Any, purpose: str | None = None) -> Any:
     """路由侧守卫：已配置配额则原子预占；超额 → 429 JSONResponse。
 
     返回 None = 放行（含未配置）。响应体与 Retry-After 头都携带
@@ -135,7 +152,13 @@ async def quota_denial(request: Any) -> Any:
 
     N191：管理员策略上限在成员自设配置之后合成——更低者生效；
     成员未配置而管理员已设限时，管理员上限以 day 窗口单独生效
-    （成员端没有任何路径可以提升它）。"""
+    （成员端没有任何路径可以提升它）。
+
+    NEW-280：purpose 非空时先做用途分桶预占（ai_quota_buckets 行存在
+    才拦截；无行 = 未分桶 → 只走全局配额）。分桶超额的响应带
+    scope="bucket" + purpose，引导用户调整分桶而不是静默超额；
+    嵌套预占（分桶过了、全局超额）中已预占的分桶名额不回退——
+    与「失败请求也计数」同一保守口径，绝不漏计。"""
     from fastapi.responses import JSONResponse
 
     from lumirss.ai_settings import (
@@ -157,6 +180,12 @@ async def quota_denial(request: Any) -> Any:
         window, max_calls = await effective_ai_limits(
             request.app.state.control_db, uid, window=window, max_calls=max_calls
         )
+    if purpose is not None:
+        bucket_denial = await _purpose_bucket_denial(
+            db, purpose, window if window else "day"
+        )
+        if bucket_denial is not None:
+            return bucket_denial
     if not window or max_calls <= 0:
         return None
     try:
@@ -174,6 +203,48 @@ async def quota_denial(request: Any) -> Any:
                     ),
                     "retryAfter": exc.retry_after,
                     "windowReset": exc.window_reset,
+                }
+            },
+        )
+    return None
+
+
+async def _purpose_bucket_denial(
+    db: Any, purpose: str, window: str
+) -> Any:
+    """NEW-280：分桶预占（行存在才拦截）；超额 → 429 带分桶现状。"""
+    from fastapi.responses import JSONResponse
+
+    await db.migrate()
+    row = await db.fetch_one(
+        "SELECT max_calls FROM ai_quota_buckets WHERE purpose = ?", (purpose,)
+    )
+    if row is None:
+        return None
+    bucket_max = int(row["max_calls"])
+    if bucket_max <= 0:
+        return None
+    try:
+        await claim_ai_call(
+            db, window=window, max_calls=bucket_max, key_prefix=f"bucket:{purpose}:"
+        )
+    except QuotaExceeded as exc:
+        return JSONResponse(
+            status_code=429,
+            headers={"Retry-After": str(exc.retry_after)},
+            content={
+                "error": {
+                    "type": "quota_exceeded",
+                    "scope": "bucket",
+                    "purpose": purpose,
+                    "maxCalls": bucket_max,
+                    "retryAfter": exc.retry_after,
+                    "windowReset": exc.window_reset,
+                    "message": (
+                        f"「{purpose}」用途的分桶额度已用尽"
+                        f"（{exc.used}/{bucket_max}）；"
+                        "可在 AI 配额分桶中调整各用途上限后重试。"
+                    ),
                 }
             },
         )
