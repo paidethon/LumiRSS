@@ -75,12 +75,12 @@ class LinkRecheckService:
         if ref.startswith("rss:"):
             raw_ref = ref.removeprefix("rss:")
             try:
-                entry_ref = decode_entry_ref(raw_ref)
+                decode_entry_ref(raw_ref)  # 合法性校验（entryRef 可解码才受理）
             except InvalidEntryReference:
                 return None, "bad_ref"
             row = await self._db.fetch_one(
                 "SELECT url FROM search_entries WHERE entry_ref = ?",
-                (entry_ref,),
+                (raw_ref,),
             )
             if row is None:
                 return None, "projection_missing"
