@@ -141,6 +141,16 @@ from lumirss.routers import (
     new278_privacy_filters,
     new279_answer_adoptions,
     new280_quota_buckets,
+    new311_bookmark_import,
+    new312_clip_selections,
+    new313_extract_compare,
+    new314_snapshot_text_layer,
+    new315_link_replace,
+    new316_bookmark_intents,
+    new317_clip_merge,
+    new318_image_picker,
+    new319_reextract,
+    new320_replacement_links,
     obsidian,
     operations,
     opml,
@@ -626,5 +636,15 @@ app.include_router(new277_purpose_constraints.router)
 app.include_router(new278_privacy_filters.router)
 app.include_router(new279_answer_adoptions.router)
 app.include_router(new280_quota_buckets.router)
+app.include_router(new311_bookmark_import.router)
+app.include_router(new312_clip_selections.router)
+app.include_router(new313_extract_compare.router)
+app.include_router(new314_snapshot_text_layer.router)
+app.include_router(new315_link_replace.router)
+app.include_router(new316_bookmark_intents.router)
+app.include_router(new317_clip_merge.router)
+app.include_router(new318_image_picker.router)
+app.include_router(new319_reextract.router)
+app.include_router(new320_replacement_links.router)
 
 register_error_handlers(app)
