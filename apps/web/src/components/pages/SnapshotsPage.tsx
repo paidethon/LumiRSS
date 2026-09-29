@@ -22,6 +22,7 @@ import { Button } from '../ui/Button'
 import { EmptyState } from '../ui/EmptyState'
 import { IconButton } from '../ui/IconButton'
 import { Skeleton } from '../ui/Skeleton'
+import { New311SnapshotTextTools } from '../new311/New311SnapshotTextTools'
 
 /** 字节数 → 人类可读（B / KB / MB，大数值取整、小数值保留 1 位小数）。 */
 function formatBytes(bytes: number): string {
@@ -145,6 +146,8 @@ export default function SnapshotsPage() {
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 max-lg:pb-[calc(4.75rem_+_var(--safe-bottom))]">
         {/* 头部：标题 + 生成表单 */}
         <h1 className="text-base font-semibold text-[var(--lumi-text-primary)]">网页快照</h1>
+        {/* NEW-314 快照文字检索层（构建派生文本层 + 命中定位；原快照不变） */}
+        <New311SnapshotTextTools />
 
         <form
           className="mt-2.5 flex items-center gap-2"

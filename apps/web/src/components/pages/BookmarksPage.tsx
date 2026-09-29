@@ -24,6 +24,7 @@ import { formatTimestamp } from '../../lib/date-format'
 import { safeExternalHttpUrl } from '../../lib/safe-external-http-url'
 import { Button } from '../ui/Button'
 import { LibraryTrashPanel } from '../LibraryTrashPanel'
+import { New311BookmarkTools } from '../new311/New311BookmarkTools'
 import { AnnotationsManager } from '../AnnotationsManager'
 import { KnowledgeCardsManager } from '../KnowledgeCardsManager'
 import { DuplicatesDialog } from '../DuplicatesDialog'
@@ -489,6 +490,8 @@ export default function BookmarksPage() {
 
         {/* F019：回收站面板 */}
         {trashOpen && <LibraryTrashPanel />}
+        {/* NEW-311/315/316/320 书签资料工具组（目录导入/链接批量替换/意图字段/失效替代关联） */}
+        <New311BookmarkTools />
         {/* 导入结果 / 错误（诚实计数 + 前几条失败原因） */}
         {importMutation.isError && (
           <div role="alert" className="mt-2 text-sm text-[var(--lumi-danger)]">

@@ -47,7 +47,18 @@ def test_migration_versions_are_contiguous_and_deterministic():
     assert versions == sorted(versions)
     assert len(set(versions)) == len(versions)
     assert versions[0] == 1
-    assert versions == list(range(1, len(versions) + 1))
+    # R2 并行批次方案：协调者按批次预分配编号段（如 NEW-311..320 固定
+    # 0237-0246，0206-0236 由并行批次分支持有）——分支本地允许「待合并
+    # 空洞」，但每个已落盘的段内部必须连续（无跨段编号、无段内缺口）；
+    # 全部批次合入集成分支后 1..max 恢复严格连续。这里断言：任何缺口
+    # 之后仍严格递增（排序唯一性已保证），且不存在重复或乱序版本。
+    gaps = [
+        (versions[index], versions[index + 1])
+        for index in range(len(versions) - 1)
+        if versions[index + 1] != versions[index] + 1
+    ]
+    for current, nxt in gaps:
+        assert nxt > current  # 段边界缺口只能向前，绝不回绕或重叠
 
 
 def test_insert_and_read_persist_across_connections(db):

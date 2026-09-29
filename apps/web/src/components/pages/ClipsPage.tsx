@@ -35,6 +35,7 @@ import { getClipFull, saveClipRevision } from '../../api/client'
 import type { Clip, ClipFetchArticleResult } from '../../api/types'
 import { formatTimestamp } from '../../lib/date-format'
 import { LibraryTrashPanel } from '../LibraryTrashPanel'
+import { New311ClipTools } from '../new311/New311ClipTools'
 import { safeExternalHttpUrl } from '../../lib/safe-external-http-url'
 import { sanitizeArticleHtml } from '../../lib/sanitize-article-html'
 import { Button } from '../ui/Button'
@@ -620,6 +621,8 @@ export default function ClipsPage() {
           </Button>
         </div>
         {trashOpen && <LibraryTrashPanel />}
+        {/* NEW-311..319 剪藏资料工具组（选区剪藏包/候选对照/重复合并/图片选择器/重新提取） */}
+        <New311ClipTools />
 
         <form
           className="mt-2.5 flex items-center gap-2"
