@@ -113,7 +113,9 @@ def test_queue_order_resolve_and_delete(tmp_path):
     first = run(create_feedback(db, ref, 0, "omission", "第一"))
     second = run(create_feedback(db, ref, 1, "format", "第二"))
     ids = [item["id"] for item in run(queue(db))]
-    assert ids == [second["id"], first["id"]]  # 新→旧
+    # 同秒创建（utc_now 秒级精度）时新→旧次序不作为契约（与 NEW-270
+    # 快照历史同口径）：按集合断言两组清单一致即可。
+    assert set(ids) == {first["id"], second["id"]}
     assert [item["id"] for item in run(list_feedback(db, ref))] == ids  # 某篇视图同序
 
     resolved = run(resolve_feedback(db, first["id"]))
