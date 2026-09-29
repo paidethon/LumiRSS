@@ -11,6 +11,8 @@ const RecoveryBanner = lazy(() => import('./RecoveryBanner').then((m) => ({ defa
 const DuplicateWarningToast = lazy(() => import('./DuplicateWarningToast').then((m) => ({ default: m.DuplicateWarningToast })))
 // E1: N050 阅读路径面板（设备本地；tools 行入口）
 const ReadingPathPanel = lazy(() => import('./ReadingPathPanel').then((m) => ({ default: m.ReadingPathPanel })))
+// NEW-221..230 阅读决策面板（队列/计划的用户决策工具区）
+const ReadingDecisionsPanel = lazy(() => import('./new2xx/ReadingDecisionsPanel').then((m) => ({ default: m.ReadingDecisionsPanel })))
 const CompareRead = lazy(() => import('./CompareRead'))
 import {
   useEntries,
@@ -497,6 +499,8 @@ function EntriesList() {
   const [queueOpen, setQueueOpen] = useState(false)
   // F024：积压整理面板开关
   const [backlogOpen, setBacklogOpen] = useState(false)
+  // NEW-221..230：阅读决策面板开关（分时段/依赖/工作量/预约/向导/容量/章节/便签/约定/主题）
+  const [decisionsOpen, setDecisionsOpen] = useState(false)
   const openEntry = (entryRef: string) => selectEntry(entryRef)
   // F016：对照阅读（恰好选中 2 条时可用；关闭恢复原列表）
   const [compareRefs, setCompareRefs] = useState<[string, string] | null>(null)
@@ -973,6 +977,12 @@ function EntriesList() {
       <Suspense fallback={null}>
         <RecoveryBanner />
       </Suspense>
+      {/* NEW-221..230：阅读决策面板（队列/计划的用户决策工具区） */}
+      {decisionsOpen && (
+        <Suspense fallback={null}>
+          <ReadingDecisionsPanel onClose={() => setDecisionsOpen(false)} />
+        </Suspense>
+      )}
       {/* N050：阅读路径面板（设备本地；恢复/停用/清空） */}
       {readingPathOpen && (
         <Suspense fallback={null}>
@@ -1054,6 +1064,21 @@ function EntriesList() {
           )}
         >
           积压整理
+        </button>
+        {/* NEW-221..230：阅读决策入口（队列/计划的用户决策工具区） */}
+        <button
+          type="button"
+          aria-pressed={decisionsOpen}
+          onClick={() => setDecisionsOpen((v) => !v)}
+          className={cx(
+            'mr-auto flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] px-2.5 py-1 text-xs transition-colors duration-[var(--lumi-motion-fast)]',
+            'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+            decisionsOpen
+              ? 'bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
+              : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-secondary)]',
+          )}
+        >
+          阅读决策
         </button>
         {timelineOrder === 'oldest' && (
           <p
