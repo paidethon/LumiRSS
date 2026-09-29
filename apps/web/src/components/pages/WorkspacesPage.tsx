@@ -77,6 +77,7 @@ import {
 import { WorkspaceBoardView } from '../WorkspaceBoard'
 import { WorkspaceOutlinePanel } from '../WorkspaceOutlinePanel'
 import { New251ResearchTools } from '../new251/New251ResearchTools'
+import { New281BriefingTools } from '../new281/New281BriefingTools'
 const WorkspaceCompare = lazy(() => import('../WorkspaceCompare'))
 const New216CollectionOpsPanel = lazy(() => import('../new211/New216CollectionOpsPanel'))
 const WorkspaceMoveDialog = lazy(() => import('../WorkspaceMoveDialog'))
@@ -1863,6 +1864,10 @@ export default function WorkspacesPage() {
           决策/缺口/大纲/结论史/分享预览）。独立项目主线（research_projects），
           不依赖所选工作区；折叠态零查询，展开后才选/建项目并挂载子面板。 */}
       <New251ResearchTools />
+      {/* NEW-281..290：个人简报工作台（编排/去重/截稿/诊断/订阅/配方/
+          来源/主题/导出/更正）。用户自组简报管线（确定性装配，零 AI）；
+          折叠态零查询，展开组合后各子工具仍折叠零查询。 */}
+      <New281BriefingTools />
       {/* NEW-216..218：集合整理工作台（快照差异/排序配方/引用检查）。 */}
       {collectionOpsOpen && (
         <Dialog
