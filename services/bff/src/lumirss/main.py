@@ -211,6 +211,16 @@ from lumirss.routers import (
     new348_data_residency,
     new349_privacy_review,
     new350_deletion_receipts,
+    new371_task_calendar,
+    new372_task_priority,
+    new373_maintenance,
+    new374_resource_bill,
+    new375_quota_batch,
+    new376_config_draft,
+    new377_task_blockers,
+    new378_feature_deps,
+    new379_tickets,
+    new380_handoff,
     obsidian,
     operations,
     opml,
@@ -441,7 +451,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
             while True:
                 await asyncio.sleep(interval)
-                await for_each_active_user(app.state, sync_user)
+                # NEW-371：暂停注册表在 tick 前检查（enforcedBy=loop 的
+                # 真实消费点）；NEW-372：本轮顺序快照（优先级变更只影响
+                # 下一轮，绝无抢占）。
+                from lumirss.new371_task_calendar import paused_task_kinds
+                from lumirss.new372_task_priority import background_sweep_order
+
+                if "search_sync" in await paused_task_kinds(app.state.control_db):
+                    continue
+                order = await background_sweep_order(
+                    app.state.control_db,
+                    await app.state.accounts.active_user_ids(),
+                )
+                await for_each_active_user(app.state, sync_user, user_order=order)
 
         # P0-13: the task exists only when sync is enabled; interval=0 must
         # not create a sleep(0) hot loop.
@@ -456,6 +478,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
             while True:
                 await asyncio.sleep(obsidian_interval)
+                # NEW-371：暂停注册表的第二个真实消费点（enforcedBy=loop）。
+                from lumirss.new371_task_calendar import paused_task_kinds
+
+                if "obsidian_scan" in await paused_task_kinds(app.state.control_db):
+                    continue
                 service: ObsidianService | None = app.state.obsidian_service
                 if service is None:
                     continue
@@ -777,5 +804,17 @@ app.include_router(new347_authorization_center.router)
 app.include_router(new348_data_residency.router)
 app.include_router(new349_privacy_review.router)
 app.include_router(new350_deletion_receipts.router)
+
+# NEW-371..380 运行治理组（管理员可操作的运行治理）。
+app.include_router(new371_task_calendar.router)
+app.include_router(new372_task_priority.router)
+app.include_router(new373_maintenance.router)
+app.include_router(new374_resource_bill.router)
+app.include_router(new375_quota_batch.router)
+app.include_router(new376_config_draft.router)
+app.include_router(new377_task_blockers.router)
+app.include_router(new378_feature_deps.router)
+app.include_router(new379_tickets.router)
+app.include_router(new380_handoff.router)
 
 register_error_handlers(app)

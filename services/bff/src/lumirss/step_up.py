@@ -40,6 +40,13 @@ STEP_UP_OPERATIONS: tuple[str, ...] = (
     # NEW-304：webhook 签名钥轮换（实例级操作，target = 操作管理员本人
     # id —— 作用域仍逐字绑定，令牌不能转投其他敏感操作）。
     "webhook_key_rotation",
+    # NEW-371..380 运行治理组：实例级敏感操作一律 target=操作管理员
+    # 本人（与 webhook_key_rotation 同口径；作用域逐字绑定）。
+    "task_kind_pause",
+    "maintenance_schedule",
+    "quota_batch_execute",
+    "config_draft_apply",
+    "handoff_export",
 )
 
 STEP_UP_OP_PATTERN = "^(?:" + "|".join(STEP_UP_OPERATIONS) + ")$"

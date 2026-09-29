@@ -257,13 +257,21 @@ def principal_of(scope) -> dict[str, str] | None:
     return None
 
 
-async def for_each_active_user(app_state, coro_fn, *, skip_paused_check: bool = True) -> None:
+async def for_each_active_user(
+    app_state, coro_fn, *, skip_paused_check: bool = True, user_order: list[str] | None = None
+) -> None:
     """Run ``coro_fn(uid)`` for every active user (background workers).
 
     Per-user failure isolation (O163): one user's broken config or upstream
     never stops the others, and every pass runs under that user's context
     so the routing database/secrets resolve correctly. Paused users are
     excluded at source (active_user_ids).
+
+    NEW-372: ``user_order`` (optional) reorders the sweep — the caller
+    passes a snapshot (e.g. NEW-372's priority order) computed once per
+    tick; this helper never re-reads it mid-pass, and members missing
+    from the snapshot keep their natural order at the end. Ordering is
+    advisory: no preemption path exists.
 
     FIX-217 lifecycle re-check: the uid snapshot can go stale — a member
     deleted or deactivated (pause / pending deactivation) AFTER the list
@@ -285,6 +293,9 @@ async def for_each_active_user(app_state, coro_fn, *, skip_paused_check: bool = 
     except Exception:  # noqa: BLE001 — control db trouble must not kill loops
         logger.exception("background loop could not list users")
         return
+    if user_order is not None:
+        order_index = {uid: index for index, uid in enumerate(user_order)}
+        uids = sorted(uids, key=lambda uid: order_index.get(uid, len(order_index)))
     for uid in uids:
         # FIX-217：执行前验证账户生命周期（代次即时复读——列表快照之后
         # 被删除/停用/待删除的账户在这里被干净跳过，绝不为死账户重建
