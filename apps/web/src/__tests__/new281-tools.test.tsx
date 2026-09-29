@@ -377,6 +377,52 @@ describe('NEW-281..290 个人简报工作台（New281BriefingTools）', () => {
     expect(fetchCalls.some((c) => c.url === '/api/v1/briefings/c1/export.eml')).toBe(true)
   })
 
+  it('NEW-283 编排台内联调回：窗口截稿后的条目勾选「调回」后 pullBack=true 进本期', async () => {
+    mockRoute(
+      (url, init) => url === '/api/v1/briefings/window' && !init?.method,
+      () =>
+        jsonResponse({
+          configured: true,
+          timezone: 'Asia/Shanghai',
+          cutoffTime: '18:00',
+          periodDays: 1,
+          startUtc: '2026-09-28T10:00:00+00:00',
+          cutoffUtc: '2026-09-29T10:00:00+00:00',
+          nextWindowStartUtc: '2026-09-29T10:00:00+00:00',
+        }),
+    )
+    mockRoute(
+      (url) => url.startsWith('/api/v1/briefings/candidates?'),
+      () =>
+        jsonResponse({
+          candidates: [
+            { ...CARD, publishedAt: '2026-09-29T11:00:00+00:00' },  // 截稿后 → 迟到
+          ],
+          count: 1,
+        }),
+    )
+    mockRoute((url, init) => url === '/api/v1/briefings' && !init?.method, () => jsonResponse({ issues: [], count: 0 }))
+    mockRoute(
+      (url, init) => url === '/api/v1/briefings' && init?.method === 'POST',
+      () => jsonResponse({ id: 'iss9', title: '调回一期', status: 'draft', items: [{}] }),
+    )
+    renderTools()
+    expand('composer')
+    fireEvent.change(screen.getByLabelText('范围起（ISO 时间）'), { target: { value: ISO_FROM } })
+    fireEvent.change(screen.getByLabelText('范围止（ISO 时间，不含）'), { target: { value: ISO_TO } })
+    fireEvent.click(screen.getByText('拉取候选摘要卡'))
+    // 迟到条目出现显式「调回」勾选（不勾 = 属下一期，后端 422 拦截，BFF 测试锁定）
+    fireEvent.click(await screen.findByLabelText('调回本期（迟到）：窗口内文章'))
+    fireEvent.click(screen.getByLabelText('选入：窗口内文章'))
+    fireEvent.change(screen.getByLabelText('本期标题'), { target: { value: '调回一期' } })
+    fireEvent.click(screen.getByText('建草稿（1 条已选）'))
+    await waitFor(() => expect(screen.getByText(/已建草稿「调回一期」/)).toBeTruthy())
+    const postCall = fetchCalls.find((c) => c.url === '/api/v1/briefings' && c.init?.method === 'POST')
+    expect(postCall, 'expected POST /api/v1/briefings').toBeDefined()
+    const sent = JSON.parse(String(postCall?.init?.body))
+    expect(sent.items[0].pullBack).toBe(true)
+  })
+
   it('NEW-290 历史更正：追加更正并列出（不替换正文）', async () => {
     mockRoute(
       (url) => url === '/api/v1/briefings',

@@ -8,6 +8,7 @@ import {
   confirmBriefing,
   createBriefing,
   fetchCandidates,
+  fetchWindow,
   listBriefings,
   type CandidateCard,
 } from '../../api/new281'
@@ -35,7 +36,17 @@ export function ComposerPanel() {
   const [sectionLabel, setSectionLabel] = useState('正文')
   const [picked, setPicked] = useState<Map<string, CandidateCard>>(new Map())
   const [decisions, setDecisions] = useState<Map<string, 'include' | 'defer' | 'skip'>>(new Map())
+  const [pullBacks, setPullBacks] = useState<Set<string>>(new Set())
   const [notice, setNotice] = useState<string | null>(null)
+
+  // 283：窗口开启时，截稿点之后的条目须显式勾选「调回」才能进本期。
+  const windowQuery = useQuery({
+    queryKey: ['new281-window'],
+    queryFn: ({ signal }) => fetchWindow(signal),
+  })
+  const cutoffUtc = windowQuery.data?.configured ? windowQuery.data.cutoffUtc : undefined
+  const isLate = (card: CandidateCard) =>
+    Boolean(cutoffUtc && card.publishedAt && card.publishedAt >= cutoffUtc)
 
   const candidates = useQuery({
     queryKey: ['new281-candidates', rangeFrom, rangeTo, feedUrl],
@@ -82,6 +93,7 @@ export function ComposerPanel() {
           url: card.url,
           publishedAt: card.publishedAt,
           excerpt: card.excerpt,
+          ...(isLate(card) ? { pullBack: pullBacks.has(card.entryRef) } : {}),
           ...(card.seenInIssues.length > 0 ? { dupDecision: decisions.get(card.entryRef) ?? 'include' } : {}),
         })),
       })
@@ -157,6 +169,24 @@ export function ComposerPanel() {
                 </label>
                 {card.excerpt && (
                   <p className="text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">{card.excerpt}</p>
+                )}
+                {isLate(card) && (
+                  <label className="flex items-center gap-2 text-xs text-[var(--lumi-warning)]">
+                    <input
+                      type="checkbox"
+                      aria-label={`调回本期（迟到）：${card.title}`}
+                      checked={pullBacks.has(card.entryRef)}
+                      onChange={() =>
+                        setPullBacks((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(card.entryRef)) next.delete(card.entryRef)
+                          else next.add(card.entryRef)
+                          return next
+                        })
+                      }
+                    />
+                    截稿点（{cutoffUtc}）之后发布——勾选「调回」才进本期，否则属下一期
+                  </label>
                 )}
                 {seen && (
                   <div className="flex flex-wrap items-center gap-2">
