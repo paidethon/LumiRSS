@@ -134,6 +134,10 @@ async def generate_translation_segments(
     local_only_denial = await _local_only_policy_denial(request, entry_ref)
     if local_only_denial is not None:
         return local_only_denial
+    # NEW-343：敏感资料标记 → 403（后端真实阻止，不经 UI 绕过）。
+    blocked_denial = await _ai_send_block_denial(request, entry_ref)
+    if blocked_denial is not None:
+        return blocked_denial
     # F064：配额事前拦截。
     from lumirss.ai_quota import quota_denial
 
@@ -367,6 +371,10 @@ async def compare_translation_block(
     disabled_denial = await _ai_disabled_denial(request, entry_ref)
     if disabled_denial is not None:
         return disabled_denial
+    # NEW-343：敏感资料标记 → 403（后端真实阻止，不经 UI 绕过）。
+    blocked_denial = await _ai_send_block_denial(request, entry_ref)
+    if blocked_denial is not None:
+        return blocked_denial
     from lumirss.ai_quota import quota_denial
 
     denial = await quota_denial(request)
@@ -651,6 +659,22 @@ async def _ai_disabled_denial(request: Request, entry_ref: str):
     return None
 
 
+async def _ai_send_block_denial(request: Request, entry_ref: str):
+    """NEW-343：用户把该条目标记为「不得发送至外部 AI」→ 403
+    ai_send_blocked（附用户原因）。四条发送路径统一走本守卫。"""
+    from lumirss.new343_sensitive_marks import (
+        SensitiveMarkStore,
+        ai_send_block_denial,
+    )
+
+    denial = await ai_send_block_denial(
+        SensitiveMarkStore(request.app.state.db), entry_ref
+    )
+    if denial is None:
+        return None
+    return JSONResponse(status_code=403, content=denial)
+
+
 async def _record_ai_task(
     request: Request,
     *,
@@ -692,6 +716,10 @@ async def generate_summary_tracked(
     disabled_denial = await _ai_disabled_denial(request, entry_ref)
     if disabled_denial is not None:
         return disabled_denial
+    # NEW-343：敏感资料标记 → 403（后端真实阻止，不经 UI 绕过）。
+    blocked_denial = await _ai_send_block_denial(request, entry_ref)
+    if blocked_denial is not None:
+        return blocked_denial
     # F064：配额事前拦截（预占失败 → 429，上游零请求）。
     # NEW-280：summary 用途的分桶额度先于全局配额。
     from lumirss.ai_quota import quota_denial
@@ -957,6 +985,10 @@ async def send_conversation_message(
     disabled_denial = await _ai_disabled_denial(request, entry_ref)
     if disabled_denial is not None:
         return disabled_denial
+    # NEW-343：敏感资料标记 → 403（后端真实阻止，不经 UI 绕过）。
+    blocked_denial = await _ai_send_block_denial(request, entry_ref)
+    if blocked_denial is not None:
+        return blocked_denial
     # F064：配额事前拦截。NEW-280：chat 用途的分桶额度先于全局配额。
     from lumirss.ai_quota import quota_denial
 

@@ -90,6 +90,12 @@ async def saved_view_atom(view_id: str, secret: str, request: Request) -> Respon
                 media_type="application/xml",
                 content="<error>not found</error>",
             )
+        # NEW-341：共享入口对本人数据的成功读取留痕（尽力而为）。
+        from lumirss.new341_access_log import record_access_event
+
+        await record_access_event(
+            request.app.state.db, "saved_view_feed", f"视图 {view_id}"
+        )
         params = view_search_params(view)
         if not params["query"].strip():
             return Response(

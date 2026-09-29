@@ -112,6 +112,10 @@ async def briefing_atom(token: str, request: Request) -> Response:
         store = BriefingFeedStore(request.app.state.db)
         if not await store.verify(token):
             return _NOT_FOUND
+        # NEW-341：共享入口对本人数据的成功读取留痕（尽力而为）。
+        from lumirss.new341_access_log import record_access_event
+
+        await record_access_event(request.app.state.db, "briefing_feed", "个人简报 Atom")
         issues = await BriefingStore(request.app.state.db).list_issues(limit=200)
         confirmed = [
             i for i in issues if i["status"] == "confirmed"
