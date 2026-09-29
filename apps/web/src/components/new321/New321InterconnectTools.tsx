@@ -52,6 +52,7 @@ import {
   type LinkReportItem,
   type RelocationPlan,
   type RootProfile,
+  type SyncConflict,
   type SyncPlan,
   type TagPreview,
 } from '../../api/new321'

@@ -101,7 +101,7 @@ describe('NEW-321..330 Obsidian 互通工具组', () => {
     )
     mockRoute(
       (url) => url === '/api/v1/obsidian/tag-mapping/rules',
-      (url, init) =>
+      (_url, init) =>
         init?.method === 'PUT'
           ? jsonResponse({ sourceTag: 'ai', targetTag: 'tech/人工智能' })
           : jsonResponse({ rules: [{ sourceTag: 'ai', targetTag: 'tech/人工智能' }] }),
@@ -174,8 +174,8 @@ describe('NEW-321..330 Obsidian 互通工具组', () => {
 
   it('NEW-324 批注 Markdown 输出：生成内容与诚实保存提示', async () => {
     mockRoute(
-      (url) => url === '/api/v1/annotations/markdown-export',
-      (url, init) => {
+      (_url) => _url === '/api/v1/annotations/markdown-export',
+      (_url, init) => {
         if (init?.method === 'POST') {
           return jsonResponse({
             id: 'exp1',
@@ -220,7 +220,7 @@ describe('NEW-321..330 Obsidian 互通工具组', () => {
     }
     mockRoute(
       (url) => url === '/api/v1/obsidian/roots' && !url.includes('/scan'),
-      (url, init) => {
+      (_url, init) => {
         if (init?.method === 'POST') {
           rootState = { ...rootState, label: '新库' }
           return jsonResponse({ ...rootState, label: '新库' }, 201)

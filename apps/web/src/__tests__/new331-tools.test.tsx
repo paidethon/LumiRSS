@@ -156,7 +156,7 @@ describe('NEW-331..340 共读空间协作工具组', () => {
 
   it('NEW-331 会议资料单：发起 → 添加资料 → 结束 → 保存结论', async () => {
     mockRoute(
-      (url) => url === `/api/v1/spaces/${SPACE_ID}/meetings` && !init?.body,
+      (url, init) => url === `/api/v1/spaces/${SPACE_ID}/meetings` && !init?.body,
       () => jsonResponse({ items: [] }),
     )
     renderWithQuery(<SpaceGovernanceTools />)
