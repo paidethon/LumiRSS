@@ -6,16 +6,23 @@
  *
  * 高亮：CSS Custom Highlight API（HighlightRegistry）优先；能力不可用
  * （Firefox 旧版 / jsdom）→ 降级为仅计数 + scrollIntoView 滚到命中处。
- * 查询变化清除旧高亮再重建。 */
+ * 查询变化清除旧高亮再重建。
+ *
+ * NEW-356：查找范围（双层/原文/译文）——正文含译文 overlay
+ * （.lb-translation，双语/仅译文视图）时显示范围选择；默认「双层」=
+ * 既有行为。译文层探测跟随真实 DOM（每次查找重新探测；关闭时复位），
+ * 范围停在「译文」而译文层消失时自动回退「双层」。 */
 
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp, Search, X } from 'lucide-react'
 import {
   clearFindHighlights,
   findMatches,
+  hasTranslationLayer,
   highlightMatches,
   revealMatch,
   type FindMatch,
+  type FindScope,
 } from '../lib/reader-find'
 import { IconButton } from './ui/IconButton'
 
@@ -26,27 +33,47 @@ export interface ArticleFindBarProps {
   getRoot: () => HTMLElement | null
 }
 
+/** NEW-356：范围选项（标签与 FindScope 一一对应）。 */
+const FIND_SCOPE_OPTIONS: ReadonlyArray<{ value: FindScope; label: string }> = [
+  { value: 'all', label: '双层' },
+  { value: 'original', label: '原文' },
+  { value: 'translated', label: '译文' },
+]
+
 export default function ArticleFindBar({ open, onClose, getRoot }: ArticleFindBarProps) {
   const [query, setQuery] = useState('')
+  const [scope, setScope] = useState<FindScope>('all')
   const [total, setTotal] = useState(0)
   const [current, setCurrent] = useState(0) // 0 基；显示时 +1
+  // NEW-356：译文层存在性——每次查找按真实 DOM 探测（overlay 注入/
+  // 移除后跟随；纯原文态不出现范围选择）。
+  const [translationAvailable, setTranslationAvailable] = useState(false)
   const matchesRef = useRef<FindMatch[]>([])
   const inputRef = useRef<HTMLInputElement | null>(null)
+
+  // 译文层消失（切回原文视图）而范围停在译文 → 回退双层（诚实，不空转）。
+  useEffect(() => {
+    if (!translationAvailable && scope === 'translated') setScope('all')
+  }, [translationAvailable, scope])
 
   // 打开时聚焦输入框（键盘路径直接可输入）。
   useEffect(() => {
     if (open) inputRef.current?.focus()
     else {
-      // 关闭（Escape/×/切文章）→ 清除高亮，绝无残留。
+      // 关闭（Escape/×/切文章）→ 清除高亮与范围探测，绝无残留。
       clearFindHighlights()
       matchesRef.current = []
+      setTranslationAvailable(false)
     }
   }, [open])
 
-  // 查询变化 → 清旧高亮 → 重新查找（组件卸载时兜底清理）。
+  // 查询/范围变化 → 清旧高亮 → 重新查找（组件卸载时兜底清理）。
+  // 译文层探测按 getRoot() 的真实正文——与查询是否为空无关（空查询时
+  // 范围选择仍需正确显示）。
   useEffect(() => {
     if (!open) return
     clearFindHighlights()
+    setTranslationAvailable(hasTranslationLayer(getRoot()))
     const trimmed = query.trim()
     const root = trimmed === '' ? null : getRoot()
     if (root === null) {
@@ -55,7 +82,7 @@ export default function ArticleFindBar({ open, onClose, getRoot }: ArticleFindBa
       setCurrent(0)
       return
     }
-    const matches = findMatches(root, trimmed)
+    const matches = findMatches(root, trimmed, scope)
     matchesRef.current = matches
     setTotal(matches.length)
     setCurrent(0)
@@ -68,7 +95,7 @@ export default function ArticleFindBar({ open, onClose, getRoot }: ArticleFindBa
       clearFindHighlights()
       matchesRef.current = []
     }
-  }, [query, open, getRoot])
+  }, [query, scope, open, getRoot])
 
   if (!open) return null
 
@@ -113,6 +140,32 @@ export default function ArticleFindBar({ open, onClose, getRoot }: ArticleFindBa
         }}
         className="min-h-8 w-full min-w-0 bg-transparent text-sm text-[var(--lumi-text-primary)] outline-none placeholder:text-[var(--lumi-text-tertiary)]"
       />
+      {/* NEW-356：查找范围（仅译文层存在时出现；默认双层 = 既有行为） */}
+      {translationAvailable && (
+        <div
+          role="radiogroup"
+          aria-label="查找范围"
+          data-lumi-find-scope=""
+          className="flex shrink-0 items-center gap-0.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-0.5"
+        >
+          {FIND_SCOPE_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={scope === option.value}
+              onClick={() => setScope(option.value)}
+              className={
+                scope === option.value
+                  ? 'min-h-7 rounded-[var(--lumi-radius-sm)] bg-[var(--lumi-accent-soft)] px-1.5 text-xs font-medium text-[var(--lumi-accent-text)]'
+                  : 'min-h-7 rounded-[var(--lumi-radius-sm)] px-1.5 text-xs text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)]'
+              }
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
       {/* 命中计数（aria-live）：0 命中诚实显示「无结果」。 */}
       <span
         aria-live="polite"

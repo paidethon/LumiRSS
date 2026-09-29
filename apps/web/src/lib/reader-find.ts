@@ -35,9 +35,29 @@ function rangeOf(match: FindMatch): Range {
   return range
 }
 
+/** NEW-356：查找范围——原文层 / 译文层 / 双层（默认双层 = 既有行为）。
+ * 译文层 = translation-blocks overlay 注入的 .lb-translation 节点
+ * （textContent 注入，查找遍历天然可见）。 */
+export type FindScope = 'all' | 'original' | 'translated'
+
+export const TRANSLATION_LAYER_SELECTOR = '.lb-translation'
+
+/** 正文是否含译文层（双语/仅译文 overlay 已注入）。无 root → false。 */
+export function hasTranslationLayer(root: HTMLElement | null): boolean {
+  return root !== null && root.querySelector(TRANSLATION_LAYER_SELECTOR) !== null
+}
+
+/** 范围过滤器：Text 节点是否落在查找层内（TreeWalker acceptNode 用）。 */
+function nodeInScope(node: Text, scope: FindScope): boolean {
+  if (scope === 'all') return true
+  const inTranslation = node.parentElement?.closest(TRANSLATION_LAYER_SELECTOR) !== null
+  return scope === 'translated' ? inTranslation : !inTranslation
+}
+
 /** 在 root 内查找查询串的全部命中（按文档序）。查询首尾去空格后
- * 大小写不敏感；空查询返回 []。 */
-export function findMatches(root: HTMLElement, query: string): FindMatch[] {
+ * 大小写不敏感；空查询返回 []。scope 缺省 'all'（= 既有行为，向后
+ * 兼容）；'original' 跳过译文节点、'translated' 只查译文节点。 */
+export function findMatches(root: HTMLElement, query: string, scope: FindScope = 'all'): FindMatch[] {
   const needle = query.trim().toLowerCase()
   if (needle === '') return []
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
@@ -46,6 +66,7 @@ export function findMatches(root: HTMLElement, query: string): FindMatch[] {
       if (parent === null || parent.closest(SKIP_SELECTOR) !== null) {
         return NodeFilter.FILTER_REJECT
       }
+      if (!nodeInScope(node as Text, scope)) return NodeFilter.FILTER_REJECT
       return NodeFilter.FILTER_ACCEPT
     },
   })

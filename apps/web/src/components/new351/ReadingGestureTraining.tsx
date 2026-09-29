@@ -25,7 +25,6 @@ import {
   swipeStartCandidate,
 } from '../../lib/edge-swipe'
 import { SWIPE_ACTION_LABELS } from '../../lib/card-swipe'
-import { READING_GESTURES } from '../../lib/reading-gesture-training'
 
 /** 演练台账容量（防刷屏；与触控练习区同量级）。 */
 export const TRAINING_LEDGER_CAP = 20

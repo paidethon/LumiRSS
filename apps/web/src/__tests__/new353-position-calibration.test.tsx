@@ -32,7 +32,7 @@ function buildArticle(): HTMLElement {
       <p></p>
     </article>`
   document.body.appendChild(host)
-  return host.querySelector('article')
+  return host.querySelector('article') as HTMLElement
 }
 
 /** 无章节 id 的正文（全部归入全文组）。 */
@@ -47,7 +47,7 @@ function buildPlainArticle(): HTMLElement {
       <blockquote>丁块的完整文本内容</blockquote>
     </article>`
   document.body.appendChild(host)
-  return host.querySelector('article')
+  return host.querySelector('article') as HTMLElement
 }
 
 beforeEach(() => {
