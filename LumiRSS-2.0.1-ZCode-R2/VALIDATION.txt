@@ -1,4 +1,0 @@
-PLAN_OK: FIX=400, NEW=400, Skills=20, MCP=10, Agents=10.
-ID sets, exact descriptions, Markdown/JSON parity and source entries checked.
-NOT A DELIVERY CHECK: semantic novelty, defects, tool use, tests and
-production deployment still require real execution and independent review.
