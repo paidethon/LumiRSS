@@ -181,16 +181,19 @@ async def _system_counts(request: Request) -> dict[str, int]:
     except Exception:  # noqa: BLE001 — unmigrated control DB → honest zeros
         pass
     # Own-scope (RoutingDatabase under the authenticated admin's context).
+    # FIX-162：管理面绝不触发阅读侧重活——管理员自己的库尚未物化时如实
+    # 零计数，不再为了诊断计数强制建立整套阅读 schema；库已存在（登录后
+    # 正常情况）时行为与旧实现完全一致。
     db = request.app.state.db
     try:
-        await db.migrate()
-        for key, table in (
-            ("feeds", "search_feeds"),
-            ("entriesIndexed", "search_entries"),
-            ("libraryItems", "library_items"),
-        ):
-            row = await db.fetch_one(f"SELECT COUNT(*) AS n FROM {table}", ())
-            counts[key] = int(row["n"]) if row else 0
+        if db.path.exists():
+            for key, table in (
+                ("feeds", "search_feeds"),
+                ("entriesIndexed", "search_entries"),
+                ("libraryItems", "library_items"),
+            ):
+                row = await db.fetch_one(f"SELECT COUNT(*) AS n FROM {table}", ())
+                counts[key] = int(row["n"]) if row else 0
     except Exception:  # noqa: BLE001 — unmigrated user DB → honest zeros
         pass
     return counts

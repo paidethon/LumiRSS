@@ -385,12 +385,16 @@ async def pool_status(request: Request) -> JSONResponse:
         if user["role"] == "owner":
             continue
         row = None
-        with user_context(str(user["id"])):
-            try:
-                await request.app.state.db.migrate()
-                row = await request.app.state.db.fetch_one("SELECT username, base_url FROM freshrss_binding WHERE id = 1")
-            except Exception:  # noqa: BLE001 — unbound counts as pending
-                row = None
+        # FIX-162：管理面绝不触发阅读侧重活。绑定行只可能存在于已迁移的
+        # 用户库（bind_freshrss_account 先迁移后写），库文件不存在 =
+        # 诚实 unbound；不再为看一眼绑定状态就 migrate() 物化整个阅读
+        # schema（旧实现会给每个成员库跑迁移副作用）。
+        if request.app.state.db.user_db_path(str(user["id"])).exists():
+            with user_context(str(user["id"])):
+                try:
+                    row = await request.app.state.db.fetch_one("SELECT username, base_url FROM freshrss_binding WHERE id = 1")
+                except Exception:  # noqa: BLE001 — unbound counts as pending
+                    row = None
         members.append({"id": str(user["id"]), "username": str(user["username"]), "bound": bool(row), "boundTo": str(row["username"]) if row else None})
     return {
         "ready": counts.get("ready", 0),
