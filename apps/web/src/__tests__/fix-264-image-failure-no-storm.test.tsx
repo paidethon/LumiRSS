@@ -133,8 +133,8 @@ describe('FIX-264: 失败图片不改写地址、不形成重试风暴', () => {
     fireEvent.click(reload)
     // 恰好一次 cache-bust：src 变为带 lumi-rb 的地址，且只此一次
     await waitFor(() => expect(img.getAttribute('src')).toContain('lumi-rb='))
-    expect(img.getAttribute('src').startsWith(`${BAD_SRC}?lumi-rb=`)).toBe(true)
-    const bustedSrc = img.getAttribute('src')
+    const bustedSrc = img.getAttribute('src') as string
+    expect(bustedSrc.startsWith(`${BAD_SRC}?lumi-rb=`)).toBe(true)
     // 真实浏览器里 busted 地址再次失败 → error 上报 → 查询失效重拉 →
     // 重渲染后按钮呈现「已重载」禁用（jsdom 无网络加载器，手动触发）。
     fireEvent.error(img)
