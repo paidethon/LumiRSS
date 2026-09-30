@@ -1895,8 +1895,11 @@ export default function ReaderHeader({
         {readingTime !== null && <span>· {readingTime}</span>}
       </p>
 
-      {/* 强标题（Folo 锚点 27px/700；移动端略小） */}
-      <h1 className="mt-2 text-[1.7rem] font-bold leading-snug text-[var(--lumi-text-primary)] max-lg:text-2xl max-lg:leading-tight">
+      {/* 强标题（Folo 锚点 27px/700；移动端略小）。
+          FIX-082：标题本身可能是长 URL/长英文单词（CJK 天然可断行），
+          break-words 让超长 token 在标题容器内换行，不横向撑破阅读列
+          （与正文 .article-content word-break: break-word 同一兜底档）。 */}
+      <h1 className="mt-2 break-words text-[1.7rem] font-bold leading-snug text-[var(--lumi-text-primary)] max-lg:text-2xl max-lg:leading-tight">
         {detail.title}
       </h1>
 
