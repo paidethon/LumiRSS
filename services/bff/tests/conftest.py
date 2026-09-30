@@ -8,7 +8,21 @@ the FreshRSS backup path set their own fixture directory via monkeypatch,
 which overrides this default.
 """
 
+import os
+
 import pytest
+
+# 测试对机器本地 services/bff/.env 封闭：pydantic dotenv 的值优先级低于
+# 进程 env，session 启动时显式置空这些变量即固定为「未配置 FreshRSS」的
+# 确定性状态（owner_migration 不再向 owner 库种子 env 绑定）。需要配置态
+# 的测试用 monkeypatch.setenv 显式给值，后者总是覆盖这里的空值。
+for _var in (
+    "FRESHRSS_BASE_URL",
+    "FRESHRSS_USERNAME",
+    "FRESHRSS_API_PASSWORD",
+    "FRESHRSS_PUBLIC_URL",
+):
+    os.environ.setdefault(_var, "")
 
 
 @pytest.fixture(autouse=True)
