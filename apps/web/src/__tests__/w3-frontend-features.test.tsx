@@ -10,7 +10,7 @@ import {
   LINKED_SCROLL_WINDOW_MS,
 } from '../lib/linked-scroll'
 import { collectArticleLinks, displayUrl, groupLinksByHost } from '../lib/collect-article-links'
-import { transformFootnotes, readFootnoteDefinition, FOOTNOTE_DEFS_CONTAINER_ID } from '../lib/footnotes'
+import { collectFootnotes, decorateFootnoteReferences, readFootnoteDefinition, FOOTNOTE_DEFS_CONTAINER_ID } from '../lib/footnotes'
 import { firstMathMatch, containsMathMarker } from '../lib/katex-render'
 
 describe('F047 RSSHub 参数编辑', () => {
@@ -115,8 +115,8 @@ describe('F054 文中链接', () => {
   })
 })
 
-describe('F059 脚注往返', () => {
-  it('F059: 引用替换为受控按钮（键盘可达 + aria-label），缺失定义不渲染', () => {
+describe('F059 脚注往返（FIX-262 两段式）', () => {
+  it('管线段：定义收进隐藏容器（经得起 sanitize 的 div+data-*），引用保持锚点', () => {
     const doc = new DOMParser().parseFromString(
       `<article>
         <p>正文一<sup><a href="#fn1">[1]</a></sup>，多引用<sup><a href="#fn1">[1]</a></sup>。</p>
@@ -125,25 +125,44 @@ describe('F059 脚注往返', () => {
       </article>`,
       'text/html',
     )
-    const count = transformFootnotes(doc)
-    expect(count).toBe(2) // fn1 的两处引用；fn9 缺定义不渲染
-    const buttons = doc.querySelectorAll('button[data-lumi-fn-ref]')
-    expect(buttons.length).toBe(2)
-    buttons.forEach((button) => {
-      expect(button.getAttribute('aria-label')).toBe('查看脚注 1')
-      expect(button.getAttribute('type')).toBe('button')
-    })
-    // 各自保留返回位置
-    const seqs = [...buttons].map((b) => b.getAttribute('data-lumi-fn-return'))
-    expect(new Set(seqs).size).toBe(2)
-    // 定义容器存在且隐藏
+    const defs = collectFootnotes(doc)
+    expect(defs).toBe(1) // fn1；fn9 无定义不收录
+    // 引用锚点原样保留（按钮化在渲染后装饰段——FORBID_TAGS 含 button，
+    // 管线内造的按钮过不了最终边界，这正是 FIX-262 的根因）
+    expect(doc.querySelectorAll('sup a[href="#fn1"]').length).toBe(2)
+    // 定义容器存在且隐藏；裸反向链接已摘除；缺定义未收录
     const container = doc.getElementById(FOOTNOTE_DEFS_CONTAINER_ID)
     expect(container?.hidden).toBe(true)
-    // 缺失定义未收录
     expect(container?.querySelector('[data-lumi-fn-def="9"]')).toBeNull()
+    expect(container?.querySelector('a[href^="#fnref"]')).toBeNull()
     // 定义可读（含净化前的内容；弹层展示时调用方需再 sanitize）
     const html = readFootnoteDefinition(doc, '1')
     expect(html).toContain('脚注内容')
+  })
+
+  it('渲染后装饰段：引用锚点 → 受控按钮（键盘可达 + 往返 data 属性），缺定义不装饰', () => {
+    const doc = new DOMParser().parseFromString(
+      `<article>
+        <p>正文一<sup><a href="#fn1">[1]</a></sup>，多引用<sup><a href="#fn1">[1]</a></sup>。</p>
+        <p>缺定义<sup><a href="#fn9">[9]</a></sup>。</p>
+        <div id="${FOOTNOTE_DEFS_CONTAINER_ID}" hidden><div data-lumi-fn-def="1">脚注内容</div></div>
+      </article>`,
+      'text/html',
+    )
+    const container = doc.body as HTMLElement
+    decorateFootnoteReferences(container)
+    const buttons = doc.querySelectorAll('button[data-lumi-fn-ref]')
+    expect(buttons.length).toBe(2) // fn1 两处；fn9 缺定义保持锚点
+    buttons.forEach((button) => {
+      expect(button.getAttribute('aria-label')).toBe('查看脚注 1')
+      expect(button.getAttribute('type')).toBe('button')
+      expect(button.getAttribute('data-lumi-fn-key')).toBe('1')
+    })
+    // 各自保留返回位置（弹层「返回引用」据此找回触发节点）
+    const seqs = [...buttons].map((b) => b.getAttribute('data-lumi-fn-return'))
+    expect(new Set(seqs).size).toBe(2)
+    // 缺定义引用仍是锚点（诚实降级，不臆造按钮）
+    expect(doc.querySelector('a[href="#fn9"]')).not.toBeNull()
   })
 })
 
