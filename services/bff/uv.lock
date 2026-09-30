@@ -660,6 +660,7 @@ version = "2.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "bcrypt" },
+    { name = "cryptography" },
     { name = "defusedxml" },
     { name = "fastapi" },
     { name = "feedparser" },
@@ -690,6 +691,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "bcrypt", specifier = ">=4.0" },
+    { name = "cryptography", specifier = ">=41" },
     { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "fastembed", marker = "extra == 'rag'", specifier = ">=0.7" },
