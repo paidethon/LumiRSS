@@ -531,8 +531,20 @@ class ObsidianService:
                     added_paths.append(rel)
                 truncated_notes += int(note["truncated"])
                 continue
-            if existing["fingerprint"] == note["fingerprint"]:
+            if (
+                existing["fingerprint"] == note["fingerprint"]
+                and existing["content_hash"] == note["content_hash"]
+            ):
                 unchanged += 1
+                truncated_notes += int(note["truncated"])
+                continue
+            # FIX-339：指纹打平（同长度修改落在同一 mtime 粒度内）但内容
+            # 摘要变化 → 真实修改。parse_note 每次扫描本就计算 content_hash，
+            # 此处零额外 I/O；不核对摘要会把索引内容静默留在旧版本上。
+            if existing["fingerprint"] == note["fingerprint"]:
+                updates.append((existing["item_uuid"], note, "change"))
+                changed += 1
+                changed_paths.append(rel)
                 truncated_notes += int(note["truncated"])
                 continue
             updates.append((existing["item_uuid"], note, "change"))

@@ -78,15 +78,29 @@ def validate_ignore_globs(raw: Any) -> list[str]:
     return patterns
 
 
+def _posix_separators(value: str) -> str:
+    """FIX-332：反斜杠分隔符 → 正斜杠（忽略规则与 rel_path 同一口径）。"""
+    return value.replace("\\", "/")
+
+
 def is_ignored(rel_path: str, patterns: list[str]) -> bool:
-    """rel path 或其任一父目录命中任一 glob → 忽略整枝。"""
-    parts = rel_path.split("/")
+    """rel path 或其任一父目录命中任一 glob → 忽略整枝。
+
+    FIX-332：模式与路径先统一归一到 posix 分隔符再匹配。Windows 书写
+    的忽略规则（``archive\\private``）与服务端 walk 产出的 posix
+    rel_path 必须命中同一规则；不归一时 posix fnmatch 把 ``\\`` 当转义
+    符（``\\*`` = 字面星号），规则静默失效。
+    """
+    normalized_path = _posix_separators(rel_path)
+    parts = normalized_path.split("/")
     prefixes = ["/".join(parts[: i + 1]) for i in range(1, len(parts))]
     for pattern in patterns:
-        if fnmatch.fnmatch(rel_path, pattern):
+        normalized = _posix_separators(pattern).rstrip("/")
+        if not normalized:
+            continue
+        if fnmatch.fnmatch(normalized_path, normalized):
             return True
-        trimmed = pattern.rstrip("/")
-        if trimmed and any(fnmatch.fnmatch(prefix, trimmed) for prefix in prefixes):
+        if any(fnmatch.fnmatch(prefix, normalized) for prefix in prefixes):
             return True
     return False
 
@@ -319,7 +333,13 @@ class RootProfileStore:
                 new_rows.append((str(_uuid.uuid4()), note))
                 added += 1
                 continue
-            if existing["fingerprint"] == note["fingerprint"]:
+            if (
+                existing["fingerprint"] == note["fingerprint"]
+                and existing["content_hash"] == note["content_hash"]
+            ):
+                # FIX-339：指纹打平且摘要一致才短路；同长度修改落在同一
+                # mtime 粒度内时摘要已在手，照常进入 changed（走下方
+                # hash_only=False 的全量更新）。
                 unchanged += 1
                 continue
             hash_only = existing["content_hash"] == note["content_hash"]

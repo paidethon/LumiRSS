@@ -10,6 +10,8 @@
 - 重写：收录附件的引用改写为包内相对链接 ``../attachments/<名>``；
   未收录（越界 / 缺失 / 扩展名不允许 / 超预算）的引用以 HTML 注释
   如实标记并从内容中移除——包内绝不残留指向包外的文件引用；
+  FIX-340：普通链接（非图片）指向本机路径（绝对路径/file:/盘符/UNC/
+  越出包根 ``..``）同样移除——公共包不暴露主机目录与用户名；
 - 终检：重写后再扫一遍全部链接目标，凡 ``..``、绝对路径、file: 即
   violation（双保险，结果随台账如实落库）；
 - zip 即时组装返回（notes/ + attachments/ + manifest.json），不落
@@ -45,7 +47,38 @@ ALLOWED_ATTACHMENT_EXTS = frozenset(
 
 _EMBED_RE = re.compile(r"!\[\[([^\]]+)\]\]")
 _MD_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)\s]+)\)")
+# FIX-340：普通 Markdown 链接（非图片；lookbehind 避开 ![...](...)——
+# 图片腿已按附件语义处理，改写出的 ../attachments/ 相对链接不得二次吃）。
+_MD_LINK_RE = re.compile(r"(?<!\!)\[([^\]]*)\]\(([^)\s]+)\)")
 _SAFE_NAME_RE = re.compile(r"[/\\:*?\"<>|]")
+
+# FIX-340：本机路径链接移除后留下的诚实注释（包内不残留主机目录/用户名）。
+_LOCAL_LINK_MARKER = (
+    "<!-- LumiRSS：此处链接指向本机路径（绝对路径/file:/盘符/越出包根），"
+    "公共包不携带，详见 manifest violations -->"
+)
+
+
+def _is_host_local_target(target: str) -> bool:
+    """FIX-340：链接目标暴露本机目录/用户名 → 不可进公共包。
+
+    覆盖：``file:`` URI、POSIX 绝对路径（``/home/<user>/…``）、Windows
+    盘符（``C:\\``/``C:/``）、UNC（``\\\\server\\…``）、越出包根的
+    ``..``。协议相对 URL（``//host/x``）、http(s)/obsidian:/data: 等
+    远程或逻辑链接不受影响。"""
+    clean = target.strip()
+    if not clean:
+        return False
+    if clean.lower().startswith("file:"):
+        return True
+    # ``//host/x`` 是协议相对远程 URL，不是本机绝对路径。
+    if clean.startswith("/") and not clean.startswith("//"):
+        return True
+    if clean.startswith("\\\\"):
+        return True
+    if len(clean) >= 2 and clean[1] == ":":
+        return True
+    return clean.startswith("..")
 
 
 class BundleInvalid(ValueError):
@@ -274,8 +307,27 @@ class PortableBundleBuilder:
                 return "<!-- LumiRSS：此处附件未打包（越界/缺失/不允许），详见 manifest violations -->"
             return f"![{alt}]({relative})"
 
+        def rewrite_link(match: re.Match[str]) -> str:
+            """FIX-340：普通链接指向本机路径 → 移除 + 如实记 violation。"""
+            target = match.group(2)
+            if not _is_host_local_target(target):
+                return match.group(0)
+            violations.append(
+                {
+                    "kind": "local_path_link",
+                    "detail": (
+                        f"链接 {target} 指向本机路径（绝对路径/file:/盘符/"
+                        "越出包根），已从公共包移除。"
+                    ),
+                }
+            )
+            return _LOCAL_LINK_MARKER
+
         new_text = _EMBED_RE.sub(rewrite_embed, text)
         new_text = _MD_IMAGE_RE.sub(rewrite_image, new_text)
+        # FIX-340：普通链接同样不得把本机绝对路径/用户名带进公共包
+        # （在图片腿之后运行，lookbehind 保护改写出的 ../attachments/）。
+        new_text = _MD_LINK_RE.sub(rewrite_link, new_text)
         return new_text, included
 
     def _final_boundary_check(
@@ -284,33 +336,53 @@ class PortableBundleBuilder:
         """终检：包内任何笔记不得残留越界文件引用（双保险）。
 
         引用按其在包内的位置解析（notes/<名>.md 的相对目标 → 包根下
-        归一化）；解析后越出包根（仍带 ..）、绝对路径、file: → 违规。
-        ``../attachments/<名>`` 是正确的包内相对链接，不违规。"""
+        归一化）；解析后越出包根（仍带 ..）、绝对路径、file:、盘符、
+        UNC → 违规。``../attachments/<名>`` 是正确的包内相对链接，不
+        违规。FIX-340：普通链接（非图片）与图片同一裁决口径。"""
         violations: list[dict[str, str]] = []
         for arcname, data in files.items():
             text = data.decode("utf-8", errors="replace")
             base_dir = posixpath.dirname(arcname)
             for match in _MD_IMAGE_RE.finditer(text):
                 src = match.group(2).strip()
-                if _is_remote(src) or src.startswith("#"):
-                    continue
-                if src.startswith("/") or "\\\\" in src or src.lower().startswith("file:"):
+                reason = self._out_of_package_reason(src, base_dir)
+                if reason is not None:
                     violations.append(
                         {
                             "kind": "out_of_bounds_reference",
-                            "detail": f"终检发现 {arcname} 残留越界引用 {src}（绝对路径不允许）。",
+                            "detail": f"终检发现 {arcname} 残留越界图片引用 {src}（{reason}）。",
                         }
                     )
-                    continue
-                resolved = posixpath.normpath(posixpath.join(base_dir, src))
-                if resolved.startswith("..") or resolved == "." :
+            for match in _MD_LINK_RE.finditer(text):
+                src = match.group(2).strip()
+                reason = self._out_of_package_reason(src, base_dir)
+                if reason is not None:
                     violations.append(
                         {
                             "kind": "out_of_bounds_reference",
-                            "detail": f"终检发现 {arcname} 残留越界引用 {src}（越出包根）。",
+                            "detail": f"终检发现 {arcname} 残留越界链接 {src}（{reason}）。",
                         }
                     )
         return violations
+
+    @staticmethod
+    def _out_of_package_reason(src: str, base_dir: str) -> str | None:
+        """FIX-340：包内引用越界/暴露主机路径 → 返回原因；None = 合规。"""
+        target = src.strip()
+        if not target or target.startswith("#"):
+            return None
+        if _is_remote(target) or target.lower().startswith("file:"):
+            # 远程与逻辑链接（http(s)/obsidian:/data:）可移植；file:
+            # 是本机路径，绝不放行。
+            return "绝对路径不允许" if target.lower().startswith("file:") else None
+        if target.startswith("/") or target.startswith("\\\\"):
+            return "绝对路径不允许"
+        if len(target) >= 2 and target[1] == ":":
+            return "绝对路径不允许"
+        resolved = posixpath.normpath(posixpath.join(base_dir, target))
+        if resolved.startswith("..") or resolved == ".":
+            return "越出包根"
+        return None
 
     def build_zip(self, manifest: dict[str, Any], files: dict[str, bytes]) -> bytes:
         buffer = io.BytesIO()
