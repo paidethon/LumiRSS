@@ -444,8 +444,10 @@ export default function App() {
 
         {/* ===== 全宽页面区（M1 布局契约）：agent / graph 桌面独占主区 =====
             仅 lg 渲染本体（移动端走上方 section 区）；挂载期间下方
-            Timeline / 分隔条 / Reader 整体不渲染。 */}
-        {FULL_WIDTH_SECTIONS.has(section) && (
+            Timeline / 分隔条 / Reader 整体不渲染。
+            FIX-096：移动端（<1024）桌面本体不挂载——否则与上方移动
+            section 区双挂载同一业务页面（各自持状态/effect）。 */}
+        {!mobileViewport && FULL_WIDTH_SECTIONS.has(section) && (
           <section
             className="hidden min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--lumi-surface)] lg:flex"
             aria-label={section === 'agent' ? 'Agent 工作台' : '标签与图谱'}
@@ -475,9 +477,13 @@ export default function App() {
         >
           {/* 0022：桌面（lg）搜索 = Timeline 列位；移动端走上方 section 区。
               phase2 M1：书签/工作区列表同模式（桌面 Timeline 列位）。
-              hidden 包裹避免移动端双挂载（可见性仍是每视口单一实例）。
-              agent/graph 是全宽 section（M1），不进入本三栏分支。 */}
-          {section === 'search' ? (
+              FIX-096：移动端（<1024）本列由 CSS 隐藏（max-lg:hidden），
+              页面若仍在此挂载会与上方移动 section 区双挂载（各自持
+              本地状态、各自跑一次性 effect）——移动端此列不挂载页面，
+              桌面（lg）行为不变。home 的 EntryList 仍走本列（移动端
+              唯一实例，不属双挂载）。agent/graph 是全宽 section（M1），
+              不进入本三栏分支。 */}
+          {mobileViewport && section !== 'home' ? null : section === 'search' ? (
             <div className="hidden min-h-0 flex-1 flex-col lg:flex">
               <RouteBoundary label="搜索">
                 <SearchPage />
