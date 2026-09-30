@@ -6,6 +6,8 @@ background-task pause (N193). Routes moved verbatim from the former
 ``routers/admin.py`` monolith.
 """
 
+import asyncio
+
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -257,7 +259,10 @@ async def reset_user_password(user_id: str, request: Request) -> JSONResponse:
         return _forbid("The owner account password cannot be reset here.")
     import secrets as _secrets
 
-    await accounts.set_password_hash(user_id, hash_password(_secrets.token_urlsafe(24)))
+    # FIX-165：bcrypt 实测 ~189ms/次（rounds=12）——哈希在 worker 线程
+    # 执行，事件循环在整段计算期间保持可用。
+    password_hash = await asyncio.to_thread(hash_password, _secrets.token_urlsafe(24))
+    await accounts.set_password_hash(user_id, password_hash)
     await AuthStore(request.app.state.control_db).revoke_all_sessions(user_id=user_id)
     raw, invite = await accounts.create_invite(
         created_by=principal["user_id"],
