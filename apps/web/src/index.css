@@ -1035,3 +1035,12 @@ button.lumi-manual-media:hover {
   border-radius: 3px;
   box-shadow: 0 0 0 2px var(--lumi-accent-soft);
 }
+
+/* FIX-272：三栏分隔条拖拽期间（PaneSeparator 挂上/摘下该类）抑制
+   文本选择——跨过正文拖动不产生选区；pointerup/pointercancel 后恢复
+   正常复制。 */
+.lumi-pane-dragging,
+.lumi-pane-dragging * {
+  user-select: none;
+  -webkit-user-select: none;
+}
