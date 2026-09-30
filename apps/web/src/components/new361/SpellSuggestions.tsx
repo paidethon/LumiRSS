@@ -25,12 +25,22 @@ export function SpellSuggestions({
     enabled,
     staleTime: 30_000,
   })
-  if (!enabled || spell.data === undefined || spell.data.candidates.length === 0) {
+  if (!enabled || spell.data === undefined) {
+    return null
+  }
+  // 响应容错：缺 candidates 字段按空表处理（不因形状不符崩溃）。
+  const rawCandidates = Array.isArray(spell.data.candidates) ? spell.data.candidates : []
+  if (rawCandidates.length === 0) {
     return null
   }
   const suggestions = Array.from(
-    new Set(spell.data.candidates.map((candidate) => candidate.suggestion)),
-  ).slice(0, 6)
+    new Set(rawCandidates.map((candidate) => candidate.suggestion)),
+  )
+    .filter((suggestion) => typeof suggestion === 'string' && suggestion !== '')
+    .slice(0, 6)
+  if (suggestions.length === 0) {
+    return null
+  }
 
   return (
     <div

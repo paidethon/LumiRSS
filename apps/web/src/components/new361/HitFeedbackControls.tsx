@@ -78,7 +78,7 @@ export function HitFeedbackControls({
             value={reason}
             onChange={(event) => setReason(event.target.value)}
             placeholder="原因（可选）"
-            className="h-7 w-40 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 text-xs text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+            className="min-h-7 w-40 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 text-xs text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
           />
           <Button
             size="sm"

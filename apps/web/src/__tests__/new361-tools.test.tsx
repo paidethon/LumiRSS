@@ -23,6 +23,7 @@ import {
   RankingSchemeToggle,
 } from '../components/new361/HitFeedbackControls'
 import type { FieldHitItem } from '../api/new361'
+import { buildAdvancedSearchUrl } from '../lib/search-advanced'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -214,6 +215,12 @@ describe('NEW-364 作者与来源交叉筛选', () => {
     expect(screen.getByText(/当前组合实际命中 3 条/)).toBeTruthy()
     fireEvent.click(screen.getAllByTestId('n364-author')[0])
     expect(onSelectAuthor).toHaveBeenCalledWith('王研究')
+  })
+
+  it('SearchPage 接线：author 条件经专用查询链进入 /search URL', () => {
+    const url = buildAdvancedSearchUrl({ q: '光栅', author: '王研究' })
+    expect(url).toContain('author=')
+    expect(buildAdvancedSearchUrl({ q: '光栅', author: null })).not.toContain('author=')
   })
 })
 

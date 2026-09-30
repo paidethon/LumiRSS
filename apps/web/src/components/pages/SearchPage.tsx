@@ -21,7 +21,7 @@
  */
 
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
-import { useInfiniteQuery, keepPreviousData, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery, keepPreviousData, useQueryClient } from '@tanstack/react-query'
 import { BarChart3, Calendar, Camera, GitCompare, LineChart, Loader2, Pencil, Rss, Search, SearchX, SlidersHorizontal, Sparkles, Unlink, X } from 'lucide-react'
 import {
   SEARCH_RESULTS_KEY,
@@ -73,6 +73,22 @@ import { SearchDistributionPanel } from '../SearchDistributionPanel'
 import { SearchBasketPanel } from '../SearchBasketPanel'
 import { SearchSnapshotPanel } from '../SearchSnapshotPanel'
 import { SearchTimelinePanel } from '../SearchTimelinePanel'
+// NEW-361..370：搜索表达、专题发现与回溯（components/new361/*）
+import { TimeBrushPanel } from '../new361/TimeBrushPanel'
+import { SimilarTitleCandidatesPanel } from '../new361/SimilarTitleCandidatesPanel'
+import { FieldHitBadges } from '../new361/FieldHitBadges'
+import { AuthorSourceFacetsPanel } from '../new361/AuthorSourceFacetsPanel'
+import { ExclusionSuggestionsPanel } from '../new361/ExclusionSuggestionsPanel'
+import { ParagraphHitsPanel } from '../new361/ParagraphHitsPanel'
+import { SearchSessionPanel } from '../new361/SearchSessionPanel'
+import { SpellSuggestions } from '../new361/SpellSuggestions'
+import { LanguageGroupsPanel } from '../new361/LanguageGroupsPanel'
+import {
+  FeedbackSummary,
+  HitFeedbackControls,
+  RankingSchemeToggle,
+} from '../new361/HitFeedbackControls'
+import { fetchHitFeedback, postFieldHits, type FieldHitItem } from '../../api/new361'
 import { SaveSearchDialog } from '../SaveSearchDialog'
 import { SimilarTitleBadge } from '../SimilarTitleBadge'
 import {
@@ -278,6 +294,8 @@ function ResultRow({
   lastSyncedAt,
   libraryError,
   similarItems,
+  fieldHit,
+  feedbackQuery,
 }: {
   item: SearchItem
   terms: string[]
@@ -285,11 +303,25 @@ function ResultRow({
   lastSyncedAt: string | null
   libraryError: string | null
   similarItems: SearchItem[]
+  /** NEW-363：该行命中字段归位（未启用/未取到 → null，不渲染徽标）。 */
+  fieldHit?: FieldHitItem | null
+  /** NEW-370：非空 = 渲染「有用/无关」评注控件（对该查询的该命中）。 */
+  feedbackQuery?: string
 }) {
   const selectEntry = useReaderUi((s) => s.selectEntry)
   const selectedEntryRef = useReaderUi((s) => s.selectedEntryRef)
   const timeFormat = useAppSettings((s) => s.settings.listTimeFormat)
   const selected = selectedEntryRef === item.entryRef
+  // NEW-363：点击字段徽标 → 定位。正文走 F072 偏移暂存；其余字段打开
+  // 文章（标题在首屏；作者/来源/笔记在文章头与批注层可见）。
+  const locateField = (field: string) => {
+    if (field === 'content') {
+      const hits = (item as SearchItem & { matchPositions?: { offset: number; term: string }[] | null })
+        .matchPositions
+      stashSearchHits(item.entryRef, hits ?? [])
+    }
+    selectEntry(item.entryRef)
+  }
   return (
     // Phase H/I：视口外行跳过 layout/paint（与 EntryList 同一策略）。
     // P2：来源行与打开按钮平级（来源可点击进入该订阅范围，不嵌套按钮）。
@@ -321,7 +353,8 @@ function ResultRow({
             />
           )}
         </div>
-        {/* F074：命中解释徽标 +「为什么匹配」popover；N148：相似标题 chip */}
+        {/* F074：命中解释徽标 +「为什么匹配」popover；N148：相似标题 chip；
+            NEW-363：跨字段命中定位徽标（含本人笔记列） */}
         <div className="flex flex-wrap items-center gap-1.5">
           {(item.matchedFields?.length ?? 0) > 0 && (
             <MatchExplainBadges
@@ -332,7 +365,15 @@ function ResultRow({
             />
           )}
           <SimilarTitleBadge item={item} similarItems={similarItems} />
+          {fieldHit !== undefined && fieldHit !== null && (
+            <FieldHitBadges hit={fieldHit} onLocate={locateField} />
+          )}
         </div>
+        {feedbackQuery !== undefined && feedbackQuery !== '' && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <HitFeedbackControls query={feedbackQuery} entryRef={item.entryRef} />
+          </div>
+        )}
         <button
           type="button"
           onClick={() => {
@@ -476,6 +517,13 @@ export default function SearchPage() {
   >(
     null,
   )
+  // NEW-361..370：研究工具区（情境展开，默认折叠零请求）+ NEW-364
+  // 作者过滤（经专用查询链进入 /search 的 author 参数）+ NEW-363
+  // 字段标注开关（默认关：不逐页多打 field-hits 请求）。
+  const [researchOpen, setResearchOpen] = useState(false)
+  const [authorFilter, setAuthorFilter] = useState<string | null>(null)
+  const [fieldHitsEnabled, setFieldHitsEnabled] = useState(false)
+  const [fieldHits, setFieldHits] = useState<Map<string, FieldHitItem>>(new Map())
   const togglePanel = (
     panel: 'parse' | 'why' | 'distribution' | 'basket' | 'snapshots' | 'timeline',
   ) => {
@@ -686,6 +734,7 @@ export default function SearchPage() {
         unread: builder.unread,
         favoriteB: builder.favorite,
         hasSummary: builder.hasSummary,
+        author: authorFilter,
       },
     ],
     initialPageParam: null as string | null,
@@ -708,18 +757,20 @@ export default function SearchPage() {
               ? true
               : null,
           hasSummary: builder.hasSummary,
+          author: authorFilter,
         },
         signal,
       ),
     getNextPageParam: (lastPage) =>
       lastPage.hasMore && lastPage.nextCursor != null ? lastPage.nextCursor : undefined,
-    enabled: hasQuery && (advancedMode || builderActive),
+    enabled: hasQuery && (advancedMode || builderActive || authorFilter !== null),
     placeholderData: keepPreviousData,
     maxPages: 50,
   })
 
-  // 两种模式的查询结果统一取用（高级/日期模式走专用查询，否则走 useSearch）
-  const activeQuery = advancedMode || builderActive ? advancedSearch : search
+  // 两种模式的查询结果统一取用（高级/日期/作者模式走专用查询，否则走 useSearch）
+  const activeQuery =
+    advancedMode || builderActive || authorFilter !== null ? advancedSearch : search
   const { data, isPending, isError, error, refetch, hasNextPage, isFetchingNextPage, fetchNextPage } =
     activeQuery
 
@@ -765,6 +816,44 @@ export default function SearchPage() {
     for (const item of results) map.set(item.entryRef, item)
     return map
   }, [results])
+
+  // NEW-363：字段标注（显式开启后才对当前可见结果批量归位；≤20 条/
+  // 请求；失败诚实降级为不渲染徽标，不阻塞结果）。
+  useEffect(() => {
+    if (!fieldHitsEnabled || !hasQuery || results.length === 0) return
+    const refs = results.slice(0, 20).map((item) => item.entryRef)
+    let cancelled = false
+    postFieldHits(trimmed, refs)
+      .then((payload) => {
+        if (cancelled) return
+        const map = new Map<string, FieldHitItem>()
+        for (const entry of payload.items) map.set(entry.entryRef, entry)
+        setFieldHits(map)
+      })
+      .catch(() => {
+        if (!cancelled) setFieldHits(new Map())
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [fieldHitsEnabled, hasQuery, trimmed, results])
+
+  // NEW-365：排除词候选的「标记结果」来源 = 本人在 NEW-370 里显式标
+  // 「无关」的命中（显式标记，绝不猜测）。
+  const feedbackList = useQuery({
+    queryKey: ['new370', 'feedback', trimmed],
+    queryFn: () => fetchHitFeedback(trimmed),
+    enabled: hasQuery,
+  })
+  const irrelevantRefs = useMemo(
+    () =>
+      (feedbackList.data?.items ?? [])
+        .filter((entry) => entry.verdict === 'irrelevant')
+        .map((entry) => entry.entryRef),
+    [feedbackList.data],
+  )
+  const readerSelectedEntryRef = useReaderUi((s) => s.selectedEntryRef)
+  const basketRefs = useMemo(() => basketItems.map((entry) => entry.entryRef), [basketItems])
 
   // 无限滚动（与 EntryList / FavoritesPage 同一模式）
   const sentinelRef = useRef<HTMLLIElement>(null)
@@ -1352,6 +1441,20 @@ export default function SearchPage() {
                 </button>
               </span>
             )}
+            {/* NEW-364：已应用的作者筛选 chip */}
+            {authorFilter !== null && (
+              <span className="flex items-center gap-1 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-accent-soft)] pl-2.5 pr-1 text-xs font-medium text-[var(--lumi-accent-text)]">
+                <span>作者: {authorFilter}</span>
+                <button
+                  type="button"
+                  onClick={() => setAuthorFilter(null)}
+                  aria-label={`清除作者筛选「${authorFilter}」`}
+                  className="relative flex size-6 items-center justify-center rounded-full transition-colors after:absolute after:-inset-y-2.5 after:-inset-x-1 after:content-[''] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+                >
+                  <X aria-hidden className="size-3" />
+                </button>
+              </span>
+            )}
           </div>
         )}
 
@@ -1418,6 +1521,96 @@ export default function SearchPage() {
           <p role="status" className="mt-2 px-1 text-xs text-[var(--lumi-text-tertiary)]">
             输入搜索词后查看主题演变。
           </p>
+        )}
+
+        {/* NEW-361..370：研究工具（情境展开；默认折叠零请求） */}
+        <div className="mt-2">
+          <button
+            type="button"
+            data-testid="research-tools-toggle"
+            aria-expanded={researchOpen}
+            onClick={() => setResearchOpen((value) => !value)}
+            className={cx(
+              'min-h-7 rounded-[var(--lumi-radius-full)] border border-dashed border-[var(--lumi-border)] px-2.5 py-1 text-xs',
+              'transition-colors duration-[var(--lumi-motion-fast)]',
+              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+              researchOpen
+                ? 'bg-[var(--lumi-accent-soft)] font-medium text-[var(--lumi-accent-text)]'
+                : 'text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)]',
+            )}
+          >
+            研究工具
+          </button>
+        </div>
+        {researchOpen && (
+          <div className="mt-2 flex flex-col gap-2" data-testid="research-tools">
+            {hasQuery ? (
+              <>
+                {/* NEW-361：时间范围刷选（点击桶 = 应用 from/to 区间） */}
+                <TimeBrushPanel
+                  query={trimmed}
+                  onApplyRange={(from, to) => {
+                    setDateRange({ from, to, label: `${from} ~ ${to}` })
+                    setDraftFrom(from)
+                    setDraftTo(to)
+                  }}
+                />
+                {/* NEW-364：作者 × 来源交叉筛选（每个计数 = 组合后真实命中） */}
+                <AuthorSourceFacetsPanel
+                  query={trimmed}
+                  activeAuthor={authorFilter}
+                  activeFeedUrl={builder.sourceFeedUrl}
+                  onSelectAuthor={setAuthorFilter}
+                  onSelectFeedUrl={(feedUrl) => {
+                    setBuilder((prev) => ({ ...prev, sourceFeedUrl: feedUrl }))
+                    setDraftBuilder((prev) => ({ ...prev, sourceFeedUrl: feedUrl }))
+                  }}
+                />
+                {/* NEW-369：显式语言分组（unknown 单独呈现） */}
+                <LanguageGroupsPanel query={trimmed} />
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {/* NEW-362：相似标题候选审阅（针对当前打开的文章） */}
+                  <SimilarTitleCandidatesPanel entryRef={readerSelectedEntryRef ?? ''} />
+                  {/* NEW-366：段落级命中 + 只保存相关片段（针对当前打开的文章） */}
+                  <ParagraphHitsPanel entryRef={readerSelectedEntryRef ?? ''} query={trimmed} />
+                </div>
+                {/* NEW-367：搜索会话回溯（记录步骤 + 接续最后一步） */}
+                <SearchSessionPanel
+                  query={trimmed}
+                  filters={{
+                    view,
+                    categoryKey,
+                    from: dateRange?.from ?? null,
+                    to: dateRange?.to ?? null,
+                    author: authorFilter,
+                    feedUrl: builder.sourceFeedUrl,
+                  }}
+                  selectedRefs={basketRefs}
+                  onResumeStep={(stepQuery) => commit(stepQuery)}
+                />
+                {/* NEW-365：排除词建议审批（标记结果来自 NEW-370 的「无关」） */}
+                <ExclusionSuggestionsPanel query={trimmed} markedRefs={irrelevantRefs} />
+                {/* NEW-370：评注汇总 + 显式排序方案（默认关闭） */}
+                <FeedbackSummary query={trimmed} />
+                <RankingSchemeToggle query={trimmed} />
+                {/* NEW-363：字段标注开关（默认关 = 不逐页多打请求） */}
+                <label className="flex items-center gap-1.5 text-xs text-[var(--lumi-text-secondary)]">
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    data-testid="field-hits-toggle"
+                    checked={fieldHitsEnabled}
+                    onChange={(event) => setFieldHitsEnabled(event.target.checked)}
+                  />
+                  在结果行显示可定位的命中字段徽标（标题/正文/作者/本人笔记）
+                </label>
+              </>
+            ) : (
+              <p role="status" className="px-1 text-xs text-[var(--lumi-text-tertiary)]">
+                输入搜索词后可用。
+              </p>
+            )}
+          </div>
         )}
 
         {/* pool #09：保存当前搜索（意图而非结果集）+ 已存视图 chips */}
@@ -1712,11 +1905,23 @@ export default function SearchPage() {
                   description="索引会在后台自动从 FreshRSS 构建（或点上方重试触发同步）；构建完成前搜索不到内容是正常状态。"
                 />
               ) : (
-                <EmptyState
-                  icon={<Search aria-hidden className="size-8" />}
-                  title={`没有找到与「${trimmed}」相关的内容`}
-                  description="试试更短的关键词，或放宽过滤器。"
-                />
+                <>
+                  <EmptyState
+                    icon={<Search aria-hidden className="size-8" />}
+                    title={`没有找到与「${trimmed}」相关的内容`}
+                    description="试试更短的关键词，或放宽过滤器。"
+                  />
+                  {/* NEW-368：零命中时的相近拼写候选（只建议，点击才替换） */}
+                  {(indexInfo?.entryCount ?? 0) > 0 && (
+                    <div className="flex justify-center px-1 pb-2">
+                      <SpellSuggestions
+                        query={trimmed}
+                        zeroHits
+                        onPick={(suggestion) => commit(suggestion)}
+                      />
+                    </div>
+                  )}
+                </>
               )}
               <LibraryGroup items={libraryHits} error={libraryError} />
             </div>
@@ -1739,6 +1944,8 @@ export default function SearchPage() {
                     similarItems={(similarGroups.get(item.entryRef) ?? [])
                       .map((ref) => resultsByRef.get(ref))
                       .filter((r): r is SearchItem => r !== undefined)}
+                    fieldHit={fieldHitsEnabled ? (fieldHits.get(item.entryRef) ?? null) : null}
+                    feedbackQuery={trimmed}
                   />
                 ))}
                 {isFetchingNextPage && (
