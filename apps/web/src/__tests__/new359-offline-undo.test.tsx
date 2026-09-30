@@ -12,9 +12,11 @@ import {
   OFFLINE_UNDO_STORAGE_KEY,
   canUndoOfflineEntry,
   clearOfflineUndoStack,
+  isNetworkFailure,
   readOfflineUndoStack,
   recordOfflineUndo,
   shouldRecordAsPending,
+  shouldRecordAsPendingFromFailure,
   undoOfflineEntry,
 } from '../lib/offline-undo-stack'
 
@@ -72,6 +74,34 @@ describe('NEW-359 撤销栈纯逻辑', () => {
     window.localStorage.setItem(OFFLINE_UNDO_STORAGE_KEY, 'not-json')
     expect(readOfflineUndoStack()).toEqual([])
   })
+})
+
+describe('FIX-346 真实网络失败识别（navigator.onLine 只是旁证）', () => {
+  it('在线但 fetch 层失败（ApiError status=0 + type=network_error）→ pending 入栈', () => {
+    const networkFailure = Object.assign(new Error('无法连接到服务器，请稍后重试。'), {
+      status: 0,
+      type: 'network_error',
+    })
+    expect(shouldRecordAsPendingFromFailure(true, networkFailure)).toBe(true)
+    expect(isNetworkFailure(networkFailure)).toBe(true)
+  })
+
+  it('服务端明确拒绝（4xx/5xx）→ 不入栈（服务端事实，不是待同步意图）', () => {
+    const serverRejected = Object.assign(new Error('bad request'), { status: 400, type: 'validation' })
+    expect(shouldRecordAsPendingFromFailure(true, serverRejected)).toBe(false)
+    expect(isNetworkFailure(serverRejected)).toBe(false)
+    expect(shouldRecordAsPendingFromFailure(true, new Error('plain boom'))).toBe(false)
+    expect(shouldRecordAsPendingFromFailure(true, undefined)).toBe(false)
+  })
+
+  it('设备离线 → 无论错误形状一律 pending（原语义保持）', () => {
+    expect(shouldRecordAsPendingFromFailure(false, undefined)).toBe(true)
+    expect(shouldRecordAsPendingFromFailure(false, serverRejected404())).toBe(true)
+  })
+
+  function serverRejected404(): Error {
+    return Object.assign(new Error('not found'), { status: 404, type: 'not_found' })
+  }
 })
 
 describe('NEW-359 撤销栈面板', () => {

@@ -162,3 +162,53 @@ describe('FIX-120 稍后读乐观回滚（useReadLaterMemberMutation）', () => 
     expect(cached?.pages[0]?.items.map((i) => i.itemRef)).toEqual(['rss:x'])
   })
 })
+
+describe('FIX-255 收藏写串行（同一 ref 的服务端写顺序 = 点击顺序）', () => {
+  function deferred<T>() {
+    let resolve!: (value: T) => void
+    const promise = new Promise<T>((res) => { resolve = res })
+    return { promise, resolve }
+  }
+
+  it('快速收藏 → 取消：取消的真实 HTTP 写在收藏 settle 之后才发出（并发下最终状态=最后一次选择）', async () => {
+    const { wrapper } = makeWrapper()
+    mocks.getFavorites.mockResolvedValue({ library: [] })
+    const gate = deferred<void>()
+    mocks.addLibraryFavorite.mockReturnValue(gate.promise)
+    mocks.removeLibraryFavorite.mockResolvedValue(undefined)
+
+    const { result } = renderHook(() => useLibraryFavoriteMutation(), { wrapper })
+
+    // 用户连续两次点击：先收藏、后取消（两次 mutation 同时 in-flight）
+    act(() => { result.current.mutate({ ref: 'rss:a', favorite: true }) })
+    act(() => { result.current.mutate({ ref: 'rss:a', favorite: false }) })
+
+    // 收藏的 HTTP 调用先落地（链首微任务）
+    await waitFor(() => expect(mocks.addLibraryFavorite).toHaveBeenCalledTimes(1))
+    // 串行契约：取消的写必须等收藏 settle——此时绝不发车
+    expect(mocks.removeLibraryFavorite).not.toHaveBeenCalled()
+
+    gate.resolve(undefined)
+    await waitFor(() => expect(mocks.removeLibraryFavorite).toHaveBeenCalledTimes(1))
+    await act(async () => { await gate.promise })
+  })
+
+  it('不同 ref 互不阻塞：b 的写不被未 settle 的 a 卡住', async () => {
+    const { wrapper } = makeWrapper()
+    mocks.getFavorites.mockResolvedValue({ library: [] })
+    const gateA = deferred<void>()
+    mocks.addLibraryFavorite.mockReturnValue(gateA.promise)
+    mocks.removeLibraryFavorite.mockResolvedValue(undefined)
+
+    const { result } = renderHook(() => useLibraryFavoriteMutation(), { wrapper })
+
+    act(() => { result.current.mutate({ ref: 'rss:a', favorite: true }) })
+    act(() => { result.current.mutate({ ref: 'rss:b', favorite: false }) })
+
+    // a 未 settle，b 独立链 → 取消写照常发车
+    await waitFor(() => expect(mocks.removeLibraryFavorite).toHaveBeenCalledTimes(1))
+    expect(mocks.addLibraryFavorite).toHaveBeenCalledTimes(1)
+    gateA.resolve(undefined)
+    await act(async () => { await gateA.promise })
+  })
+})

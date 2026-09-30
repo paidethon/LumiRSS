@@ -46,7 +46,7 @@ import type { BudgetCandidate } from '../lib/reading-budget'
 // NEW-354：移动批量整理范围条；NEW-359：离线撤销栈。
 import MobileOrganizeBar from './new351/MobileOrganizeBar'
 import OfflineUndoPanel from './new351/OfflineUndoPanel'
-import { recordOfflineUndo, shouldRecordAsPending } from '../lib/offline-undo-stack'
+import { recordOfflineUndo, shouldRecordAsPendingFromFailure } from '../lib/offline-undo-stack'
 import { useIsMobile } from '../lib/use-is-mobile'
 
 const EMPTY_TEXTS: Record<UiView, { title: string; description: string }> = {
@@ -683,11 +683,13 @@ function EntriesList() {
         }
         // NEW-359：成功 = 服务端已确认 → 已同步记录（本栈不能直接撤销）。
         recordOfflineUndo({ kind, entryRef: ref, syncState: 'synced' })
-      } catch {
+      } catch (error) {
         failed.push(ref)
         // NEW-359：离线导致的失败 = 未同步意图 → 入撤销栈可逐项放弃；
-        // 在线失败走既有失败清单（不入栈）。
-        if (shouldRecordAsPending(navigator.onLine)) {
+        // FIX-346：navigator.onLine 只是旁证——浏览器报告在线但请求真实
+        // 失败（network_error）时意图同样是「未同步」，一并入栈；服务端
+        // 明确拒绝（4xx/5xx）不入栈（那是服务端事实，不是待同步意图）。
+        if (shouldRecordAsPendingFromFailure(navigator.onLine, error)) {
           recordOfflineUndo({ kind, entryRef: ref, syncState: 'pending' })
         }
       }

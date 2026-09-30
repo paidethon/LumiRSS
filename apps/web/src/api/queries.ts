@@ -2885,14 +2885,36 @@ export function useFavorites() {
   })
 }
 
+/** FIX-255：同一 ref 的收藏写在模块级 FIFO 里串行执行。
+ *
+ * 两个 HTTP 请求的到达/完成顺序不受网络调度保证——快速「收藏 → 取消」
+ * 若并发发出，取消可能先落库、收藏后落库，最终服务端状态与用户最后一次
+ * 明确选择相反。按 ref 串行后，写顺序 = 点击顺序，最终状态 = 最后一次
+ * 明确选择。链上错误被吞掉（前一次失败不阻塞后一次），但返回给调用方的
+ * promise 原样拒绝（mutation 的 onError/回滚语义不变）。 */
+const favoriteWriteChains = new Map<string, Promise<void>>()
+
+function enqueueFavoriteWrite(ref: string, run: () => Promise<void>): Promise<void> {
+  const previous = favoriteWriteChains.get(ref) ?? Promise.resolve()
+  const next = previous.then(run, run)
+  favoriteWriteChains.set(
+    ref,
+    next.catch(() => undefined),
+  )
+  return next
+}
+
 /** P0-10：库收藏增删（addLibraryFavorite/removeLibraryFavorite 首批 UI
  * 消费者）。乐观更新 ['favorites'] 的 library 腿：移除立即从列表消失；
- * 失败回滚到前值并重取（诚实错误由调用方从 mutation.error 透出）。 */
+ * 失败回滚到前值并重取（诚实错误由调用方从 mutation.error 透出）。
+ * FIX-255：同一 ref 的服务端写经 enqueueFavoriteWrite 串行。 */
 export function useLibraryFavoriteMutation() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (vars: { ref: string; favorite: boolean }) =>
-      vars.favorite ? addLibraryFavorite(vars.ref) : removeLibraryFavorite(vars.ref),
+      enqueueFavoriteWrite(vars.ref, () =>
+        vars.favorite ? addLibraryFavorite(vars.ref) : removeLibraryFavorite(vars.ref),
+      ),
     onMutate: async (vars) => {
       await queryClient.cancelQueries({ queryKey: ['favorites'] })
       const previous = queryClient.getQueryData<FavoritesResponse>(['favorites'])
