@@ -940,7 +940,7 @@ STUB
     [[ -e "$stamp_dir/$artifact" ]] && ok "backup contains $artifact" || bad "backup missing $artifact"
   done
   manifest="$(cat "$stamp_dir/MANIFEST.txt" 2>/dev/null || true)"
-  assert_contains "manifest records the CLI version" "cli_version: 2.0.1" "$manifest"
+  assert_contains "manifest records the CLI version" "cli_version: $(cat VERSION)" "$manifest"
   assert_contains "manifest lists the control DB" "lumi-sqlite/lumi.sqlite" "$manifest"
   assert_contains "manifest lists the per-user DB" "lumi-sqlite/users/u_fix192/lumi.sqlite" "$manifest"
   assert_contains "manifest lists the FreshRSS DB" "freshrss-sqlite/db.sqlite" "$manifest"

@@ -54,13 +54,15 @@ fi
 echo "== 2. mutation tests: each drifted source is caught =="
 wt="$(copy_tree)"
 
-sed -i 's/"version": "2.0.1"/"version": "9.9.9"/' "$wt/apps/web/package.json"
+# 版本无关节：从树上 VERSION 读当前版本（版本线提升时测试不漂移）。
+ver="$(cat VERSION)"
+sed -i "s/\"version\": \"$ver\"/\"version\": \"9.9.9\"/" "$wt/apps/web/package.json"
 if python3 "$wt/scripts/check-version.py" >/dev/null 2>&1; then
   bad "mutation: web package.json version drift NOT caught by check-version"
 else
   ok "mutation: web package.json version drift caught by check-version"
 fi
-sed -i 's/"version": "9.9.9"/"version": "2.0.1"/' "$wt/apps/web/package.json"
+sed -i "s/\"version\": \"9.9.9\"/\"version\": \"$ver\"/" "$wt/apps/web/package.json"
 
 sed -i '/LABEL org\.opencontainers\.image\.version/d; /org\.opencontainers\.image\.revision/d' \
   "$wt/services/bff/Dockerfile" "$wt/apps/web/Dockerfile"
