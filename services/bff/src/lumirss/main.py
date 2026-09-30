@@ -241,6 +241,16 @@ from lumirss.routers import (
     new388_index,
     new389_volumes,
     new390_reconcile,
+    new391_notifications,
+    new392_aggregation,
+    new393_quiet_hours,
+    new394_revocations,
+    new395_experience,
+    new396_modes,
+    new397_status,
+    new398_runbooks,
+    new399_doc_feedback,
+    new400_cleanup,
     obsidian,
     operations,
     opml,
@@ -859,5 +869,17 @@ app.include_router(new387_encrypted.router)
 app.include_router(new388_index.router)
 app.include_router(new389_volumes.router)
 app.include_router(new390_reconcile.router)
+
+# NEW-391..400 通知、发布变化与帮助闭环（本组 10 项）
+app.include_router(new391_notifications.router)
+app.include_router(new392_aggregation.router)
+app.include_router(new393_quiet_hours.router)
+app.include_router(new394_revocations.router)
+app.include_router(new395_experience.router)
+app.include_router(new396_modes.router)
+app.include_router(new397_status.router)
+app.include_router(new398_runbooks.router)
+app.include_router(new399_doc_feedback.router)
+app.include_router(new400_cleanup.router)
 
 register_error_handlers(app)
