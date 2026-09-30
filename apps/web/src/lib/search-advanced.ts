@@ -96,6 +96,8 @@ export interface AdvancedSearchParams {
   exclude?: string | null
   /** F017：仅摘要有/无维度（true=有摘要；false=无摘要；null=不过滤）。 */
   hasSummary?: boolean | null
+  /** NEW-364：作者过滤（LIKE，进 cursor scope；null=不过滤）。 */
+  author?: string | null
 }
 
 /** 构造 /api/v1/search 请求 URL（导出供测试断言参数）。 */
@@ -114,6 +116,7 @@ export function buildAdvancedSearchUrl(params: AdvancedSearchParams): string {
   if (params.phrase != null && params.phrase !== '') query.set('phrase', params.phrase)
   if (params.exclude != null && params.exclude !== '') query.set('exclude', params.exclude)
   if (params.hasSummary != null) query.set('hasSummary', params.hasSummary ? 'true' : 'false')
+  if (params.author != null && params.author !== '') query.set('author', params.author)
   return `${API_BASE}/search?${query}`
 }
 

@@ -211,6 +211,16 @@ from lumirss.routers import (
     new348_data_residency,
     new349_privacy_review,
     new350_deletion_receipts,
+    new361_time_brush,
+    new362_similar_titles,
+    new363_field_hits,
+    new364_author_source,
+    new365_exclusion_words,
+    new366_paragraphs,
+    new367_sessions,
+    new368_spell,
+    new369_language_groups,
+    new370_hit_feedback,
     obsidian,
     operations,
     opml,
@@ -777,5 +787,16 @@ app.include_router(new347_authorization_center.router)
 app.include_router(new348_data_residency.router)
 app.include_router(new349_privacy_review.router)
 app.include_router(new350_deletion_receipts.router)
+# NEW-361..370 搜索表达、专题发现与回溯（r2 N361 组；路由各自独立成文件）
+app.include_router(new361_time_brush.router)
+app.include_router(new362_similar_titles.router)
+app.include_router(new363_field_hits.router)
+app.include_router(new364_author_source.router)
+app.include_router(new365_exclusion_words.router)
+app.include_router(new366_paragraphs.router)
+app.include_router(new367_sessions.router)
+app.include_router(new368_spell.router)
+app.include_router(new369_language_groups.router)
+app.include_router(new370_hit_feedback.router)
 
 register_error_handlers(app)

@@ -38,6 +38,7 @@ def _filter_params(
     published_from: str | None,
     published_to: str | None,
     has_summary: bool | None,
+    author: str | None = None,
 ) -> list:
     """_SQL_DIST_* 的绑定参数（与 _SQL_DIST_WHERE 槽位顺序一一对应；
     未用槽位的关闭方式与 query() 完全一致）。"""
@@ -85,6 +86,12 @@ def _filter_params(
         ]
     )
     params.extend([has_summary, has_summary, has_summary])
+    # NEW-364：作者槽（NULL = 未启用；LIKE 口径与词条一致）。
+    if author:
+        author_pattern = like_pattern(author)
+        params.extend([author_pattern, author_pattern])
+    else:
+        params.extend([None, None])
     return params
 
 
@@ -135,6 +142,8 @@ _SQL_SEARCH = (
     # F017 has_summary：仅摘要维度（NULL = 不启用；1 = 有摘要；0 = 无摘要）
     " AND (? IS NULL OR (? = 1 AND s.content_text != '')"
     "      OR (? = 0 AND (s.content_text IS NULL OR s.content_text = '')))"
+    # NEW-364：作者过滤（NULL = 未启用）。
+    " AND (? IS NULL OR s.author LIKE ? ESCAPE '\\')"
     " ORDER BY s.published_at DESC, s.item_id DESC LIMIT ?"
 )
 
@@ -145,7 +154,7 @@ _SQL_SEARCH = (
 # 语句为模块级静态字面量的组合（无任何用户输入拼接）；参数顺序与
 # _filter_params 一致：词条 x3 → intitle x2 → phrase x3 → exclude x2 槽
 # → feed x2 → category x2 → unread → starred → from x2 → to x2
-# → has_summary x3（days 额外尾部两个日期界）。
+# → has_summary x3 → author x2（NEW-364；days 额外尾部两个日期界）。
 # ---------------------------------------------------------------------------
 
 _SQL_DIST_WHERE = (
@@ -180,6 +189,7 @@ _SQL_DIST_WHERE = (
     " AND (? IS NULL OR s.published_at < ?)"
     " AND (? IS NULL OR (? = 1 AND s.content_text != '')"
     "      OR (? = 0 AND (s.content_text IS NULL OR s.content_text = '')))"
+    " AND (? IS NULL OR s.author LIKE ? ESCAPE '\\')"
 )
 
 _SQL_DIST_SOURCES = (
@@ -187,6 +197,14 @@ _SQL_DIST_SOURCES = (
     " COUNT(*) AS n FROM search_entries s"
     + _SQL_DIST_WHERE
     + " GROUP BY s.feed_url, s.feed_title ORDER BY n DESC, s.feed_url ASC LIMIT ?"
+)
+
+# NEW-364 作者 facet：同一过滤链，按 author 分组（空作者不入组）。
+_SQL_DIST_AUTHORS = (
+    "SELECT s.author AS author, COUNT(*) AS n FROM search_entries s"
+    + _SQL_DIST_WHERE
+    + " AND s.author != ''"
+    + " GROUP BY s.author ORDER BY n DESC, s.author ASC LIMIT ?"
 )
 
 _SQL_DIST_DAYS = (
@@ -239,11 +257,13 @@ class SearchStore:
         phrase: str | None = None,
         exclude_terms: list[str] | None = None,
         has_summary: bool | None = None,
+        author: str | None = None,
     ) -> list[Any]:
         """One page of hits, newest first; limit+1 rows detect hasMore.
 
         F29 高级条件（全部可选、可组合）：``intitle_terms`` 仅标题命中；
-        ``phrase`` 精确短语（子串）；``exclude_terms`` 全列排除。
+        ``phrase`` 精确短语；``exclude_terms`` 全列排除。
+        NEW-364：``author`` 作者过滤（LIKE，口径与词条一致）。
         """
         params: list = []
         for term in terms:
@@ -298,6 +318,12 @@ class SearchStore:
             params.extend([None, None, None, None])
         # F017：has_summary 三槽（维度开关 + 真/假分支；位于 keyset 之后）
         params.extend([has_summary, has_summary, has_summary])
+        # NEW-364：作者槽（NULL 关闭）。
+        if author:
+            author_pattern = like_pattern(author)
+            params.extend([author_pattern, author_pattern])
+        else:
+            params.extend([None, None])
         params.append(limit + 1)
         return await self._db.fetch_all(_SQL_SEARCH, tuple(params))
 
@@ -306,6 +332,15 @@ class SearchStore:
             "SELECT COUNT(*) AS n FROM search_entries"
         )
         return int(row["n"]) if row else 0
+
+    async def recent_titles(self, *, limit: int = 400) -> list[Any]:
+        """NEW-368 拼写候选词表来源：最近 N 行的标题（有界，仅标题列）。"""
+        await self._db.migrate()
+        return await self._db.fetch_all(
+            "SELECT title FROM search_entries"
+            " ORDER BY published_at DESC, item_id DESC LIMIT ?",
+            (max(1, int(limit)),),
+        )
 
     async def known_states(self) -> list[Any]:
         return await self._db.fetch_all(
@@ -366,6 +401,7 @@ class SearchStore:
         published_from: str | None = None,
         published_to: str | None = None,
         has_summary: bool | None = None,
+        author: str | None = None,
         limit: int = 21,
     ) -> list[Any]:
         """Top-N 来源计数（limit 取 n+1 由调用方探测截断诚实性）。"""
@@ -381,9 +417,46 @@ class SearchStore:
             published_from=published_from,
             published_to=published_to,
             has_summary=has_summary,
+            author=author,
         )
         params.append(max(1, limit))
         return await self._db.fetch_all(_SQL_DIST_SOURCES, tuple(params))
+
+    async def distribution_authors(
+        self,
+        *,
+        terms: list[str],
+        intitle_terms: list[str] | None = None,
+        phrase: str | None = None,
+        exclude_terms: list[str] | None = None,
+        feed_url: str | None = None,
+        category_id: str | None = None,
+        unread_only: bool = False,
+        starred_only: bool = False,
+        published_from: str | None = None,
+        published_to: str | None = None,
+        has_summary: bool | None = None,
+        author: str | None = None,
+        limit: int = 21,
+    ) -> list[Any]:
+        """NEW-364 作者 facet 计数（同链 GROUP BY author；空作者不入组；
+        limit 取 n+1 由调用方探测截断诚实性）。"""
+        params = _filter_params(
+            terms=terms,
+            intitle_terms=intitle_terms,
+            phrase=phrase,
+            exclude_terms=exclude_terms,
+            feed_url=feed_url,
+            category_id=category_id,
+            unread_only=unread_only,
+            starred_only=starred_only,
+            published_from=published_from,
+            published_to=published_to,
+            has_summary=has_summary,
+            author=author,
+        )
+        params.append(max(1, limit))
+        return await self._db.fetch_all(_SQL_DIST_AUTHORS, tuple(params))
 
     async def distribution_days(
         self,
@@ -401,6 +474,7 @@ class SearchStore:
         published_from: str | None = None,
         published_to: str | None = None,
         has_summary: bool | None = None,
+        author: str | None = None,
     ) -> list[Any]:
         """窗口内逐日计数（[day_from, day_to) 排他上界；SQL 分桶）。"""
         params = _filter_params(
@@ -415,6 +489,7 @@ class SearchStore:
             published_from=published_from,
             published_to=published_to,
             has_summary=has_summary,
+            author=author,
         )
         params.extend([day_from, day_to])
         return await self._db.fetch_all(_SQL_DIST_DAYS, tuple(params))
@@ -435,6 +510,7 @@ class SearchStore:
         published_from: str | None = None,
         published_to: str | None = None,
         has_summary: bool | None = None,
+        author: str | None = None,
     ) -> list[Any]:
         """窗口内逐月计数（[month_from, month_to) 排他上界；SQL 分桶）。
 
@@ -451,6 +527,7 @@ class SearchStore:
             published_from=published_from,
             published_to=published_to,
             has_summary=has_summary,
+            author=author,
         )
         params.extend([month_from, month_to])
         return await self._db.fetch_all(_SQL_DIST_MONTHS, tuple(params))
@@ -469,6 +546,7 @@ class SearchStore:
         published_from: str | None = None,
         published_to: str | None = None,
         has_summary: bool | None = None,
+        author: str | None = None,
     ) -> int:
         """过滤链全量计数（无窗口；与 sources 聚合同一 WHERE）。"""
         params = _filter_params(
@@ -483,6 +561,7 @@ class SearchStore:
             published_from=published_from,
             published_to=published_to,
             has_summary=has_summary,
+            author=author,
         )
         row = await self._db.fetch_one(_SQL_DIST_TOTAL, tuple(params))
         return int(row["n"]) if row else 0

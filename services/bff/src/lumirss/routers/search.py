@@ -95,6 +95,7 @@ async def search(
     phrase: str | None = None,
     exclude: str | None = None,
     hasSummary: bool | None = None,
+    author: str | None = None,
     expandSynonyms: bool = True,
 ) -> SearchResponse:
     """Global search over the derived projection.
@@ -106,7 +107,9 @@ async def search(
     are mutually exclusive. F29 advanced conditions (optional):
     ``intitle`` (title-only, ≤2 terms), ``phrase`` (exact phrase),
     ``exclude`` (excluded terms, ≤2) — bound into the cursor scope so
-    pagination never drifts across changed conditions.
+    pagination never drifts across changed conditions. NEW-364:
+    ``author`` filters on the indexed author column (LIKE, bound into
+    the cursor scope like every other condition).
 
     Each leg paginates independently: ``cursor`` keys the RSS leg,
     ``libraryCursor`` the library leg; both cursors are bound to the
@@ -148,6 +151,8 @@ async def search(
         "hasSummary": hasSummary,
         # F078：同义词扩展（进 cursor scope，翻页不漂移）
         "expandSynonyms": expandSynonyms,
+        # NEW-364：作者过滤（进 cursor scope，翻页不漂移）
+        "author": author,
     }
     # FIX-363: cursor scope 绑定发放账户（他人 token → 400，不再续接）。
     library_scope: dict[str, Any] = {"q": query, "favorite": bool(favorite)}
@@ -191,6 +196,7 @@ async def search(
             exclude=exclude,
             has_summary=hasSummary,
             expand_synonyms=expandSynonyms,
+            author=author,
         )
     next_cursor = None
     if result["hasMore"] and result["nextKeyset"] is not None:
