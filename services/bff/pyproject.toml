@@ -5,6 +5,7 @@ description = "LumiRSS Backend-for-Frontend (BFF)"
 requires-python = ">=3.12"
 dependencies = [
     "bcrypt>=4.0",
+    "cryptography>=41",
     "defusedxml>=0.7.1",
     "fastapi>=0.115",
     "feedparser>=6.0.14",

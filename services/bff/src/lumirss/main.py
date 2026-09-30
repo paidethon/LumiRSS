@@ -231,6 +231,16 @@ from lumirss.routers import (
     new378_feature_deps,
     new379_tickets,
     new380_handoff,
+    new381_zotero,
+    new382_ris,
+    new383_offline,
+    new384_jsonfeed,
+    new385_warc,
+    new386_formats,
+    new387_encrypted,
+    new388_index,
+    new389_volumes,
+    new390_reconcile,
     obsidian,
     operations,
     opml,
@@ -837,5 +847,17 @@ app.include_router(new377_task_blockers.router)
 app.include_router(new378_feature_deps.router)
 app.include_router(new379_tickets.router)
 app.include_router(new380_handoff.router)
+
+# NEW-381..390 长期保存与格式互通（本组 10 项）
+app.include_router(new381_zotero.router)
+app.include_router(new382_ris.router)
+app.include_router(new383_offline.router)
+app.include_router(new384_jsonfeed.router)
+app.include_router(new385_warc.router)
+app.include_router(new386_formats.router)
+app.include_router(new387_encrypted.router)
+app.include_router(new388_index.router)
+app.include_router(new389_volumes.router)
+app.include_router(new390_reconcile.router)
 
 register_error_handlers(app)
