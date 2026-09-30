@@ -43,6 +43,11 @@ import { Skeleton } from './ui/Skeleton'
 import { cx } from './ui/cx'
 import { aggregateByNormalizedUrl, type UrlGroup } from '../lib/url-aggregate'
 import type { BudgetCandidate } from '../lib/reading-budget'
+// NEW-354：移动批量整理范围条；NEW-359：离线撤销栈。
+import MobileOrganizeBar from './new351/MobileOrganizeBar'
+import OfflineUndoPanel from './new351/OfflineUndoPanel'
+import { recordOfflineUndo, shouldRecordAsPending } from '../lib/offline-undo-stack'
+import { useIsMobile } from '../lib/use-is-mobile'
 
 const EMPTY_TEXTS: Record<UiView, { title: string; description: string }> = {
   all: { title: '这里还没有文章', description: '订阅源还没有内容，稍后再来看看。' },
@@ -617,6 +622,9 @@ function EntriesList() {
   }
 
   // ---- F07 多选批量 ----
+  const isMobile = useIsMobile()
+  // NEW-359：离线撤销栈面板（整理模式内的入口）。
+  const [undoPanelOpen, setUndoPanelOpen] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
   const [selectedRefs, setSelectedRefs] = useState<Set<string>>(new Set())
   const [batch, setBatch] = useState<{ kind: BatchKind; running: boolean; failed: string[] } | null>(null)
@@ -673,8 +681,15 @@ function EntriesList() {
         } else {
           await readLaterMember.mutateAsync({ itemRef: `rss:${ref}`, add: true })
         }
+        // NEW-359：成功 = 服务端已确认 → 已同步记录（本栈不能直接撤销）。
+        recordOfflineUndo({ kind, entryRef: ref, syncState: 'synced' })
       } catch {
         failed.push(ref)
+        // NEW-359：离线导致的失败 = 未同步意图 → 入撤销栈可逐项放弃；
+        // 在线失败走既有失败清单（不入栈）。
+        if (shouldRecordAsPending(navigator.onLine)) {
+          recordOfflineUndo({ kind, entryRef: ref, syncState: 'pending' })
+        }
       }
     }
     if (failed.length > 0) {
@@ -1369,6 +1384,31 @@ function EntriesList() {
         )}
       </div>
 
+      {/* NEW-354：移动整理模式范围条（视图/范围/已加载/已选 + 统一退出，
+          退出 = exitSelectMode 全清）；撤销栈入口随整理模式出现。 */}
+      {selectMode && isMobile && (
+        <MobileOrganizeBar
+          scope={{
+            view,
+            scopeLabel: scopeTitle(scope),
+            loadedCount: entries.length,
+            selectedCount: selectedRefs.size,
+          }}
+          batchLimit={BATCH_LIMIT}
+          onExit={exitSelectMode}
+        />
+      )}
+      {selectMode && isMobile && (
+        <button
+          type="button"
+          data-testid="n359-open-undo"
+          onClick={() => setUndoPanelOpen(true)}
+          className="flex min-h-11 w-full items-center justify-center gap-1.5 border-t border-[var(--lumi-separator)] bg-[var(--lumi-surface)] px-3 py-2 text-xs text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+        >
+          离线撤销栈（本机操作记录）
+        </button>
+      )}
+      {undoPanelOpen && <OfflineUndoPanel onClose={() => setUndoPanelOpen(false)} />}
       {/* F07 批量操作栏（固定于列表底部；处理中禁用全部动作） */}
       {selectMode && (
         <div

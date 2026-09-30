@@ -1,5 +1,7 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
+  Crosshair,
+  Gauge,
   BookMarked,
   Camera, Check, Clock, ExternalLink, FileCode, FileText, Languages,
   Link2, ListTree, Loader2, MessageSquare, MoreHorizontal, PanelRight, Pause, Play, Printer, Quote,
@@ -1240,6 +1242,8 @@ export default function ReaderHeader({
   onOpenAiConversation,
   onOpenFind,
   onOpenLinks,
+  onOpenCalibrate,
+  onOpenBudget,
   collectSpeechBlocks,
   autoScrollState = 'off',
   onAutoScrollToggle,
@@ -1262,6 +1266,10 @@ export default function ReaderHeader({
   onOpenFind?: () => void
   /** F054：文中链接清单（Reader 持有面板状态）。 */
   onOpenLinks?: () => void
+  /** NEW-353：阅读位置校准面板（Reader 持有面板状态）。 */
+  onOpenCalibrate?: () => void
+  /** NEW-355：单篇媒体预算面板（Reader 持有面板状态）。 */
+  onOpenBudget?: () => void
   /** F19/P18：收集「从视口顶部段落开始」的朗读块（Reader 提供容器几何；
    * texts 下标即 DOM 块序，引擎逐块出声）。 */
   collectSpeechBlocks?: () => SpeechCollection | null
@@ -1410,6 +1418,32 @@ export default function ReaderHeader({
                 <span className="flex items-center gap-2">
                   <Link2 aria-hidden className="size-4" />
                   文中链接
+                </span>
+              ),
+            })
+          }
+          break
+        case 'calibrate':
+          if (onOpenCalibrate !== undefined) {
+            moreItems.push({
+              key: 'calibrate',
+              content: (
+                <span className="flex items-center gap-2">
+                  <Crosshair aria-hidden className="size-4" />
+                  位置校准
+                </span>
+              ),
+            })
+          }
+          break
+        case 'budget':
+          if (onOpenBudget !== undefined) {
+            moreItems.push({
+              key: 'budget',
+              content: (
+                <span className="flex items-center gap-2">
+                  <Gauge aria-hidden className="size-4" />
+                  媒体预算
                 </span>
               ),
             })
@@ -1608,6 +1642,14 @@ export default function ReaderHeader({
       onOpenLinks?.()
       return
     }
+    if (key === 'calibrate') {
+      onOpenCalibrate?.()
+      return
+    }
+    if (key === 'budget') {
+      onOpenBudget?.()
+      return
+    }
     if (key === 'ai') {
       onOpenAiConversation?.()
       return
@@ -1772,6 +1814,20 @@ export default function ReaderHeader({
         return (
           <Tooltip content="文中链接">
             <IconButton icon={<Link2 aria-hidden />} label="文中链接" touch onClick={onOpenLinks} />
+          </Tooltip>
+        )
+      case 'calibrate':
+        if (onOpenCalibrate === undefined) return null
+        return (
+          <Tooltip content="位置校准">
+            <IconButton icon={<Crosshair aria-hidden />} label="位置校准" touch onClick={onOpenCalibrate} />
+          </Tooltip>
+        )
+      case 'budget':
+        if (onOpenBudget === undefined) return null
+        return (
+          <Tooltip content="媒体预算">
+            <IconButton icon={<Gauge aria-hidden />} label="媒体预算" touch onClick={onOpenBudget} />
           </Tooltip>
         )
       case 'speech':

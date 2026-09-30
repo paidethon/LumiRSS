@@ -107,6 +107,9 @@ const DESKTOP_DEFAULT = [
   'share',
   'quote',
   'print',
+  // NEW-353/355：位置校准 / 媒体预算（注册表新增，排在锁定「更多操作」前）
+  'calibrate',
+  'budget',
   'more',
 ]
 const MOBILE_DEFAULT = [
@@ -121,6 +124,9 @@ const MOBILE_DEFAULT = [
   'share',
   'quote',
   'print',
+  // NEW-353/355：位置校准 / 媒体预算（注册表新增，排在锁定「更多操作」前）
+  'calibrate',
+  'budget',
   'more',
 ]
 
@@ -154,6 +160,8 @@ describe('P07 normalizeReaderToolbarOrder — 不可信存储归一化', () => {
       'speech',
       'quote',
       'print',
+      'calibrate',
+      'budget',
       'more',
     ])
   })
@@ -171,6 +179,8 @@ describe('P07 normalizeReaderToolbarOrder — 不可信存储归一化', () => {
       'speech',
       'share',
       'quote',
+      'calibrate',
+      'budget',
       'more',
     ])
   })
@@ -188,6 +198,8 @@ describe('P07 normalizeReaderToolbarOrder — 不可信存储归一化', () => {
       'speech',
       'share',
       'quote',
+      'calibrate',
+      'budget',
       'more',
     ])
   })
@@ -286,6 +298,8 @@ describe('P07 app-settings 集成 — 设备本地两键', () => {
       'links',
       'speech',
       'quote',
+      'calibrate',
+      'budget',
       'more',
       '-share',
     ])
@@ -392,9 +406,9 @@ describe('P07 — 自定义工具栏对话框', () => {
     const dialog = await openCustomize()
     fireEvent.click(within(dialog).getByRole('tab', { name: '移动端' }))
     expect(within(dialog).getByRole('tab', { name: '移动端' })).toHaveAttribute('aria-selected', 'true')
-    // 4 个 primary（收藏/打开原文/语言视图/更多操作）标「工具栏」，其余 8 个标「菜单」
+    // 4 个 primary（收藏/打开原文/语言视图/更多操作）标「工具栏」，其余 10 个标「菜单」（NEW-353/355 注册表新增 2 个非 primary）
     expect(within(dialog).getAllByText('工具栏')).toHaveLength(4)
-    expect(within(dialog).getAllByText('菜单')).toHaveLength(8)
+    expect(within(dialog).getAllByText('菜单')).toHaveLength(10)
     // 两套键独立：桌面隐藏不影响移动端开关
     expect(within(dialog).getByRole('switch', { name: '显示打印' })).toBeChecked()
   })
@@ -425,6 +439,8 @@ describe('P07 — 自定义工具栏对话框', () => {
       'share',
       'quote',
       'print',
+      'calibrate',
+      'budget',
       'more',
     ])
   })

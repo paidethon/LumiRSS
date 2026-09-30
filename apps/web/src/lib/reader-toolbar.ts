@@ -25,7 +25,9 @@
 import type { LucideIcon } from 'lucide-react'
 import {
   Camera,
+  Crosshair,
   ExternalLink,
+  Gauge,
   Languages,
   Link2,
   MessageSquare,
@@ -54,6 +56,8 @@ export type ReaderToolbarActionId =
   | 'share'
   | 'quote'
   | 'print'
+  | 'calibrate'
+  | 'budget'
   | 'more'
 
 export interface ReaderToolbarActionDef {
@@ -186,11 +190,33 @@ export const READER_TOOLBAR_ACTIONS: readonly ReaderToolbarActionDef[] = [
     locked: false,
   },
   {
+    // NEW-353：阅读位置手动校准（章节+段落显式选择写本机位置记忆）。
+    id: 'calibrate',
+    label: '位置校准',
+    icon: Crosshair,
+    defaultOrder: 12,
+    mobileDefaultOrder: 12,
+    scope: 'both',
+    primary: false,
+    locked: false,
+  },
+  {
+    // NEW-355：单篇媒体流量预算（已知体积 + 只读文字/按次加载策略）。
+    id: 'budget',
+    label: '媒体预算',
+    icon: Gauge,
+    defaultOrder: 13,
+    mobileDefaultOrder: 13,
+    scope: 'both',
+    primary: false,
+    locked: false,
+  },
+  {
     id: 'more',
     label: '更多操作',
     icon: MoreHorizontal,
-    defaultOrder: 12,
-    mobileDefaultOrder: 12,
+    defaultOrder: 14,
+    mobileDefaultOrder: 14,
     scope: 'both',
     primary: true,
     locked: true,

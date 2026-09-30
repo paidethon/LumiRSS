@@ -14,6 +14,11 @@ import {
 } from '../lib/reading-position'
 import { useFinishRead } from '../lib/finish-read'
 import {
+  budgetRequiresDefer,
+  readMediaBudgetDecision,
+  type MediaBudgetMode,
+} from '../lib/media-budget'
+import {
   AUTO_SCROLL_SPEEDS,
   BACK_TO_TOP_THRESHOLD_PX,
   pageTargetTop,
@@ -94,6 +99,18 @@ const ReaderPager = lazy(() =>
   import('./ReaderPager').then((m) => ({ default: m.ReaderPager })),
 )
 const ArticleLinksPanel = lazy(() => import('./ArticleLinksPanel'))
+// NEW-353：阅读位置手动校准（章节+段落显式选择 → 既有本机位置记忆）。
+const PositionCalibrationPanel = lazy(() =>
+  import('./new351/PositionCalibrationPanel').then((m) => ({ default: m.PositionCalibrationPanel })),
+)
+// NEW-355：单篇媒体流量预算（已知体积 + 只读文字/按次加载策略）。
+const MediaBudgetPanel = lazy(() =>
+  import('./new351/MediaBudgetPanel').then((m) => ({ default: m.MediaBudgetPanel })),
+)
+// NEW-358：长按外链操作面板（事件委托挂在正文容器；面板自身零网络）。
+const LinkActionGesture = lazy(() =>
+  import('./new351/LinkActionSheet').then((m) => ({ default: m.LinkActionGesture })),
+)
 const ItemRelationsPanel = lazy(() => import('./ItemRelationsPanel'))
 const DigestUsagePanel = lazy(() => import('./DigestUsagePanel'))
 // Bundle guard：N241..250 原文版本与溯源工具组非首读必需（折叠态零查询）——
@@ -404,6 +421,19 @@ useEffect(() => {
 const [findOpen, setFindOpen] = useState(false)
   // F054：文中链接面板
   const [linksOpen, setLinksOpen] = useState(false)
+  // NEW-353：阅读位置校准面板。
+  const [calibrateOpen, setCalibrateOpen] = useState(false)
+  // NEW-355：媒体预算面板 + 单篇策略（面板改动即时生效于本篇）。
+  const [budgetOpen, setBudgetOpen] = useState(false)
+  const [budgetMode, setBudgetMode] = useState<MediaBudgetMode>('ask')
+// NEW-355：换文章读取本机单篇预算决策。
+useEffect(() => {
+  setBudgetMode(selectedEntryRef !== null ? (readMediaBudgetDecision(selectedEntryRef)?.mode ?? 'ask') : 'ask')
+}, [selectedEntryRef])
+// NEW-355 策略执行：只读文字/按次加载 → 本篇图片走既有 deferImages
+// 延后管线（零媒体请求）；只读文字 → 音频播放器不渲染。
+const budgetDeferImages = budgetRequiresDefer(budgetMode)
+
 // 专注阅读：会话级开关（settings store 无此键；Aa 面板经 props 切换）。
 const [focusMode, setFocusMode] = useState(false)
 const focusModeRef = useRef(focusMode)
@@ -827,6 +857,33 @@ const handleScroll = useCallback(() => {
           {linksOpen && <ArticleLinksPanel containerRef={contentRef} onClose={() => setLinksOpen(false)} />}
         </Suspense>
       )}
+      {/* NEW-353：位置校准面板（章节+段落 → 既有本机位置记忆；恢复端零改动） */}
+      {calibrateOpen && (
+        <Suspense fallback={null}>
+          <PositionCalibrationPanel
+            entryRef={detailEntryRef ?? ''}
+            getArticle={getFindRoot}
+            getScroller={getScrollContainer}
+            onClose={() => setCalibrateOpen(false)}
+          />
+        </Suspense>
+      )}
+      {/* NEW-355：媒体预算面板（本篇已知体积 + 策略即时生效） */}
+      {budgetOpen && (
+        <Suspense fallback={null}>
+          <MediaBudgetPanel
+            entryRef={detailEntryRef ?? ''}
+            contentHtml={detail?.contentHtml ?? null}
+            enclosures={detail?.enclosure ?? []}
+            onDecisionChange={setBudgetMode}
+            onClose={() => setBudgetOpen(false)}
+          />
+        </Suspense>
+      )}
+      {/* NEW-358：长按外链操作面板（事件委托挂正文容器；零远端预览请求） */}
+      <Suspense fallback={null}>
+        <LinkActionGesture containerRef={contentRef} />
+      </Suspense>
       {/* 0010 Gate A：正文宽度消费 --lumi-reader-content-width（默认 46rem
           ≈ 736px，设置中心可调）；0017：页面左右边距消费
           --lumi-reader-page-margin（.lumi-reader-article 连续值，
@@ -865,6 +922,8 @@ const handleScroll = useCallback(() => {
             onOpenAiConversation={() => setAiConversationOpen(true)}
             onOpenFind={() => setFindOpen(true)}
             onOpenLinks={() => setLinksOpen(true)}
+            onOpenCalibrate={() => setCalibrateOpen(true)}
+            onOpenBudget={() => setBudgetOpen(true)}
             collectSpeechBlocks={collectSpeechBlocks}
             autoScrollState={autoScroll}
             onAutoScrollToggle={() =>
@@ -883,9 +942,13 @@ const handleScroll = useCallback(() => {
             正文之后才是工具面板（AI 摘要/溯源/自测/知识卡片/关联）——
             打开文章首屏即正文，工具不再把内容推到折叠线下。 */}
         {/* F011：enclosure 播放器（audio/video 附件；显式开始，禁止 autoplay） */}
-        <Suspense fallback={null}>
-          <EnclosurePlayers key={`enclosures-${detail.entryRef}`} detail={detail} />
-        </Suspense>
+        {/* NEW-355：只读文字策略下不渲染音频/视频播放器（零媒体加载）；
+            按次加载保持既有显式点击开始语义。 */}
+        {budgetMode !== 'text-only' && (
+          <Suspense fallback={null}>
+            <EnclosurePlayers key={`enclosures-${detail.entryRef}`} detail={detail} />
+          </Suspense>
+        )}
         {/* N065：附件下载队列（白名单类型可入队；脚本/可执行诚实拒绝） */}
         <Suspense fallback={null}>
           <AttachmentQueuePanel key={`attachments-${detail.entryRef}`} detail={detail} />
@@ -898,13 +961,13 @@ const handleScroll = useCallback(() => {
             自启（浏览器引擎 activation 被消费 → 诚实重试，既有语义）。 */}
         {viewMode === 'original' ? (
           <div>
-            <ArticleContent detail={detail} />
+            <ArticleContent detail={detail} forceImageMode={budgetDeferImages ? 'hidden' : undefined} />
           </div>
         ) : (
           <Suspense
             fallback={
               <div>
-                <ArticleContent detail={detail} />
+                <ArticleContent detail={detail} forceImageMode={budgetDeferImages ? 'hidden' : undefined} />
               </div>
             }
           >
