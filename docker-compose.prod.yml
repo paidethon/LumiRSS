@@ -7,7 +7,13 @@
 #   cp .env.prod.example .env.prod        # fill in secrets
 #   docker compose -f docker-compose.prod.yml up -d
 #
-# Images: prebuilt-only from GHCR (LUMIRSS_IMAGE_TAG, default latest).
+# Images: prebuilt-only from GHCR (LUMIRSS_IMAGE_TAG). FIX-184: the bare
+# default is THIS release's immutable version tag (kept equal to the
+# VERSION file; scripts/check-version.py fails the drift), never the
+# mutable `latest` — a plain install is pinned to what it installed, and
+# './lumirss update' moves the pin deliberately. Digest-exact installs go
+# through './lumirss import-images' (release-manifest.json carries the
+# pushed digests).
 # This file has NO build: stanzas on purpose — production always runs the
 # published images, so a pull failure aborts and leaves the old stack
 # running instead of silently rebuilding. Local builds are dev/CI only:
@@ -23,7 +29,7 @@ name: ${COMPOSE_PROJECT_NAME:-lumirss-prod}
 
 services:
   web:
-    image: ghcr.io/paidethon/lumirss/lumirss-web:${LUMIRSS_IMAGE_TAG:-latest}
+    image: ghcr.io/paidethon/lumirss/lumirss-web:${LUMIRSS_IMAGE_TAG:-2.8.0}
     container_name: lumirss-web
     restart: unless-stopped
     # ARCH-10/FIX-070: web(=Caddy) 容器只注入它实际需要的 6 个变量；
@@ -56,7 +62,7 @@ services:
     cpus: 0.5
 
   bff:
-    image: ghcr.io/paidethon/lumirss/lumirss-bff:${LUMIRSS_IMAGE_TAG:-latest}
+    image: ghcr.io/paidethon/lumirss/lumirss-bff:${LUMIRSS_IMAGE_TAG:-2.8.0}
     container_name: lumirss-bff
     restart: unless-stopped
     env_file: .env.prod

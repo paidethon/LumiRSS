@@ -226,7 +226,82 @@ promo_bad "mutable-tag reference instead of a digest pin" \
   --manifest <(sed "s/@$BD/@v2.0.1/" "$pstage/manifest.json") \
   --tag-commit "$SHA" --expected-sha "$SHA" --expected-version 2.0.1 \
   --bff-digest "$BD" --web-digest "$WD"
+
+# FIX-185/189: the declared platform is part of the promoted identity.
+if promo_ok --manifest "$pstage/manifest.json" --tag-commit "$SHA" --expected-sha "$SHA" \
+  --expected-version 2.0.1 --expected-platform "linux/amd64" \
+  --bff-digest "$BD" --web-digest "$WD"; then
+  bad "promotion accepted a manifest with NO platform against --expected-platform"
+else
+  ok "promotion rejected: manifest without a platform declaration"
+fi
+cat > "$pstage/manifest-amd64.json" <<JSON
+{
+  "schema": "lumirss-release-manifest/v1",
+  "name": "LumiRSS",
+  "version": "2.0.1",
+  "git_sha": "$SHA",
+  "platform": "linux/amd64",
+  "images": {
+    "bff": "ghcr.io/paidethon/lumirss/lumirss-bff@$BD",
+    "web": "ghcr.io/paidethon/lumirss/lumirss-web@$WD"
+  }
+}
+JSON
+cat > "$pstage/manifest-arm64.json" <<JSON
+{
+  "schema": "lumirss-release-manifest/v1",
+  "name": "LumiRSS",
+  "version": "2.0.1",
+  "git_sha": "$SHA",
+  "platform": "linux/arm64",
+  "images": {
+    "bff": "ghcr.io/paidethon/lumirss/lumirss-bff@$BD",
+    "web": "ghcr.io/paidethon/lumirss/lumirss-web@$WD"
+  }
+}
+JSON
+if promo_ok --manifest "$pstage/manifest-amd64.json" --tag-commit "$SHA" --expected-sha "$SHA" \
+  --expected-version 2.0.1 --expected-platform "linux/amd64" \
+  --bff-digest "$BD" --web-digest "$WD"; then
+  ok "matching platform promotes"
+else
+  bad "promotion verifier rejected a platform-matching candidate"
+fi
+promo_bad "platform mismatch (arm64 manifest for amd64 release)" \
+  --manifest "$pstage/manifest-arm64.json" --tag-commit "$SHA" --expected-sha "$SHA" \
+  --expected-version 2.0.1 --expected-platform "linux/amd64" \
+  --bff-digest "$BD" --web-digest "$WD"
 rm -rf "$pstage"
+
+# ---------------------------------------------------------------------------
+echo "== 3b. FIX-188: min_compat resolves to the nearest release below =="
+minc="$REPO_ROOT/scripts/resolve-min-compat.py"
+[[ -f "$minc" ]] && ok "scripts/resolve-min-compat.py exists" || bad "resolve-min-compat.py missing"
+mc() { python3 "$minc" "$@" 2>/dev/null; }
+assert_eq "nearest release below current wins" '"2.7.0"' \
+  "$(mc --current 2.8.0 --tag v2.8.0 --tag v2.7.0 --tag v2.0.0)"
+assert_eq "non-SemVer tags are ignored" '"2.0.0"' \
+  "$(mc --current 2.8.0 --tag nightly --tag v2.0.0)"
+assert_eq "tags above current never become the floor" 'null' \
+  "$(mc --current 2.8.0 --tag v9.9.9)"
+assert_eq "no earlier release → null (first release)" 'null' \
+  "$(mc --current 2.8.0)"
+assert_eq "patch-level neighbors compare correctly" '"2.8.0"' \
+  "$(mc --current 2.8.1 --tag v2.8.0 --tag v2.7.9)"
+if python3 "$minc" --current not-semver --tag v1.0.0 >/dev/null 2>&1; then
+  bad "non-SemVer current accepted"
+else
+  ok "non-SemVer current is rejected with a nonzero exit"
+fi
+if grep -n '"min_compat": null' "$REPO_ROOT/.github/workflows/publish-images.yml" >/dev/null; then
+  bad "publish workflow still hardcodes min_compat null"
+else
+  ok "publish workflow resolves min_compat (no hardcoded null)"
+fi
+grep -q "scripts/resolve-min-compat.py" "$REPO_ROOT/.github/workflows/publish-images.yml" \
+  && ok "publish workflow wires the resolver into the manifest" \
+  || bad "publish workflow does not call resolve-min-compat.py"
 
 # ---------------------------------------------------------------------------
 echo "== 4. FIX-379: required release assets asserted before green =="
@@ -345,6 +420,32 @@ run_mutation "script: pipefail-declared script passes" 0 \
 run_mutation "workflow: 'logs --tail' flag is not a pipe" 0 \
   mk_wf '          docker compose logs --tail 40'
 rm -rf "$mroot"
+
+# ---------------------------------------------------------------------------
+echo "== 6. FIX-184: production installs pin the release tag, never latest =="
+# A bare install must land on an immutable version reference: the compose
+# default equals the VERSION file (scripts/check-version.py asserts the
+# equality), the CLI's tag fallback reads VERSION, and no production path
+# falls back to mutable `latest` unless VERSION itself is unreadable.
+version="$(cat "$REPO_ROOT/VERSION")"
+compose_defaults="$(grep -oE 'lumirss-(web|bff):\$\{LUMIRSS_IMAGE_TAG:-[^}]+\}' \
+  "$REPO_ROOT/docker-compose.prod.yml" | sed 's/.*:-//;s/}//' | tr '\n' ' ' | sed 's/ $//')"
+assert_eq "both prod image defaults == VERSION" "$version $version" "$(echo $compose_defaults)"
+if grep -n 'LUMIRSS_IMAGE_TAG:-latest' "$REPO_ROOT/docker-compose.prod.yml" >/dev/null; then
+  bad "compose still defaults LUMIRSS_IMAGE_TAG to mutable latest"
+else
+  ok "compose has no mutable-latest default"
+fi
+if grep -n 'IMAGE_TAG:-latest}' "$REPO_ROOT/lumirss" | grep -v 'cat VERSION' >/dev/null; then
+  bad "CLI still carries a bare latest fallback outside the VERSION guard"
+else
+  ok "CLI tag fallbacks all read VERSION (latest only as last resort)"
+fi
+if grep -n 'tag_now="${tag_now:-latest}"' "$REPO_ROOT/lumirss" >/dev/null; then
+  bad "deploy still persists latest when no tag is configured"
+else
+  ok "deploy persists the release VERSION tag when nothing is pinned"
+fi
 
 # ---------------------------------------------------------------------------
 echo

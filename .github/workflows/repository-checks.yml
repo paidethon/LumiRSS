@@ -107,6 +107,12 @@ jobs:
       - name: Run release publishing tests
         run: tests/deploy/run-release-publish-tests.sh
 
+      # FIX-186/187/188/189: min_compat resolution, platform pinning and the
+      # ready-to-install bundle (self-contained, checksum-verified,
+      # blank-env render) are guarded on every PR, not only at publish time.
+      - name: Run release install-bundle tests
+        run: tests/deploy/run-release-bundle-tests.sh
+
       # FIX-390: a command piped into tail/head must never return success
       # after the real command failed.
       - name: Check pipe error propagation (FIX-390)

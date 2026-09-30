@@ -107,7 +107,14 @@ NONEMPTY_FALLBACKS: dict[str, tuple[str, str]] = {
         "docker-compose.prod.yml",
     ),
     "DOMAIN": ("localhost", "docker-compose.prod.yml"),
-    "LUMIRSS_IMAGE_TAG": ("latest", "docker-compose.prod.yml"),
+    # FIX-184: the fallback is no longer a literal — the mutable `latest`
+    # was replaced by the release VERSION tag. The prose must name VERSION
+    # as the single source; the compose default == VERSION equality is
+    # enforced by scripts/check-version.py.
+    "LUMIRSS_IMAGE_TAG": (
+        "VERSION",
+        "VERSION file + docker-compose.prod.yml (FIX-184: pinned release tag, never latest)",
+    ),
 }
 
 # Files scanned for fallback-claim prose (in addition to the templates'

@@ -26,9 +26,12 @@ N012/N013/N015、NE1 阅读排版批次等）以 `git log` 为准。
 - Agent 消息 / RAG 端点的 Web 侧本地 interface 迁移到生成 schema 别名
   （response_model 已补齐，剩余为 Web 消费端重构）；
 - 剪藏/快照阅读体验打磨；
-- CI Playwright journey 门扩展：AI journey（J4）因 AI purpose-profiles
-  契约漂移暂不在门内，spec 待重写；
 - 来源运维 UI 的 J4 类合并契约回归排查（ny1/nx1 批次）。
+
+> 更新（FIX-182/ARCH-03，2026-10）：J4 AI journey 已按现行 AI 设置页
+> 契约（用途分配 / Profile / 默认配置的精确锚定选择器）重写并恢复为 CI
+> 必需旅程——原「CI 门扩展：J4 因 purpose-profiles 契约漂移暂不在门内」
+> 条目不再成立，已移除。
 
 ## Explicitly deferred / rejected
 

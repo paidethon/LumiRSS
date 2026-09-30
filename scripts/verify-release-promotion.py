@@ -42,6 +42,7 @@ def verify_promotion(
     expected_version: str,
     bff_digest: str,
     web_digest: str,
+    expected_platform: str | None = None,
 ) -> list[str]:
     failures: list[str] = []
 
@@ -95,6 +96,19 @@ def verify_promotion(
                 f"pushed digest @{digest} — a mutable tag must never be promoted",
             )
 
+    # FIX-185/189: the declared platform is part of the promoted identity —
+    # a manifest describing a different architecture must never ride along
+    # with this build (the production target is pinned in the workflow).
+    if expected_platform is not None:
+        manifest_platform = manifest.get("platform")
+        if manifest_platform != expected_platform:
+            _fail(
+                failures,
+                f"manifest platform {manifest_platform!r} != expected "
+                f"{expected_platform!r} — refusing to promote a mismatched "
+                "architecture",
+            )
+
     return failures
 
 
@@ -104,6 +118,10 @@ def main() -> int:
     parser.add_argument("--tag-commit", required=True, help="git rev-parse of the tag's commit")
     parser.add_argument("--expected-sha", required=True, help="tested SHA the builds received")
     parser.add_argument("--expected-version", required=True)
+    parser.add_argument(
+        "--expected-platform", default=None,
+        help="published image platform (e.g. linux/amd64); checked against manifest.platform",
+    )
     parser.add_argument("--bff-digest", required=True)
     parser.add_argument("--web-digest", required=True)
     args = parser.parse_args()
@@ -115,15 +133,19 @@ def main() -> int:
         args.expected_version,
         args.bff_digest,
         args.web_digest,
+        expected_platform=args.expected_platform,
     )
     if failures:
         for failure in failures:
             print(f"FAIL {failure}")
         return 1
+    platform_note = (
+        f"; platform {args.expected_platform}" if args.expected_platform else ""
+    )
     print(
         f"promotion identity ok: tag commit == tested SHA == manifest git_sha "
         f"({args.expected_sha[:12]}); v{args.expected_version}; "
-        "bff+web digest-pinned to this run's pushes"
+        f"bff+web digest-pinned to this run's pushes{platform_note}"
     )
     return 0
 

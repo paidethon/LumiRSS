@@ -161,9 +161,10 @@ jobs:
   e2e-journeys:
     # E05：核心用户旅程真实闭环——boot 完整 e2e compose 栈
     # （FreshRSS/RSSHub/BFF/Caddy），跑登录/订阅/时间线/已读收藏/
-    # 设置持久化等 journey（desktop-journeys.spec.ts 的核心集；
-    # J4 AI journey 因合并批次引入 AI purpose-profiles 后的契约漂移
-    # 暂不在门内——见本轮报告 REMAINING）。
+    # 设置持久化等 journey（desktop-journeys.spec.ts 的核心集）。
+    # FIX-182/ARCH-03：J4 AI journey 的 purpose-profiles 契约漂移已在
+    # 测试侧收敛（精确锚定「默认 Base URL」/「默认 Model」/exact「保存」，
+    # 见 desktop-journeys.spec.ts），恢复为门内必需旅程——不再 grep-invert。
     name: Playwright core journeys (e2e stack)
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -213,8 +214,9 @@ jobs:
           LUMIRSS_E2E_BASE_URL: http://127.0.0.1:8088
           LUMIRSS_E2E_LOGIN: e2e-login-pwpw
         run: |
+          # FIX-182/ARCH-03: J4 back in the gate — full file, no exclusions.
           pnpm exec playwright test --project=desktop-1440 \
-            --grep-invert "J4" e2e/desktop-journeys.spec.ts
+            e2e/desktop-journeys.spec.ts
 
       - name: Upload artifacts on failure
         if: failure()
