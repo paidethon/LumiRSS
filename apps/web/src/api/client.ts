@@ -3899,10 +3899,12 @@ export type UnsubscribePreview = {
   note: string
 }
 
-/** N012：退订影响预览（纯只读；先于任何确认/删除调用）。 */
-export async function fetchUnsubscribePreview(subscriptionRef: string): Promise<UnsubscribePreview> {
+/** N012：退订影响预览（纯只读；先于任何确认/删除调用）。
+ * FIX-252：signal 一路传到真实 fetch——对话框关闭 / 卸载时预取可真实终止。 */
+export async function fetchUnsubscribePreview(subscriptionRef: string, signal?: AbortSignal): Promise<UnsubscribePreview> {
   return request<UnsubscribePreview>(
     `${API_BASE}/subscriptions/${encodeURIComponent(subscriptionRef)}/unsubscribe-preview`,
+    signal,
   )
 }
 

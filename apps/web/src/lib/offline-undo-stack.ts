@@ -143,3 +143,21 @@ export function clearOfflineUndoStack(
 export function shouldRecordAsPending(online: boolean): boolean {
   return !online
 }
+
+/** FIX-346：真实请求的网络失败识别（api/client 的 ApiError 形状：
+ * status 0 + type network_error = fetch 层失败——服务器不可达 / DNS /
+ * captive portal）。结构化判断，保持本模块零依赖（不 import client）。 */
+export function isNetworkFailure(error: unknown): boolean {
+  if (error === null || typeof error !== 'object') return false
+  const candidate = error as { status?: unknown; type?: unknown }
+  return candidate.status === 0 && candidate.type === 'network_error'
+}
+
+/** FIX-346：pending 判定的完整形式 = 设备离线 ∨ 真实网络失败。
+ * navigator.onLine 只是旁证：WSL / 内网断外网 / captive portal 场景下
+ * 浏览器报告在线但请求真实失败——此时本机意图同样是「未同步」，必须
+ * 入栈，否则提交意图直接丢失（既非 synced 也无从撤销）。服务端明确
+ * 拒绝（4xx/5xx）不入栈——那是服务端事实，不是待同步意图。 */
+export function shouldRecordAsPendingFromFailure(online: boolean, error: unknown): boolean {
+  return !online || isNetworkFailure(error)
+}

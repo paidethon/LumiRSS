@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, deleteInboxItem, deleteInboxSource, getEntries, getEntry, getFeeds, setEntryState } from '../api/client'
+import { ApiError, deleteInboxItem, deleteInboxSource, fetchUnsubscribePreview, getEntries, getEntry, getFeeds, setEntryState } from '../api/client'
 import type { EntryDetail, EntryListResponse } from '../api/types'
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -369,5 +369,29 @@ describe('inbox 删除的 404 幂等容错（质量收口）', () => {
       ),
     )
     await expect(deleteInboxSource('src-1')).resolves.toBeUndefined()
+  })
+})
+
+describe('FIX-252 — 退订预览的 AbortSignal 透传真实 fetch', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('fetchUnsubscribePreview(ref, signal) → fetch 收到同一 signal；预 abort 不发请求', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}))
+    vi.stubGlobal('fetch', fetchMock)
+    const controller = new AbortController()
+
+    await fetchUnsubscribePreview('s1.abc', controller.signal)
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(path).toBe('/api/v1/subscriptions/s1.abc/unsubscribe-preview')
+    expect(init.signal).toBe(controller.signal)
+
+    const aborted = new AbortController()
+    aborted.abort()
+    await expect(fetchUnsubscribePreview('s1.abc', aborted.signal)).rejects.toMatchObject({ name: 'AbortError' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })
