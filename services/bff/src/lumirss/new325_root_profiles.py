@@ -333,7 +333,13 @@ class RootProfileStore:
                 new_rows.append((str(_uuid.uuid4()), note))
                 added += 1
                 continue
-            if existing["fingerprint"] == note["fingerprint"]:
+            if (
+                existing["fingerprint"] == note["fingerprint"]
+                and existing["content_hash"] == note["content_hash"]
+            ):
+                # FIX-339：指纹打平且摘要一致才短路；同长度修改落在同一
+                # mtime 粒度内时摘要已在手，照常进入 changed（走下方
+                # hash_only=False 的全量更新）。
                 unchanged += 1
                 continue
             hash_only = existing["content_hash"] == note["content_hash"]
