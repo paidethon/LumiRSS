@@ -11,6 +11,12 @@
  *   （共享 cookie 已是新身份）。只处理「本标签页仍挂着应用子树」的
  *   场景（status === 'authenticated'），且处理过程不再次广播（否则
  *   标签页间乒乓循环）。
+ * - FIX-278：监听 pageshow persisted=true（浏览器 back-forward cache
+ *   恢复快照——JS 状态原样复活，离开期间会话可能已被撤销/过期）。
+ *   先回 checking 摘下应用子树（私有内容交互暂停），再走 probeNonce
+ *   重探 /auth/session，按服务端结果放行；探测失败（离线）照旧放行
+ *   ——「连不上」不冒充「未登录」。persisted=false 与非 authenticated
+ *   状态不触发（普通加载/登录页无需复核）。
  */
 
 import { useEffect } from 'react'
@@ -50,6 +56,21 @@ export function useAuthGate(queryClient: QueryClient): AuthGateStatus {
       queryClient.clear()
     }
   }, [status, queryClient])
+
+  useEffect(() => {
+    function onPageShow(event: PageTransitionEvent): void {
+      // 只处理 bfcache 恢复（persisted=true）；普通加载不重探。
+      if (!event.persisted) return
+      // 只复核还挂着应用子树的标签页；登录页/探测中无需复核。
+      if (useAuthStore.getState().status !== 'authenticated') return
+      // 先回 checking：AuthGate 摘下应用子树，私有内容交互暂停；
+      // probeNonce 递增驱动重新探测，按服务端结果放行（见上方 effect）。
+      useAuthStore.getState().setStatus('checking')
+      useAuthStore.getState().requestProbe()
+    }
+    window.addEventListener('pageshow', onPageShow)
+    return () => window.removeEventListener('pageshow', onPageShow)
+  }, [])
 
   useEffect(() => {
     function onStorage(event: StorageEvent): void {
