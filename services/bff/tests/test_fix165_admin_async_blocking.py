@@ -25,6 +25,7 @@ runtime-generated test fakes.
 """
 
 import asyncio
+import secrets
 import threading
 
 import httpx
@@ -39,7 +40,7 @@ LOOP_THREAD = threading.get_ident()
 
 
 def _session_env(monkeypatch, tmp_path) -> tuple[str, str]:
-    password = "owner-pw-" + tmp_path.name[-10:]
+    password = "pw-" + secrets.token_urlsafe(16)
     monkeypatch.setenv("LUMIRSS_DB_PATH", str(tmp_path / "lumi.sqlite"))
     monkeypatch.setenv("LUMIRSS_AUTH_MODE", "session")
     monkeypatch.setenv("LUMIRSS_SESSION_SECURE_COOKIES", "false")
@@ -110,7 +111,7 @@ async def _scenario(monkeypatch, tmp_path) -> None:
             mint = await client.post(
                 "/api/v1/admin/step-up",
                 json={
-                    "password": "definitely-not-" + owner_password,
+                    "password": owner_password + "x" * 4,
                     "operation": "user_password_reset",
                     "targetUserId": "u" + tmp_path.name[-6:],
                 },

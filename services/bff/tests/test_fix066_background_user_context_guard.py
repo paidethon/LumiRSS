@@ -27,10 +27,11 @@ from lumirss.user_scope import (
 
 
 def _uid_rows(db_file, table: str) -> int:
+    assert table == "lumi_settings", "测试辅助仅允许字面量表名"
     connection = sqlite3.connect(f"file:{db_file}?mode=ro", uri=True)
     try:
         return int(
-            connection.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()[0]
+            connection.execute("SELECT COUNT(*) AS n FROM lumi_settings").fetchone()[0]
         )
     finally:
         connection.close()
