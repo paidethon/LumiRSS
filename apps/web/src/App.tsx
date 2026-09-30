@@ -200,7 +200,10 @@ export default function App() {
   const swipeBackGesture = settings.swipeBackGesture
   // FIX-112：侧滑跟手预览是大幅整页平移——应用内减少动效与 OS
   // prefers-reduced-motion 等效生效（后者此前被遗漏）。
-  const reduceMotion = settings.reduceMotion || usePrefersReducedMotion()
+  // Hook 必须无条件调用：settings.reduceMotion 为 true 时短路会改变
+  // 渲染间 Hook 顺序（rules-of-hooks 错误，运行时崩溃风险）。
+  const systemReduceMotion = usePrefersReducedMotion()
+  const reduceMotion = settings.reduceMotion || systemReduceMotion
   const glassEffect = settings.glassEffect
   useEffect(() => {
     const root = document.documentElement
