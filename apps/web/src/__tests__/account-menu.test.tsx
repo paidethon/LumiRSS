@@ -83,6 +83,41 @@ describe('身份展示与入口可见性', () => {
   })
 })
 
+describe('FIX-001 身份未核实的死局（session 模式 + identity null）', () => {
+  it('登录瞬间探测失败（identity null）→ 仍渲染账户入口，退出登录可用', async () => {
+    // 前缺陷：`mode !== 'session' || identity === null` 直接零渲染——
+    // 已登录（Cookie 有效、可读文章）却没有任何退出/改密入口。
+    useAuthStore.setState({ mode: 'session', identity: null })
+    mocks.logoutCurrent.mockResolvedValue({ authenticated: false })
+    renderMenu()
+    expect(screen.getByTestId('account-menu')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('account-menu-trigger'))
+    fireEvent.click(await screen.findByRole('menuitem', { name: '退出登录' }))
+    await waitFor(() => {
+      expect(useAuthStore.getState().status).toBe('unauthenticated')
+    })
+    expect(mocks.logoutCurrent).toHaveBeenCalledTimes(1)
+  })
+
+  it('身份未核实 → 无角色徽标、无管理台入口（不猜测身份，basic 模式仍零渲染）', async () => {
+    useAuthStore.setState({ mode: 'session', identity: null })
+    renderMenu()
+    expect(screen.queryByTestId('account-role-badge')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('account-username')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('account-menu-trigger'))
+    await screen.findByRole('menuitem', { name: '退出登录' })
+    expect(screen.queryByRole('menuitem', { name: '管理台' })).not.toBeInTheDocument()
+    // 对照组保持不变：basic 模式（代理层持有身份）依旧零渲染。
+    useAuthStore.setState({ mode: 'basic', identity: null })
+  })
+
+  it('basic 模式（无身份）→ 零渲染（现状兼容，FIX-001 不改变该契约）', () => {
+    useAuthStore.setState({ mode: 'basic', identity: null })
+    renderMenu()
+    expect(screen.queryByTestId('account-menu')).not.toBeInTheDocument()
+  })
+})
+
 describe('退出登录（O157 统一清理）', () => {
   it('退出登录 → logoutCurrent → 缓存清空 + 身份清除 + 门翻 unauthenticated', async () => {
     useAuthStore.setState({ identity: MEMBER })
