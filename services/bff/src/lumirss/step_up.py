@@ -18,6 +18,7 @@
 - 审计只记 mint/denied 动作与用户 id，绝不记令牌或密码。
 """
 
+import asyncio
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -82,7 +83,11 @@ async def mint_step_up_token(
     row = await db.fetch_one(
         "SELECT password_hash FROM users WHERE id = ?", (user_id,)
     )
-    if row is None or not verify_password_hash(password, row["password_hash"]):
+    # FIX-165：bcrypt 校验实测 ~191ms/次（rounds=12）——必须在 worker
+    # 线程执行；在事件循环上内联会让所有并发请求停摆整个 bcrypt 周期。
+    if row is None or not await asyncio.to_thread(
+        verify_password_hash, password, row["password_hash"]
+    ):
         return None
     token = secrets.token_urlsafe(_TOKEN_BYTES)
     now = utc_now()
