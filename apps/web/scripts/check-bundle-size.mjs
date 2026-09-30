@@ -7,6 +7,9 @@
  *    合并后实测 781.4 kB raw（登录页注册入口 + ?next= 重定向校验 +
  *    register/policy client 函数，均为登录必经路径、无法懒加载），
  *    raw 上限按实测重校为 784 kB（gzip 上限不变，实测 232.9 kB）；
+ *    R2 FIX 清扫批次合并后首路径语义增长（脚注往返装饰层、bfcache
+ *    会话复核、阅读器切换钉键等首屏阅读路径，均无法懒加载）实测
+ *    785 kB，raw 上限按同法重校为 792 kB（2026-10 记录）；
  * 2. 懒加载契约：SettingsModal / MobileSettingsScreen / 一级移动页
  *    chunk 不得出现在 index.html 引用里（回归 = 有人把懒入口改回
  *    静态 import）。
@@ -32,7 +35,7 @@ for (const asset of jsAssets) {
   gzipTotal += gzipSync(buf).length
 }
 
-const RAW_LIMIT = 784 * 1024
+const RAW_LIMIT = 792 * 1024
 const GZIP_LIMIT = 235 * 1024
 const failures = []
 if (rawTotal > RAW_LIMIT) {
