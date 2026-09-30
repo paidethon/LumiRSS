@@ -28,6 +28,12 @@ export function takeStepUpHeaders(): Record<string, string> {
   return headers
 }
 
+/** FIX-028：解除已武装的令牌（取消敏感操作/关闭提权弹窗时调用）。
+ * 取消的操作不得给后续请求留下一枚可借道通过的一次性令牌。 */
+export function clearStepUpToken(): void {
+  currentToken = null
+}
+
 export function isStepUpRequiredError(error: unknown): boolean {
   return error instanceof ApiError && error.type === 'step_up_required'
 }
