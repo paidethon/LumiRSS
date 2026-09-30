@@ -116,7 +116,7 @@ def test_new345_evaluate_access_pure():
     assert evaluate_access({"revokedAt": None, "maxUses": 2, "useCount": 1}) == "served"
 
 
-def test_new345_record_access_module_level():
+def test_new345_record_access_module_level(tmp_path):
     """模块层：served 累加 + 首次耗尽写 exhausted_at（真实库）。"""
     from lumirss.entryref import encode_entry_ref
     from lumirss.new344_share_links import ShareLinkStore
@@ -124,7 +124,8 @@ def test_new345_record_access_module_level():
     from lumirss.storage import Database
 
     async def run():
-        db = Database("/tmp/n345-direct/lumi.sqlite")
+        # FIX-386：per-test tmp_path（同 conftest 隔离纪律）。
+        db = Database(tmp_path / "lumi.sqlite")
         store = ShareLinkStore(db)
         created = await store.create(
             title="模块层",

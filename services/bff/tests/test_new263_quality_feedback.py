@@ -135,7 +135,7 @@ def test_queue_order_resolve_and_delete(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def _seed_api(client, entry_key: str, calls: dict | None = None):
+def _seed_api(client, tmp_path, entry_key: str, calls: dict | None = None):
     async def run_seed():
         from lumirss.main import app as lumi_app
 
@@ -149,7 +149,8 @@ def _seed_api(client, entry_key: str, calls: dict | None = None):
             db=db,
             settings_store=settings,
             provider_factory=_echo_provider(calls if calls is not None else {"n": 0}),
-            secrets=SecretsStore(f"/tmp/n263-{entry_key}-secrets.json"),
+            # FIX-386：密钥文件随 per-test tmp_path，禁止固定 /tmp 路径。
+            secrets=SecretsStore(tmp_path / f"n263-{entry_key}-secrets.json"),
         )
         blocks = [
             SegmentInput(index=0, text="Source zero."),
@@ -162,8 +163,8 @@ def _seed_api(client, entry_key: str, calls: dict | None = None):
     return encode_entry_ref(f"e1.{entry_key}")
 
 
-def test_api_feedback_roundtrip(client):
-    ref = _seed_api(client, "n263api")
+def test_api_feedback_roundtrip(client, tmp_path):
+    ref = _seed_api(client, tmp_path, "n263api")
 
     made = client.post(
         f"/api/v1/entries/{ref}/translation/segments/0/feedback",

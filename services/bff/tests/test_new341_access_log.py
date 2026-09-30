@@ -55,14 +55,16 @@ def test_new341_limit_is_bounded(ab_env):  # noqa: F811
     assert response.status_code == 200
 
 
-def test_new341_list_events_pure_shape():
+def test_new341_list_events_pure_shape(tmp_path):
     """模块层：purposeLabel 映射与未知 purpose 兜底。"""
 
     async def run():
         from lumirss.new341_access_log import record_access_event
         from lumirss.storage import Database
 
-        db = Database("/tmp/n341-labels/lumi.sqlite")
+        # FIX-386：per-test tmp_path，禁止固定 /tmp 路径（多 worktree
+        # 并行 pytest 会读写同一文件 → 串数据/锁冲突）。
+        db = Database(tmp_path / "lumi.sqlite")
         await record_access_event(db, "share_link", "链接 演示")
         await record_access_event(db, "unknown_purpose", "x")
         return await list_access_events(db, 10)

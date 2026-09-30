@@ -124,7 +124,7 @@ def test_discard_keeps_ledger_and_machine_text_then_regenerates(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def _seed_segments(entry_key: str, calls: dict | None = None):
+def _seed_segments(tmp_path, entry_key: str, calls: dict | None = None):
     """在当前 client 的 app.state.db 上为 entry 生成两段缓存行，
     并把带 fake provider 的段服务显式注入 app.state（路由级替身）。"""
 
@@ -141,7 +141,8 @@ def _seed_segments(entry_key: str, calls: dict | None = None):
             db=db,
             settings_store=settings,
             provider_factory=_echo_provider(calls if calls is not None else {"n": 0}),
-            secrets=SecretsStore(f"/tmp/n262-{entry_key}-secrets.json"),
+            # FIX-386：密钥文件随 per-test tmp_path，禁止固定 /tmp 路径。
+            secrets=SecretsStore(tmp_path / f"n262-{entry_key}-secrets.json"),
         )
         await service.generate(encode_entry_ref(f"e1.{entry_key}"), BLOCKS)
         lumi_app.state.segment_translation_service = service
@@ -149,10 +150,10 @@ def _seed_segments(entry_key: str, calls: dict | None = None):
     run(run_seed())
 
 
-def test_api_discard_regenerates_and_records_ledger(client):
+def test_api_discard_regenerates_and_records_ledger(client, tmp_path):
     entry_key = "new262a"
     calls = {"n": 0}
-    _seed_segments(entry_key, calls)
+    _seed_segments(tmp_path, entry_key, calls)
     generate_calls_before = calls["n"]
     entry_ref = encode_entry_ref(f"e1.{entry_key}")
     assert client.put(
@@ -189,9 +190,9 @@ def test_api_discard_regenerates_and_records_ledger(client):
     assert no_revision.json()["error"]["type"] == "revision_discard_invalid"
 
 
-def test_api_discard_without_regenerate_is_zero_provider(client):
+def test_api_discard_without_regenerate_is_zero_provider(client, tmp_path):
     entry_key = "new262b"
-    _seed_segments(entry_key)
+    _seed_segments(tmp_path, entry_key)
     entry_ref = encode_entry_ref(f"e1.{entry_key}")
     assert client.put(
         f"/api/v1/entries/{entry_ref}/translation/segments/1/revision",
