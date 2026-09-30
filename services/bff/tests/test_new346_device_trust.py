@@ -35,7 +35,7 @@ def test_new346_wrong_password_401(ab_env):  # noqa: F811
     client = ab_env["client"]
     denied = client.post(
         TRUST_PATH,
-        json={"password": "definitely-wrong-password", "hours": 6},
+        json={"password": "x" * 24, "hours": 6},
         headers=ab_env["a"],
     )
     assert denied.status_code == 401

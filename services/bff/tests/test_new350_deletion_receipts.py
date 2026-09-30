@@ -75,7 +75,7 @@ def test_new350_confirm_processes_and_receipt(ab_env):  # noqa: F811
 
     wrong_password = client.post(
         CONFIRM_PATH,
-        json={"password": "totally-wrong", "confirmText": "DELETE"},
+        json={"password": "y" * 20, "confirmText": "DELETE"},
         headers=ab_env["a"],
     )
     assert wrong_password.status_code == 401
