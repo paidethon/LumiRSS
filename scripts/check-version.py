@@ -7,6 +7,8 @@
 - services/bff/pyproject.toml ``version``
 - services/bff/src/lumirss/config.py ``LUMIRSS_VERSION``
 - apps/web/package.json ``version``
+- docker-compose.prod.yml 镜像默认 tag（FIX-184：正式安装钉发布版本，
+  绝不默认可变 latest）
 
 任何不一致 → 非零退出。CI 与 ``pnpm api:check`` 同类门禁；升级版本时
 只改 VERSION 与各处（脚本保证不漂移）。
@@ -54,11 +56,28 @@ def main() -> int:
     if web.get("version") != expected:
         failures.append(f"apps/web/package.json version={web.get('version')!r} != {expected!r}")
 
+    # FIX-184: the production compose image default must equal VERSION —
+    # a plain install pins the released immutable tag, never mutable
+    # `latest` (image tag consistency is part of the O190 single source).
+    compose = (ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")
+    defaults = re.findall(
+        r"lumirss-(?:web|bff):\$\{LUMIRSS_IMAGE_TAG:-([^}]+)\}", compose
+    )
+    if sorted(defaults) != [expected, expected]:
+        failures.append(
+            "docker-compose.prod.yml image defaults "
+            f"{defaults!r} != ['{expected}', '{expected}'] "
+            "(both services must default to the VERSION release tag, never 'latest')"
+        )
+
     if failures:
         for failure in failures:
             print(f"FAIL {failure}")
         return 1
-    print(f"version ok: {expected} (VERSION, bff pyproject, bff config, web package.json)")
+    print(
+        f"version ok: {expected} (VERSION, bff pyproject, bff config, "
+        "web package.json, compose image default)"
+    )
     return 0
 
 

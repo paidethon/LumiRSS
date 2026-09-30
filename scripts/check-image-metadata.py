@@ -199,6 +199,58 @@ def check_image_metadata() -> list[str]:
         "asset exists on the server before concluding (scripts/check-release-assets.py)",
     )
 
+    # ---- FIX-189: published platform is explicit and single ---------------
+    if publish.count("platforms: linux/amd64") < 2:
+        failures.append(
+            "publish-images.yml: BOTH image builds must declare "
+            "`platforms: linux/amd64` (the production target is x86_64; "
+            "an accidental multi-arch or native-only drift must fail here)"
+        )
+    _require(
+        publish,
+        r'"platform": "linux/amd64"',
+        failures,
+        "publish-images.yml: the manifest must record the published platform "
+        "(operators check it against uname -m before loading offline)",
+    )
+    _require(
+        publish,
+        r'--expected-platform "linux/amd64"',
+        failures,
+        "publish-images.yml: promotion must verify the manifest platform "
+        "matches the published one (scripts/verify-release-promotion.py "
+        "--expected-platform)",
+    )
+
+    # ---- FIX-188: min_compat is resolved, never a stub null ----------------
+    if re.search(r'"min_compat":\s*null', publish) is not None:
+        failures.append(
+            'publish-images.yml: manifest must not hardcode "min_compat": null '
+            "— resolve the upgrade floor via scripts/resolve-min-compat.py"
+        )
+    _require(
+        publish,
+        r'scripts/resolve-min-compat\.py --current "\$version"',
+        failures,
+        "publish-images.yml: min_compat must come from "
+        "scripts/resolve-min-compat.py (the most recent release below current)",
+    )
+
+    # ---- FIX-186/187: a ready-to-install bundle ships with the release ----
+    _require(
+        publish,
+        r"scripts/assemble-release-bundle\.sh",
+        failures,
+        "publish-images.yml: every run must assemble the install bundle "
+        "(scripts/assemble-release-bundle.sh) — a release ships an "
+        "installable package, not only a workflow-artifact manifest",
+    )
+    if "lumirss-release-bundle-${{ steps.tags.outputs.version }}" not in publish:
+        failures.append(
+            "publish-images.yml: the bundle tar must be attached to the tag's "
+            "release and asserted as a required asset"
+        )
+
     # ---- FIX-376: any setup-node cache must hash its lockfile -------------
     for wf in sorted((ROOT / ".github/workflows").glob("*.yml")):
         text = wf.read_text(encoding="utf-8")
@@ -224,7 +276,9 @@ def main() -> int:
             print(f"FAIL {failure}")
         return 1
     print(f"image metadata ok: OCI labels wired to VERSION ({version}) + tested SHA; "
-          "ci-gate identity is path-based; node caches hash lockfiles")
+          "ci-gate identity is path-based; platform pinned linux/amd64 (FIX-189); "
+          "min_compat resolved (FIX-188); install bundle assembled (FIX-186/187); "
+          "node caches hash lockfiles")
     return 0
 
 

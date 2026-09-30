@@ -184,13 +184,20 @@ test('J4 — AI：mock provider 设置 / key 不回显 / 摘要生成与失败�
   const dialog = visibleDialog(page)
 
   // 配置 mock provider（key 只在服务端；UI 无 key 输入 = 不回显）。
+  // FIX-182/ARCH-03 契约更新：AI 设置页新增用途分配 / Profile / 配额卡 /
+  // 任务中心后，模糊匹配不再成立——
+  //   /保存/ 会同时命中「保存」「保存用量限制」「保存评测样例」（探测
+  //   count=3），strict violation 被 isEnabled().catch() 吞掉后保存与
+  //   「已保存」断言静默丢失（配额卡先渲染即触发）——改为精确锚定：
+  //   aria-label「默认 Base URL」「默认 Model」+ exact「保存」（count=1）。
   // 幂等：若表单与服务器已一致（重跑），保存按钮禁用则直接继续。
-  await dialog.getByLabel(/Base URL|服务地址/).fill(`http://${BRIDGE}:${AI_PORT}/v1`)
-  await dialog.getByLabel(/模型|Model/).fill('mock-model')
-  const saveButton = dialog.getByRole('button', { name: /保存/ })
-  if (await saveButton.isEnabled().catch(() => false)) {
+  await dialog.getByLabel('默认 Base URL').fill(`http://${BRIDGE}:${AI_PORT}/v1`)
+  await dialog.getByLabel('默认 Model').fill('mock-model')
+  const saveButton = dialog.getByRole('button', { name: '保存', exact: true })
+  await expect(saveButton).toHaveCount(1)
+  if (await saveButton.isEnabled()) {
     await saveButton.click()
-    await expect(dialog.getByText(/已保存|保存成功/).first()).toBeVisible()
+    await expect(dialog.getByText('已保存', { exact: true })).toBeVisible()
   }
   // 页面任意位置不得出现真实 key 形状
   const bodyText = await page.locator('body').innerText()

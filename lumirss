@@ -292,8 +292,9 @@ configure() { # interactive when values are missing; env vars win
   # Persist the deployed image tag so update/rollback reuse the exact same
   # immutable reference without needing the env var again (env still wins).
   # .env.prod files copied from older examples lack the key — append it.
+  # FIX-184: the fallback is the release VERSION, never mutable latest.
   local tag_now="${LUMIRSS_IMAGE_TAG:-$(env_value LUMIRSS_IMAGE_TAG)}"
-  tag_now="${tag_now:-latest}"
+  tag_now="${tag_now:-$(cat VERSION 2>/dev/null || echo latest)}"
   if grep -qE '^LUMIRSS_IMAGE_TAG=' "$ENV_FILE"; then
     sed -i "s|^LUMIRSS_IMAGE_TAG=.*|LUMIRSS_IMAGE_TAG=$tag_now|" "$ENV_FILE"
   else
@@ -324,7 +325,7 @@ images_pull_or_build() { # $1 = "--build" (dev-only; refused on prod compose)
   if [[ "${1:-}" == "--build" ]]; then
     refuse_build_flag
   fi
-  local tag="${IMAGE_TAG:-latest}"
+  local tag="${IMAGE_TAG:-$(cat VERSION 2>/dev/null || echo latest)}"
   log "pulling prebuilt images (tag: $tag)"
   if DC_D pull 2>&1 | grep -qE " Pulled| up to date"; then
     return 0
@@ -452,7 +453,7 @@ os.replace(tmp, path)
 snapshot_for_rollback() {
   mkdir -p "$BACKUP_DIR"
   cp -f "$ENV_FILE" "$BACKUP_DIR/.env.prod.previous"
-  echo "${IMAGE_TAG:-latest}" > "$BACKUP_DIR/.image-tag.previous"
+  echo "${IMAGE_TAG:-$(cat VERSION 2>/dev/null || echo latest)}" > "$BACKUP_DIR/.image-tag.previous"
   # N197 回滚就绪检查：与 N196 deploy-status 同一挂载思路——设置
   # LUMIRSS_ROLLBACK_MANIFEST_FILE 时把前一镜像标签写成 JSON 清单，
   # 供 BFF GET /admin/rollback-readiness 只读透传（无秘密；写失败仅
@@ -481,7 +482,7 @@ snapshot_for_rollback() {
 
 write_rollback_manifest() { # write_rollback_manifest DEST (values from caller scope)
   ROLLBACK_MANIFEST_PATH="$1" \
-  ROLLBACK_MANIFEST_TAG="${IMAGE_TAG:-latest}" \
+  ROLLBACK_MANIFEST_TAG="${IMAGE_TAG:-$(cat VERSION 2>/dev/null || echo latest)}" \
   ROLLBACK_MANIFEST_ID_BFF="${id_bff:-}" ROLLBACK_MANIFEST_ID_WEB="${id_web:-}" \
   ROLLBACK_MANIFEST_SCHEMA_VERSIONS="${schema_versions:-}" \
   ROLLBACK_MANIFEST_RUN_ID="${LUMIRSS_DEPLOY_RUN_ID:-}" \
@@ -789,7 +790,7 @@ backup_image() { # prints the image reference for backup/restore containers
   if [[ -n "${LUMIRSS_BACKUP_IMAGE:-}" ]]; then printf '%s\n' "$LUMIRSS_BACKUP_IMAGE"; return; fi
   local img
   img="$(DC_D config --format json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("services",{}).get("bff",{}).get("image",""))' 2>/dev/null || true)"
-  printf '%s\n' "${img:-ghcr.io/paidethon/lumirss/lumirss-bff:${IMAGE_TAG:-latest}}"
+  printf '%s\n' "${img:-ghcr.io/paidethon/lumirss/lumirss-bff:${IMAGE_TAG:-$(cat VERSION 2>/dev/null || echo latest)}}"
 }
 
 # 快照程序（FIX-192 一致性备份的趟 1；经 stdin 喂给备份容器里的 python3，
@@ -1431,13 +1432,45 @@ cmd_freshrss_init() { # make the internal FreshRSS usable by the BFF
 }
 
 # ---------------------------------------------------------------------------
+# FIX-189: the published images are linux/amd64 (publish-images.yml pins
+# `platforms: linux/amd64`; the production target reports uname -m x86_64
+# in the G5 read-only inventory). An offline bundle must match the platform
+# that will run it: export refuses a known mismatch, import verifies what
+# actually got loaded on the target host. Unknown architecture (stub/legacy
+# docker without inspect data) → warn, never a silent green light.
+host_docker_arch() { # docker arch name for this machine
+  case "$(uname -m)" in
+    x86_64) echo amd64;;
+    aarch64|arm64) echo arm64;;
+    armv7l) echo arm;;
+    *) uname -m;;
+  esac
+}
+
+assert_images_match_host_arch() { # image refs...; returns 1 on known mismatch
+  local want="$1"; shift
+  local arch img
+  for img in "$@"; do
+    arch="$(docker_cmd image inspect --format '{{.Architecture}}' "$img" 2>/dev/null || true)"
+    if [[ -z "$arch" ]]; then
+      warn "cannot read the architecture of $img — verify it is linux/$want before shipping this bundle (release-manifest.json platform)."
+    elif [[ "$arch" != "$want" ]]; then
+      err "$img is linux/$arch but this host runs $want — refusing: a platform-mismatched bundle cannot be installed on the target (published images are linux/amd64; see release-manifest.json 'platform')."
+      return 1
+    fi
+  done
+  return 0
+}
+
 cmd_export_images() { # ./lumirss export-images [--out DIR]
   local out="."
   if [[ "${1:-}" == "--out" ]]; then
     out="${2:-}"
     [[ -n "$out" ]] || { err "usage: ./lumirss export-images [--out DIR]"; exit 1; }
   fi
-  local tag="${IMAGE_TAG:-latest}"
+  # FIX-184: resolve like the dispatcher does — pinned release VERSION
+  # fallback, never mutable latest.
+  local tag="${IMAGE_TAG:-$(cat VERSION 2>/dev/null || echo latest)}"
   # D-01: names must match docker-compose.prod.yml (ghcr.io/paidethon/lumirss/…)
   # and images_pull_or_build below — the pre-registry-segment names
   # (ghcr.io/paidethon/lumirss-web) no longer exist and broke the offline
@@ -1466,6 +1499,9 @@ except Exception:
   if (( ${#imgs[@]} < 4 )); then
     warn "could not resolve the freshrss/rsshub pinned images from compose — this bundle covers web+bff only and is NOT a complete offline install set."
   fi
+  # FIX-189: export on a host that matches the target platform; a known
+  # arch mismatch refuses the bundle here, before any tar exists.
+  assert_images_match_host_arch "$(host_docker_arch)" "${imgs[@]}" || exit 1
   mkdir -p "$out"
   log "exporting ${#imgs[@]} images → $out/$tar_name (offline bundle)"
   docker_cmd save -o "$out/$tar_name" "${imgs[@]}" \
@@ -1499,6 +1535,16 @@ cmd_import_images() { # ./lumirss import-images <DIR>
   fi
   log "loading images from $tar"
   docker_cmd load -i "$tar" || { err "docker load failed."; exit 1; }
+  # FIX-189: the target host just accepted the bundle — prove what got
+  # loaded actually runs here (offline-load verification; refuse a known
+  # mismatch, warn when the loaded images cannot be inspected).
+  local itag loaded_imgs=()
+  itag="${tar##*/lumirss-images-}"; itag="${itag%.tar}"
+  if [[ -n "$itag" && "$itag" != "*" ]]; then
+    loaded_imgs=("ghcr.io/paidethon/lumirss/lumirss-web:$itag" "ghcr.io/paidethon/lumirss/lumirss-bff:$itag")
+    assert_images_match_host_arch "$(host_docker_arch)" "${loaded_imgs[@]}" \
+      || { err "loaded images do not match this host's architecture — do NOT deploy this bundle."; exit 1; }
+  fi
   log "images loaded — './lumirss deploy' / './lumirss update' will use them even when ghcr.io is unreachable."
 }
 
@@ -1590,7 +1636,11 @@ main() {
   UPSTREAM_PORT="${LUMIRSS_UPSTREAM_PORT:-$(env_value LUMIRSS_UPSTREAM_PORT)}"
   UPSTREAM_PORT="${UPSTREAM_PORT:-18080}"
   IMAGE_TAG="${LUMIRSS_IMAGE_TAG:-$(env_value LUMIRSS_IMAGE_TAG)}"
-  IMAGE_TAG="${IMAGE_TAG:-latest}"
+  # FIX-184: never default to the mutable `latest` — a bare install pins
+  # this tree's release version (the VERSION file ships next to this CLI
+  # in the repo and in every release bundle). docker-compose.prod.yml's
+  # default is kept equal by scripts/check-version.py.
+  IMAGE_TAG="${IMAGE_TAG:-$(cat VERSION 2>/dev/null || echo latest)}"
   export LUMIRSS_IMAGE_TAG="$IMAGE_TAG"
   if ((EXTERNAL_MODE == 1)); then
     COMPOSE_ARGS+=(-f docker-compose.external-caddy.yml)
