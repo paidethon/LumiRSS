@@ -6,7 +6,10 @@
  *   退出所有设备（/auth/logout-all，需确认）。
  * - owner/admin 额外有「管理台」入口（/admin 路由；member 访问由
  *   管理台自身渲染 403 页）。
- * - basic 模式（mode!=='session' 或无身份）→ 零渲染：现状兼容，
+ * - FIX-001：session 模式身份未核实（登录瞬间探测失败的兜底）→ 降级
+ *   菜单（占位触发钮、无徽标、无管理台），退出登录始终可达——已登录
+ *   绝不出现「无账户入口」的死局。
+ * - basic 模式（mode!=='session'）→ 零渲染：现状兼容，
  *   不显示身份与退出（AGENTS：Web 不建第二套 basic 登录 UI）。
  *
  * O157：登出成功统一走 resetAccountState——缓存与本地足迹清空后才
@@ -54,8 +57,14 @@ export default function AccountMenu() {
   // N080：阅读成果（会话内实际创建的批注/问题/卡片汇总）。
   const [recapOpen, setRecapOpen] = useState(false)
 
-  // basic 模式 / 身份未核实（登录响应探测失败的兜底）：不渲染身份与退出。
-  if (mode !== 'session' || identity === null) return null
+  // FIX-001：session 模式必须始终提供账户入口。登录成功瞬间 /auth/session
+  // 探测失败（网络抖动）会让 identity 为 null——若据此零渲染，用户已登录
+  // （Cookie 有效）却没有任何退出登录/改密入口，形成死局。身份未核实时
+  // 渲染「降级菜单」：触发按钮显示账号占位、无角色徽标、无管理台入口
+  // （不猜测身份）；退出与改密走 Cookie 会话，不依赖身份字段。
+  // basic 模式（代理层持有身份）仍零渲染：AGENTS 契约，Web 不建第二套
+  // basic 登录/账户 UI。
+  if (mode !== 'session') return null
 
   /** 登出统一出口：服务端撤销 → 清本地 → 翻门。 */
   async function performLogout(kind: 'current' | 'all') {
@@ -111,26 +120,46 @@ export default function AccountMenu() {
             data-testid="account-menu-trigger"
             className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-[var(--lumi-radius-md)] px-2 text-left transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
           >
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-[var(--lumi-radius-full)] bg-[var(--lumi-accent-soft)] text-xs font-semibold text-[var(--lumi-accent-text)]" aria-hidden>
-              {identity.username.slice(0, 1).toUpperCase()}
-            </span>
-            <span className="flex min-w-0 flex-col">
-              <span className="truncate text-sm font-medium text-[var(--lumi-text-primary)]" data-testid="account-username">
-                {identity.username}
-              </span>
-              <span
-                className={`mt-0.5 w-fit rounded-[var(--lumi-radius-full)] px-1.5 py-px text-[11px] leading-4 ${ROLE_BADGE_CLASSES[identity.role]}`}
-                data-testid="account-role-badge"
-              >
-                {ROLE_LABELS[identity.role]}
-              </span>
-            </span>
+            {/* FIX-001：身份未核实时显示占位触发钮（无徽标、无用户名——
+                绝不猜测身份），保证退出登录始终可达。 */}
+            {identity !== null ? (
+              <>
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-[var(--lumi-radius-full)] bg-[var(--lumi-accent-soft)] text-xs font-semibold text-[var(--lumi-accent-text)]" aria-hidden>
+                  {identity.username.slice(0, 1).toUpperCase()}
+                </span>
+                <span className="flex min-w-0 flex-col">
+                  <span className="truncate text-sm font-medium text-[var(--lumi-text-primary)]" data-testid="account-username">
+                    {identity.username}
+                  </span>
+                  <span
+                    className={`mt-0.5 w-fit rounded-[var(--lumi-radius-full)] px-1.5 py-px text-[11px] leading-4 ${ROLE_BADGE_CLASSES[identity.role]}`}
+                    data-testid="account-role-badge"
+                  >
+                    {ROLE_LABELS[identity.role]}
+                  </span>
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] text-xs font-semibold text-[var(--lumi-text-tertiary)]" aria-hidden>
+                  ?
+                </span>
+                <span className="flex min-w-0 flex-col">
+                  <span className="truncate text-sm font-medium text-[var(--lumi-text-primary)]">
+                    账号
+                  </span>
+                  <span className="mt-0.5 text-[11px] leading-4 text-[var(--lumi-text-tertiary)]">
+                    身份未核实
+                  </span>
+                </span>
+              </>
+            )}
           </button>
         )}
         items={[
           { key: 'recap', content: <><ListChecks aria-hidden className="size-4" />阅读成果</> },
           { key: 'password', content: <><KeyRound aria-hidden className="size-4" />修改密码</> },
-          ...(identity.role === 'owner' || identity.role === 'admin'
+          ...(identity !== null && (identity.role === 'owner' || identity.role === 'admin')
             ? [{ key: 'admin', content: <><Settings2 aria-hidden className="size-4" />管理台</> }]
             : []),
           { key: 'logout', content: <><LogOut aria-hidden className="size-4" />退出登录</> },
