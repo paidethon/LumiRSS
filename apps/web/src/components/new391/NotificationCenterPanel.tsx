@@ -262,7 +262,7 @@ export function AggregationRulesPanel() {
               value={kind}
               onChange={(event) => setKind(event.target.value as NotificationKind)}
             >
-              {(Object.keys(KIND_LABELS) as NotificationKind[])
+              {(Object.keys(KIND_LABELS) as (NotificationKind | 'all')[])
                 .filter((key) => key !== 'all')
                 .map((key) => (
                   <option key={key} value={key}>

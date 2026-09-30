@@ -179,7 +179,7 @@ describe('NEW-392 聚合规则', () => {
   it('创建规则 + 分组摘要展开即逐条原始事件', async () => {
     mockRoute(
       (url) => url === '/api/v1/notifications/aggregation-rules',
-      (init) =>
+      (_url, init) =>
         init?.method === 'POST'
           ? jsonResponse({
               id: 'r1', kind: 'task_failed', source: 'digest', label: '日报',

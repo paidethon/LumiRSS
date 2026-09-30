@@ -57,7 +57,6 @@ export function DocFeedbackPanel() {
   const [anchor, setAnchor] = useState('')
   const [question, setQuestion] = useState('')
   const [error, setError] = useState('')
-  const queryClient = useQueryClient()
   const own = useQuery({
     queryKey: ['new391', 'own-feedback'],
     queryFn: fetchOwnDocFeedback,
