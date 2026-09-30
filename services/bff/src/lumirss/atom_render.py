@@ -29,10 +29,16 @@ from datetime import UTC, datetime
 def rfc3339(value: object) -> str | None:
     """Normalize a timestamp-ish value to canonical RFC 3339 UTC, or None.
 
-    Accepts ``...Z`` / explicit offsets / naive (assumed UTC). Invalid or
-    missing values yield None — callers must treat None as "no usable
-    timestamp" and fall back, never emit an empty <updated>.
+    Accepts ``...Z`` / explicit offsets / naive (assumed UTC) ISO strings,
+    plus the two other shapes API sources commonly declare (FIX-157):
+    numeric epoch seconds / milliseconds, and RFC 2822 date strings.
+    Invalid or missing values yield None — callers must treat None as
+    "no usable timestamp" and fall back, never emit an empty <updated>.
     """
+    if isinstance(value, bool):  # bool 是 int 子类——绝不当 epoch
+        return None
+    if isinstance(value, (int, float)):
+        return _epoch_to_rfc3339(value)
     if not isinstance(value, str) or not value.strip():
         return None
     text = value.strip()
@@ -41,10 +47,45 @@ def rfc3339(value: object) -> str | None:
     try:
         parsed = datetime.fromisoformat(text)
     except ValueError:
+        parsed = _parse_rfc2822(text)
+    if parsed is None:
         return None
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=UTC)
     return parsed.astimezone(UTC).isoformat(timespec="seconds")
+
+
+# 数字 epoch 的可信量级（FIX-157）：低于 1e9「秒」是 1970s 噪声值，
+# [1e12, 1e14) 是毫秒形态；两者之外不猜（宁可 None 退回稳定锚点）。
+_EPOCH_SECONDS_MIN = 10**9
+_EPOCH_SECONDS_MAX = 10**11
+_EPOCH_MILLIS_MIN = 10**12
+_EPOCH_MILLIS_MAX = 10**14
+
+
+def _epoch_to_rfc3339(value: int | float) -> str | None:
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if _EPOCH_MILLIS_MIN <= seconds < _EPOCH_MILLIS_MAX:
+        seconds /= 1000.0
+    elif not (_EPOCH_SECONDS_MIN <= seconds < _EPOCH_SECONDS_MAX):
+        return None
+    try:
+        return datetime.fromtimestamp(seconds, tz=UTC).isoformat(timespec="seconds")
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def _parse_rfc2822(text: str):
+    """RFC 2822（邮件/传统 API 的日期形态）→ datetime；不可解析返回 None。"""
+    try:
+        from email.utils import parsedate_to_datetime
+
+        return parsedate_to_datetime(text)
+    except (TypeError, ValueError, OverflowError):
+        return None
 
 
 def newest_rfc3339(values: list[str | None]) -> str | None:
