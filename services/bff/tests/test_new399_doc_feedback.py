@@ -1,5 +1,6 @@
 """NEW-399 帮助文档反馈定位 — 版本/锚点定位、管理员闭环、391 通知闭环。"""
 
+from lumirss.config import LumiSettings
 from new2xx_ab import ab_env  # noqa: F401 — pytest 夹具注册
 
 REAL_DOC = "README.md"
@@ -16,7 +17,7 @@ def test_new399_submit_locates_version_and_anchor(ab_env):  # noqa: F811
     )
     assert created.status_code == 201, created.text
     feedback = created.json()
-    assert feedback["version"] == "2.0.1"
+    assert feedback["version"] == LumiSettings().LUMIRSS_VERSION
     assert feedback["anchorFound"] is True
     assert feedback["status"] == "open"
     # 锚点找不到 = anchorFound false（检测结论不是保证），仍可提交
@@ -71,7 +72,7 @@ def test_new399_admin_resolve_and_notification_loop(ab_env):  # noqa: F811
         "/api/v1/admin/help/feedback?status=open", headers=owner
     ).json()
     assert any(item["id"] == feedback["id"] for item in queue["items"])
-    assert queue["items"][0]["version"] == "2.0.1"
+    assert queue["items"][0]["version"] == LumiSettings().LUMIRSS_VERSION
     # resolve 是终态；校验空修订/回复
     assert (
         client.post(
@@ -83,7 +84,7 @@ def test_new399_admin_resolve_and_notification_loop(ab_env):  # noqa: F811
     )
     resolved = client.post(
         f"/api/v1/admin/help/feedback/{feedback['id']}/resolve",
-        json={"revisionNote": "§2 安装步骤按 2.0.1 重写。",
+        json={"revisionNote": "§2 安装步骤已重写。",
               "reply": "已在当前版本文档修订，请再看一眼。"},
         headers=owner,
     )

@@ -1,5 +1,6 @@
 """NEW-398 错误自助处理单 — 注册表真实错误码、逐步效果、脱敏升级材料。"""
 
+from lumirss.config import LumiSettings
 from new2xx_ab import ab_env  # noqa: F401 — pytest 夹具注册
 
 
@@ -84,7 +85,7 @@ def test_new398_escalation_material_is_sanitized(ab_env):  # noqa: F811
     assert set(material.keys()) == {"code", "version", "steps", "userNote",
                                     "generatedAt"}
     assert material["code"] == "ai_not_configured"
-    assert material["version"] == "2.0.1"
+    assert material["version"] == LumiSettings().LUMIRSS_VERSION
     assert material["steps"] == [{"stepIndex": 1, "outcome": "tried"}]
     flat = str(material)
     assert "cookie" not in flat and a["cookie"].split("=")[1] not in flat
