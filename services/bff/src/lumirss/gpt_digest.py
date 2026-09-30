@@ -567,18 +567,29 @@ def _material_lines(
             )
         else:
             parts: list[str] = []
+            present: list[str] = []
             for i in group:
                 doc = material[i]
                 body = _clip(doc.get("contentText") or "", body_limit)
                 total += len(body)
                 if total > _MAX_TOTAL_CHARS:
                     break
+                sid = f"s{i + 1}"
+                present.append(sid)
                 parts.append(
-                    f"〔s{i + 1}〕{doc.get('title') or '(无标题)'}"
+                    f"〔{sid}〕{doc.get('title') or '(无标题)'}"
                     f"（来源: {doc.get('feedTitle') or ''}，"
                     f"发布: {doc.get('publishedAt') or '未知'}）\n{body}"
                 )
-            lines.append(f"[{ids}] 同一事件的多来源报道：\n" + "\n".join(parts))
+            if not present:
+                break
+            # FIX-308：内容与出处是不可拆对应单元——预算在簇中途耗尽时，
+            # 行首只列实际携带正文的成员编号（绝不承诺一个正文已被截掉
+            # 的 ID；模型据行首引用不存在的正文才会产生错配引用）。
+            lines.append(
+                "[" + ",".join(present) + "] 同一事件的多来源报道：\n"
+                + "\n".join(parts)
+            )
             if total > _MAX_TOTAL_CHARS:
                 break
     return lines
