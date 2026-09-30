@@ -741,10 +741,7 @@ export function useUnsubscribeMutation() {
 export function useUnsubscribePreviewQuery(subscriptionRef: string | null) {
   return useQuery({
     queryKey: ['unsubscribe-preview', subscriptionRef],
-    queryFn: ({ signal }) => {
-      void signal
-      return fetchUnsubscribePreview(subscriptionRef as string)
-    },
+    queryFn: ({ signal }) => fetchUnsubscribePreview(subscriptionRef as string, signal),
     enabled: subscriptionRef !== null,
     staleTime: 0,
     gcTime: 0,
