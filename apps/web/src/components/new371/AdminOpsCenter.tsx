@@ -159,7 +159,7 @@ function TaskCalendarSection() {
         }}
       >
         <Field label="任务档">
-          <select className={inputClass} value={kind} onChange={(e) => setKind(e.target.value)}>
+          <select aria-label="任务档" className={inputClass} value={kind} onChange={(e) => setKind(e.target.value)}>
             {calendar.kinds.map((item) => (
               <option key={item.kind} value={item.kind}>
                 {item.label}
@@ -168,10 +168,10 @@ function TaskCalendarSection() {
           </select>
         </Field>
         <Field label="暂停原因">
-          <input className={inputClass} value={reason} onChange={(e) => setReason(e.target.value)} required />
+          <input aria-label="暂停原因" className={inputClass} value={reason} onChange={(e) => setReason(e.target.value)} required />
         </Field>
         <Field label="影响说明（必填）">
-          <input className={inputClass} value={impact} onChange={(e) => setImpact(e.target.value)} required />
+          <input aria-label="影响说明" className={inputClass} value={impact} onChange={(e) => setImpact(e.target.value)} required />
         </Field>
         <button type="submit" className={actionButtonClass} disabled={pause.isPending}>
           登记暂停（需临时提权）
@@ -235,10 +235,10 @@ function TaskPrioritySection() {
         }}
       >
         <Field label="账户 ID">
-          <input className={inputClass} value={userId} onChange={(e) => setUserId(e.target.value)} required />
+          <input aria-label="账户 ID" className={inputClass} value={userId} onChange={(e) => setUserId(e.target.value)} required />
         </Field>
         <Field label="优先级">
-          <select className={inputClass} value={level} onChange={(e) => setLevel(e.target.value)}>
+          <select aria-label="优先级" className={inputClass} value={level} onChange={(e) => setLevel(e.target.value)}>
             <option value="low">低</option>
             <option value="normal">普通</option>
             <option value="high">高</option>
@@ -280,16 +280,16 @@ function MaintenanceSection() {
     <div className="flex flex-col gap-3" data-n371-maintenance>
       <form className="flex flex-col gap-2">
         <Field label="窗口标题">
-          <input className={inputClass} value={title} onChange={(e) => setTitle(e.target.value)} required />
+          <input aria-label="窗口标题" className={inputClass} value={title} onChange={(e) => setTitle(e.target.value)} required />
         </Field>
         <Field label="通知文案">
-          <input className={inputClass} value={notice} onChange={(e) => setNotice(e.target.value)} required />
+          <input aria-label="通知文案" className={inputClass} value={notice} onChange={(e) => setNotice(e.target.value)} required />
         </Field>
         <Field label="开始时刻（RFC3339，如 2026-06-01T08:00:00Z）">
-          <input className={inputClass} value={startsAt} onChange={(e) => setStartsAt(e.target.value)} required />
+          <input aria-label="开始时刻" className={inputClass} value={startsAt} onChange={(e) => setStartsAt(e.target.value)} required />
         </Field>
         <Field label="结束时刻">
-          <input className={inputClass} value={endsAt} onChange={(e) => setEndsAt(e.target.value)} required />
+          <input aria-label="结束时刻" className={inputClass} value={endsAt} onChange={(e) => setEndsAt(e.target.value)} required />
         </Field>
         <div className="flex gap-2">
           <button
@@ -370,7 +370,7 @@ function ResourceBillSection() {
         }}
       >
         <Field label="账户 ID（留空看自己的账单）">
-          <input className={inputClass} value={userId} onChange={(e) => setUserId(e.target.value)} />
+          <input aria-label="账户 ID（留空看自己的账单）" className={inputClass} value={userId} onChange={(e) => setUserId(e.target.value)} />
         </Field>
         <button type="submit" className={actionButtonClass}>
           查看账单（他人账单只含计数并留查阅台账）
@@ -423,10 +423,11 @@ function QuotaBatchSection() {
         }}
       >
         <Field label="账户 ID">
-          <input className={inputClass} value={userId} onChange={(e) => setUserId(e.target.value)} required />
+          <input aria-label="账户 ID" className={inputClass} value={userId} onChange={(e) => setUserId(e.target.value)} required />
         </Field>
         <Field label="AI 日上限">
           <input
+            aria-label="AI 日上限"
             className={inputClass}
             type="number"
             min={1}
@@ -506,7 +507,7 @@ function ConfigDraftSection() {
         }}
       >
         <Field label="配置键（仅非敏感白名单键）">
-          <select className={inputClass} value={key} onChange={(e) => setKey(e.target.value)}>
+          <select aria-label="配置键" className={inputClass} value={key} onChange={(e) => setKey(e.target.value)}>
             {(schema.data?.keys ?? [{ key: 'allow_public_registration', type: 'bool', label: '公开注册开关' }]).map(
               (item) => (
                 <option key={item.key} value={item.key}>
@@ -517,7 +518,7 @@ function ConfigDraftSection() {
           </select>
         </Field>
         <Field label="拟变更值（布尔键填 0 或 1）">
-          <input className={inputClass} value={value} onChange={(e) => setValue(e.target.value)} required />
+          <input aria-label="拟变更值" className={inputClass} value={value} onChange={(e) => setValue(e.target.value)} required />
         </Field>
         <button type="submit" className={actionButtonClass} disabled={create.isPending}>
           形成草案
@@ -698,7 +699,7 @@ function TicketsSection() {
             </NoteText>
           ))}
           <Field label="指派给（管理员账户 ID）">
-            <input className={inputClass} value={assignee} onChange={(e) => setAssignee(e.target.value)} />
+            <input aria-label="指派给" className={inputClass} value={assignee} onChange={(e) => setAssignee(e.target.value)} />
           </Field>
           <button
             type="button"
@@ -708,7 +709,7 @@ function TicketsSection() {
             指派
           </button>
           <Field label="回复内容">
-            <input className={inputClass} value={reply} onChange={(e) => setReply(e.target.value)} />
+            <input aria-label="回复内容" className={inputClass} value={reply} onChange={(e) => setReply(e.target.value)} />
           </Field>
           <div className="flex gap-2">
             <button

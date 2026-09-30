@@ -136,7 +136,7 @@ describe('NEW-362 相似标题候选审阅', () => {
       (url, init) =>
         url === '/api/v1/search/similar-title-candidates/confirm' &&
         init?.method === 'POST',
-      (url, init) =>
+      (_url, _init) =>
         jsonResponse(
           {
             relation: { id: 1, srcRef: 'e1.a', dstRef: 'e1.b', kind: 'duplicate', note: '疑似重复', createdAt: 'T' },
@@ -354,7 +354,7 @@ describe('NEW-367 搜索会话回溯', () => {
     )
     mockRoute(
       (url, init) => url === '/api/v1/search/sessions/s1/selections' && init?.method === 'POST',
-      (url) => jsonResponse({ id: 's1', title: '研究：内核', currentStep: 1, stepCount: 2, createdAt: 'T', updatedAt: 'T', steps: [], resumeStep: 1 }),
+      () => jsonResponse({ id: 's1', title: '研究：内核', currentStep: 1, stepCount: 2, createdAt: 'T', updatedAt: 'T', steps: [], resumeStep: 1 }),
     )
     renderWithQuery(
       <SearchSessionPanel
