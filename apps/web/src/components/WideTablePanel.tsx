@@ -225,6 +225,16 @@ export function WideTablePanel({ table }: { table: HTMLTableElement }) {
               {header.map((label, col) => (
                 <th
                   key={col}
+                  // FIX-277：辅助技术确定列语义与当前排序——scope 关联
+                  // 数据列，aria-sort 携带排序方向（未排序省略）。
+                  scope="col"
+                  aria-sort={
+                    sortCol === col && sortDir !== null
+                      ? sortDir === 'asc'
+                        ? 'ascending'
+                        : 'descending'
+                      : undefined
+                  }
                   className={cx(
                     // N063：表头 sticky top；首列表头同时 sticky left。
                     'lumi-wt-head border-b border-[var(--lumi-border)] px-2 py-1.5 text-left font-semibold',
@@ -250,8 +260,10 @@ export function WideTablePanel({ table }: { table: HTMLTableElement }) {
                         sortCol === col && sortDir !== null ? 'opacity-100' : 'opacity-30',
                       )}
                     />
+                    {/* FIX-277：方向箭头纯视觉；排序方向由 th 的 aria-sort
+                        播报，避免按钮文本把「↑/↓」重复读一遍。 */}
                     {sortCol === col && sortDir !== null && (
-                      <span className="text-[10px]">{sortDir === 'asc' ? '↑' : '↓'}</span>
+                      <span aria-hidden="true" className="text-[10px]">{sortDir === 'asc' ? '↑' : '↓'}</span>
                     )}
                   </button>
                 </th>

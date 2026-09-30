@@ -140,6 +140,14 @@ export function useFinishRead(options: UseFinishReadOptions): FinishReadControll
     [],
   )
 
+  /** FIX-279：iOS 橡皮筋（overscroll）会产生负值或超出滚动余量的
+   * scrollTop——进度只认有效容器范围内的位移，越界读数既不提前判
+   * 完成，也不会在回弹后重复触发判定。基线与推进读数统一夹取。 */
+  const clampTop = useCallback(
+    (top: number) => Math.min(scrollRangeRef.current, Math.max(0, top)),
+    [],
+  )
+
   const clearDwell = useCallback(() => {
     if (dwellTimerRef.current !== null) {
       clearTimeout(dwellTimerRef.current)
@@ -231,9 +239,11 @@ export function useFinishRead(options: UseFinishReadOptions): FinishReadControll
         0,
         container.scrollHeight - container.clientHeight,
       )
-      baselineTopRef.current = container.scrollTop
-      maxTopRef.current = container.scrollTop
-      lastScrollTopRef.current = container.scrollTop
+      // FIX-279：基线夹取到有效滚动范围（见 clampTop 注释）。
+      const clampedTop = clampTop(container.scrollTop)
+      baselineTopRef.current = clampedTop
+      maxTopRef.current = clampedTop
+      lastScrollTopRef.current = clampedTop
       // lastScrollHeightRef 刻意不在此初始化：挂载/切换时刻的布局尚未
       // 完成（正文/图片未排版），首帧几何不可信——校准交给第一次滚动
       // 事件（见 onScroll），避免把「正文就位」误判成内容变化。
@@ -243,7 +253,7 @@ export function useFinishRead(options: UseFinishReadOptions): FinishReadControll
       lastScrollHeightRef.current = null
       setIsShortArticle(false)
     }
-  }, [entryRef, read, clearDwell])
+  }, [entryRef, read, clearDwell, clampTop])
 
   // ---- 正文渲染完成后重测容器（图片/译文展开使余量变化） ----
   const remeasure = useCallback(() => {
@@ -296,7 +306,7 @@ export function useFinishRead(options: UseFinishReadOptions): FinishReadControll
     // 变长文（反之亦然）；scrollHeight 读取在滚动帧内通常无强制重排。
     const scrollHeight = container.scrollHeight
     remeasure()
-    const top = container.scrollTop
+    const top = clampTop(container.scrollTop)
     const now = Date.now()
     // FIX-126：与上一次滚动事件相比内容高度变化 → 本帧位移是被动位移
     //（图片加载/译文展开 + 滚动锚定推高 scrollTop），不计主动推进。
@@ -310,7 +320,7 @@ export function useFinishRead(options: UseFinishReadOptions): FinishReadControll
     }
     lastScrollTopRef.current = top
     evaluateRef.current()
-  }, [remeasure])
+  }, [remeasure, clampTop])
 
   const setContainer = useCallback(
     (node: HTMLDivElement | null) => {
@@ -320,14 +330,16 @@ export function useFinishRead(options: UseFinishReadOptions): FinishReadControll
       if (node !== null) {
         node.addEventListener('scroll', onScroll, { passive: true })
         remeasure()
-        baselineTopRef.current = node.scrollTop
-        maxTopRef.current = node.scrollTop
-        lastScrollTopRef.current = node.scrollTop
+        // FIX-279：基线同样夹取到有效范围——挂载/换容器瞬间若处于
+        // 橡皮筋偏移中，负值/越界基线会虚增推进量。
+        baselineTopRef.current = clampTop(node.scrollTop)
+        maxTopRef.current = baselineTopRef.current
+        lastScrollTopRef.current = baselineTopRef.current
         // lastScrollHeightRef 同样留给首帧滚动校准（见 onScroll）。
         attachObserver()
       }
     },
-    [attachObserver, remeasure, onScroll],
+    [attachObserver, remeasure, onScroll, clampTop],
   )
 
   const noteProgrammaticScroll = useCallback(() => {

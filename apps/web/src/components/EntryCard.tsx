@@ -112,6 +112,14 @@ function EntryCard({
     }
   }
 
+  /** FIX-271：touchcancel（来电/系统手势/浏览器接管触摸）必须归位——
+   * 不释放会让卡片停在 translateX 预览位（动作背景露出）直到下一次
+   * touchstart；也绝不提交动作。 */
+  const onTouchCancel = () => {
+    touchStartRef.current = null
+    setSwipeDx(0)
+  }
+
   /** 行主点击：多选模式切换选中；普通模式记录最近阅读 + 打开文章。 */
   const handleOpen = () => {
     if (suppressClickRef.current) {
@@ -136,6 +144,7 @@ function EntryCard({
       onTouchStart={swipeEnabled ? onTouchStart : undefined}
       onTouchMove={swipeEnabled ? onTouchMove : undefined}
       onTouchEnd={swipeEnabled ? onTouchEnd : undefined}
+      onTouchCancel={swipeEnabled ? onTouchCancel : undefined}
       className={cx(
         'lumi-entry-card group/row relative flex w-full overflow-hidden rounded-[var(--lumi-radius-lg)] text-left',
         // O141 按压微动效：transition 限定属性（禁 all）；transform 参与

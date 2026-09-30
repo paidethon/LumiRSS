@@ -109,6 +109,14 @@ export function EdgeSwipeBack({ disabled = false }: { disabled?: boolean }) {
     const onMove = (event: TouchEvent) => {
       const state = stateRef.current
       if (!state.candidate || state.nativeTookOver) return
+      // FIX-280：第二指落下（捏合缩放/图片双指/误触）→ 立即放弃本次
+      // 手势——绝不把双指位移当成单指导航意图；已产生的预览回弹。
+      if (event.touches.length !== 1) {
+        state.candidate = false
+        state.previewing = false
+        resetPreview()
+        return
+      }
       const touch = event.touches[0]
       if (touch === undefined) return
       const dx = touch.clientX - state.startX
