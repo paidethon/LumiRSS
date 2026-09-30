@@ -121,7 +121,7 @@ def test_new343_store_pure_level():
         clean_reason(123)
 
 
-def test_new343_denial_helper_direct():
+def test_new343_denial_helper_direct(tmp_path):
     """denial 守卫：无标记 → None；有标记 → 错误体（真实库）。"""
     from lumirss.entryref import encode_entry_ref
     from lumirss.new343_sensitive_marks import (
@@ -131,7 +131,8 @@ def test_new343_denial_helper_direct():
     from lumirss.storage import Database
 
     async def run():
-        db = Database("/tmp/n343-direct/lumi.sqlite")
+        # FIX-386：per-test tmp_path（同 conftest 隔离纪律）。
+        db = Database(tmp_path / "lumi.sqlite")
         store = SensitiveMarkStore(db)
         ref = encode_entry_ref("n343-direct-1")
         assert await ai_send_block_denial(store, ref) is None
