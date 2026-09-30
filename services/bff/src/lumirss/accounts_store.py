@@ -581,14 +581,33 @@ class AccountsStore:
         The API password is NOT stored here — the caller keeps it in the
         control-level secrets file (0600, key ``freshrss_pool:<username>``,
         AD-0018-6: no secrets in SQLite).
+
+        FIX-047: the username is trimmed and duplicate detection is
+        case-insensitive. FreshRSS itself enforces case-insensitive
+        username uniqueness (userController.createUser compares
+        ``strtoupper`` against all users), so ``Alice`` / ``alice`` /
+        ``" alice"`` are ONE backend account; registering them as two
+        pool rows would assign the same subscription backend to two
+        members. Storage keeps the trimmed value so binding and secret
+        lookup use the exact same key.
         """
         await self._db.migrate()
+        username = freshrss_username.strip()
+        base_url = base_url.strip()
+        if not username:
+            raise AccountError("This FreshRSS account is already registered.")
         now = _now()
+        clash = await self._db.fetch_one(
+            "SELECT id FROM freshrss_pool WHERE TRIM(freshrss_username) = ? COLLATE NOCASE",
+            (username,),
+        )
+        if clash is not None:
+            raise AccountError("This FreshRSS account is already registered.")
         try:
-            await self._db.execute("INSERT INTO freshrss_pool (freshrss_username, base_url, state, created_at) VALUES (?, ?, 'ready', ?)", (freshrss_username, base_url, now))
+            await self._db.execute("INSERT INTO freshrss_pool (freshrss_username, base_url, state, created_at) VALUES (?, ?, 'ready', ?)", (username, base_url, now))
         except Exception as exc:
             raise AccountError("This FreshRSS account is already registered.") from exc
-        row = await self._db.fetch_one("SELECT id, freshrss_username, base_url, state, created_at FROM freshrss_pool WHERE freshrss_username = ?", (freshrss_username,))
+        row = await self._db.fetch_one("SELECT id, freshrss_username, base_url, state, created_at FROM freshrss_pool WHERE freshrss_username = ?", (username,))
         return dict(row) if row else {}
 
     async def pool_assign(self, user_id: str, held_freshrss_username: str | None = None) -> dict[str, object] | None:

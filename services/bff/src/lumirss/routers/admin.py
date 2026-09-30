@@ -731,7 +731,10 @@ async def pool_add(body: PoolAddRequest, request: Request) -> JSONResponse:
             content={"error": {"type": "pool_conflict", "message": str(exc)}},
             headers=_NO_STORE,
         )
-    request.app.state.control_secrets.set(f"freshrss_pool:{body.freshrssUsername}", body.apiPassword)
+    # FIX-047：secrets 键使用池行的规范化用户名（trim 后）——绑定读取
+    # （bind_freshrss_account）按池行用户名逐字取密，键错位会让成员
+    # 激活后认证失败。
+    request.app.state.control_secrets.set(f"freshrss_pool:{row['freshrss_username']}", body.apiPassword)
     await accounts.audit(actor=principal["user_id"], action="pool_add", object_type="freshrss_pool", object_id=str(row.get("id")))
     return row
 

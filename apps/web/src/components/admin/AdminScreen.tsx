@@ -513,7 +513,15 @@ function MembersSection({ onConfirm }: { onConfirm: (state: ConfirmState) => voi
   const [resetLink, setResetLink] = useState<string | null>(null)
   const [quotaUser, setQuotaUser] = useState<AdminUser | null>(null)
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
+  // FIX-055：成员生命周期变更会同时改变容量卡（活跃/暂停）、系统计数
+  // （成员/会话）与审计尾——这些派生视图必须与列表同源刷新，否则
+  // 暂停后列表已「已暂停」而容量卡「活跃成员」仍是旧值。
+  const invalidate = () => {
+    void queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
+    void queryClient.invalidateQueries({ queryKey: ['admin', 'capacity'] })
+    void queryClient.invalidateQueries({ queryKey: ['admin', 'system'] })
+    void queryClient.invalidateQueries({ queryKey: ['admin', 'audit'] })
+  }
 
   const pause = useMutation({
     mutationFn: (userId: string) => pauseAdminUser(userId),
@@ -705,8 +713,13 @@ function InvitesSection({ onConfirm }: { onConfirm: (state: ConfirmState) => voi
     onSuccess: (result) => {
       setCreated({ url: activationLink(result.token), at: Date.now() })
       setLabel('')
+      // FIX-055：创建/撤销邀请改变容量卡（待激活/占用名额）与系统计数
+      // （邀请数）——派生视图与列表同源刷新。
       void queryClient.invalidateQueries({ queryKey: ['admin', 'invites'] })
       void queryClient.invalidateQueries({ queryKey: ['admin', 'funnel'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'capacity'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'system'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'audit'] })
     },
     onError: (error) => setFormError(adminActionError(error)),
   })
@@ -715,6 +728,9 @@ function InvitesSection({ onConfirm }: { onConfirm: (state: ConfirmState) => voi
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['admin', 'invites'] })
       void queryClient.invalidateQueries({ queryKey: ['admin', 'funnel'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'capacity'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'system'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'audit'] })
     },
     onError: (error) => setFormError(adminActionError(error)),
   })
@@ -875,6 +891,8 @@ function SchemesSection({ onConfirm }: { onConfirm: (state: ConfirmState) => voi
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ['admin', 'invite-schemes'] })
     void queryClient.invalidateQueries({ queryKey: ['admin', 'funnel'] })
+    // FIX-055：方案增删/批量生成写入审计尾——最近动态与列表同源刷新。
+    void queryClient.invalidateQueries({ queryKey: ['admin', 'audit'] })
   }
 
   const create = useMutation({
@@ -904,8 +922,12 @@ function SchemesSection({ onConfirm }: { onConfirm: (state: ConfirmState) => voi
       generateInvitesFromScheme(input.schemeId, { count: input.count }),
     onSuccess: (result) => {
       setBatchResult(result.invites)
+      // FIX-055：批量生成改变容量卡（待激活/占用名额）与系统计数（邀请数）。
       void queryClient.invalidateQueries({ queryKey: ['admin', 'invites'] })
       void queryClient.invalidateQueries({ queryKey: ['admin', 'funnel'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'capacity'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'system'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'audit'] })
     },
     onError: (error) => setBatchError(adminActionError(error)),
   })
@@ -1373,7 +1395,11 @@ function PoolSection() {
       setFreshrssBaseUrl('')
       setApiPassword('')
       setPublicUrl('')
+      // FIX-055：入池改变容量卡（池计数）与系统计数（池 ready/assigned）。
       void queryClient.invalidateQueries({ queryKey: ['admin', 'pool'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'capacity'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'system'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'audit'] })
     },
     onError: (error) => setFormError(adminActionError(error)),
   })
