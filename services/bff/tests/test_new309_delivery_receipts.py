@@ -189,6 +189,56 @@ def test_new309_process_due_and_exhausted_cap(client):
         "/api/v1/webhooks/deliveries/" + str(newest["id"]) + "/retry", json={}
     )
     assert denied.status_code == 409
+    assert denied.json()["error"]["type"] == "retry_not_allowed"
+
+
+def test_new309_retry_refusal_reports_real_reason(client):
+    """FIX-230：失败列表的操作按真实错误类型上报——撤销订阅后的重试
+    被拒给 subscription_not_active，不与「尝试上限」混为一谈（撤销权限
+    不进入自动重试，操作者能看到真实原因并知道该重建订阅）。"""
+    failing = FakeTarget(status=500, text="boom")
+    subscription_id = _create_and_activate(client, "https://hook.example.com/f230")
+    _dispatch(client, failing)
+    rows = client.get(
+        "/api/v1/webhooks/deliveries?subscriptionId=" + str(subscription_id)
+    ).json()["items"]
+    delivery_id = rows[0]["id"]
+
+    # 撤销订阅（权限收回）
+    revoked = client.delete(f"/api/v1/webhooks/out-subscriptions/{subscription_id}")
+    assert revoked.status_code == 204, revoked.text
+
+    denied = client.post(
+        f"/api/v1/webhooks/deliveries/{delivery_id}/retry", json={}
+    )
+    assert denied.status_code == 409, denied.text
+    body = denied.json()
+    assert body["error"]["type"] == "subscription_not_active", body
+    assert "尝试上限" not in body["error"]["message"]
+
+
+def test_new309_process_due_skips_revoked_subscription(client):
+    """FIX-230：到点计划处理同样跳过已撤销订阅（不进入无限自动重试）。"""
+    failing = FakeTarget(status=503, text="later")
+    subscription_id = _create_and_activate(client, "https://hook.example.com/f230b")
+    _dispatch(client, failing)
+
+    async def _backdate():
+        await app.state.db.migrate()
+        await app.state.db.execute(
+            "UPDATE webhook_deliveries SET next_retry_at = '2000-01-01T00:00:00Z' "
+            "WHERE subscription_id = ?",
+            (subscription_id,),
+        )
+
+    _run(_backdate())
+    assert client.delete(
+        f"/api/v1/webhooks/out-subscriptions/{subscription_id}"
+    ).status_code == 204
+
+    due = client.post("/api/v1/webhooks/deliveries/process-due", json={})
+    assert due.status_code == 200, due.text
+    assert due.json()["processed"] == 0
 
 
 def test_new309_cross_user_receipts_invisible(ab_env):  # noqa: F811 — pytest 夹具注册

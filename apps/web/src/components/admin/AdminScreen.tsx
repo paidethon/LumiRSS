@@ -19,7 +19,7 @@
  * 复制按钮，并诚实标注「只显示这一次」。
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft,
@@ -71,6 +71,7 @@ import { AdminDocFeedbackQueue } from '../new391/DocFeedbackPanel'
 import { useAuthStore } from '../../store/auth'
 import { navigateAppRoute } from '../../lib/app-route'
 import {
+  clearStepUpToken,
   mintAdminStepUp,
   notifyStepUpRequired,
   onStepUpRequired,
@@ -123,28 +124,50 @@ function adminActionError(error: unknown): string {
 
 /** N009：临时提权密码对话框（铸造一次性令牌后关闭；下一次敏感操作
  * 自动携带 X-Lumi-Step-Up 头）。FIX-218：铸造时带上 403 错误体声明的
- * (operation, targetUserId) 作用域——令牌只对该操作该目标可消费。 */
+ * (operation, targetUserId) 作用域——令牌只对该操作该目标可消费。
+ * FIX-028：取消=终止该次操作——取消即解除已武装/在途铸造的令牌，并经
+ * onCancel 通知宿主解除已确认待执行的危险动作；取消后才落定的迟到铸
+ * 造响应同样不得武装令牌（否则下一次敏感请求会借道通过）。 */
 function StepUpDialog({
   open,
   scope,
   onClose,
+  onCancel,
 }: {
   open: boolean
   scope: StepUpScope | undefined
   onClose: () => void
+  onCancel?: () => void
 }) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
+  // FIX-028：取消后迟到的铸造结果不得武装令牌（取消先于响应到达的竞态）。
+  const cancelledRef = useRef(false)
+  useEffect(() => {
+    if (open) cancelledRef.current = false
+  }, [open])
   if (!open) return null
+  const cancel = () => {
+    cancelledRef.current = true
+    clearStepUpToken()
+    onCancel?.()
+    onClose()
+  }
   const submit = async () => {
     setPending(true)
     setError(null)
     try {
       await mintAdminStepUp(password, scope ?? { operation: null, targetUserId: null })
+      if (cancelledRef.current) {
+        // 取消后才落定的铸造：立即解除武装，绝不留给下一次请求。
+        clearStepUpToken()
+        return
+      }
       setPassword('')
       onClose()
     } catch (err) {
+      if (cancelledRef.current) return
       setError(err instanceof Error ? err.message : '验证失败，请重试。')
     } finally {
       setPending(false)
@@ -185,7 +208,7 @@ function StepUpDialog({
             </p>
           )}
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" size="sm" type="button" onClick={onClose}>
+            <Button variant="ghost" size="sm" type="button" onClick={cancel}>
               取消
             </Button>
             <Button variant="primary" size="sm" type="submit" disabled={pending || password === ''}>
@@ -2222,6 +2245,12 @@ export default function AdminScreen() {
         open={stepUpOpen}
         scope={stepUpScope}
         onClose={() => setStepUpOpen(false)}
+        onCancel={() => {
+          // FIX-028：取消临时提权 = 终止该次敏感操作——确认中的危险
+          // 动作一并解除，不留「可继续执行」的半开状态。
+          setConfirmState(null)
+          setConfirmError(null)
+        }}
       />
       <div className="mx-auto w-full max-w-5xl px-4 py-6">
         <div className="mb-5 flex items-center gap-3">

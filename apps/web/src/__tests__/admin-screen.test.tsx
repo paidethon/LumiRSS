@@ -14,7 +14,7 @@
  */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   ApiError,
@@ -26,6 +26,7 @@ import {
   type InviteScheme,
 } from '../api/client'
 import AdminScreen from '../components/admin/AdminScreen'
+import { getStepUpToken, mintAdminStepUp } from '../lib/step-up'
 import { useAuthStore, type AuthIdentity } from '../store/auth'
 
 // 合成占位值（非真实凭据）
@@ -39,6 +40,7 @@ const mocks = vi.hoisted(() => ({
   resumeAdminUser: vi.fn(),
   revokeAdminUserSessions: vi.fn(),
   resetAdminUserPassword: vi.fn(),
+  mintAdminStepUpToken: vi.fn(),
   getFreshRssPool: vi.fn(),
   registerFreshRssPool: vi.fn(),
   getAdminSystem: vi.fn(),
@@ -57,10 +59,36 @@ const mocks = vi.hoisted(() => ({
   getAdminDeployStatus: vi.fn(),
 }))
 
-vi.mock('../api/client', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../api/client')>()
+vi.mock('../api/client', () => {
+  // FIX-028：不用 importOriginal —— 真实 client 与 lib/step-up 存在模块环，
+  // importOriginal 会把 lib 侧绑到第二个 client 实例上（令牌状态分裂）。
+  // 这里给出测试所需的运行时导出（其余 client 导出在本套件只以 type-only
+  // 形式引用，编译后无运行时引用）。
+  class ApiError extends Error {
+    readonly status: number
+    readonly type: string
+    readonly retryAfterSeconds: number | null
+    readonly extra: Record<string, string> | null
+    readonly redirectChain: unknown[] | null
+    constructor(
+      status: number,
+      type: string,
+      message: string,
+      retryAfterSeconds: number | null = null,
+      extra: Record<string, string> | null = null,
+      redirectChain: unknown[] | null = null,
+    ) {
+      super(message)
+      this.name = 'ApiError'
+      this.status = status
+      this.type = type
+      this.retryAfterSeconds = retryAfterSeconds
+      this.extra = extra
+      this.redirectChain = redirectChain
+    }
+  }
   return {
-    ...actual,
+    ApiError,
     listAdminUsers: mocks.listAdminUsers,
     listAdminInvites: mocks.listAdminInvites,
     createAdminInvite: mocks.createAdminInvite,
@@ -85,6 +113,7 @@ vi.mock('../api/client', async (importOriginal) => {
     getAdminCapacity: mocks.getAdminCapacity,
     getAdminUpgradePreview: mocks.getAdminUpgradePreview,
     getAdminDeployStatus: mocks.getAdminDeployStatus,
+    mintAdminStepUpToken: mocks.mintAdminStepUpToken,
   }
 })
 
@@ -201,6 +230,12 @@ const AUDIT: AdminAuditEntry[] = [
   { at: ISO(-7_200_000), actor: 'u1', action: 'user_role_change', objectType: 'user', objectId: 'u3', outcome: 'ok', detail: 'admin' },
   { at: null, actor: 'u1', action: 'future_unknown_action', objectType: null, objectId: null, outcome: 'error', detail: null },
 ]
+
+beforeEach(() => {
+  window.addEventListener('unhandledrejection', (e) => {
+    console.log('DBG unhandled rejection:', e.reason)
+  })
+})
 
 function renderAdmin() {
   return render(
@@ -936,5 +971,100 @@ describe('FIX-287 基线：额度输入恒为受控字符串（无 undefined↔�
     expect(consoleText).not.toMatch(/uncontrolled/i)
     expect(consoleText).not.toMatch(/controlled input/i)
     consoleError.mockRestore()
+  })
+})
+
+// FIX-028：二次认证（临时提权）弹窗的取消语义 —— 取消必须终止该次
+// 敏感操作：(a) 确认中的危险动作被解除（确认对话框关闭，不留「可继续
+// 执行」的半开状态）；(b) 取消时仍在途的铸造响应迟到成功也不得武装
+// 令牌；(c) 取消同时解除本会话可能残留的已武装令牌。
+//
+// 注：jsdom 不派发表单提交（点击 submit 按钮与 fireEvent.submit 都不
+// 触发 React onSubmit），经 form 的 React props 直接调用 onSubmit ——
+// 与浏览器提交执行的是同一个 submit() 闭包。
+
+type MintResult = { token: string; expiresInMinutes: number; header: string }
+
+function submitStepUpForm(dialog: ReturnType<typeof within>): void {
+  const form = dialog.getByLabelText('管理员密码').closest('form')
+  expect(form).not.toBeNull()
+  const props = Object.entries(form!).find(([k]) => k.startsWith('__reactProps$'))?.[1] as
+    | { onSubmit?: (e: { preventDefault: () => void }) => void }
+    | undefined
+  expect(typeof props?.onSubmit).toBe('function')
+  props!.onSubmit!({ preventDefault: () => {} })
+}
+
+const STEP_UP_403 = () =>
+  new ApiError(403, 'step_up_required', '需要临时提权', null, {
+    operation: 'user_paused',
+    targetUserId: 'u1',
+  })
+
+async function openStepUpOverPause(): Promise<HTMLElement> {
+  renderAdmin()
+  await screen.findByTestId('admin-user-list')
+  fireEvent.click(screen.getByRole('button', { name: '暂停' }))
+  const confirmDialog = await screen.findByRole('dialog')
+  fireEvent.click(within(confirmDialog).getByRole('button', { name: '暂停' }))
+  return await screen.findByTestId('step-up-dialog')
+}
+
+describe('FIX-028：取消临时提权弹窗终止该次操作', () => {
+  it('验证中取消 → 确认中的敏感操作被解除；迟到的铸造不武装令牌', async () => {
+    mocks.pauseAdminUser.mockRejectedValue(STEP_UP_403())
+    // 铸造请求挂起——用户在「验证中…」点击取消，响应之后才到达
+    let resolveMint!: (v: MintResult) => void
+    mocks.mintAdminStepUpToken.mockImplementation(
+      () =>
+        new Promise<MintResult>((resolve) => {
+          resolveMint = resolve
+        }),
+    )
+    const stepUp = await openStepUpOverPause()
+    fireEvent.change(within(stepUp).getByLabelText('管理员密码'), {
+      target: { value: 'pw-in-test' },
+    })
+    submitStepUpForm(within(stepUp))
+    // 验证进行中取消
+    fireEvent.click(within(stepUp).getByText('取消'))
+    expect(screen.queryByTestId('step-up-dialog')).not.toBeInTheDocument()
+    // 迟到的铸造成功也绝不能武装令牌
+    resolveMint({ token: 'late-token-after-cancel', expiresInMinutes: 5, header: 'X-Lumi-Step-Up' })
+    // 让迟到的铸造完整落定（lib 先武装、取消路径再解除——此后必须仍为空）
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(getStepUpToken()).toBeNull()
+    // 该次操作被终止：确认对话框关闭，敏感端点没有被再次调用
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(mocks.pauseAdminUser).toHaveBeenCalledTimes(1)
+  })
+
+  it('取消也解除本会话残留的已武装令牌（下一次敏感请求重新走 403 流程）', async () => {
+    // 预置：上一次铸造留下的未消费令牌仍在本会话内存里
+    mocks.mintAdminStepUpToken.mockResolvedValue({
+      token: 'stale-armed-token',
+      expiresInMinutes: 5,
+      header: 'X-Lumi-Step-Up',
+    })
+    await mintAdminStepUp('pw-in-test', { operation: 'user_paused', targetUserId: 'u1' })
+    expect(getStepUpToken()).toBe('stale-armed-token')
+
+    // 新一轮敏感操作 403 → 提权弹窗；这次用户选择取消
+    mocks.pauseAdminUser.mockRejectedValue(STEP_UP_403())
+    mocks.mintAdminStepUpToken.mockImplementation(
+      () =>
+        new Promise<MintResult>(() => {
+          // 永不落定——用户在验证中放弃
+        }),
+    )
+    const stepUp = await openStepUpOverPause()
+    fireEvent.change(within(stepUp).getByLabelText('管理员密码'), {
+      target: { value: 'pw-in-test' },
+    })
+    fireEvent.click(within(stepUp).getByText('取消'))
+    expect(getStepUpToken()).toBeNull()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })
