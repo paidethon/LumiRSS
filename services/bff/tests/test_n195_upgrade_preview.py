@@ -87,6 +87,13 @@ def _write_manifest(env, payload: dict | str) -> str:
     return str(path)
 
 
+def _next_minor() -> str:
+    """比当前版本高的下一 minor（版本线提升时 fixture 不漂移）。"""
+    from lumirss.config import LumiSettings
+    parts = LumiSettings().LUMIRSS_VERSION.split(".")
+    return f"{parts[0]}.{int(parts[1]) + 1}.0"
+
+
 def _manifest(version: str, migrations: list[str], min_compat: str | None = None) -> dict:
     return {
         "schema": "lumirss-release-manifest/v1",
@@ -132,13 +139,13 @@ def test_valid_manifest_shows_target_and_new_migrations(preview_env, monkeypatch
     target_migrations.append("9999_future.sql")
     path = _write_manifest(
         env,
-        _manifest("2.1.0", target_migrations, min_compat="0.1.0"),
+        _manifest(_next_minor(), target_migrations, min_compat="0.1.0"),
     )
     monkeypatch.setenv("LUMIRSS_RELEASE_MANIFEST", path)
     data = _preview(env)
     assert data["available"] is True
     assert data["currentVersion"] == CURRENT_VERSION
-    assert data["targetVersion"] == "2.1.0"
+    assert data["targetVersion"] == _next_minor()
     assert data["newMigrations"] == ["9999_future.sql"]
     assert data["minCompat"] == "0.1.0"
     assert data["blocked"] is False
@@ -174,7 +181,7 @@ def test_database_ahead_of_target_is_blocked(preview_env, monkeypatch):
     # 旧代码跑在新库上）→ 必须阻断。
     monkeypatch.setenv(
         "LUMIRSS_RELEASE_MANIFEST",
-        _write_manifest(env, _manifest("2.1.0", ["0001_core.sql"])),
+        _write_manifest(env, _manifest(_next_minor(), ["0001_core.sql"])),
     )
     data = _preview(env)
     assert data["blocked"] is True
