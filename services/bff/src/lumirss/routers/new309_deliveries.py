@@ -18,6 +18,46 @@ from lumirss.new309_delivery_receipts import (
 
 router = APIRouter()
 
+# FIX-230：拒绝重试按真实原因上报（失败列表的操作按真实错误类型提供）。
+_RETRY_REFUSALS: dict[str, tuple[int, str, str]] = {
+    "attempt_cap": (
+        409,
+        "retry_not_allowed",
+        f"该投递已达尝试上限（{MAX_ATTEMPTS} 次计划内），无法自动重试。",
+    ),
+    "subscription_missing": (
+        409,
+        "delivery_subscription_missing",
+        "投递所属订阅不存在，无法重试。",
+    ),
+    "subscription_not_active": (
+        409,
+        "subscription_not_active",
+        "所属订阅已撤销或暂停——权限收回后不再重试；如需继续投递，"
+        "请重新创建并验证订阅。",
+    ),
+    "subscription_secret_missing": (
+        409,
+        "subscription_secret_missing",
+        "订阅签名密钥缺失，无法重试；请重新创建订阅。",
+    ),
+}
+
+
+def _refusal_response(reason: str) -> JSONResponse:
+    status, error_type, message = _RETRY_REFUSALS.get(
+        reason,
+        (
+            409,
+            "retry_not_allowed",
+            f"该投递已达尝试上限（{MAX_ATTEMPTS} 次计划内），无法自动重试。",
+        ),
+    )
+    return JSONResponse(
+        status_code=status,
+        content={"error": {"type": error_type, "message": message}},
+    )
+
 
 def _store(request: Request) -> DeliveryStore:
     return DeliveryStore(request.app.state.db)
@@ -64,8 +104,8 @@ async def process_due_deliveries(request: Request) -> Response:
     due = await store.due_deliveries()
     processed = 0
     for row in due:
-        ok = await _retry_once(store, out, row)
-        if ok is not None:
+        receipt, _reason = await _retry_once(store, out, row)
+        if receipt is not None:
             processed += 1
     return JSONResponse({"processed": processed, "due": len(due)})
 
@@ -80,7 +120,9 @@ async def retry_delivery(delivery_id: int, payload: RetryBody | None = None, req
 
     计划耗尽（exhausted）的投递也允许手动重试一次 —— 用户显式要求
     时给了第二次机会；attempt 上界仍是 MAX_ATTEMPTS 的计划内语义，
-    手动重试以「新家族尝试」计数（attempt + 1，退避重新排定）。"""
+    手动重试以「新家族尝试」计数（attempt + 1，退避重新排定）。
+    FIX-230：拒绝时按真实原因上报（尝试上限 / 订阅不存在 / 订阅已
+    撤销暂停 / 密钥缺失），不与「尝试上限」混为一谈。"""
     store = _store(request)
     row = await store.get(delivery_id)
     if row is None:
@@ -90,22 +132,16 @@ async def retry_delivery(delivery_id: int, payload: RetryBody | None = None, req
                 "error": {"type": "delivery_not_found", "message": "投递不存在。"}
             },
         )
-    result = await _retry_once(store, _out_store(request), row)
+    result, refusal = await _retry_once(store, _out_store(request), row)
     if result is None:
-        return JSONResponse(
-            status_code=409,
-            content={
-                "error": {
-                    "type": "retry_not_allowed",
-                    "message": f"该投递已达尝试上限（{MAX_ATTEMPTS} 次计划内），无法自动重试。",
-                }
-            },
-        )
+        return _refusal_response(refusal or "attempt_cap")
     return JSONResponse(result)
 
 
-async def _retry_once(store: DeliveryStore, out: Any, row: dict[str, Any]) -> dict[str, Any] | None:
-    """执行一次重试；返回新回执，无可重试（超限/订阅不可用）→ None。
+async def _retry_once(
+    store: DeliveryStore, out: Any, row: dict[str, Any]
+) -> tuple[dict[str, Any] | None, str | None]:
+    """执行一次重试；返回 (新回执, 拒绝原因)。
 
     复用原投递的 (subscription_id, event_uuid, idempotency_key) ——
     接收端凭同一幂等键去重，重试绝不产生重复副作用。原始载荷不
@@ -113,13 +149,17 @@ async def _retry_once(store: DeliveryStore, out: Any, row: dict[str, Any]) -> di
     （同一幂等键 + 新 occurredAt），如实标注。"""
     attempt = int(row["attempt"]) + 1
     if attempt > MAX_ATTEMPTS:
-        return None
+        return None, "attempt_cap"
     subscription = await out.get(int(row["subscription_id"]))
-    if subscription is None or str(subscription["state"]) != "active":
-        return None
+    if subscription is None:
+        return None, "subscription_missing"
+    if str(subscription["state"]) != "active":
+        # FIX-230：撤销/暂停的订阅按真实状态拒绝——权限收回与错误
+        # 配置不进入自动重试，原因如实上报而非伪装成尝试上限。
+        return None, "subscription_not_active"
     secret = out.secret_for(int(row["subscription_id"]))
     if not secret:
-        return None
+        return None, "subscription_secret_missing"
     # 重发**同一幂等标识**：信封与 X-Lumi-Delivery 头一致，接收端凭
     # 该键去重 —— 重试绝不产生重复副作用。
     from lumirss.new308_outbound_subscriptions import _http_sender, sign_payload
@@ -145,7 +185,7 @@ async def _retry_once(store: DeliveryStore, out: Any, row: dict[str, Any]) -> di
             subscription["target_url"], headers, body
         )
     except Exception as exc:
-        return await store.record_attempt(
+        receipt = await store.record_attempt(
             subscription_id=int(row["subscription_id"]),
             event_type=str(row["event_type"]),
             event_uuid=event_uuid,
@@ -155,9 +195,10 @@ async def _retry_once(store: DeliveryStore, out: Any, row: dict[str, Any]) -> di
             response_status=None,
             response_excerpt=f"[network] {type(exc).__name__}",
         )
+        return receipt, None
     from lumirss.new309_delivery_receipts import sanitize_response_excerpt
 
-    return await store.record_attempt(
+    receipt = await store.record_attempt(
         subscription_id=int(row["subscription_id"]),
         event_type=str(row["event_type"]),
         event_uuid=event_uuid,
@@ -167,6 +208,7 @@ async def _retry_once(store: DeliveryStore, out: Any, row: dict[str, Any]) -> di
         response_status=status,
         response_excerpt=sanitize_response_excerpt(content_type, text),
     )
+    return receipt, None
 
 
 _INJECTABLE_SENDER: Any = None
