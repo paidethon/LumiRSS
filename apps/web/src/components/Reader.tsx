@@ -961,13 +961,25 @@ const handleScroll = useCallback(() => {
             自启（浏览器引擎 activation 被消费 → 诚实重试，既有语义）。 */}
         {viewMode === 'original' ? (
           <div>
-            <ArticleContent detail={detail} forceImageMode={budgetDeferImages ? 'hidden' : undefined} />
+            {/* FIX-134：key=entryRef —— 缓存命中路径（无 pending 骨架）
+                同步接管时，ArticleContent 的 html state / 目录 / 章节锚点
+                必须随文章一起重置，不允许上一篇文章的中间态先渲染一帧
+                （清洗管线缓存让重挂载不重复付出正文处理成本）。 */}
+            <ArticleContent
+              key={`content-${detail.entryRef}`}
+              detail={detail}
+              forceImageMode={budgetDeferImages ? 'hidden' : undefined}
+            />
           </div>
         ) : (
           <Suspense
             fallback={
               <div>
-                <ArticleContent detail={detail} forceImageMode={budgetDeferImages ? 'hidden' : undefined} />
+                <ArticleContent
+                  key={`content-fallback-${detail.entryRef}`}
+                  detail={detail}
+                  forceImageMode={budgetDeferImages ? 'hidden' : undefined}
+                />
               </div>
             }
           >
