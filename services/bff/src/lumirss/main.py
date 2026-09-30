@@ -211,7 +211,6 @@ from lumirss.routers import (
     new348_data_residency,
     new349_privacy_review,
     new350_deletion_receipts,
-<<<<<<< HEAD
     new361_time_brush,
     new362_similar_titles,
     new363_field_hits,
@@ -222,7 +221,6 @@ from lumirss.routers import (
     new368_spell,
     new369_language_groups,
     new370_hit_feedback,
-=======
     new371_task_calendar,
     new372_task_priority,
     new373_maintenance,
@@ -233,7 +231,6 @@ from lumirss.routers import (
     new378_feature_deps,
     new379_tickets,
     new380_handoff,
->>>>>>> feat/r2-n371
     obsidian,
     operations,
     opml,
