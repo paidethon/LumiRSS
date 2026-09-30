@@ -284,6 +284,11 @@ async def stream_events(thread_id: str, request: Request, after: int = 0):
     store: AgentStore = _get_agent_store(request)
     loop = _get_agent_loop(request)
     queue = loop.subscribe(thread_id)
+    # FIX-216：会话中间件每个 HTTP 请求只跑一次——长连 SSE 在账户被停用
+    # / 会话被吊销后不会自动获得这个事实（只有「下一次请求」会失败）。
+    # 流内守卫按空闲 tick 周期复检（见 _stream_permission_active）。
+    principal = request.scope.get("lumi_principal") or {}
+    stream_user_id = str(principal.get("user_id", ""))
 
     async def generator():
         try:
@@ -302,6 +307,11 @@ async def stream_events(thread_id: str, request: Request, after: int = 0):
                 except TimeoutError:
                     idle += 1.0
                     if idle >= _SSE_IDLE_TIMEOUT_SECONDS:
+                        return
+                    # FIX-216：权限撤回（账户 paused / 会话失效 / 换人）→
+                    # 立即终止这条在途连接（诚实终态），不再吐 keep-alive。
+                    if not await _stream_permission_active(request, stream_user_id):
+                        yield _sse("done", {"status": "revoked"})
                         return
                     yield ": keep-alive\n\n"
                     continue
@@ -336,6 +346,42 @@ async def stream_events(thread_id: str, request: Request, after: int = 0):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+async def _stream_permission_active(request: Request, user_id: str) -> bool:
+    """FIX-216：在途 SSE 流的身份/权限复检（每个空闲 tick 至多一次）。
+
+    会话模式：cookie 必须仍然解析为同一用户的【有效】会话，且该账户
+    users.status 仍为 active——任一不成立即撤回。basic（单用户）模式
+    没有可吊销的会话，恒为 active。复检本身失败（控制库暂不可用等）
+    按撤回处理（fail-closed）：终端是只读流，客户端会以轮询方式恢复，
+    多断不如错续。
+    """
+    from lumirss.config import LumiSettings
+
+    if LumiSettings().LUMIRSS_AUTH_MODE != "session":
+        return True
+    if not user_id:
+        return False
+    state = getattr(request.app, "state", None)
+    control_db = getattr(state, "control_db", None) if state is not None else None
+    if control_db is None:
+        return False
+    try:
+        from lumirss.accounts_store import AccountsStore
+        from lumirss.auth_store import AuthStore
+        from lumirss.middleware import parse_session_cookie
+
+        token = parse_session_cookie(request.headers)
+        if token is None:
+            return False
+        resolved = await AuthStore(control_db).get_valid_session_user(token)
+        if resolved is None or str(resolved[0]) != user_id:
+            return False
+        user = await AccountsStore(control_db).get_user(user_id)
+        return user is not None and user.get("status") == "active"
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------------------
