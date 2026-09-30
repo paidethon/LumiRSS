@@ -59,7 +59,7 @@ export function MediaBudgetPanel({ entryRef, contentHtml, enclosures, onDecision
       role="dialog"
       aria-label="媒体流量预算"
       data-n355-panel=""
-      className="absolute right-4 top-16 z-30 max-h-[70vh] w-[min(24rem,calc(100vw-2rem))] overflow-y-auto rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface-elevated)] p-3 shadow-lg"
+      className="absolute right-4 top-16 z-30 max-h-[70vh] w-[min(24rem,calc(100vw-2rem))] overflow-y-auto rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface-elevated)] p-3 shadow-[var(--lumi-shadow-popover)]"
     >
       <div className="mb-2 flex items-center gap-2">
         <p className="flex-1 text-xs font-medium text-[var(--lumi-text-primary)]">

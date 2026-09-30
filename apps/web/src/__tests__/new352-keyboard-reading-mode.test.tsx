@@ -97,7 +97,7 @@ describe('NEW-352 键盘阅读模式面板', () => {
   it('面板展示当前页面（列表页）命令与检测状态；启用为会话级', () => {
     render(<KeyboardReadingModePanel />)
     expect(screen.getByText(/当前页面（列表页）可执行命令/)).toBeTruthy()
-    expect(screen.getByText('下一篇')).toBeTruthy()
+    expect(screen.getByText('选中下一篇')).toBeTruthy()
     // 列表页不显示文章域键位
     expect(screen.queryByText(/纯键盘定位/)).toBeNull()
     // 启用 → sessionStorage；探测区出现
@@ -123,7 +123,7 @@ describe('NEW-352 键盘阅读模式面板', () => {
     const probe = screen.getByRole('group', { name: '按键测试区' })
     fireEvent.focus(probe)
     fireEvent.keyDown(probe, { key: 'j' })
-    expect(screen.getByText('会触发：下一篇')).toBeTruthy()
+    expect(screen.getByText('会触发：选中下一篇')).toBeTruthy()
     // 修饰键组合：如实显示不匹配
     fireEvent.keyDown(probe, { key: 'k', ctrlKey: true })
     expect(screen.getByText(/不匹配任何命令/)).toBeTruthy()

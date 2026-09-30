@@ -158,9 +158,9 @@ export function LinkActionSheet({ url, onClose }: LinkActionSheetProps) {
         {/* 稍后打开清单（本机；打开动作 = 用户显式点击） */}
         {laterItems.length > 0 && (
           <section aria-label="稍后打开清单" className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-2">
-            <h3 className="text-xs font-medium text-[var(--lumi-text-tertiary)]">
+            <p className="text-xs font-medium text-[var(--lumi-text-tertiary)]">
               稍后打开（本机 {laterItems.length}）
-            </h3>
+            </p>
             <ul className="mt-1 flex max-h-32 flex-col gap-0.5 overflow-y-auto">
               {laterItems.map((item) => (
                 <li key={item.url} data-n358-later-item={item.url} className="flex items-center gap-1.5">

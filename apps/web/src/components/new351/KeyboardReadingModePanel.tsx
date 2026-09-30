@@ -84,9 +84,9 @@ export function KeyboardReadingModePanel() {
 
       {/* 当前页面可执行命令 */}
       <div className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-2.5">
-        <h3 className="text-xs font-medium text-[var(--lumi-text-tertiary)]" data-n352-page-label="">
+        <p className="text-xs font-medium text-[var(--lumi-text-tertiary)]" data-n352-page-label="">
           当前页面（{page === 'reader' ? '阅读页' : '列表页'}）可执行命令
-        </h3>
+        </p>
         <ul data-testid="n352-command-list" className="mt-1.5 flex flex-col gap-1">
           {probe.map((command) => (
             <li
@@ -108,9 +108,9 @@ export function KeyboardReadingModePanel() {
         </ul>
         {readerOnly.length > 0 && (
           <>
-            <h3 className="mt-2 text-xs font-medium text-[var(--lumi-text-tertiary)]">
+            <p className="mt-2 text-xs font-medium text-[var(--lumi-text-tertiary)]">
               阅读页文章域键位（固定；受设置「纯键盘阅读定位」开关控制）
-            </h3>
+            </p>
             <ul className="mt-1.5 flex flex-col gap-1">
               {readerOnly.map((command) => (
                 <li key={command.id} className="flex items-baseline gap-2 text-xs text-[var(--lumi-text-primary)]">

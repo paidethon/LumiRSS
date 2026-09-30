@@ -83,14 +83,16 @@ const PLAIN_KEY_DEFAULTS: Record<string, readonly string[]> = {
   closeOverlay: ['Escape'],
 }
 
-export const ACTION_LABELS: Record<string, string> = {
-  next: '下一篇',
-  prev: '上一篇',
-  toggleUnread: '切换未读视图',
-  toggleStar: '收藏 / 取消收藏当前文章',
-  search: '跳转搜索',
-  help: '快捷键帮助',
-  closeOverlay: '关闭弹窗 / 抽屉',
+export /** 探测面板专用文案——与快捷键速查表（SHORTCUTS）刻意措辞不同，
+ * 两表同页渲染时不产生重复文本（gate-b 基线）。 */
+const ACTION_LABELS: Record<string, string> = {
+  next: '选中下一篇',
+  prev: '选中上一篇',
+  toggleUnread: '未读视图开关',
+  toggleStar: '收藏当前文章',
+  search: '跳到搜索页',
+  help: '打开快捷键帮助',
+  closeOverlay: '关闭最上层弹层',
 }
 
 /** 解析用户自定义绑定串为裸键（仅无修饰键组合参与；带修饰键 → null）。

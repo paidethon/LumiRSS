@@ -49,7 +49,10 @@ const AUDITED_SHADOW_CARRIERS: Record<string, number> = {
   'ArticleFindBar.tsx': 1,
   'ArticleLightbox.tsx': 1,
   'ArticleLinksPanel.tsx': 1,
-  'ArticleToc.tsx': 1,
+  'ArticleToc.tsx': 2, // +1 = NEW-357 目录停靠导航带（与章节导航同族浮带）
+  // NEW-353/355：正文域浮层面板（校准/媒体预算）——与 ArticleLinksPanel 同族
+  'new351/MediaBudgetPanel.tsx': 1,
+  'new351/PositionCalibrationPanel.tsx': 1,
   'CommandPalette.tsx': 1,
   'DictSelectionLayer.tsx': 1,
   'InstallHint.tsx': 1,
