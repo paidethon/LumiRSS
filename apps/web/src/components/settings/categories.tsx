@@ -109,6 +109,8 @@ import { ActivityPurgeSection } from './ActivityPurgeSection'
 // NEW-341..350 隐私、会话与可理解的授权（本组组合面板）
 import { PrivacyAuthorizationCenter } from '../new341/PrivacyAuthorizationCenter'
 import { PrivacySharingCenter } from '../new341/PrivacySharingCenter'
+// NEW-381..390 长期保存与格式互通（本组组合面板）
+import { PreservationCenter } from '../new381/PreservationCenter'
 // R03：来源显示别名（设备本地 Map<feedTitle, alias>，仅展示层替换）
 import { SourceAliasSettings } from '../SourceAliasSettings'
 // N067：触控操作练习区（手势重映射的安全练习台账）
@@ -659,6 +661,10 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         // NEW-344/345/349/350：共享与删除控制（共享链接范围与次数上限 /
         // 隐私检查向导逐项撤回，无一键全删 / 删除范围预览与实际处理回执）
         { type: 'custom', node: <PrivacySharingCenter /> },
+        // NEW-381..390：长期保存与格式互通（书目导入 / 离线站点 /
+        // JSON Feed / 格式对照 / 加密导出 / 索引导出 / 分卷 / 逐项对账；
+        // 全部两级情境展开，折叠零请求）
+        { type: 'custom', node: <PreservationCenter /> },
       ]
     case 'services':
       // 0018 Gate 9：账户与服务 —— 会话账户安全（session 模式）+ 真实
