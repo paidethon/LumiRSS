@@ -68,7 +68,8 @@ describe('NEW-351 阅读手势训练页', () => {
     window.history.back = backSpy
     render(withProviders(<ReadingGestureTrainingOverlay onClose={() => {}} />))
     swipePractice(8, 140)
-    expect(screen.getByText('触发:左缘侧滑返回(练习)')).toBeInTheDocument()
+    // FIX-275：最新动作同时出现在 sr-only 播报节点与台账行——放宽为至少一份
+    expect(screen.getAllByText('触发:左缘侧滑返回(练习)').length).toBeGreaterThanOrEqual(1)
     expect(backSpy).not.toHaveBeenCalled()
     expect(fetchSpy).not.toHaveBeenCalled()
     // 位移不足 → 只记预览（不提交）

@@ -231,12 +231,20 @@ export function GesturePracticeOverlay({ onClose }: { onClose: () => void }) {
           <h4 className="text-sm font-medium text-[var(--lumi-text-tertiary)]">
             练习台账（{ledger.length}）
           </h4>
+          {/* FIX-275：播报只承载「本次操作结果」（最新一条）。此前
+              aria-live 挂在整张台账 ul 上——每次练习都让屏幕阅读器把
+              最多 20 条历史从头重读。常驻单节点 polite：连续动作在同
+              一节点上合并，播报始终是最新状态，不回放历史。台账本体
+              是普通可视列表（按需阅读，不自动播报）。 */}
+          <p role="status" aria-live="polite" data-practice-latest="" className="sr-only">
+            {ledger[0]?.text ?? ''}
+          </p>
           {ledger.length === 0 ? (
-            <p aria-live="polite" className="mt-1 text-xs text-[var(--lumi-text-tertiary)]">
+            <p className="mt-1 text-xs text-[var(--lumi-text-tertiary)]">
               还没有动作。在上方卡片上滑动 / 长按 / 双击试试。
             </p>
           ) : (
-            <ul aria-live="polite" className="mt-1 flex flex-col gap-0.5">
+            <ul className="mt-1 flex flex-col gap-0.5">
               {ledger.map((entry) => (
                 <li key={entry.id} data-practice-log={entry.text} className="text-xs text-[var(--lumi-text-primary)]">
                   {entry.text}

@@ -25,7 +25,7 @@
 
 import { sanitizeArticleHtml } from './sanitize-article-html'
 import { containsCodeBlock, highlightCodeBlocks } from './code-highlight'
-import { transformFootnotes } from './footnotes'
+import { collectFootnotes } from './footnotes'
 import { renderMathInDom } from './katex-render'
 import type { ReaderChineseConversion } from '../store/app-settings'
 
@@ -343,7 +343,10 @@ export async function renderArticleHtml(
 
   // F079：最先执行——被摘除的元素不参与后续 transform
   if (needsStripFixed) stripFixedStickyMedia(doc.body)
-  if (needsFootnotes) transformFootnotes(doc)
+  // FIX-262：只收集定义（隐藏容器可经 sanitize 存活）；引用锚点的
+  // 按钮化在渲染后装饰层进行（FORBID_TAGS 含 button，管线内造的
+  // 按钮过不了最终边界）——见 lib/footnotes.ts 模块注释。
+  if (needsFootnotes) collectFootnotes(doc)
   if (needsMath) await renderMathInDom(doc.body)
   if (needsFirstImageMark) markFirstImage(doc)
   if (needsConversion) {

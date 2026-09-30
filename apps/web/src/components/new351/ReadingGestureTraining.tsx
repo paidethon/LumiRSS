@@ -224,12 +224,18 @@ export function ReadingGestureTrainingOverlay({ onClose }: { onClose: () => void
           <h3 className="text-sm font-medium text-[var(--lumi-text-tertiary)]">
             训练台账（{ledger.length}）
           </h3>
+          {/* FIX-275：与练习台账同一语义——aria-live 不再挂整张 ul
+              （每次演练都重读最多 20 条历史）；常驻单节点 polite 只播报
+              本次演练判定（最新一条），连续动作合并，不回放历史。 */}
+          <p role="status" aria-live="polite" data-n351-training-latest="" className="sr-only">
+            {ledger[0]?.text ?? ''}
+          </p>
           {ledger.length === 0 ? (
-            <p aria-live="polite" className="mt-1 text-xs text-[var(--lumi-text-tertiary)]">
+            <p className="mt-1 text-xs text-[var(--lumi-text-tertiary)]">
               还没有动作。在上方合成文章左缘向右滑试试。
             </p>
           ) : (
-            <ul aria-live="polite" className="mt-1 flex flex-col gap-0.5">
+            <ul className="mt-1 flex flex-col gap-0.5">
               {ledger.map((entry) => (
                 <li key={entry.id} data-n351-training-log={entry.text} className="text-xs text-[var(--lumi-text-primary)]">
                   {entry.text}

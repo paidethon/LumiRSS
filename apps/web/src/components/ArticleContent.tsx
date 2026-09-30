@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import type { EntryDetail } from '../api/types'
 import { renderArticleHtmlCached, sanitizeArticleHtmlCached } from '../lib/article-pipeline'
 import 'katex/dist/katex.min.css'
-import { readFootnoteDefinition } from '../lib/footnotes'
+import { readFootnoteDefinition, decorateFootnoteReferences } from '../lib/footnotes'
 import { getEntryExtractPreview } from '../api/client'
 import { Button } from './ui/Button'
 import { cx as cxRaw } from './ui/cx'
@@ -526,6 +526,11 @@ export default function ArticleContent({
     const container = contentRef.current
     if (container === null || !hasHtml) return
     decorateCodeCopyButtons(container)
+    // FIX-262：脚注引用锚点 → 受控按钮（渲染后装饰，幂等）。管线内
+    // 造的按钮过不了 DOMPurify 边界（FORBID_TAGS 含 button）——按钮化
+    // 必须发生在 sanitize 之后的 live DOM 上（受控 DOM API，与下方
+    // 各装饰同一信任模型）；定义容器已随管线过最终边界。
+    decorateFootnoteReferences(container)
     // FIX-137：外链补 target=_blank + rel=noopener noreferrer；同源链接
     // 不留新标签语义（点击走应用内路由）。
     decorateContentLinks(container, linkBase)

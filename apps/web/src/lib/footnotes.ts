@@ -1,14 +1,22 @@
-/** footnotes — F059 脚注往返阅读（pipeline 后处理，受控 DOM 变换）。
+/** footnotes — F059 / FIX-262 脚注往返（两段式）。
  *
- * 识别三种常见脚注模式（GFM/多说的 li.footnote、Pandoc 的
- * sup > a[href^="#fn"]、a.footnote-backref 的反向），把正文引用标记
- * 替换为受控按钮（aria-label="查看脚注 N"，键盘可达），定义内容保留
- * 在隐藏容器 `#lumi-footnote-defs`（已经 sanitize 边界，注入弹层时
- * 再次走净化）。
+ * FIX-262 根因：管线的引用→受控按钮变换发生在 sanitize **之前**，而
+ * DOMPurify 配置 FORBID_TAGS 含 'button'（正文清洗边界禁止任何交互
+ * 控件）——按钮在最终边界被剥掉，只剩 <sup>1</sup> 裸文本：点击不可
+ * 达，往返关系（data-lumi-fn-key / data-lumi-fn-return）随之丢失。
  *
- * 硬规则与 article-pipeline 一致：只使用 DOM API，不执行任何脚本；
- * 同一脚注多处引用各自保留返回位置（data-lumi-fn-return 唯一序号）；
- * 缺失定义 → 按钮不渲染（诚实降级）；重复 id 取首个定义。
+ * 修复（不放松 DOMPurify，安全边界不变）：
+ * 1. 管线内 `collectFootnotes(doc)`：只收集**定义**进隐藏容器
+ *    `#lumi-footnote-defs`（div + data-* 可经 sanitize 存活；定义内容
+ *    随整篇正文过最终边界）；正文引用标记保持为已清洗的裸锚点。
+ * 2. 渲染后 `decorateFootnoteReferences(container)`：在 DOMPurify 输出
+ *    的 live DOM 上把引用锚点替换为受控按钮（DOM API 构造，type/aria/
+ *    data-* 全部受控常量，textContent 只写序号）——与段落复制链接
+ *    按钮 / 表格展开按钮同一信任模型（渲染后装饰，幂等）。
+ *
+ * 往返语义：引用按钮携带 data-lumi-fn-key（定义键）与
+ * data-lumi-fn-return（唯一返回序号）；弹层「返回引用」按序号找回
+ * 触发节点。缺失定义 → 不装饰（诚实降级）；重复 id 取首个定义。
  */
 
 export const FOOTNOTE_DEFS_CONTAINER_ID = 'lumi-footnote-defs'
@@ -39,32 +47,49 @@ function collectDefinitions(doc: Document): Map<string, FnDef> {
   return defs
 }
 
-/** 正文内引用标记：sup > a[href^="#fn"] / a[href^="#fn"] / sup.footnote。 */
-function forEachReference(doc: Document, visit: (anchor: HTMLElement, key: string) => void): void {
-  const anchors = doc.querySelectorAll('sup a[href^="#fn"], a[href^="#fn"], sup.footnote a[href^="#"]')
-  anchors.forEach((node) => {
-    const anchor = node as HTMLElement
-    const href = anchor.getAttribute('href') ?? ''
-    const key = href.replace(/^#fn(:|-)?/i, '').replace(/^#/, '')
-    if (key === '') return
-    visit(anchor, key)
-  })
-}
-
-/** 就地变换：引用 → 受控按钮；定义收集进隐藏容器。返回定义数。 */
-export function transformFootnotes(doc: Document): number {
+/** 管线内变换（sanitize 之前）：把定义收进隐藏容器。定义 div 随整篇
+ * 过最终边界；正文引用锚点原样保留（按钮化在渲染后装饰阶段进行，
+ * 见 decorateFootnoteReferences——FORBID_TAGS 含 button，管线内造的
+ * 按钮过不了最终边界，这正是 FIX-262 的根因）。返回定义数。 */
+export function collectFootnotes(doc: Document): number {
   const defs = collectDefinitions(doc)
   if (defs.size === 0) return 0
   const container = doc.createElement('div')
   container.id = FOOTNOTE_DEFS_CONTAINER_ID
   container.hidden = true
+  for (const def of defs.values()) {
+    const defNode = doc.createElement('div')
+    defNode.setAttribute('data-lumi-fn-def', def.key)
+    defNode.innerHTML = def.html // 弹层注入时调用方还会再净化一次
+    container.appendChild(defNode)
+  }
+  doc.body.appendChild(container)
+  return defs.size
+}
+
+/** 渲染后装饰（幂等，decorateCodeCopyButtons 同一模式）：在已清洗的
+ * live DOM 上把正文引用锚点替换为受控按钮（键盘可达 + aria-label +
+ * 往返 data 属性）。定义缺失的引用保持锚点原样（诚实降级）。 */
+export function decorateFootnoteReferences(container: HTMLElement): void {
+  const anchors = container.querySelectorAll(
+    'sup a[href^="#fn"], a[href^="#fn"], sup.footnote a[href^="#"]',
+  )
   let returnSeq = 0
-  let replaced = 0
-  forEachReference(doc, (anchor, key) => {
-    const def = defs.get(key)
-    if (def === undefined) return // 缺失定义 → 不渲染按钮（诚实降级）
-    const number = def.number
-    const button = doc.createElement('button')
+  anchors.forEach((node) => {
+    const anchor = node as HTMLElement
+    const href = anchor.getAttribute('href') ?? ''
+    const key = href.replace(/^#fn(:|-)?/i, '').replace(/^#/, '')
+    if (key === '') return
+    const defNode = container.querySelector(
+      `#${FOOTNOTE_DEFS_CONTAINER_ID} [data-lumi-fn-def="${CSS.escape(key)}"]`,
+    )
+    if (defNode === null) return // 缺失定义 → 不装饰（诚实降级）
+    // 定义序号 = 收集顺序（与 collectFootnotes 编号一致）
+    const number =
+      Array.from(
+        container.querySelectorAll(`#${FOOTNOTE_DEFS_CONTAINER_ID} [data-lumi-fn-def]`),
+      ).indexOf(defNode) + 1
+    const button = container.ownerDocument.createElement('button')
     button.setAttribute('type', 'button')
     button.setAttribute('aria-label', `查看脚注 ${number}`)
     button.setAttribute('data-lumi-fn-ref', String(number))
@@ -73,18 +98,7 @@ export function transformFootnotes(doc: Document): number {
     button.textContent = String(number)
     returnSeq += 1
     anchor.replaceWith(button)
-    replaced += 1
-    if (container.querySelector(`[data-lumi-fn-def="${key}"]`) === null) {
-      const defNode = doc.createElement('div')
-      defNode.setAttribute('data-lumi-fn-def', key)
-      defNode.innerHTML = def.html // 已过 sanitize 的内容；弹层注入时再净化
-      container.appendChild(defNode)
-    }
   })
-  if (container.childElementCount > 0) {
-    doc.body.appendChild(container)
-  }
-  return replaced
 }
 
 /** 读取指定脚注的定义 HTML（弹层展示用；调用方需再次 sanitize）。 */
