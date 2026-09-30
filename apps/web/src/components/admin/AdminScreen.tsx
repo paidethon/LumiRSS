@@ -66,6 +66,7 @@ import {
   type AdminUser,
   type InviteScheme,
 } from '../../api/client'
+import { AdminOpsCenter } from '../new371/AdminOpsCenter'
 import { useAuthStore } from '../../store/auth'
 import { navigateAppRoute } from '../../lib/app-route'
 import {
@@ -2265,6 +2266,10 @@ export default function AdminScreen() {
             </div>
             <div className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-4">
               <SystemSection />
+            </div>
+            <div className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-4">
+              {/* NEW-371..380 运行治理中心（情境展开子区；折叠 = 零查询）。 */}
+              <AdminOpsCenter />
             </div>
           </div>
         )}
