@@ -17,6 +17,7 @@
 | VERSION | KEEP-VERIFIED | scripts/check-version.py 单源；apps/web/package.json=2.0.1 一致 |
 | .github/PULL_REQUEST_TEMPLATE.md | KEEP-VERIFIED | 通用流程模板 |
 | apps/web/README.md | UPDATE→done | 引用已删除的 docs/milestones/0005-web-shell.md → 已改指 docs/README.md，去掉"0005 起步"定位 |
+| LumiRSS-2.0.1-ZCode-R2/*.md（MASTER/START/TASKS-800/README） | EXCLUDE（交付期任务包） | 运维侧批次指令与计数规则，非项目文档；不入文档导航。注意：含部署现场身份信息，属交付包而非公开文档，公开化前需单独脱敏（2026-10-01 ARCH-09 验收盘点发现，处置归协调者） |
 | docs/README.md | KEEP-VERIFIED | ~20 索引链接全部可达 |
 | docs/ROADMAP.md | UPDATE→done | "Current state" 成第二份 changelog → 已精简为一段 + 链接 CHANGELOG/implementation-status.json；Next/Deferred 保留 |
 | docs/getting-started.md | KEEP-VERIFIED | 路径正确；Node 24 与 ci.yml 一致 |
@@ -48,6 +49,7 @@
 | docs/.vitepress/config.ts | UPDATE→done | 站点描述"单用户"过时 → 已改"邀请制多账户" |
 | docs/doc-disposition.md | NEW | 本表（治理索引） |
 | tools/perf/README.md | KEEP-VERIFIED | 与 performance.md 方法一致；凭据声明为测试专用 |
+| e2e/stack/README.md | KEEP-VERIFIED | FIX-178 判定：自描述测试夹具目录（非部署面），内容与 compose 文件一致 |
 | e2e/stack/fixtures/vault/AI/transformer.md | EXCLUDE | 测试夹具内容，不是文档，不改写 |
 
 ## 重复簇 → 单一事实源（SSOT）
@@ -69,7 +71,7 @@
 |---|---|---|---|---|
 | OpenAPI 导出 | `pnpm api:generate`（services/bff/scripts/export_openapi.py + openapi-typescript） | `apps/web/src/api/generated/openapi.json`、`schema.ts` | 无——目录生成专属 | `pnpm api:check`（git diff --exit-code） |
 | 设置元数据导出 | `pnpm settings:generate`（services/bff/scripts/export_settings_meta.py，`WEB_OUT` 常量） | `apps/web/src/api/generated/settings-meta.ts` | 无——同上目录 | `pnpm settings:check` |
-| 文档站构建 | `npm run docs:build`（vitepress build docs） | `docs/.vitepress/dist/`（.gitignore:59，不入库） | 无——只**读** `docs/**` 源，绝不写回源树 | 构建内建死链检查 |
+| 文档站构建 | `npm run docs:build`（vitepress build docs） | `docs/.vitepress/dist/`（.gitignore:59，不入库） | 无——只**读** `docs/**` 源，绝不写回源树 | 构建内建死链检查 + `pnpm check:docs-nav`（config.ts 导航路由核验；构建死链门禁不覆盖 themeConfig 导航，FIX-395） |
 | 进度看板构建 | `npm run build:dashboard`（tools/progress-dashboard/build.mjs） | `tools/progress-dashboard/dist/{project-data.js,index.html}` | 无——`dist/` 生成专属；手写模板 `index.html` 在上一级，路径不同（dist/index.html 是其字节拷贝） | `pnpm check:dashboard`（对照 `docs/implementation-status.json`） |
 
 docs/ 内的两份 JSON 均为手写**输入**、无生成器回写：
@@ -77,3 +79,9 @@ docs/ 内的两份 JSON 均为手写**输入**、无生成器回写：
 `release-notes.json`（BFF 版本导览读取）。结论：**BASELINE_OK** ——
 生成目录各有唯一所有者，手写解释不会被生成器删除；后续新增生成器时
 先在本表登记输出路径。
+
+## 仓库外记录索引（FIX-391，2026-10-01）
+
+Agent 工具预备/核验记录（skills、agent 定义、MCP 清单）不属于仓库文档，
+在本表范围之外由运维侧单独维护为唯一权威记录；本仓库不复制其清单内容，
+需要时向运维索取当前索引，避免出现第二份各自漂移的工具清单。

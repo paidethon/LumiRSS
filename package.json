@@ -11,6 +11,7 @@
     "check:dashboard": "node tools/progress-dashboard/check.mjs",
     "lint:commits": "commitlint --from ${BASE_SHA:-origin/main~20} --to HEAD",
     "check:version": "python3 scripts/check-version.py",
+    "check:docs-nav": "python3 scripts/check_docs_nav.py",
     "perf:soak": "node tools/perf/load-soak.mjs"
   },
   "devDependencies": {
