@@ -8,7 +8,9 @@
 - 全局配额（F064/N191）在同一循环内预占：配额拒绝 → 该项
   quota_exceeded 且执行停止；
 - 可取消尚未开始的项（pending → cancelled）；已开始的项不动；
-  整单取消在 completed 之后拒绝。
+  整单取消在 completed 之后拒绝。FIX-225：执行循环尊重取消——每项
+  发起前 re-check，取消项不再调用；不可中断区段的结果不覆盖取消
+  （丢弃并计数）；已取消的审批单不会被执行循环复活为 completed。
 
 per-user：审批单与明细在 per-user 库，A 的审批单对 B 不可见。
 """
@@ -152,6 +154,35 @@ class BatchApprovalStore:
 
     # -- 执行 ---------------------------------------------------------------
 
+    async def _item_status(self, item_id: str) -> str | None:
+        row = await self._db.fetch_one(
+            "SELECT status FROM ai_batch_approval_items WHERE id = ?",
+            (item_id,),
+        )
+        return str(row["status"]) if row is not None else None
+
+    async def _commit_item_result(
+        self, item_id: str, status: str, error_type: str | None
+    ) -> bool:
+        """FIX-225：结果只在项仍为 pending 时落账（一条 UPDATE 完成
+        「校验 + 写入」）。False = 项已被并发取消——不可中断区段的
+        结果被丢弃，绝不把成功结果覆盖到取消标签上。"""
+        import sqlite3
+
+        from lumirss.db_tx import transaction
+
+        now = utc_now()
+
+        def _tx(conn: sqlite3.Connection) -> bool:
+            cursor = conn.execute(
+                "UPDATE ai_batch_approval_items SET status = ?, error_type = ?, "
+                "finished_at = ? WHERE id = ? AND status = 'pending'",
+                (status, error_type, now, item_id),
+            )
+            return bool(cursor.rowcount)
+
+        return bool(await transaction(self._db, _tx))
+
     async def execute(
         self,
         approval_id: str,
@@ -163,7 +194,13 @@ class BatchApprovalStore:
         名额用尽 → 停止并如实上报 stoppedReason="over_budget"，剩余项
         保持 pending（可调整后再次 execute 续跑）——绝不静默超额。
         执行循环串行（单进程 BFF）；全局配额/费用由 run_item 内的既有
-        配额守卫负责，quota_exceeded 同样停止整单。"""
+        配额守卫负责，quota_exceeded 同样停止整单。
+
+        FIX-225：取消不是只改数据库标签——每项发起前 re-check 行状态
+        （并发取消的项不再发起调用，worker 停止可取消工作）；run_item
+        是不可中断区段，其结果只在项仍 pending 时提交，取消项的结果
+        被丢弃并以 ``inFlightCancelled`` 如实计数；整单取消后的完成态
+        迁移绝不把 cancelled 复活成 completed。"""
         approval = await self.get_approval(approval_id)
         if approval["status"] == "draft":
             raise ApprovalStateError("not_approved", "审批单未经确认，不能执行。")
@@ -174,9 +211,13 @@ class BatchApprovalStore:
         budget = int(approval["budgetCalls"])
         used = int(approval["usedCalls"])
         summary = {"done": 0, "failed": 0}
+        in_flight_cancelled = 0
         stopped_reason: str | None = None
         for item in approval["items"]:
             if item["status"] != "pending":
+                continue
+            if await self._item_status(item["id"]) != "pending":
+                # FIX-225：发起前 re-check——并发取消的项跳过，不再调用。
                 continue
             if used >= budget:
                 stopped_reason = "over_budget"
@@ -188,15 +229,14 @@ class BatchApprovalStore:
                 "WHERE id = ?",
                 (approval_id,),
             )
-            await self._db.execute(
-                "UPDATE ai_batch_approval_items SET status = ?, error_type = ?, "
-                "finished_at = ? WHERE id = ?",
-                (status, error_type, utc_now(), item["id"]),
-            )
-            if status == "done":
-                summary["done"] += 1
+            if await self._commit_item_result(item["id"], status, error_type):
+                if status == "done":
+                    summary["done"] += 1
+                else:
+                    summary["failed"] += 1
             else:
-                summary["failed"] += 1
+                # 不可中断区段内被取消：结果丢弃，保持 cancelled 标签。
+                in_flight_cancelled += 1
             if status == "quota_exceeded":
                 stopped_reason = "quota_exceeded"
                 break
@@ -204,7 +244,7 @@ class BatchApprovalStore:
         if remaining == 0:
             await self._db.execute(
                 "UPDATE ai_batch_approvals SET status = 'completed', closed_at = ? "
-                "WHERE id = ?",
+                "WHERE id = ? AND status != 'cancelled'",
                 (utc_now(), approval_id),
             )
         result = await self.get_approval(approval_id)
@@ -213,6 +253,7 @@ class BatchApprovalStore:
             "budgetCalls": budget,
             "remainingPending": remaining,
             "stoppedReason": stopped_reason,
+            "inFlightCancelled": in_flight_cancelled,
             **summary,
         }
         return result

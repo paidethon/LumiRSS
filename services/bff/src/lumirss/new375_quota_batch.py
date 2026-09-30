@@ -203,7 +203,13 @@ async def cancel_batch(control_db: Any, batch_id: str) -> dict[str, Any]:
 async def execute_batch(
     state: Any, control_db: Any, *, batch_id: str, by: str
 ) -> dict[str, Any]:
-    """逐账户执行；单账户失败隔离为 error 行，绝不中断批次。"""
+    """逐账户执行；单账户失败隔离为 error 行，绝不中断批次。
+
+    FIX-225：取消不是只改数据库标签——每个账户发起前 re-check 批次
+    状态，并发取消后 worker 停止可取消工作（不再对后续账户写入）；
+    已执行账户的结果行照常落账（诚实呈现）；终态迁移带
+    ``status = 'draft'`` 守卫，绝不把已取消的批次复活成 executed，
+    并以 ``stoppedReason`` 如实上报。"""
     await control_db.migrate()
     batch = await get_batch(control_db, batch_id)
     if batch is None:
@@ -216,7 +222,15 @@ async def execute_batch(
 
     accounts = AccountsStore(control_db)
     outcomes: list[dict[str, Any]] = []
+    stopped_reason: str | None = None
     for change in batch["change"]:
+        # FIX-225：发起前 re-check——并发取消的批次停止执行。
+        status_row = await control_db.fetch_one(
+            "SELECT status FROM admin_quota_batches WHERE id = ?", (batch_id,)
+        )
+        if status_row is not None and str(status_row["status"]) != "draft":
+            stopped_reason = "cancelled"
+            break
         user_id = str(change["userId"])
         before = await store.caps_for(user_id)
         user = await accounts.get_user(user_id)
@@ -242,8 +256,9 @@ async def execute_batch(
             )
 
     def _write(conn: Any) -> dict[str, Any]:
+        # FIX-225：终态迁移带 draft 守卫——取消落定的批次保持 cancelled。
         conn.execute(
-            "UPDATE admin_quota_batches SET status = 'executed', executed_at = ?, executed_by = ? WHERE id = ?",
+            "UPDATE admin_quota_batches SET status = 'executed', executed_at = ?, executed_by = ? WHERE id = ? AND status = 'draft'",
             (utc_now(), by, batch_id),
         )
         for item in outcomes:
@@ -259,9 +274,16 @@ async def execute_batch(
                     item["detail"],
                 ),
             )
-        return {"batchId": batch_id, "status": "executed", "results": outcomes}
+        row = conn.execute(
+            "SELECT status FROM admin_quota_batches WHERE id = ?", (batch_id,)
+        ).fetchone()
+        status = str(row["status"]) if row is not None else "executed"
+        return {"batchId": batch_id, "status": status, "results": outcomes}
 
-    return await transaction(control_db, _write)
+    result = await transaction(control_db, _write)
+    if stopped_reason is not None:
+        result["stoppedReason"] = stopped_reason
+    return result
 
 
 async def list_batches(control_db: Any, limit: int = 20) -> list[dict[str, Any]]:
