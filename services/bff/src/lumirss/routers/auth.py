@@ -484,6 +484,31 @@ class RegisterRequest(BaseModel):
     displayName: str | None = Field(default=None, max_length=64)
 
 
+class RegistrationPolicy(BaseModel):
+    """GET /auth/registration-policy (R01)：匿名可探的实例注册策略。"""
+
+    allowPublicRegistration: bool
+
+
+@router.get(
+    "/api/v1/auth/registration-policy",
+    response_model=RegistrationPolicy,
+    response_model_exclude_none=True,
+)
+async def registration_policy(request: Request) -> RegistrationPolicy:
+    """匿名公开：登录页据此决定注册入口是表单还是邀请说明。
+
+    只暴露这一个布尔位，不泄漏实例其他配置；探测失败由前端诚实
+    回退（进 /register 由服务端 403 定案）。
+    """
+    from lumirss.instance_settings import InstanceSettingsStore
+
+    allowed = await InstanceSettingsStore(request.app.state.control_db).get_bool(
+        "allow_public_registration"
+    )
+    return RegistrationPolicy(allowPublicRegistration=allowed)
+
+
 @router.post(
     "/api/v1/auth/register",
     response_model=AuthStatus,
