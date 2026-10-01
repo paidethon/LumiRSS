@@ -974,7 +974,9 @@ cmd_backup() {
   # 趟 2：非数据库文件 file-level tar；*.sqlite 与 -wal/-shm/-journal 边车
   # 一律排除（它们由趟 1 的一致性快照覆盖，混入裸拷贝会重新引入不一致）。
   for vol in lumi-data freshrss-data; do
-    if ! docker_cmd run --rm -v "${proj}_${vol}:/src:ro" -v "$dir":/dst "$BACKUP_IMAGE" \
+    # --user 0:0：freshrss 卷内子目录属 root:33 且非全员可读（2026-10-01
+    # 生产实测 ./users/admin EACCES）；/src 只读挂载，root 仅用于读全卷。
+    if ! docker_cmd run --rm --user 0:0 -v "${proj}_${vol}:/src:ro" -v "$dir":/dst "$BACKUP_IMAGE" \
         tar czf "/dst/${vol}.files.tar.gz" \
           --exclude='*.sqlite' --exclude='*.sqlite3' --exclude='*.db' \
           --exclude='*.sqlite-wal' --exclude='*.sqlite-shm' --exclude='*.sqlite-journal' \
