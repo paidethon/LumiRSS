@@ -195,6 +195,8 @@ jobs:
       - name: Assemble release install bundle (FIX-186/187)
         run: |
           set -euo pipefail
+          # 脚本契约：--out 须是已存在目录（负向测试钉定），调用方先建。
+          mkdir -p release-bundle
           scripts/assemble-release-bundle.sh \
             --out release-bundle \
             --manifest release-manifest.json
