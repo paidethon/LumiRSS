@@ -137,7 +137,11 @@ require_env_file() {
 env_value() { # env_value KEY [FILE]
   local file="${2:-$ENV_FILE}"
   [[ -f "$file" ]] || return 0
-  grep -E "^$1=" "$file" | tail -1 | cut -d= -f2- || true
+  # .env.prod 按 compose dotenv 约定存储：$$ 是字面 $ 的转义。CLI"先导出
+  # 再调 compose"的路径不经过 compose 的 dotenv 解析，必须在此还原——
+  # 否则含 $ 的值（bcrypt 哈希等）以 $$ 形态进入容器，web 的 basic-auth
+  # 对所有人失效（2026-10-01 生产实测，运营者被锁在站外）。
+  grep -E "^$1=" "$file" | tail -1 | cut -d= -f2- | sed 's/\$\$/$/g' || true
 }
 
 # Set (or append) KEY=VALUE in $ENV_FILE idempotently.

@@ -260,6 +260,20 @@ rc=$?
 assert_eq "update completes against stub docker" "0" "$rc"
 assert_contains "update reports completion" "update complete" "$update_out"
 
+# ---------------------------------------------------------------------------
+echo "== 7b. env_value unescapes compose \$\$ (basic-auth hash reaches container intact) =="
+# .env.prod 按 compose dotenv 约定存 $$；CLI 先导出再调 compose 的路径
+# 不经过 compose 的 dotenv 解析。回归样例：bcrypt 哈希以 $$ 形态进容器
+# 曾让 web basic-auth 对所有人失效（2026-10-01 生产事故）。
+ev_sandbox="$(mktemp -d)"
+printf 'LUMIRSS_AUTH_HASH=$$2b$$12$$abcdEFGH\nOTHER=$$keep$$me\n' > "$ev_sandbox/.env.prod"
+sed -n "/^env_value()/,/^}/p" "$REPO_ROOT/lumirss" > "$ev_sandbox/env_value.sh"
+ev_hash="$(ENV_FILE="$ev_sandbox/.env.prod" bash -c '. "$1"; env_value LUMIRSS_AUTH_HASH' _ "$ev_sandbox/env_value.sh")"
+assert_eq "env_value unescapes \$\$ in bcrypt hash" '$2b$12$abcdEFGH' "$ev_hash"
+ev_other="$(ENV_FILE="$ev_sandbox/.env.prod" bash -c '. "$1"; env_value OTHER' _ "$ev_sandbox/env_value.sh")"
+assert_eq "env_value unescape applies to every value" '$keep$me' "$ev_other"
+rm -rf "$ev_sandbox"
+
 echo "== 8. pull failure must fall back to existing local images, never a rebuild =="
 cat > "$stub_dir/docker" <<'STUB'
 #!/bin/sh
