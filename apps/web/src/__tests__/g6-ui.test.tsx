@@ -239,7 +239,7 @@ describe('ApiSourcesSection', () => {
     expect(screen.getByText('正常')).toBeInTheDocument()
   })
 
-  it('创建：一次性成功面板展示 atomPath + 复制按钮 + 仅显示一次提示', async () => {
+  it('创建：向导五步 → 一次性成功面板展示 atomPath + 复制按钮 + 仅显示一次提示', async () => {
     mocks.listApiSources.mockResolvedValue({ items: [] })
     mocks.createApiSource.mockResolvedValue(
       apiSourceFixture({
@@ -250,15 +250,24 @@ describe('ApiSourcesSection', () => {
       }),
     )
     render(withProviders(<ApiSourcesSection />))
-    fireEvent.click(await screen.findByRole('button', { name: '新增来源' }))
+    fireEvent.click(await screen.findByRole('button', { name: '添加 API 来源' }))
+    // 第 1 步：地址与认证
     fireEvent.change(screen.getByLabelText('名称'), { target: { value: '新来源' } })
     fireEvent.change(screen.getByLabelText('Endpoint'), {
       target: { value: 'https://api.example.com/items' },
     })
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    // 第 2 步：预览 JSON（列表表达式）
     fireEvent.change(screen.getByLabelText('items 表达式（JMESPath）'), {
       target: { value: 'items' },
     })
-    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    // 第 3 步：字段映射（留空可继续）
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    // 第 4 步：有界试抓（不分页可继续）
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    // 第 5 步：保存并订阅
+    fireEvent.click(screen.getByRole('button', { name: '保存并订阅' }))
 
     expect(await screen.findByText('/feeds/api-sources/src-new.atom?secret=one-time')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '复制' })).toBeInTheDocument()

@@ -1,10 +1,11 @@
-/** NEW-301..310 API 来源、Webhook 与自动接入 — 本组专属 API 调用
+/** API 来源、Webhook 与自动接入 — 本组专属 API 调用
  * （独立文件，不触碰共享 client.ts；URL 全部相对 /api/v1/*，与
  * client.ts 同口径）。
  *
  * 后端真源：services/bff/src/lumirss/routers/new301*.py … new310*.py；
  * 类型按 BFF 稳定 DTO 手写（本组端点尚未进 OpenAPI 生成集——诚实
- * 注释，不假装 generated）。 */
+ * 注释，不假装 generated）。new301 等小写编号仅是内部文件命名，
+ * 用户可见文案一律使用自然语言名称。 */
 
 const API_BASE = '/api/v1'
 
@@ -60,6 +61,7 @@ async function sendJson<T>(
   method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   body?: unknown,
   extraHeaders?: Record<string, string>,
+  signal?: AbortSignal,
 ): Promise<T> {
   const response = await fetch(path, {
     method,
@@ -68,6 +70,7 @@ async function sendJson<T>(
       ...(extraHeaders ?? {}),
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
+    signal,
   })
   if (!response.ok) throw await toApiError(response)
   if (response.status === 204) return null as T
@@ -138,7 +141,7 @@ function sampleIdUrl(uuid: string, sampleId: number, suffix = ''): string {
   return `${sampleListUrl(uuid)}/${sampleId}${suffix}`
 }
 
-// ---- NEW-302 分页试抓台 -----------------------------------------------------
+// ---- 分页试抓（有界：页数硬上限由后端强制，前端只放宽到 1..5） --------
 
 export interface ProbePage {
   page: number | string
@@ -160,8 +163,14 @@ export interface ProbeResult {
 }
 
 export const new302Api = {
-  run: (uuid: string, maxPages: number) =>
-    sendJson<ProbeResult>(sourceUrl(uuid, '/pagination-probe'), 'POST', { maxPages }),
+  run: (uuid: string, maxPages: number, signal?: AbortSignal) =>
+    sendJson<ProbeResult>(
+      sourceUrl(uuid, '/pagination-probe'),
+      'POST',
+      { maxPages },
+      undefined,
+      signal,
+    ),
   last: (uuid: string) =>
     getJson<ProbeResult>(sourceUrl(uuid, '/pagination-probe')),
 }

@@ -1,24 +1,17 @@
-/** NEW-301..310 Web 工具台测试 — 情境展开零请求/来源选择器驱动来源
- * 级子面板/收件箱审阅主路径。fetch 按 URL 匹配 mock（服务真源在
- * BFF：services/bff/tests/test_new30*.py、test_new310*.py）。 */
+/** 接入中心（IntakeCenter）测试 — 聚合入口只含收发侧工具；死信重试
+ * 仅在存在失败记录时出现；用户可见文案不含开发编号（渲染输出断言
+ * 无 /NEW-\d/）。fetch 按 URL 匹配 mock（服务真源在 BFF：
+ * services/bff/tests/test_new30*.py、test_new310*.py）。 */
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { New301IntakeTools } from '../components/new301/New301IntakeTools'
+import { IntakeCenter } from '../components/new301/New301IntakeTools'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'content-type': 'application/json' },
   })
-}
-
-function renderTools(): void {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
-  render(<QueryClientProvider client={queryClient}><New301IntakeTools /></QueryClientProvider>)
 }
 
 const fetchCalls: { url: string; init?: RequestInit }[] = []
@@ -31,18 +24,8 @@ function mockRoute(match: (url: string) => boolean, body: unknown, status = 200)
   routes.push({ match, respond: () => jsonResponse(body, status) })
 }
 
-function expand(subsectionId: string): void {
-  const toggles = screen
-    .getAllByRole('button')
-    .filter((button) => {
-      const host = button.closest('[data-new271-subsection]')
-      return (
-        host !== null &&
-        host.getAttribute('data-new271-subsection') === subsectionId
-      )
-    })
-  expect(toggles.length).toBeGreaterThan(0)
-  fireEvent.click(toggles[0])
+function renderCenter(): HTMLElement {
+  return render(<IntakeCenter />).container
 }
 
 beforeEach(() => {
@@ -56,10 +39,6 @@ beforeEach(() => {
     }
     return jsonResponse({ error: { type: 'unmocked', message: url } }, 404)
   }) as typeof fetch
-  mockRoute(
-    (url) => url.endsWith('/api-sources') && fetchCalls.length <= 2,
-    { items: [{ uuid: 'src-1', name: '样例来源' }] },
-  )
 })
 
 afterEach(() => {
@@ -67,52 +46,48 @@ afterEach(() => {
   routes = []
 })
 
-describe('NEW-301..310 接入工具台（New301IntakeTools）', () => {
-  it('挂载即拉来源清单；子区折叠态不产生子面板请求', async () => {
-    renderTools()
+describe('接入中心（IntakeCenter）', () => {
+  it('渲染自然语言分组标题；渲染输出不含开发编号', async () => {
+    mockRoute((url) => url.includes('/webhooks/dead-letters'), { items: [] })
+    const container = renderCenter()
+    expect(screen.getByText('Webhook 收件箱（先审阅再入库）')).toBeTruthy()
+    expect(screen.getByText('外发事件订阅')).toBeTruthy()
+    expect(screen.getByText('投递回执')).toBeTruthy()
     await waitFor(() => {
-      expect(
-        fetchCalls.some((call) => call.url.endsWith('/api-sources')),
-      ).toBe(true)
+      expect(fetchCalls.some((call) => call.url.includes('/webhooks/dead-letters'))).toBe(true)
     })
-    // 未展开任何子区：不应有子面板请求
-    expect(
-      fetchCalls.filter((call) => call.url.includes('mapping-samples')),
-    ).toHaveLength(0)
+    // 开发编号不出现在任何用户可见文本
+    expect(/NEW-\d/.test(container.textContent ?? '')).toBe(false)
   })
 
-  it('NEW-301：展开映射编辑器 → 拉样本清单（GET mapping-samples）', async () => {
-    routes.length = 0
+  it('死信为空：死信重试整节不显示（仅存在失败记录才显示）', async () => {
+    mockRoute((url) => url.includes('/webhooks/dead-letters'), { items: [] })
+    renderCenter()
+    await waitFor(() => {
+      expect(fetchCalls.some((call) => call.url.includes('/webhooks/dead-letters'))).toBe(true)
+    })
+    expect(screen.queryByText('死信重试（脱敏重放）')).toBeNull()
+  })
+
+  it('存在死信：死信重试节出现；展开 Webhook 收件箱 → 待确认条目可拒绝', async () => {
     mockRoute(
-      (url) => url.endsWith('/api-sources'),
-      { items: [{ uuid: 'src-1', name: '样例来源' }] },
-    )
-    mockRoute(
-      (url) => url.includes('/mapping-samples'),
+      (url) => url.includes('/webhooks/dead-letters'),
       {
         items: [
           {
-            id: 7,
-            label: '已有样本',
-            sampleJson: { items: [] },
-            createdAt: 'now',
+            id: 9,
+            endpointUuid: 'ep-1',
+            eventId: 'evt-9',
+            reason: 'invalid_payload',
+            payloadSummary: { keys: ['id'], bytes: 120 },
+            status: 'pending',
+            failedAt: 'now',
+            replayedAt: null,
           },
         ],
       },
     )
-    renderTools()
-    expand('new301-mapping')
-    await waitFor(() => {
-      const pulled = fetchCalls.some(
-        (call) => call.url.includes('/mapping-samples'),
-      )
-      expect(pulled).toBe(true)
-    })
-  })
-
-  it('NEW-303：收件箱显示待确认条目并可拒绝', async () => {
-    routes.length = 0
-    mockRoute((url) => url.endsWith('/webhooks/endpoints'), { items: [] })
+    mockRoute((url) => url.includes('/webhooks/endpoints'), { items: [] })
     mockRoute(
       (url) => url.includes('/webhooks/inbox'),
       {
@@ -130,8 +105,12 @@ describe('NEW-301..310 接入工具台（New301IntakeTools）', () => {
         ],
       },
     )
-    renderTools()
-    expand('new303-inbox')
+    renderCenter()
+    expect(await screen.findByText('死信重试（脱敏重放）')).toBeTruthy()
+
+    // 展开收件箱（折叠态零请求）
+    expect(fetchCalls.some((call) => call.url.includes('/webhooks/inbox'))).toBe(false)
+    fireEvent.click(screen.getByText('Webhook 收件箱（先审阅再入库）'))
     const rejectButton = await screen.findByRole('button', { name: '拒绝' })
     fireEvent.click(rejectButton)
     await waitFor(() => {
