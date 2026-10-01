@@ -342,7 +342,10 @@ describe('P07 — 默认渲染序 = 既有视觉序', () => {
     ).not.toBeNull()
   })
 
-  it('移动端菜单默认序 = O127 序 + 尾部「自定义工具栏」入口', async () => {
+  it('移动端菜单默认序 = R23 五组小标题（阅读/整理/笔记/分享与导出/高级）内的 O127 序', async () => {
+    // 有意迁移（R23）：旧断言为扁平菜单序；分组后 section 小标题由
+    // ActionMenu GroupLabel 承载（非 menuitem），条目 = 组固定顺序 ×
+    // 组内用户移动端相对序。空组（如桌面整理组）不渲染小标题。
     render(withProviders(<ReaderHeader detail={detailFixture()} {...allCallbacks} />))
     fireEvent.click(screen.getByRole('button', { name: '更多操作' }))
     const menu = await screen.findByRole('menu')
@@ -350,20 +353,31 @@ describe('P07 — 默认渲染序 = 既有视觉序', () => {
       .getAllByRole('menuitem')
       .map((el) => el.textContent ?? '')
     expect(names).toEqual([
+      // 阅读（朗读未入菜单：jsdom 无 speechSynthesis；位置校准/媒体预算
+      // 未入：allCallbacks 未提供对应回调——可用性门槛与旧契约一致）
       '文内查找',
       '文中链接',
       'AI 对话',
+      '自动滚屏',
+      // 整理
       '保存快照',
+      // 笔记
+      '导出到 Obsidian',
+      // 分享与导出
       '复制链接', // jsdom 无 navigator.share
       '复制为纯文本',
       '复制为 Markdown',
       '打印',
-      '自动滚屏',
       '导出 Markdown',
       '导出 HTML',
-      '导出到 Obsidian', // P16：交接入口（固定尾部）
+      // 高级
       '自定义工具栏',
     ])
+    // 五组小标题按固定组序出现（jsdom 全部组非空）
+    const labels = within(menu)
+      .getAllByText(/^(阅读|整理|笔记|分享与导出|高级)$/)
+      .map((el) => el.textContent)
+    expect(labels).toEqual(['阅读', '整理', '笔记', '分享与导出', '高级'])
   })
 })
 
@@ -464,19 +478,23 @@ describe('P07 — 自定义工具栏对话框', () => {
       .getAllByRole('menuitem')
       .map((el) => el.textContent ?? '')
     expect(names).toEqual([
+      // 阅读（朗读上移后在组内居查找之后；自动滚屏固定组尾）
       '文内查找',
       '朗读', // 上移后的菜单位置
       '文中链接',
       'AI 对话',
+      '自动滚屏',
+      // 整理
       '保存快照',
-      // 分享已隐藏：不在菜单
+      // 笔记
+      '导出到 Obsidian',
+      // 分享与导出（分享已隐藏：不在菜单）
       '复制为纯文本',
       '复制为 Markdown',
       '打印',
-      '自动滚屏',
       '导出 Markdown',
       '导出 HTML',
-      '导出到 Obsidian', // P16：交接入口（固定尾部）
+      // 高级
       '自定义工具栏',
     ])
     // 隐藏以 '-share' 占位持久化（不被缺项补全复活）

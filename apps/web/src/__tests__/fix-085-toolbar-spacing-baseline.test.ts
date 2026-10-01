@@ -10,7 +10,8 @@
  *   表达，组间距由外层 gap-1/gap-1.5 承担（不手绘竖分隔线）；
  * - 主/次操作排序：批量栏 = 计数与全选/清除（次）在左，flex-1 弹性
  *   spacer 把主操作（AI 批量入口）稳定推到右端；列表工具行 =
- *   阅读预算入口 mr-auto 独占左位，其余工具右聚。
+ *   未读 segmented（带边框容器表达分组）在左，flex-1 spacer 后视图
+ *   选单与工具按钮右聚（R11 顶栏迁移后的新基线）。
  */
 
 import { readFileSync } from 'node:fs'
@@ -23,9 +24,9 @@ const entryList = read('components/EntryList.tsx')
 const readerHeader = read('components/ReaderHeader.tsx')
 
 describe('FIX-085: 芯片工具行——统一横向间距与内容区分隔', () => {
-  it('列表工具行：flex-wrap items-center gap-1.5，border-b separator 与列表分隔', () => {
+  it('列表工具行：flex items-center gap-1.5，border-b separator 与列表分隔', () => {
     expect(entryList).toContain(
-      'flex flex-wrap items-center justify-end gap-1.5 border-b border-[var(--lumi-separator)] px-4 py-1',
+      'flex flex-wrap items-center gap-1.5 border-b border-[var(--lumi-separator)] px-4 py-1',
     )
   })
 
@@ -61,11 +62,27 @@ describe('FIX-085: 主/次操作稳定排序', () => {
     expect(spacer).toBeLessThan(primary)
   })
 
-  it('列表工具行：阅读预算入口 mr-auto 独占左位（其余工具右聚）', () => {
-    const rowStart = entryList.indexOf('justify-end gap-1.5 border-b')
-    expect(rowStart).toBeGreaterThan(-1)
-    const row = entryList.slice(rowStart, entryList.indexOf('最早优先', rowStart))
-    expect(row.indexOf('mr-auto flex min-h-7'), '阅读预算入口应带 mr-auto 锚在左位').toBeGreaterThan(-1)
+  it('列表工具行（R11 顶栏）：未读 segmented 左位（带边框分组容器），flex-1 后视图/工具右聚', () => {
+    const rowStart = entryList.indexOf('data-testid="list-toolbar"')
+    expect(rowStart, '列表顶栏应存在').toBeGreaterThan(-1)
+    const row = entryList.slice(rowStart, rowStart + 9000)
+    const segmented = row.indexOf('role="group"')
+    const spacer = row.indexOf('<span className="flex-1" />')
+    const viewMenu = row.indexOf('<Menu')
+    const tools = row.indexOf('data-testid="tools-drawer-open"')
+    for (const [label, idx] of [
+      ['未读 segmented（role=group）', segmented],
+      ['flex-1 spacer', spacer],
+      ['视图选单', viewMenu],
+      ['工具按钮', tools],
+    ] as const) {
+      expect(idx, `${label} 应在顶栏窗口内`).toBeGreaterThan(-1)
+    }
+    expect(segmented, 'segmented 应锚在左位').toBeLessThan(spacer)
+    expect(spacer).toBeLessThan(viewMenu)
+    expect(viewMenu).toBeLessThan(tools)
+    // 触控目标：行内控件桌面 32px / 移动 44px（min-h-8 max-lg:min-h-11）
+    expect(row).toContain('min-h-8 max-lg:min-h-11')
   })
 })
 

@@ -237,7 +237,13 @@ describe('F05 按来源分组', () => {
 })
 
 describe('F06 排序切换（诚实客户端降级）', () => {
-  it('切换按钮同步 settings；oldest 时 reverse + 常驻诚实标注；received 走服务端；newest 恢复', async () => {
+  /** R11 顶栏迁移：排序切换收进「视图」选单（沿用三态循环语义）。 */
+  async function openViewMenu(): Promise<HTMLElement> {
+    fireEvent.click(screen.getByRole('button', { name: '视图' }))
+    return await screen.findByTestId('timeline-order-toggle')
+  }
+
+  it('视图选单切换同步 settings；oldest 时 reverse + 常驻诚实标注；received 走服务端；newest 恢复', async () => {
     const entryUrls: string[] = []
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input)
@@ -252,17 +258,14 @@ describe('F06 排序切换（诚实客户端降级）', () => {
     const { container } = render(withProviders(<EntryList />))
     await screen.findAllByText('文章 e1.a')
 
-    const toggle = screen.getByTestId('timeline-order-toggle')
-    expect(toggle).toHaveTextContent('最新优先')
-    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    let toggle = await openViewMenu()
+    expect(toggle).toHaveTextContent('时间线排序：最新优先')
     expect(useAppSettings.getState().settings.timelineOrder).toBe('newest')
     // 默认最新优先：e1.a 在前
     expect(uniqueRowRefs(container).slice(0, 2)).toEqual(['e1.a', 'e1.b'])
 
     fireEvent.click(toggle)
     expect(useAppSettings.getState().settings.timelineOrder).toBe('oldest')
-    expect(toggle).toHaveTextContent('最早优先')
-    expect(toggle.getAttribute('aria-pressed')).toBe('true')
     // 客户端 reverse：已加载范围内 e1.b 在前（order 进入 queryKey →
     // 切换会重拉一页，需等待新查询返回）
     await waitFor(() =>
@@ -276,9 +279,10 @@ describe('F06 排序切换（诚实客户端降级）', () => {
     // N034：第二次点击 → 按接收时间（服务端 sort=received；三态循环）。
     // 该 mock 未投影接收时间 → 服务端按收到的顺序原样返回（a, b），
     // 客户端不再 reverse；诚实标注可见。
+    toggle = await openViewMenu()
+    expect(toggle).toHaveTextContent('时间线排序：最早优先')
     fireEvent.click(toggle)
     expect(useAppSettings.getState().settings.timelineOrder).toBe('received')
-    expect(toggle).toHaveTextContent('按接收时间')
     expect(screen.getByTestId('timeline-order-received-note')).toHaveTextContent(
       '按接收时间（服务端排序；页边界仍由上游分页决定）',
     )
@@ -289,6 +293,8 @@ describe('F06 排序切换（诚实客户端降级）', () => {
     )
 
     // 切回 newest：顺序与标注恢复（三态循环闭环）
+    toggle = await openViewMenu()
+    expect(toggle).toHaveTextContent('时间线排序：按接收时间')
     fireEvent.click(toggle)
     expect(useAppSettings.getState().settings.timelineOrder).toBe('newest')
     expect(uniqueRowRefs(container).slice(0, 2)).toEqual(['e1.a', 'e1.b'])
@@ -298,6 +304,18 @@ describe('F06 排序切换（诚实客户端降级）', () => {
 })
 
 describe('F07 多选批量', () => {
+  /** R11 顶栏迁移：「选择」入口收进「视图」选单（批处理模式语义不变）。 */
+  async function enterSelectMode(): Promise<void> {
+    fireEvent.click(screen.getByRole('button', { name: '视图' }))
+    fireEvent.click(await screen.findByTestId('enter-select-mode'))
+  }
+
+  /** 选择入口在选单内（多选未激活时）。 */
+  async function expectSelectEntryVisible(): Promise<void> {
+    fireEvent.click(screen.getByRole('button', { name: '视图' }))
+    await screen.findByTestId('enter-select-mode')
+  }
+
   function mockEntriesApi(patchState: (ref: string, body: unknown) => Response = () => new Response(null, { status: 204 })) {
     const patchCalls: { ref: string; body: unknown }[] = []
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
@@ -327,7 +345,7 @@ describe('F07 多选批量', () => {
     render(withProviders(<EntryList />))
     await screen.findAllByText('文章 e1.a')
 
-    fireEvent.click(screen.getByTestId('enter-select-mode'))
+    await enterSelectMode()
     expect(screen.getByTestId('batch-bar')).toBeInTheDocument()
     // 真实 checkbox 进入 DOM（每行 row+card 两份，CSS 分发）
     expect(screen.getAllByRole('checkbox', { name: '选择「文章 e1.a」' }).length).toBeGreaterThan(0)
@@ -349,8 +367,8 @@ describe('F07 多选批量', () => {
     await waitFor(() => expect(patchCalls).toHaveLength(1))
     expect(patchCalls[0]).toEqual({ ref: 'e1.a', body: { read: true } })
     expect(useAppSettings.getState().settings.timelineOrder).toBe('newest') // 无副作用
-    // 退出多选态：选择按钮回归
-    expect(screen.getByTestId('enter-select-mode')).toBeInTheDocument()
+    // 退出多选态：选择入口回归（R11：收进「视图」选单）
+    await expectSelectEntryVisible()
   })
 
   it('部分失败：列出失败 ref；重试失败项只重发失败的', async () => {
@@ -362,7 +380,7 @@ describe('F07 多选批量', () => {
     render(withProviders(<EntryList />))
     await screen.findAllByText('文章 e1.a')
 
-    fireEvent.click(screen.getByTestId('enter-select-mode'))
+    await enterSelectMode()
     fireEvent.click(screen.getAllByRole('button', { name: '文章 e1.a' })[0]!)
     fireEvent.click(screen.getAllByRole('button', { name: '文章 e1.b' })[0]!)
     fireEvent.click(screen.getByTestId('batch-read'))
@@ -395,7 +413,7 @@ describe('F07 多选批量', () => {
     render(withProviders(<EntryList />))
     await screen.findAllByText('文章 m0')
 
-    fireEvent.click(screen.getByTestId('enter-select-mode'))
+    await enterSelectMode()
     fireEvent.click(screen.getByRole('button', { name: '全选已加载' }))
     expect(screen.getByTestId('selected-count')).toHaveTextContent('已选 101 条')
     expect(screen.getByRole('alert')).toHaveTextContent('一次最多批量处理 100 条')
@@ -414,7 +432,7 @@ describe('F07 多选批量', () => {
     render(withProviders(<EntryList />))
     await screen.findAllByText('文章 e1.a')
 
-    fireEvent.click(screen.getByTestId('enter-select-mode'))
+    await enterSelectMode()
     fireEvent.click(screen.getByRole('button', { name: '全选已加载' }))
     expect(screen.getByTestId('selected-count')).toHaveTextContent('已选 3 条')
     // 取消 e1.b 的叶子勾选 → 批量提交集合只含剩余叶子行

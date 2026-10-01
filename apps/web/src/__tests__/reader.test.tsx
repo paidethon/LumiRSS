@@ -516,8 +516,9 @@ describe('0020 AUDIT-011 — ReaderSummary 跨文章不泄漏生成态', () => {
     }))
     renderReader(qc)
 
-    // A：点击生成 → POST 永不返回 → 按钮变“正在生成…”（isPending）
+    // A：展开紧凑入口（R23）→ 点击生成 → POST 永不返回 → 按钮变“正在生成…”（isPending）
     fireEvent.click(await screen.findByRole('button', { name: /AI 摘要/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'AI 摘要' }))
     expect(await screen.findByText('正在生成…')).toBeInTheDocument()
 
     // 切到 B（detail 已缓存 → 子树不重挂载）

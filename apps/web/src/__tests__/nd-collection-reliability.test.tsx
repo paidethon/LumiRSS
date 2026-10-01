@@ -235,17 +235,26 @@ describe('N034 时间可信度', () => {
     )
     useAppSettings.setState({ settings: { ...DEFAULT_APP_SETTINGS } })
     const EntryList = (await import('../components/EntryList')).default
-    const view = renderUi(<EntryList />)
-    const toggle = await view.findByTestId('timeline-order-toggle')
+    renderUi(<EntryList />)
+    // R11 顶栏迁移：排序切换收进「视图」选单（点击后选单关闭，逐态重开；
+    // 重开前先等上一轮选单完全关闭——Base UI 关闭是异步的）
+    const openMenu = async () => {
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+      fireEvent.click(screen.getByRole('button', { name: '视图' }))
+      // 本文件动态 import EntryList（重模块图）：菜单 chunk 首开可能
+      // 超过 findBy 默认 1s，显式放宽
+      return await screen.findByTestId('timeline-order-toggle', {}, { timeout: 5000 })
+    }
     // 最新优先 → 最早优先（客户端重排）
-    fireEvent.click(toggle)
+    fireEvent.click(await openMenu())
     // 最早优先 → 按接收时间（服务端排序）
-    fireEvent.click(toggle)
+    fireEvent.click(await openMenu())
     expect(screen.getByTestId('timeline-order-received-note')).toBeDefined()
     await waitFor(() =>
       expect(entryUrls.some((u) => u.includes('sort=received'))).toBe(true),
     )
-    expect(toggle.textContent).toContain('按接收时间')
+    // 三态落位以 settings store 为准（选单已关闭，DOM 不再承载排序控件）
+    expect(useAppSettings.getState().settings.timelineOrder).toBe('received')
   })
 })
 
