@@ -1,0 +1,22 @@
+#!/command/with-contenv sh
+# rsshub (longrun) — node, same start command as the official image's
+# `npm run start` (node dist/index.mjs, production), non-root.
+# Listens on 127.0.0.1:12001 (loopback-only inside the container; the BFF
+# and FreshRSS consume it via RSSHUB_BASE_URL/RSSHUB_FRESHRSS_BASE_URL).
+# NOTE: RSSHub itself does not honor a bind-host env, so it binds 0.0.0.0
+# inside the container namespace — unreachable from outside regardless,
+# because compose publishes only the loopback-mapped :80 (same posture as
+# the old rsshub container on the internal docker network).
+set -eu
+
+export NODE_ENV=production
+export PORT="${RSSHUB_LUMI_PORT:-12001}"
+export CACHE_TYPE="${CACHE_TYPE:-memory}"
+# In-process LRU cache budget (MB) — same env the old rsshub container used.
+export MEMORY_MAX="${LUMIRSS_RSSHUB_MEMORY_MAX:-256}"
+# --max-http-header-size matches the official image's start script; operator
+# heap caps (low-memory profile) ride along via LUMIRSS_RSSHUB_NODE_OPTIONS.
+export NODE_OPTIONS="--max-http-header-size=32768 ${LUMIRSS_RSSHUB_NODE_OPTIONS:-}"
+
+cd /app/rsshub
+exec s6-setuidgid lumirss node dist/index.mjs

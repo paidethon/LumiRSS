@@ -1,0 +1,81 @@
+# LumiRSS all-in-one production stack (single container).
+#
+# One container = Caddy (SPA + /api + /feeds proxy + internal FreshRSS site)
+# + FastAPI BFF + FreshRSS (php-fpm) + RSSHub, supervised by s6-overlay.
+# Same named volumes (lumi-data, freshrss-data), same /data and
+# /var/www/FreshRSS/data layouts, same uid model (bff 10001+gid33,
+# FreshRSS www-data 33) as docker-compose.prod.yml — a data volume from the
+# 4-container stack runs here unchanged, and vice versa.
+#
+# Manual usage:
+#   cp .env.prod.example .env.prod        # fill in secrets
+#   docker compose -f docker-compose.allinone.yml up -d
+#
+# Images: prebuilt-only from GHCR (LUMIRSS_IMAGE_TAG). This file has NO
+# build: stanza on purpose (same policy as docker-compose.prod.yml — a pull
+# failure aborts instead of silently rebuilding). Building is dev/CI only:
+#   docker build -f docker/all-in-one/Dockerfile -t lumirss-allinone:<tag> .
+# (see docker/all-in-one/README.md for the local build-arg overrides).
+#
+# Published surface: ONLY 127.0.0.1:${LUMIRSS_UPSTREAM_PORT:-18080} -> 80.
+# The all-in-one image is external-caddy-only by construction (plain HTTP on
+# :80; the host Caddy/nginx terminates TLS; './lumirss caddy-config' renders
+# the host site block). FreshRSS (127.0.0.1:8081), RSSHub (127.0.0.1:12001)
+# and the BFF (127.0.0.1:8000) are loopback-only INSIDE the container and
+# are never published.
+#
+# Differences from docker-compose.prod.yml an operator must know:
+# - proxy basic-auth (LUMIRSS_AUTH_USER/HASH) is ignored with a warning;
+#   access control is the app's session auth (LUMIRSS_AUTH_MODE=session).
+# - per-container memory knobs collapse into LUMIRSS_ALLINONE_MEM_LIMIT/_RESERVATION.
+# - FRESHRSS_BASE_URL / RSSHUB_*_BASE_URL / LUMIRSS_ATOM_BASE_URL from
+#   .env.prod are OVERRIDDEN below with loopback addresses (compose
+#   environment wins over env_file) — the internal service names
+#   (http://freshrss, http://rsshub) do not exist in this topology.
+
+name: ${COMPOSE_PROJECT_NAME:-lumirss-prod}
+
+services:
+  lumirss:
+    image: ghcr.io/paidethon/lumirss/lumirss-allinone:${LUMIRSS_IMAGE_TAG:-2.8.0}
+    container_name: lumirss-app
+    restart: unless-stopped
+    env_file: .env.prod
+    environment:
+      TZ: Asia/Shanghai
+      # Structural, tied to the mounts below (not in .env.prod).
+      LUMIRSS_DB_PATH: /data/lumi.sqlite
+      FRESHRSS_DATA_DIR: /var/www/FreshRSS/data
+      # All upstreams are loopback inside the single container.
+      FRESHRSS_BASE_URL: http://127.0.0.1:8081
+      RSSHUB_BASE_URL: http://127.0.0.1:12001
+      RSSHUB_FRESHRSS_BASE_URL: http://127.0.0.1:12001
+      # FreshRSS reaches the BFF's generated Atom feeds over loopback.
+      LUMIRSS_ATOM_BASE_URL: http://127.0.0.1:8000
+      # The one scheduling owner for feed refresh (freshrss-cron service).
+      LUMIRSS_FRESHRSS_CRON_MIN: ${LUMIRSS_FRESHRSS_CRON_MIN:-13,43}
+    ports:
+      # external-caddy semantics: loopback-only, host proxy owns TLS.
+      - "127.0.0.1:${LUMIRSS_UPSTREAM_PORT:-18080}:80"
+    volumes:
+      - lumi-data:/data
+      - freshrss-data:/var/www/FreshRSS/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # One cgroup for four workloads (Caddy ~10-30MB, BFF ~80-150MB,
+    # FreshRSS fpm ~60-150MB, RSSHub ~100-300MB). 1200m fits a 1.6GB host;
+    # a runaway single service can OOM the shared cgroup — the RSSHub V8
+    # heap cap (LUMIRSS_RSSHUB_NODE_OPTIONS) is the main containment lever.
+    mem_limit: ${LUMIRSS_ALLINONE_MEM_LIMIT:-1200m}
+    mem_reservation: ${LUMIRSS_ALLINONE_MEM_RESERVATION:-256m}
+    cpus: 2
+    stop_grace_period: 30s
+    # s6-overlay stops services in reverse dependency order; 30s covers a
+    # graceful uvicorn/php-fpm drain without the docker SIGKILL racing it.
+
+volumes:
+  lumi-data:
+  freshrss-data:

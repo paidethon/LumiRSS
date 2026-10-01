@@ -1,0 +1,43 @@
+#!/command/with-contenv sh
+# freshrss-cron (longrun) — the ONE scheduling owner for feed refresh.
+# Replaces the freshrss container's built-in cron (CRON_MIN -> crontab) with
+# a per-minute supervisor that runs the SAME command the official image's
+# crontab ran:
+#   su www-data -s /bin/sh -c 'php /var/www/FreshRSS/app/actualize_script.php'
+# CRON_MIN semantics: comma-separated minute-of-hour list (e.g. "13,43").
+# Unset = never refresh (same as upstream default) — one owner, by design:
+# no system cron daemon is installed in this image.
+set -eu
+
+MINUTES="${LUMIRSS_FRESHRSS_CRON_MIN:-}"
+if [ -z "$MINUTES" ]; then
+    echo "freshrss-cron: CRON_MIN unset — automatic refresh DISABLED (set LUMIRSS_FRESHRSS_CRON_MIN, e.g. 13,43)"
+fi
+echo "freshrss-cron: schedule minutes='${MINUTES:-none}'"
+
+# Non-blocking lock + last-run minute: one run per matching minute (upstream
+# cron semantics), later ticks skipped while a run is still going.
+exec 9>/tmp/freshrss-cron.lock
+last_min=""
+
+while :; do
+    now="$(date +%M)"
+    case ",${MINUTES}," in
+        *",${now},"*)
+            if [ "$now" != "$last_min" ] && flock -n 9; then
+                last_min="$now"
+                echo "freshrss-cron: actualize at minute ${now}"
+                cd /var/www/FreshRSS
+                if su www-data -s /bin/sh -c 'php ./app/actualize_script.php' \
+                        >/tmp/FreshRSS-aio.log 2>&1; then
+                    echo "freshrss-cron: actualize ok"
+                else
+                    echo "freshrss-cron: actualize FAILED (rc=$?) — output follows"
+                    cat /tmp/FreshRSS-aio.log
+                fi
+                date +%s >/tmp/freshrss-cron.last-run
+            fi
+            ;;
+    esac
+    sleep 20
+done

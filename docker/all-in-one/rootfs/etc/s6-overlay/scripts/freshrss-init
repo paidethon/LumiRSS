@@ -1,0 +1,32 @@
+#!/command/with-contenv sh
+# freshrss-init (oneshot) — per-start FreshRSS data preparation, mirroring
+# the official freshrss/freshrss:1.29.1 entrypoint.sh (which runs at every
+# container start there too): TZ into php.ini, access permissions, prepare.
+# It must NOT run FRESHRSS_INSTALL/FRESHRSS_USER logic — ./lumirss
+# freshrss-init owns installation (cli/do-install.php) exactly as before.
+#
+# Failure semantics: oneshot failure + S6_BEHAVIOUR_IF_STAGE2_FAILS=2 kills
+# the container — a broken data volume is a hard error, never a "running"
+# container with dead FreshRSS (healthcheck + restart policy surface it).
+set -eu
+
+# date.timezone in BOTH SAPIs (fpm serves the UI, cli runs actualize) —
+# same substitution the official entrypoint performs.
+if [ -n "${TZ:-}" ]; then
+    sed -i -E \
+        -e "\#^;?date.timezone#s#^.*#date.timezone = ${TZ}#" \
+        -e "\#^;?post_max_size#s#^.*#post_max_size = 32M#" \
+        -e "\#^;?upload_max_filesize#s#^.*#upload_max_filesize = 32M#" \
+        /etc/php/8.4/fpm/php.ini /etc/php/8.4/cli/php.ini
+    ln -snf "/usr/share/zoneinfo/${TZ}" /etc/localtime
+    echo "${TZ}" >/etc/timezone
+fi
+
+cd /var/www/FreshRSS
+
+./cli/access-permissions.sh --only-userdirs
+php -f ./cli/prepare.php >/dev/null
+# Fix permissions of data added by prepare.php (official entrypoint order).
+./cli/access-permissions.sh --only-userdirs
+
+echo "freshrss-init: data prepared (TZ=${TZ:-unset})"

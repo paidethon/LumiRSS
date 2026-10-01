@@ -1,0 +1,6 @@
+#!/command/with-contenv sh
+# freshrss-php (longrun) — php-fpm master. Workers run as www-data (33:33)
+# from Debian's pool config; /run/php/php8.4-fpm.sock is where the Caddy
+# internal FreshRSS site connects. Pool tuning lives in
+# /etc/php/8.4/fpm/pool.d/zz-lumirss.conf (small-VPS budget).
+exec /usr/sbin/php-fpm8.4 --nodaemonize --force-stderr
