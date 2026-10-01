@@ -654,6 +654,28 @@ cmd_deploy() {
 #      镜像 ID 一致（防 tag 漂移/旧容器未被重建）。
 # 任一硬性检查失败 → verify 阶段记 failed、result 记 failed 并以非零退出；
 # 回滚保持手动（runbook 约定），本命令绝不自动回滚。
+# 期望提交的来源优先级：环境覆盖 > 发布清单 git_sha（bundle 安装态的唯一
+# 可信来源；主机 git HEAD 属于另一棵树——生产 /opt/lumirss 的旧 checkout
+# 曾让自证把正确发布判为错配，2026-10-01 实测）> git HEAD > 空（跳过）。
+release_expected_commit() {
+  if [[ -n "${LUMIRSS_EXPECTED_COMMIT:-}" ]]; then
+    printf '%s\n' "$LUMIRSS_EXPECTED_COMMIT"
+    return 0
+  fi
+  if [[ -f release-manifest.json ]] && python3 - <<'PY' 2>/dev/null
+import json, sys
+m = json.load(open("release-manifest.json"))
+sha = m.get("git_sha")
+if not sha:
+    sys.exit(1)
+print(sha)
+PY
+  then
+    return 0
+  fi
+  git rev-parse HEAD 2>/dev/null || true
+}
+
 verify_deployment() { # verify_deployment TAG EXPECTED_COMMIT ; 0 = verified
   local tag="$1" expected_commit="$2" rc=0
   local token vout reported_commit svc img running_id pulled_id
@@ -731,7 +753,7 @@ cmd_update() {
     # digest 都对得上本次发布。
     deploy_status_write verify running "version endpoint + image digests must match the pinned release"
     if verify_deployment "$IMAGE_TAG" \
-        "${LUMIRSS_EXPECTED_COMMIT:-$(git rev-parse HEAD 2>/dev/null || true)}"; then
+        "${LUMIRSS_EXPECTED_COMMIT:-$(release_expected_commit)}"; then
       deploy_status_write verify ok
       deploy_status_write result success
       log "update complete (verified: version endpoint + image digests match)."
