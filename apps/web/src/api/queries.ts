@@ -150,6 +150,7 @@ import {
   listClips,
   listInboxItems,
   listSources,
+  listSourcesSummary,
   getMailImapSettings,
   testMailImap,
   pollMailImap,
@@ -2208,10 +2209,14 @@ export function useDeleteApiSourceMutation() {
   })
 }
 
-/** 无副作用预览（不 invalidate 任何 query，结果由调用方存本地 state）。 */
+/** 无副作用预览（不 invalidate 任何 query，结果由调用方存本地 state）。
+ * vars.signal：分步向导中允许用户中止预览请求。 */
 export function useApiSourcePreviewMutation() {
   return useMutation({
-    mutationFn: (input: ApiSourcePreviewInput) => previewApiSource(input),
+    mutationFn: (vars: ApiSourcePreviewInput & { signal?: AbortSignal }) => {
+      const { signal, ...input } = vars
+      return previewApiSource(input, signal)
+    },
   })
 }
 
@@ -2219,7 +2224,12 @@ export function useApiSourcePreviewMutation() {
 
 export function useApiSourceSamplePreviewMutation() {
   return useMutation({
-    mutationFn: (input: ApiSourceSamplePreviewInput) => previewApiSourceSample(input),
+    mutationFn: (
+      vars: ApiSourceSamplePreviewInput & { signal?: AbortSignal },
+    ) => {
+      const { signal, ...input } = vars
+      return previewApiSourceSample(input, signal)
+    },
   })
 }
 
@@ -3338,6 +3348,17 @@ export function useSources() {
   return useQuery({
     queryKey: ['sources'],
     queryFn: ({ signal }) => listSources(signal),
+    staleTime: 30_000,
+  })
+}
+
+/** R02 来源中心按类型汇总：九类 {count, status, lastActivityAt}（零上游
+ * 调用，owning store 本地读取）。键与 ['sources'] 同族——来源增删的
+ * 失效路径一并命中。 */
+export function useSourcesSummary() {
+  return useQuery({
+    queryKey: ['sources', 'summary'],
+    queryFn: ({ signal }) => listSourcesSummary(signal),
     staleTime: 30_000,
   })
 }

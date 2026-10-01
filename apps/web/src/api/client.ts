@@ -714,6 +714,21 @@ export async function updateRegistrationPolicy(
   return normalizeRegistrationPolicy(body)
 }
 
+/** 注册策略公开探测（R01 登录页注册入口两态）：GET /auth/registration-policy。
+ * 匿名可读，响应只含布尔策略位——绝不含 updatedAt/updatedBy 等管理字段，
+ * 也不泄露账号信息。端点尚未部署（404）、被拒（401/403）或网络失败时
+ * 抛 ApiError，调用方必须回退诚实路径（进 /register，由服务端在提交时
+ * 以 403 registration_disabled 定案）——前端从不依据本地猜测放行注册。 */
+export async function getPublicRegistrationPolicy(
+  signal?: AbortSignal,
+): Promise<{ allowPublicRegistration: boolean }> {
+  const body = await request<Record<string, unknown>>(
+    `${API_BASE}/auth/registration-policy`,
+    signal,
+  )
+  return { allowPublicRegistration: body.allowPublicRegistration === true }
+}
+
 // ---- 管理台（role=owner|admin；403 = 后端判定的越界，UI 不自行放行） ----
 
 // N009：敏感管理操作自动附带一次性提权令牌（lib/step-up.ts 持有；
@@ -3228,14 +3243,16 @@ export async function deleteApiSource(uuid: string): Promise<void> {
 
 /** 无副作用预览：按 endpoint + itemsExpr + fieldMap 实抓 ≤5 条映射结果。
  * 400 invalid_expression / invalid_api_source、502 fetch_failed 的
- * error.message 由 UI 原样透出。 */
+ * error.message 由 UI 原样透出。signal：分步向导中允许用户中止预览。 */
 export async function previewApiSource(
   input: ApiSourcePreviewInput,
+  signal?: AbortSignal,
 ): Promise<ApiSourcePreviewResult> {
   const response = await rawRequest(`${API_BASE}/api-sources/preview`, {
     method: 'POST',
     body: JSON.stringify(input),
     contentType: 'application/json',
+    signal,
   })
   return (await response.json()) as ApiSourcePreviewResult
 }
@@ -3249,14 +3266,17 @@ export interface ApiSourceSamplePreviewInput {
 }
 
 /** N128 离线样例预览：对粘贴样例跑同一条映射 + Atom 预览管线。
- * 零网络、零存储、无任何请求头；sampleMode=true 诚实标注。 */
+ * 零网络、零存储、无任何请求头；sampleMode=true 诚实标注。
+ * signal：分步向导中允许用户中止。 */
 export async function previewApiSourceSample(
   input: ApiSourceSamplePreviewInput,
+  signal?: AbortSignal,
 ): Promise<ApiSourcePreviewResult> {
   const response = await rawRequest(`${API_BASE}/api-sources/preview-sample`, {
     method: 'POST',
     body: JSON.stringify(input),
     contentType: 'application/json',
+    signal,
   })
   return (await response.json()) as ApiSourcePreviewResult
 }
@@ -4934,6 +4954,31 @@ export async function deleteInboxItem(itemRef: string): Promise<void> {
 /** GET /api/v1/sources —— 统一来源注册表（只读综合，不含任何 secret）。 */
 export async function listSources(signal?: AbortSignal): Promise<SourceRegistryResponse> {
   return request<SourceRegistryResponse>(`${API_BASE}/sources`, signal)
+}
+
+// ---- R02 来源中心按类型汇总（GET /api/v1/sources/summary） ----
+// 类型按 BFF models.py 的 SourceTypeSummary/SourcesSummaryResponse 逐字段
+// 手写镜像（该端点尚未进 OpenAPI 生成集——诚实注释，不假装 generated；
+// 集成跑 pnpm api:generate 后可切到 generated 契约类型）。
+
+/** 来源类型汇总行：count=null = 不可数（连接状态型），绝不冒充 0；
+ * status 严格区分「服务未配置」与「集合为空」。 */
+export interface SourceTypeSummary {
+  type: string
+  count: number | null
+  status: 'ok' | 'empty' | 'not_configured' | 'error'
+  lastActivityAt: string | null
+  detail: string | null
+}
+
+export interface SourcesSummaryResponse {
+  items: SourceTypeSummary[]
+  generatedAt: string
+}
+
+/** GET /api/v1/sources/summary —— 当前账号全部来源类型的计数/状态/最近活动。 */
+export async function listSourcesSummary(signal?: AbortSignal): Promise<SourcesSummaryResponse> {
+  return request<SourcesSummaryResponse>(`${API_BASE}/sources/summary`, signal)
 }
 
 // ---- Q-P1-07：IMAP 收信通路（后端 4 端点早已存在，此前无任何 UI） ----
