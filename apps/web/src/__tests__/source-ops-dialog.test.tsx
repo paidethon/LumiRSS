@@ -133,6 +133,9 @@ describe('NEW-201..210 来源运维工作台', () => {
     renderDialog()
     fireEvent.click(screen.getByRole('tab', { name: '阅读日历' }))
     fireEvent.change(screen.getByLabelText('来源 feed URL'), { target: { value: 'https://cal.example/rss' } })
+    // 月份输入显式钉定：组件默认取 UTC 当前月，断言不得依赖墙钟
+    // （2026-10-01 UTC 月界实测翻转，CI 红/本地串行绿的双态来源）。
+    fireEvent.change(screen.getByLabelText('月份'), { target: { value: '2026-09' } })
     fireEvent.click(screen.getByRole('button', { name: '查看月历' }))
     expect(await screen.findByText('2026-09-03（2 条）')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '九月文章甲' }))
