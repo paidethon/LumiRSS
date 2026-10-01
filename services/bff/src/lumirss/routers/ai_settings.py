@@ -12,10 +12,6 @@ from lumirss.ai_profiles import (
 )
 from lumirss.ai_settings import (
     KEY_BASE_URL,
-    KEY_LIBRETRANSLATE_CHECKED_AT,
-    KEY_LIBRETRANSLATE_DIAGNOSTIC,
-    KEY_LIBRETRANSLATE_STATUS,
-    KEY_LIBRETRANSLATE_URL,
     KEY_MODEL,
     KEY_PROVIDER,
     KEY_QUOTA_MAX_CALLS,
@@ -25,14 +21,10 @@ from lumirss.ai_settings import (
     KEY_TRANSLATION_LANGUAGE,
     AiSettingsUpdate,
 )
-from lumirss.ai_translation_segments import (
-    LIBRETRANSLATE_KEY_NAME,
-)
 from lumirss.config import LumiSettings
 from lumirss.deps import (
     _get_ai_profile_store,
     _get_ai_settings_store,
-    _get_secrets_store,
 )
 from lumirss.models import (
     AiProfile,
@@ -41,7 +33,6 @@ from lumirss.models import (
 from lumirss.rsshub_control import (
     MAX_SECRET_LENGTH,
 )
-from lumirss.secrets_store import SecretsStore
 
 router = APIRouter()
 
@@ -49,7 +40,6 @@ router = APIRouter()
 async def _ai_settings_json(
     values: dict[str, str],
     profiles: AiProfileStore | None = None,
-    secrets: SecretsStore | None = None,
 ) -> dict[str, object]:
     """Browser-safe AI settings view — NEVER contains an API key.
 
@@ -59,7 +49,6 @@ async def _ai_settings_json(
     """
     settings = LumiSettings()
     env_key = settings.AI_API_KEY.get_secret_value()
-    secrets = secrets or SecretsStore(settings.secrets_path)
     payload: dict[str, object] = {
         "provider": values[KEY_PROVIDER],
         "baseUrl": values[KEY_BASE_URL],
@@ -67,20 +56,8 @@ async def _ai_settings_json(
         "summaryLanguage": values[KEY_SUMMARY_LANGUAGE],
         "translationLanguage": values[KEY_TRANSLATION_LANGUAGE],
         "translationEngine": values[KEY_TRANSLATION_ENGINE],
-        "libretranslateUrl": values[KEY_LIBRETRANSLATE_URL],
-        # FIX-142：实际能力状态（最近一次有界探测）；untested = 从未探测。
-        # 配置存在 ≠ 可用；stale 由 checkedAt 如实暴露。
-        "libretranslateStatus": values[KEY_LIBRETRANSLATE_STATUS]
-        or "untested",
-        "libretranslateCheckedAt": values[KEY_LIBRETRANSLATE_CHECKED_AT]
-        or None,
-        "libretranslateDiagnostic": values[KEY_LIBRETRANSLATE_DIAGNOSTIC]
-        or None,
         "quotaWindow": values[KEY_QUOTA_WINDOW],
         "quotaMaxCalls": int(values[KEY_QUOTA_MAX_CALLS] or "0"),
-        "libretranslateKeyConfigured": bool(
-            (secrets.get(LIBRETRANSLATE_KEY_NAME) or "").strip()
-        ),
         "configured": settings.ai_configured,
         "envKeyConfigured": bool(env_key.strip()),
         "defaultKeyConfigured": settings.ai_configured
@@ -119,9 +96,7 @@ async def get_ai_settings(request: Request) -> dict[str, object]:
     """
     store = _get_ai_settings_store(request)
     profiles = _get_ai_profile_store(request)
-    return await _ai_settings_json(
-        await store.load(), profiles, _get_secrets_store(request)
-    )
+    return await _ai_settings_json(await store.load(), profiles)
 
 
 @router.put(
@@ -139,9 +114,7 @@ async def put_ai_settings(
     """
     store = _get_ai_settings_store(request)
     profiles = _get_ai_profile_store(request)
-    return await _ai_settings_json(
-        await store.save(update), profiles, _get_secrets_store(request)
-    )
+    return await _ai_settings_json(await store.save(update), profiles)
 
 
 @router.get("/api/v1/settings/ai/quota")
@@ -239,73 +212,6 @@ async def delete_default_ai_key(request: Request) -> Response:
     """Remove the browser-set default key (env fallback resumes)."""
     _get_ai_profile_store(request).clear_default_key()
     return Response(status_code=204)
-
-
-@router.put("/api/v1/settings/translation/libretranslate-key", status_code=204)
-async def put_libretranslate_key(secret: SecretValuePut, request: Request) -> Response:
-    """Write-only LibreTranslate API key (optional; empty string clears)."""
-    value = secret.value.strip()
-    if not value:
-        _get_secrets_store(request).delete(LIBRETRANSLATE_KEY_NAME)
-    else:
-        _get_secrets_store(request).set(LIBRETRANSLATE_KEY_NAME, value)
-    return Response(status_code=204)
-
-
-@router.delete("/api/v1/settings/translation/libretranslate-key", status_code=204)
-async def delete_libretranslate_key(request: Request) -> Response:
-    """Remove the optional LibreTranslate API key."""
-    _get_secrets_store(request).delete(LIBRETRANSLATE_KEY_NAME)
-    return Response(status_code=204)
-
-
-class LibreTranslateTestResult(BaseModel):
-    """POST /api/v1/settings/translation/libretranslate-test."""
-
-    status: Literal["ok", "failed"]
-    message: str | None = None
-    # FIX-142：探测时间随响应返回（与设置视图中的 checkedAt 同源）。
-    checkedAt: str | None = None
-
-
-@router.post(
-    "/api/v1/settings/translation/libretranslate-test",
-    response_model=LibreTranslateTestResult,
-)
-async def test_libretranslate(request: Request) -> dict[str, object]:
-    """Bounded capability probe (GET /languages) — FIX-142.
-
-    The outcome is PERSISTED so the settings view can report an ACTUAL
-    capability state (ok/failed + checkedAt + diagnostic) instead of a
-    config-exists-only "enabled". A stale state stays honest through its
-    checkedAt; a GET never probes (no hidden upstream calls)."""
-    store = _get_ai_settings_store(request)
-    values = await store.load()
-    base = values[KEY_LIBRETRANSLATE_URL]
-    if not base:
-        status, message = "failed", "LibreTranslate 服务地址未配置。"
-    else:
-        try:
-            response = await request.app.state.http_client.get(
-                f"{base}/languages", timeout=10.0
-            )
-            response.raise_for_status()
-            languages = response.json()
-            if not isinstance(languages, list):
-                raise ValueError("unexpected payload")
-            status = "ok"
-            message = f"连接成功（{len(languages)} 种语言）。"
-        except Exception:
-            status = "failed"
-            message = "连接失败：BFF 无法访问该地址或服务未就绪。"
-    checked_at = await store.record_libretranslate_probe(
-        status=status, diagnostic=message
-    )
-    return {
-        "status": status,
-        "message": message,
-        "checkedAt": checked_at,
-    }
 
 
 @router.get("/api/v1/settings/ai/profiles", response_model=list[AiProfile])

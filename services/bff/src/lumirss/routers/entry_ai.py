@@ -386,7 +386,6 @@ async def compare_translation_block(
         profile_store=_get_ai_profile_store(request),
         translation_provider_factory=_provider_factory_for(request, "translation"),
         chat_provider_factory=_provider_factory_for(request, "chat"),
-        secrets=request.app.state.secrets_store,
     )
     started = _time.monotonic()
     try:

@@ -4,8 +4,8 @@
 
 - 服务端（BFF）：AI provider 每次 ``complete()`` / ``chat_completion()``
   恰好一次上游 POST——超时/连接错误/非 2xx 一律映射稳定错误族直接抛出，
-  没有自动重试（模块头声明即契约）；LibreTranslate 段翻译每批一次
-  POST，失败按块写 failed 行，绝不重发；
+  没有自动重试（模块头声明即契约）；段翻译每批一次 POST，失败按块写
+  failed 行，绝不重发；
 - 前端（Web）：TanStack Query 全局默认 4xx 永不重试、网络/5xx 最多
   2 次（main.tsx Q-P2-20），mutations 未配置默认重试（0 次）；AI 生成
   入口全部是显式 mutation / 显式队列派发——每次用户动作恰好一次请求。
@@ -79,49 +79,3 @@ def test_provider_module_has_no_retry_constructs():
     assert "for attempt" not in text
     assert "max_retries" not in text
     assert "RETRY" not in text
-
-
-def test_libretranslate_batch_failure_makes_one_request_per_batch(tmp_path):
-    """段翻译 LibreTranslate 引擎：批次失败恰好 1 次上游 POST（写 failed
-    行），绝不自动重发同一批。"""
-    from lumirss.ai_settings import AiSettingsStore, AiSettingsUpdate
-    from lumirss.ai_translation_segments import SegmentInput, SegmentTranslationService
-    from lumirss.secrets_store import SecretsStore
-    from lumirss.storage import Database
-
-    calls: list[int] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        calls.append(1)
-        return httpx.Response(500, text="boom")
-
-    db = Database(tmp_path / "lumi.sqlite")
-    run(db.migrate())
-    settings = AiSettingsStore(db)
-    run(
-        settings.save(
-            AiSettingsUpdate(
-                translationEngine="libretranslate",
-                libretranslateUrl="https://libre.local",
-            )
-        )
-    )
-    service = SegmentTranslationService(
-        db=db,
-        settings_store=settings,
-        provider_factory=None,
-        secrets=SecretsStore(":memory:"),
-        httpx_client_factory=lambda: httpx.AsyncClient(
-            transport=httpx.MockTransport(handler)
-        ),
-    )
-
-    async def scenario():
-        return await service.generate(
-            "rss:1",
-            [SegmentInput(index=0, text="第一块"), SegmentInput(index=1, text="第二块")],
-        )
-
-    states = run(scenario())
-    assert len(calls) == 1, "一个批次恰好一次上游调用（无重试叠乘）"
-    assert all(state.status == "failed" for state in states)

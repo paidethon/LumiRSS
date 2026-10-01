@@ -18,7 +18,6 @@ from lumirss.ai_translation_segments import (
     block_hash,
     normalize_block_text,
 )
-from lumirss.secrets_store import SecretsStore
 from lumirss.storage import Database
 
 
@@ -54,7 +53,6 @@ def _make_service(tmp_path, provider_factory):
         db=db,
         settings_store=settings,
         provider_factory=provider_factory,
-        secrets=SecretsStore(tmp_path / "secrets.json"),
     )
     return service, db
 

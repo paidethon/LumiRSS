@@ -1157,14 +1157,7 @@ class AiSettingsView(BaseModel):
     model: str
     summaryLanguage: Literal["zh-CN", "en"]
     translationLanguage: Literal["zh-CN", "en"]
-    translationEngine: Literal["ai", "libretranslate", "browser"]
-    libretranslateUrl: str
-    libretranslateKeyConfigured: bool
-    # FIX-142：本地翻译的实际能力状态（最近一次有界探测的结果）。
-    # untested = 从未探测；checkedAt 让 stale 状态如实可见。
-    libretranslateStatus: Literal["untested", "ok", "failed"] = "untested"
-    libretranslateCheckedAt: str | None = None
-    libretranslateDiagnostic: str | None = None
+    translationEngine: Literal["ai", "browser"]
     configured: bool
     envKeyConfigured: bool
     defaultKeyConfigured: bool

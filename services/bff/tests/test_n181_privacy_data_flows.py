@@ -10,11 +10,12 @@ def test_n181_unconfigured_capability_reports_not_sending(client):
     flows = {item["capability"]: item for item in response.json()["flows"]}
     assert flows["ai-summary"]["configured"] is False
     assert flows["ai-translation"]["configured"] is False
-    assert flows["libretranslate"]["configured"] is False
     assert flows["webdav"]["configured"] is False
     assert flows["imap"]["configured"] is False
     # 未配置条目不携带主机名
     assert flows["ai-summary"].get("providerHost") in (None, "")
+    # R21：自托管 LibreTranslate 能力已移除，清单不再包含该条目
+    assert "libretranslate" not in flows
 
 
 def test_n181_configured_ai_shows_host_only(client):
@@ -32,25 +33,6 @@ def test_n181_configured_ai_shows_host_only(client):
     assert flows["ai-summary"]["providerHost"] == "api.openai.com"
     assert flows["ai-chat"]["configured"] is True
     assert flows["ai-chat"]["providerHost"] == "api.openai.com"
-
-
-def test_n181_libretranslate_engine_and_url(client):
-    put = client.put(
-        "/api/v1/settings/ai",
-        json={
-            "translationEngine": "libretranslate",
-            "libretranslateUrl": "https://libre.example.com",
-        },
-    )
-    assert put.status_code == 200, put.text
-    flows = {
-        item["capability"]: item
-        for item in client.get("/api/v1/privacy/data-flows").json()["flows"]
-    }
-    assert flows["libretranslate"]["configured"] is True
-    assert flows["libretranslate"]["providerHost"] == "libre.example.com"
-    # 引擎切到 libretranslate 后，AI 翻译不再外发
-    assert flows["ai-translation"]["configured"] is False
 
 
 def test_n181_tts_unconfigured_is_local_and_never_sends(client, monkeypatch):

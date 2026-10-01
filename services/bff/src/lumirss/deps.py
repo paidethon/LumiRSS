@@ -330,7 +330,6 @@ def _get_segment_service(request: Request) -> SegmentTranslationService:
             db=request.app.state.db,
             settings_store=_purpose_settings(request, "translation"),
             provider_factory=_provider_factory_for(request, "translation"),
-            secrets=request.app.state.secrets_store,
         ),
     )
 

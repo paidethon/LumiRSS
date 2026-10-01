@@ -29,7 +29,6 @@ from lumirss.new265_budget_estimate import (
     get_budget_settings,
     save_budget_settings,
 )
-from lumirss.secrets_store import SecretsStore
 from lumirss.storage import Database
 from new2xx_ab import ab_env, seed_entry  # noqa: F401
 
@@ -76,7 +75,6 @@ def _make(tmp_path, calls, engine="ai"):
         db=db,
         settings_store=settings,
         provider_factory=_echo_provider(calls),
-        secrets=SecretsStore(tmp_path / "secrets.json"),
     )
     return service, db, settings
 
@@ -208,7 +206,6 @@ def test_api_budget_estimate_preflight(client, tmp_path):
             db=db,
             settings_store=settings,
             provider_factory=_echo_provider(calls),
-            secrets=SecretsStore(str(tmp_path / "n265api-secrets.json")),
         )
         await service.generate(ref, [SegmentInput(index=0, text="Cached one.")])
         lumi_app.state.segment_translation_service = service

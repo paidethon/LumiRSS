@@ -84,9 +84,6 @@ async def _config_hosts(request: Request) -> dict[str, Any]:
             str((rsshub.RSSHUB_BASE_URL if rsshub else "") or "")
         ),
         "ai_host": ai_host,
-        "libretranslate_host": _hostname_of(
-            ai.get("translation.libretranslate_url", "")
-        ),
         "tts_host": tts_host,
         "webdav_host": _hostname_of(str(webdav_doc.get("serverUrl", ""))),
         "webdav_ready": webdav_store.configured(webdav_doc),
@@ -147,7 +144,6 @@ async def get_third_party_requests(request: Request) -> JSONResponse:
         freshrss_host=hosts["freshrss_host"],
         rsshub_host=hosts["rsshub_host"],
         ai_host=hosts["ai_host"],
-        libretranslate_host=hosts["libretranslate_host"],
         tts_host=hosts["tts_host"],
         webdav_host=hosts["webdav_host"],
         imap_host=hosts["imap_host"],

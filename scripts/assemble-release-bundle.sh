@@ -44,7 +44,6 @@ mkdir -p "$bundle"
 cp -p "$ROOT/lumirss" "$bundle/"
 cp -p "$ROOT/docker-compose.prod.yml" \
       "$ROOT/docker-compose.external-caddy.yml" \
-      "$ROOT/docker-compose.translate.yml" \
       "$ROOT/docker-compose.obsidian.yml" \
       "$ROOT/.env.prod.example" \
       "$ROOT/VERSION" \
@@ -63,7 +62,7 @@ fail() { echo "bundle verification FAILED: $*" >&2; exit 1; }
 
 # Every required piece exists and is non-empty.
 for f in lumirss docker-compose.prod.yml docker-compose.external-caddy.yml \
-         docker-compose.translate.yml docker-compose.obsidian.yml \
+         docker-compose.obsidian.yml \
          .env.prod.example VERSION INSTALL.md; do
   [[ -s "$bundle/$f" ]] || fail "required bundle file missing or empty: $f"
 done

@@ -1,17 +1,19 @@
 """NEW-264 翻译服务能力比较 —— 用户选择的少量非敏感样本的对照运行。
 
 用户显式提交 1..5 段样本（每段 ≤500 字符，非敏感由用户自判，系统
-只做体量上限），对每个「已配置」的服务端翻译通道逐样本运行一次：
+只做体量上限），对「已配置」的服务端翻译通道逐样本运行一次：
 
 - ai 侧：配置了 baseUrl+model 才参与；经与生成路径同一的
-  purpose-aware provider 工厂调用（简单直译 prompt）；
-- libretranslate 侧：配置了 URL 才参与；POST /translate。
+  purpose-aware provider 工厂调用（简单直译 prompt）。
+
+（自托管 LibreTranslate 侧已随 R21 移除；历史报告 JSON 里的
+libretranslate 侧数据按原样回读，不再产生新行。）
 
 逐样本记录 结果文本 / 耗时（monotonic 实测）/ 错误类型。探测是
 ephemeral 的：绝不写 ai_translation_segments 缓存行，只把用户可见
 的报告本体存入本模块台账（每人保留最近 PROBE_HISTORY_CAP 条）。
 
-无任何已配置服务 → available=False + 诚实 reason（不臆造结果）。
+无已配置服务 → available=False + 诚实 reason（不臆造结果）。
 绝不自动发送整库 —— 只有显式 POST 携带的样本会被发出。
 
 全部 SQL 为内联字面量 + 绑定参数。
@@ -23,17 +25,12 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-import httpx
-
 from lumirss.ai_provider import AiProviderError
 from lumirss.ai_settings import (
     KEY_BASE_URL,
-    KEY_LIBRETRANSLATE_URL,
     KEY_MODEL,
     KEY_TRANSLATION_LANGUAGE,
-    LIBRETRANSLATE_KEY_NAME,
     TRANSLATION_ENGINE_AI,
-    TRANSLATION_ENGINE_LIBRETRANSLATE,
 )
 from lumirss.util import utc_now
 
@@ -41,8 +38,6 @@ PROBE_MAX_SAMPLES = 5
 PROBE_MAX_SAMPLE_CHARS = 500
 PROBE_HISTORY_CAP = 20
 PROBE_TIMEOUT_SECONDS = 20.0
-
-_LIBRETRANSLATE_TARGETS = {"zh-CN": "zh", "en": "en"}
 
 _INSERT_SQL = """INSERT INTO translation_capability_probes
 (id, samples_json, sides_json, available, reason, created_at)
@@ -150,78 +145,18 @@ async def _probe_ai_side(
     return side
 
 
-async def _probe_libretranslate_side(
-    httpx_factory, secrets: Any, settings: dict[str, str], samples: list[str]
-) -> dict[str, Any]:
-    """LibreTranslate 侧逐样本探测；未配置 → configured=False。"""
-    base = settings[KEY_LIBRETRANSLATE_URL]
-    if not base:
-        return {"configured": False, "reason": "LibreTranslate 未配置 URL。"}
-    target = _LIBRETRANSLATE_TARGETS.get(
-        settings.get(KEY_TRANSLATION_LANGUAGE, "en"), "en"
-    )
-    api_key = ""
-    if secrets is not None:
-        api_key = secrets.get(LIBRETRANSLATE_KEY_NAME) or ""
-    side: dict[str, Any] = {"configured": True, "samples": []}
-    for index, sample in enumerate(samples):
-        started = time.monotonic()
-        payload: dict[str, Any] = {
-            "q": sample,
-            "source": "auto",
-            "target": target,
-            "format": "text",
-        }
-        if api_key:
-            payload["api_key"] = api_key
-        try:
-            async with httpx_factory() as client:
-                response = await client.post(base + "/translate", json=payload)
-                response.raise_for_status()
-                data = response.json()
-        except (httpx.HTTPError, ValueError):
-            side["samples"].append(
-                {
-                    "index": index,
-                    "ok": False,
-                    "error": "upstream",
-                    "elapsedMs": int((time.monotonic() - started) * 1000),
-                }
-            )
-            continue
-        text = data.get("translatedText") if isinstance(data, dict) else None
-        ok = isinstance(text, str) and bool(text)
-        side["samples"].append(
-            {
-                "index": index,
-                "ok": ok,
-                **({"text": text} if ok else {"error": "invalid_response"}),
-                "elapsedMs": int((time.monotonic() - started) * 1000),
-            }
-        )
-    return side
-
-
 async def run_probe(
     db: Any,
     settings: dict[str, str],
     samples: list[str],
     provider_factory: Any,
-    secrets: Any = None,
-    httpx_factory: Any = None,
 ) -> ProbeReport:
-    """一次显式能力探测（用户样本 → 已配置两侧逐样本结果）。"""
+    """一次显式能力探测（用户样本 → 已配置侧逐样本结果）。"""
     await db.migrate()
     clean = _clean_samples(samples)
-    httpx_factory = httpx_factory or (
-        lambda: httpx.AsyncClient(timeout=PROBE_TIMEOUT_SECONDS)
-    )
     sides: dict[str, Any] = {
         TRANSLATION_ENGINE_AI: await _probe_ai_side(
             provider_factory, settings, clean
-        ),
-        TRANSLATION_ENGINE_LIBRETRANSLATE: await _probe_libretranslate_side(
-            httpx_factory, secrets, settings, clean
         ),
     }
     available = any(side.get("configured") for side in sides.values())

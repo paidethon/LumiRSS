@@ -50,6 +50,7 @@ export const PORTABLE_DEFAULTS = {
   readerPagedMode: false,
   searchHighlightMatches: true,
   readerPresets: [],
+  translationMigratedFromLibre: false,
 } as const
 
 export const SETTING_ENUMS = {

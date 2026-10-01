@@ -44,7 +44,7 @@
 | `LUMIRSS_OBSIDIAN_VAULT_DIR` | 空 | Obsidian vault 的容器内挂载路径（只读）。生产 compose 经 `LUMIRSS_OBSIDIAN_VAULT_HOST_DIR` 绑定宿主目录；空 = Obsidian 投影关闭 |
 | `LUMIRSS_OBSIDIAN_SCAN_INTERVAL` | `0`（秒） | vault 增量扫描节奏（`config.py` 默认 `0` = 仅手动 rescan）；`0` 关闭后台扫描 |
 | `LUMIRSS_RAG_INDEX_INTERVAL` | `300`（秒） | RAG 语义索引增量收敛节奏（`config.py` 默认 `300`）；`0` 关闭（显式 rebuild 仍可用）。模型加载在显式启用后进行，空闲自动卸载 |
-| `LUMIRSS_FETCH_ALLOW_PRIVATE_HOSTS` | 空 | 逗号分隔主机名 allow-list：名单内的私网主机可作为**来源 URL / AI·LibreTranslate base URL** 被服务端访问（容器内 RSSHub、自托管 AI 等）。仅跳过"公网地址拒绝"，取回仍逐跳解析、校验、按钉住 IP 直连 |
+| `LUMIRSS_FETCH_ALLOW_PRIVATE_HOSTS` | 空 | 逗号分隔主机名 allow-list：名单内的私网主机可作为**来源 URL / AI base URL** 被服务端访问（容器内 RSSHub、自托管 AI 等）。仅跳过"公网地址拒绝"，取回仍逐跳解析、校验、按钉住 IP 直连 |
 | `LUMIRSS_ACCESS_LOG` | `json` | BFF 访问日志：`json` = 每请求一行结构化 JSON（request_id/路由模板/status/duration_ms/服务端派生 actor）；`off` = 静默。脱敏边界：绝不记录 query string、请求体、header、凭据 |
 | `LUMIRSS_INTERNAL_TOKEN` | 空 | 同上表（BFF 侧读取） |
 | `AI_API_KEY` | 空 | 同上表（BFF 侧读取） |
@@ -59,7 +59,6 @@
 | `LUMIRSS_HTTP_PORT` / `LUMIRSS_HTTPS_PORT` | `80` / `443` | Caddy 发布到宿主的端口；与 `COMPOSE_PROJECT_NAME` 一起用于同机隔离测试（避免端口与卷冲突） |
 | `LUMIRSS_EXTERNAL_CADDY` | （空） | `1` = 外部宿主反代模式：web 只发布 `127.0.0.1:LUMIRSS_UPSTREAM_PORT`（纯 HTTP、任意 Host，无 ACME/443），TLS 由宿主 Caddy/nginx 负责。`./lumirss deploy --external-caddy` 自动写入；见 [../how-to/deploy.md](../how-to/deploy.md) |
 | `LUMIRSS_UPSTREAM_PORT` | `18080` | external 模式下 web 发布的 loopback 端口（`127.0.0.1:<port> -> 80`）。必须与宿主反代 upstream 一致；`./lumirss caddy-config` 按它渲染站点块 |
-| `LUMIRSS_TRANSLATE_PORT` | `50050` | 可选 LibreTranslate fragment（`docker-compose.translate.yml`）发布的 loopback 端口（`127.0.0.1:<port> -> 5000`），仅宿主机验证用；BFF 经 compose 内网名 `http://lumirss-libretranslate:5000` 访问。按需启停（`./lumirss translate up\|stop\|status`），见 [../how-to/optional-services.md](../how-to/optional-services.md) |
 | `COMPOSE_PROJECT_NAME` | `lumirss-prod` | compose 项目名（决定卷前缀） |
 | `LUMIRSS_WEB_MEM_LIMIT` / `_RESERVATION` | `128m` / `64m` | web 容器内存 limit/reservation。`./lumirss deploy --low-memory` 写入低资源预设（96m/48m）；改完用 `./lumirss doctor` 验证无 OOMKilled |
 | `LUMIRSS_BFF_MEM_LIMIT` / `_RESERVATION` | `512m` / `128m` | BFF 容器（low-memory 预设 256m/96m） |

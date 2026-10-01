@@ -7,12 +7,11 @@ ref_key=feed_url（整源更正）。每对 (scope, ref_key) 至多一条 ——
 生效规则（resolve_source_language）：
 1. 该篇的 entry 级更正优先；
 2. 否则经 search_entries 本地投影找到 feed_url，取该源的更正；
-3. 都没有 → None（引擎沿用各自的默认识别：LibreTranslate=auto，
-   AI=不附加源语言指令）。
+3. 都没有 → None（AI 引擎不附加源语言指令）。
 
 「已产生结果不悄悄改变」：更正绝不改写/失效既有缓存行 —— 只影响
-其后的新生成（LibreTranslate 的 source 参数 / AI 引擎的源语言指
-令）。缓存身份不变，旧结果原样展示。
+其后的新生成（AI 引擎的源语言指令）。缓存身份不变，旧结果原样
+展示。
 
 全部 SQL 为内联字面量 + 绑定参数。
 """

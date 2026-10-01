@@ -132,7 +132,7 @@ async def attach_glossary_block(db: Database, content_text: str) -> str:
 # - 命中：术语在源段文本中的匹配沿用 compute_hits（拉丁词按词边界、
 #   CJK 按子串、重叠最长优先）——保护只作用于确实出现在源段的术语；
 # - prompt：受保护术语在 AI 引擎的批次指令里逐条列出（原文照写，
-#   不翻译不改大小写）——LibreTranslate 无 prompt 通道，只做后处理；
+#   不翻译不改大小写）；
 # - 还原（生成完成后）：译文里已含原始词形 → 恒等；存在大小写漂移
 #   （如 "GraphQL"→"graphql"）→ 命中位置一律替换回词表原始词形
 #   （case-sensitive 原文）；术语被整体改写/翻译掉 → 不臆造，计为

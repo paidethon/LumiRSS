@@ -2191,17 +2191,6 @@
       ],
       "title": "Baseurl"
      },
-     "libretranslateUrl": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Libretranslateurl"
-     },
      "model": {
       "anyOf": [
        {
@@ -2274,7 +2263,6 @@
        {
         "enum": [
          "ai",
-         "libretranslate",
          "browser"
         ],
         "type": "string"
@@ -2322,46 +2310,6 @@
      "envKeyConfigured": {
       "title": "Envkeyconfigured",
       "type": "boolean"
-     },
-     "libretranslateCheckedAt": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Libretranslatecheckedat"
-     },
-     "libretranslateDiagnostic": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Libretranslatediagnostic"
-     },
-     "libretranslateKeyConfigured": {
-      "title": "Libretranslatekeyconfigured",
-      "type": "boolean"
-     },
-     "libretranslateStatus": {
-      "default": "untested",
-      "enum": [
-       "untested",
-       "ok",
-       "failed"
-      ],
-      "title": "Libretranslatestatus",
-      "type": "string"
-     },
-     "libretranslateUrl": {
-      "title": "Libretranslateurl",
-      "type": "string"
      },
      "model": {
       "title": "Model",
@@ -2412,7 +2360,6 @@
      "translationEngine": {
       "enum": [
        "ai",
-       "libretranslate",
        "browser"
       ],
       "title": "Translationengine",
@@ -2434,8 +2381,6 @@
      "summaryLanguage",
      "translationLanguage",
      "translationEngine",
-     "libretranslateUrl",
-     "libretranslateKeyConfigured",
      "configured",
      "envKeyConfigured",
      "defaultKeyConfigured",
@@ -3953,6 +3898,11 @@
       ],
       "title": "Timelineorder",
       "type": "string"
+     },
+     "translationMigratedFromLibre": {
+      "default": false,
+      "title": "Translationmigratedfromlibre",
+      "type": "boolean"
      },
      "uiFontSize": {
       "default": 16,
@@ -15524,46 +15474,6 @@
      "title"
     ],
     "title": "LibrarySearchItem",
-    "type": "object"
-   },
-   "LibreTranslateTestResult": {
-    "description": "POST /api/v1/settings/translation/libretranslate-test.",
-    "properties": {
-     "checkedAt": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Checkedat"
-     },
-     "message": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Message"
-     },
-     "status": {
-      "enum": [
-       "ok",
-       "failed"
-      ],
-      "title": "Status",
-      "type": "string"
-     }
-    },
-    "required": [
-     "status"
-    ],
-    "title": "LibreTranslateTestResult",
     "type": "object"
    },
    "LicenseNoticePreview": {
@@ -79151,67 +79061,6 @@
      }
     },
     "summary": "Post Close"
-   }
-  },
-  "/api/v1/settings/translation/libretranslate-key": {
-   "delete": {
-    "description": "Remove the optional LibreTranslate API key.",
-    "operationId": "delete_libretranslate_key_api_v1_settings_translation_libretranslate_key_delete",
-    "responses": {
-     "204": {
-      "description": "Successful Response"
-     }
-    },
-    "summary": "Delete Libretranslate Key"
-   },
-   "put": {
-    "description": "Write-only LibreTranslate API key (optional; empty string clears).",
-    "operationId": "put_libretranslate_key_api_v1_settings_translation_libretranslate_key_put",
-    "requestBody": {
-     "content": {
-      "application/json": {
-       "schema": {
-        "$ref": "#/components/schemas/SecretValuePut"
-       }
-      }
-     },
-     "required": true
-    },
-    "responses": {
-     "204": {
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Put Libretranslate Key"
-   }
-  },
-  "/api/v1/settings/translation/libretranslate-test": {
-   "post": {
-    "description": "Bounded capability probe (GET /languages) — FIX-142.\n\nThe outcome is PERSISTED so the settings view can report an ACTUAL\ncapability state (ok/failed + checkedAt + diagnostic) instead of a\nconfig-exists-only \"enabled\". A stale state stays honest through its\ncheckedAt; a GET never probes (no hidden upstream calls).",
-    "operationId": "test_libretranslate_api_v1_settings_translation_libretranslate_test_post",
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/LibreTranslateTestResult"
-        }
-       }
-      },
-      "description": "Successful Response"
-     }
-    },
-    "summary": "Test Libretranslate"
    }
   },
   "/api/v1/source-discovery": {

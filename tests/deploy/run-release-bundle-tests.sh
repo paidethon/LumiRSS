@@ -54,7 +54,7 @@ fi
 bundle="$work/out1/lumirss-release-bundle-$version"
 assert_eq "bundle named after VERSION" "lumirss-release-bundle-$version" "$(basename "$bundle")"
 for f in lumirss docker-compose.prod.yml docker-compose.external-caddy.yml \
-         docker-compose.translate.yml docker-compose.obsidian.yml \
+         docker-compose.obsidian.yml \
          .env.prod.example VERSION release-manifest.json INSTALL.md SHA256SUMS; do
   [[ -s "$bundle/$f" ]] && ok "bundle carries $f" || bad "bundle missing $f"
 done
@@ -112,7 +112,7 @@ done
 
 # ---------------------------------------------------------------------------
 echo "== 4. tamper detection: SHA256SUMS catches any modification =="
-printf 'tampered\n' >> "$bundle/docker-compose.translate.yml"
+printf 'tampered\n' >> "$bundle/docker-compose.obsidian.yml"
 ( cd "$bundle" && sha256sum -c SHA256SUMS > /dev/null 2>&1 )
 rc=$?
 assert_eq "modified bundle file fails checksum verification" "1" "$rc"

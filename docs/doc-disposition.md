@@ -25,7 +25,7 @@
 | docs/how-to/invite-members.md | KEEP-VERIFIED | 与 ADR 0006、/admin API、freshrss_pool.sh 一致 |
 | docs/how-to/backup-restore.md | KEEP→updated | 卷备份布局已变（FIX-192/209）：快照树 + MANIFEST.txt + LATEST，备份失败中止 update → 本文已重写同步 |
 | docs/how-to/troubleshoot.md | UPDATE→done | 一处断行链接 → 已修复；2.0.0 回滚说明仍为当前 |
-| docs/how-to/optional-services.md | KEEP-VERIFIED | 与 translate compose/CLI/端口一致 |
+| docs/how-to/optional-services.md | REMOVED（R21） | 全文即 LibreTranslate 可选服务文档；该服务已移除（engine 枚举收敛为 ai\|browser，translate compose/CLI 文档随删；CLI 子命令本身归 CLI 责任方处理） |
 | docs/explanation/architecture.md | KEEP-VERIFIED | 控制库/用户库拆分与 user_scope.py、owner_migration.py 一致 |
 | docs/explanation/project-map.md | KEEP-VERIFIED | 数据归属表与 architecture.md 一致 |
 | docs/explanation/search.md | KEEP-VERIFIED | 投影机制 + 60s 同步间隔与配置一致 |

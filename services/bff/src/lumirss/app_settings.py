@@ -205,6 +205,12 @@ class PortableSettings(BaseModel):
     # 设备专属参数（mobile 应用 desktop-only 预设忽略宽度/栏数）。
     readerPresets: list[ReaderPresetSync] = []
 
+    # ---- R21：自托管 LibreTranslate 翻译引擎移除的一次性迁移标记 ----
+    # 服务端迁移（translation_engine_migration）把旧 engine=libretranslate
+    # 改写为 ai 时置 true；前端据此给一次「自托管翻译已移除」的提示。
+    # 默认 False（"0"）；非迁移用户永远是 False。
+    translationMigratedFromLibre: bool = False
+
     @field_validator("accentColor", "readerBackgroundCustom")
     @classmethod
     def _hex_color(cls, value: str) -> str:
@@ -286,6 +292,9 @@ class PortableSettingsPatch(BaseModel):
     readerCodeWrap: bool | None = None
     readerPagedMode: bool | None = None
     searchHighlightMatches: bool | None = None
+
+    # R21：迁移标记允许前端确认后显式清零（一次性提示的 ack 路径）。
+    translationMigratedFromLibre: bool | None = None
 
     # N058：预设列表整体替换（幂等 upsert 语义由客户端以 id 归并后发送）。
     readerPresets: list[ReaderPresetSync] | None = Field(default=None, max_length=_MAX_PRESETS)

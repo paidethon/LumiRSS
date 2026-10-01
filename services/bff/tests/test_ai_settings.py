@@ -43,12 +43,6 @@ def _expected_default_body():
         "summaryLanguage": "zh-CN",
         "translationLanguage": "zh-CN",
         "translationEngine": "ai",
-        "libretranslateUrl": "",
-        "libretranslateKeyConfigured": False,
-        # FIX-142：实际能力状态（最近一次有界探测）；untested = 从未探测。
-        "libretranslateStatus": "untested",
-        "libretranslateCheckedAt": None,
-        "libretranslateDiagnostic": None,
         "configured": False,
         "envKeyConfigured": False,
         "defaultKeyConfigured": False,
@@ -202,85 +196,27 @@ def test_blank_base_url_clears_value(tmp_path):
     assert cleared.json()["baseUrl"] == ""
 
 
-# ---- FIX-142: 本地翻译能力状态 = 实际探测结果（非“配置存在”即“可用”）----
+# ---- R21: 引擎枚举收敛为 ai|browser（自托管 LibreTranslate 已移除）----
 
 
-def test_libretranslate_view_defaults_to_untested_capability(tmp_path):
-    """FIX-142: 配置了 URL 只代表“已配置”；能力状态必须独立呈现——
-    从未探测时诚实显示 untested，绝不暗示可用。"""
-    import httpx
-
+def test_put_rejects_retired_libretranslate_engine(tmp_path):
+    """libretranslate 引擎不再是合法值——PUT 直接 422/400，绝不接受。"""
     with TestClient(app) as client:
         _use_temp_state(tmp_path)
-        app.state.http_client = httpx.AsyncClient(
-            transport=httpx.MockTransport(
-                lambda request: httpx.Response(500, text="down")
-            )
-        )
-        client.put(
+        response = client.put(
             "/api/v1/settings/ai",
-            json={
-                "translationEngine": "libretranslate",
-                "libretranslateUrl": "https://libre.example.com",
-            },
-        )
-        before = client.get("/api/v1/settings/ai").json()
-        assert before["translationEngine"] == "libretranslate"
-        assert before["libretranslateStatus"] == "untested"
-        assert before["libretranslateCheckedAt"] is None
-
-
-def test_libretranslate_test_persists_capability_state(tmp_path):
-    """FIX-142: POST libretranslate-test 是有界能力探测（GET /languages，
-    上游超时上限）；其结果必须被持久化，GET /settings/ai 如实上报
-    ok/failed + 最近检查时间 + 诊断——引擎“已启用”不再与“实际可用”脱节，
-    且 stale 状态由 checkedAt 如实暴露。"""
-    import httpx
-
-    def ok_handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/languages"
-        return httpx.Response(
-            200, json=[{"code": "en"}, {"code": "zh"}]
+            json={"translationEngine": "libretranslate"},
         )
 
+    assert response.status_code == 422
+
+
+def test_retired_libretranslate_keys_never_surface_in_view(tmp_path):
+    """历史库里的 libretranslate 配置键不再出现在设置视图中。"""
     with TestClient(app) as client:
         _use_temp_state(tmp_path)
-        app.state.http_client = httpx.AsyncClient(
-            transport=httpx.MockTransport(ok_handler)
-        )
-        client.put(
-            "/api/v1/settings/ai",
-            json={"libretranslateUrl": "https://libre.example.com"},
-        )
-        probe = client.post("/api/v1/settings/translation/libretranslate-test")
-        assert probe.status_code == 200, probe.text
-        probe_body = probe.json()
-        assert probe_body["status"] == "ok"
-        assert probe_body["checkedAt"]
+        body = client.get("/api/v1/settings/ai").json()
 
-        view = client.get("/api/v1/settings/ai").json()
-        assert view["libretranslateStatus"] == "ok"
-        assert view["libretranslateCheckedAt"] == probe_body["checkedAt"]
-        assert view["libretranslateDiagnostic"]
-
-    # 服务不可达 → 探测 failed 且视图如实降级（不再是上一次的 ok）。
-    def down_handler(request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("refused", request=request)
-
-    with TestClient(app) as client:
-        _use_temp_state(tmp_path)
-        app.state.http_client = httpx.AsyncClient(
-            transport=httpx.MockTransport(down_handler)
-        )
-        client.put(
-            "/api/v1/settings/ai",
-            json={"libretranslateUrl": "https://libre.example.com"},
-        )
-        probe = client.post("/api/v1/settings/translation/libretranslate-test")
-        assert probe.status_code == 200
-        assert probe.json()["status"] == "failed"
-
-        view = client.get("/api/v1/settings/ai").json()
-        assert view["libretranslateStatus"] == "failed"
-        assert view["libretranslateCheckedAt"]
-        assert view["libretranslateDiagnostic"]
+    assert "libretranslateUrl" not in body
+    assert "libretranslateStatus" not in body
+    assert "libretranslateKeyConfigured" not in body

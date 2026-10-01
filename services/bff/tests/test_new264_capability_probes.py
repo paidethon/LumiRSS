@@ -1,7 +1,7 @@
 """NEW-264 翻译服务能力比较 — 用户样本的显式对照探测。
 
-- fake provider / fake httpx：无网络；
-- 逐侧逐样本 结果/耗时/错误；零缓存行写入（ephemeral）；
+- fake provider：无网络；
+- 逐样本 结果/耗时/错误；零缓存行写入（ephemeral）；
 - 未配置 → available=false + 诚实 reason；样本越界 → 422；
 - 历史 cap=20；A/B 隔离。
 """
@@ -43,63 +43,35 @@ def _fake_ai_factory(log):
     return factory
 
 
-def _fake_httpx_factory(log):
-    class FakeResponse:
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return {"translatedText": "LT译"}
-
-    class FakeClient:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *exc):
-            return None
-
-        async def post(self, url, json=None):
-            log.append((url, json["q"]))
-            return FakeResponse()
-
-    return lambda: FakeClient()
-
-
-def _settings(baseUrl="http://ai.local/v1", model="m1", libreUrl="http://ai.local/lt"):
+def _settings(baseUrl="http://ai.local/v1", model="m1"):
     return {
         "ai.base_url": baseUrl,
         "ai.model": model,
-        "translation.libretranslate_url": libreUrl,
         "translation.language": "zh-CN",
         "translation.engine": "ai",
     }
 
 
-def test_probe_runs_both_configured_sides_ephemeral(tmp_path):
+def test_probe_runs_configured_side_ephemeral(tmp_path):
     db = Database(tmp_path / "lumi.sqlite")
     run(db.migrate())
     ai_log: list = []
-    lt_log: list = []
     report = run(
         run_probe(
             db,
             _settings(),
             [" Hello world. ", "Second sample."],
             _fake_ai_factory(ai_log),
-            secrets=None,
-            httpx_factory=_fake_httpx_factory(lt_log),
         )
     )
     assert report.available is True
     assert report.samples == ["Hello world.", "Second sample."]
     ai = report.sides["ai"]
-    lt = report.sides["libretranslate"]
-    assert ai["configured"] and lt["configured"]
+    assert ai["configured"]
     assert [s["text"] for s in ai["samples"]] == ["AI<Hello world.>", "AI<Second sample.>"]
     assert all(s["ok"] and s["elapsedMs"] >= 0 for s in ai["samples"])
-    assert [s["text"] for s in lt["samples"]] == ["LT译", "LT译"]
-    # AI 侧工厂每报告只构建一次（provider 复用）；LT 侧逐样本建客户端
-    assert len(ai_log) == 1 and len(lt_log) == 2
+    # AI 侧工厂每报告只构建一次（provider 复用）
+    assert len(ai_log) == 1
 
     # ephemeral：绝不写段缓存行
     rows = run(db.fetch_all("SELECT * FROM ai_translation_segments"))
@@ -116,30 +88,27 @@ def test_probe_unconfigured_honest_and_validation(tmp_path):
     db = Database(tmp_path / "lumi.sqlite")
     run(db.migrate())
     report = run(
-        run_probe(
-            db, _settings(baseUrl="", model="", libreUrl=""), ["样本"], None, None, None
-        )
+        run_probe(db, _settings(baseUrl="", model=""), ["样本"], None)
     )
     assert report.available is False
     assert "没有已配置" in report.reason
     assert report.sides["ai"]["configured"] is False
-    assert report.sides["libretranslate"]["configured"] is False
 
     with pytest.raises(ProbeInvalid):
-        run(run_probe(db, _settings(), [], None, None))
+        run(run_probe(db, _settings(), [], None))
     with pytest.raises(ProbeInvalid):
-        run(run_probe(db, _settings(), ["a", "b", "c", "d", "e", "f"], None, None))
+        run(run_probe(db, _settings(), ["a", "b", "c", "d", "e", "f"], None))
     with pytest.raises(ProbeInvalid):
-        run(run_probe(db, _settings(), ["x" * 501], None, None))
+        run(run_probe(db, _settings(), ["x" * 501], None))
     with pytest.raises(ProbeInvalid):
-        run(run_probe(db, _settings(), ["   "], None, None))
+        run(run_probe(db, _settings(), ["   "], None))
 
 
 def test_probe_history_cap(tmp_path):
     db = Database(tmp_path / "lumi.sqlite")
     run(db.migrate())
     for _ in range(PROBE_HISTORY_CAP + 2):
-        run(run_probe(db, _settings(baseUrl="", model="", libreUrl=""), ["样本"], None))
+        run(run_probe(db, _settings(baseUrl="", model=""), ["样本"], None))
     rows = run(db.fetch_all("SELECT id FROM translation_capability_probes"))
     assert len(rows) == PROBE_HISTORY_CAP
     assert len(run(list_probes(db, limit=99))) == PROBE_HISTORY_CAP

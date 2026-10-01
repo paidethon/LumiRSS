@@ -79,7 +79,6 @@ def build_third_party_inventory(
     freshrss_host: str | None,
     rsshub_host: str | None,
     ai_host: str | None,
-    libretranslate_host: str | None,
     tts_host: str | None,
     webdav_host: str | None,
     imap_host: str | None,
@@ -180,14 +179,6 @@ def build_third_party_inventory(
             "AI 摘要 / 对话 / AI 翻译（标题、正文或待翻译文本发往该主机）",
             optional=True,
             controlled_by="AI 设置 ai.base_url（未配置即无此请求）",
-        ),
-        item(
-            "libretranslate",
-            "ai",
-            libretranslate_host,
-            "本地引擎翻译（待翻译文本发往该主机）",
-            optional=True,
-            controlled_by="翻译设置 translation.libretranslate_url",
         ),
         item(
             "tts",

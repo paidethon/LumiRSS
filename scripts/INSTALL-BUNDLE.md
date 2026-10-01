@@ -7,7 +7,6 @@ This bundle is a ready-to-install LumiRSS release. It contains:
 | `lumirss` | lifecycle CLI: deploy / update / backup / restore / doctor / rollback / export-images / import-images |
 | `docker-compose.prod.yml` | the production stack (prebuilt GHCR images, digest-pinned FreshRSS/RSSHub) |
 | `docker-compose.external-caddy.yml` | optional: existing host reverse proxy owns TLS |
-| `docker-compose.translate.yml` | optional on-demand LibreTranslate (`./lumirss translate up`) |
 | `docker-compose.obsidian.yml` | optional read-only Obsidian vault mount |
 | `.env.prod.example` | configuration template (copy to `.env.prod`, fill in secrets) |
 | `VERSION` | this release's version — the deploy tag default (never mutable `latest`) |
