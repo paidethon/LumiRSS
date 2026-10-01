@@ -16,14 +16,19 @@ concurrency:
 
 jobs:
   bff-tests:
-    name: BFF tests (Python 3.12)
+    name: BFF tests (Python 3.12, shard ${{ matrix.shard }}/2)
     runs-on: ubuntu-latest
-    # 套件增长到 ~16.5 min（r5 轮 2000+ 用例）；15 min 上限会在 80%
-    # 处超时取消（真实发生过），放宽到 25。R2 后 3300+ 用例 + --extra rag
-    # 依赖同步，CI 实测 25:20 整点超时（2026-10-01），放宽到 45 后实测
-    # 45:16 处仍在 67%（推算全量约 65 min），按同法再放宽到 75。
-    # 不做 xdist 分片：sqlite 会话级夹具与并行 worker 冲突，不引新依赖。
-    timeout-minutes: 75
+    # 套件时长史：r5 轮 2000+ 用例 ~16.5min（15→25）；R2 后 3300+ 用例 +
+    # --extra rag，单 runner 实测 45:16 处仍 67%（45→75），高负载期两次
+    # 在 1h16m 整触顶取消（2026-10-01）。改为按测试文件确定性二分片并行
+    # （无新插件、无进程内并行——sqlite 会话级夹具不兼容 xdist）；每片
+    # 只拿一半文件，round-robin 保持负载均衡。空片=失败（FIX-383：空集
+    # 不能作为通过证据）。
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -41,11 +46,27 @@ jobs:
         working-directory: services/bff
         run: uv run ruff check src tests scripts
 
-      - name: Run BFF tests
+      - name: Run BFF tests (shard ${{ matrix.shard }}/2)
         working-directory: services/bff
         # --extra rag mirrors the production image (Dockerfile uv sync),
         # so the RAG tests exercise the shipped dependency set.
-        run: uv run --extra rag pytest -q
+        run: |
+          mapfile -t files < <(ls tests/test_*.py | LC_ALL=C sort)
+          shard_file="$(mktemp)"
+          i=0
+          for f in "${files[@]}"; do
+            if (( i % 2 == ${{ matrix.shard }} - 1 )); then printf '%s\n' "$f" >> "$shard_file"; fi
+            i=$((i+1))
+          done
+          count=$(wc -l < "$shard_file")
+          total=${#files[@]}
+          echo "shard ${{ matrix.shard }}: $count/$total test files"
+          if [[ ! -s "$shard_file" ]]; then
+            echo "FAIL: empty shard (collection must not be zero — FIX-383)" >&2
+            exit 1
+          fi
+          # shellcheck disable=SC2046
+          uv run --extra rag pytest -q $(cat "$shard_file")
 
   generated-contracts:
     name: Generated contracts drift check
