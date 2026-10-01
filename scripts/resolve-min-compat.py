@@ -59,7 +59,9 @@ def main() -> int:
     try:
         value = resolve_min_compat(args.current, args.tag)
     except ValueError as exc:
-        print(f"FAIL {exc}")
+        # 诊断走 stderr：workflow 把 stdout 原样嵌入 manifest JSON，
+        # 诊断混入 stdout 会产生非法 JSON（2026-10-01 main 路径实测）。
+        print(f"FAIL {exc}", file=sys.stderr)
         return 1
     # JSON-literal output: the workflow embeds it verbatim.
     print("null" if value is None else f'"{value}"')

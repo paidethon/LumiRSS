@@ -259,7 +259,13 @@ jobs:
             exit 0
           fi
           rm -rf release-assets && mkdir release-assets
-          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir release-assets
+          # 全新 Release 可能还没有任何既有资产（gh release download 对
+          # 空资产集硬失败，2026-10-01 首次真实运行实测）：只在有资产时
+          # 下载合并，空集则直接以本次产物构建 SHA256SUMS。
+          asset_count="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length' 2>/dev/null || echo 0)"
+          if [ "${asset_count:-0}" -gt 0 ]; then
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir release-assets
+          fi
           rm -f release-assets/release-manifest.json release-assets/SHA256SUMS
           cp release-manifest.json release-assets/
           # FIX-186: the ready-to-install bundle ships with every official
