@@ -1,28 +1,19 @@
 import {
-  Archive,
-  Bookmark,
-  Bot,
   ChevronDown,
-  Clock,
-  FileText,
-  FolderOpen,
-  Globe,
-  Inbox,
-  Layers,
-  Link2,
-  Mail,
   Plus,
   Rss,
-  Search as SearchIcon,
-  Star,
-  Tags,
-  Zap,
 } from 'lucide-react'
 import { Suspense, lazy, useMemo, useState, memo } from 'react'
 import { useFeeds, usePinnedViewCount, usePinnedViews } from '../api/queries'
 import type { Feed } from '../api/types'
 import { useReaderUi, ALL_SCOPE } from '../store/reader-ui'
 import type { ContentScope } from '../lib/navigation'
+import {
+  navGroupsForSidebar,
+  navTargetOf,
+  settingsCategoryOf,
+  type NavEntry,
+} from '../lib/nav-registry'
 import { requestOpenSettings } from './settings/settings-bridge'
 import { Skeleton } from './ui/Skeleton'
 const AddSourceDialog = lazy(() => import('./AddSourceDialog'))
@@ -35,10 +26,17 @@ import AccountMenu from './AccountMenu'
 
 /** Sidebar — 信息架构分组导航（0011 阻断修复：真实分类树 + 四级 Scope）。
  *
+ * 入口数据唯一真源是 lib/nav-registry（R3 契约 §3）：分组（阅读 →
+ * 内容来源 → 工具）、行 label/icon/顺序都从注册表读取，本组件只保留
+ * 渲染层：全部信息源行（未读 chip）与 RSS 订阅行（分类树）是注册表
+ * 条目的特殊渲染形态，其余条目走通用行（section 导航 / settings 深链）。
+ *
  * 结构：
- *   信息来源：全部信息源（scope=all）/ RSS 订阅（scope=rss，tree 含
- *            FreshRSS 真实分类 + 未分组）+ Phase 2 项（禁用+徽标）
- *   工作区：  稍后读（view=read-later）/ 收藏（view=starred）
+ *   阅读：    全部信息源（scope=all, view=all + 未读 chip）/ 稍后读 / 收藏
+ *   内容来源：RSS 订阅（tree 含 FreshRSS 真实分类 + 未分组）/ 来源 /
+ *             书签 / 网页剪藏 / 网页快照 / 收件箱 / API 来源 / 邮件简报 /
+ *             Obsidian 库
+ *   工具：    搜索 / 工作区 / Agent 工作台 / RAG 索引 / 标签 / 图谱
  *
  * 0011 阻断修复关键语义（§6–§9）：
  * - RSS 行主区域（icon+label）→ scope=全部 RSS；chevron → 只展开/收起
@@ -415,11 +413,6 @@ function Sidebar({
 }: {
   onNavigate?: () => void
 }) {
-  const view = useReaderUi((s) => s.view)
-  const section = useReaderUi((s) => s.section)
-  const selectView = useReaderUi((s) => s.selectView)
-  const selectScope = useReaderUi((s) => s.selectScope)
-  const selectSection = useReaderUi((s) => s.selectSection)
   // 0014a Gate 1：桌面上下文（无 onNavigate = 桌面常驻栏；移动抽屉会在
   // 导航完成后回调关闭）才渲染「添加来源」按钮与共享 AddSourceDialog。
   const isDesktop = onNavigate === undefined
@@ -448,256 +441,16 @@ function Sidebar({
         </Suspense>
       )}
 
-      {/* ===== 信息来源 ===== */}
-      <div className="flex flex-col gap-0.5" role="group" aria-label="信息来源">
-        <GroupLabel>信息来源</GroupLabel>
-
-        {/* 全部信息源 + 「未读」过滤子项：并排不嵌套 button */}
-        <div
-          className={cx(
-            'flex items-center gap-1 rounded-[var(--lumi-radius-md)]',
-            view === 'all' || view === 'unread'
-              ? 'bg-[var(--lumi-surface-selected)]'
-              : 'transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)]',
-          )}
-        >
-          <button
-            type="button"
-            onClick={() => {
-              selectSection('home')
-              selectScope(ALL_SCOPE)
-              selectView('all')
-              onNavigate?.()
-            }}
-            aria-current={view === 'all' ? 'true' : undefined}
-            className={cx(
-              'flex min-w-0 flex-1 items-center gap-2.5 rounded-[var(--lumi-radius-md)] px-2.5 text-left text-sm',
-              'min-h-8 py-1 max-lg:min-h-11 max-lg:items-center',
-              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
-              view === 'all'
-                ? 'font-medium text-[var(--lumi-accent-text)]'
-                : 'text-[var(--lumi-text-secondary)] hover:text-[var(--lumi-text-primary)]',
-            )}
-          >
-            <Inbox aria-hidden className={icon16} />
-            <span className="truncate">全部信息源</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              selectSection('home')
-              selectView('unread')
-              onNavigate?.()
-            }}
-            aria-pressed={view === 'unread'}
-            className={cx(
-              'mr-1.5 shrink-0 rounded-[var(--lumi-radius-full)] px-2 py-0.5 text-[11px]',
-              'min-h-6 transition-colors duration-[var(--lumi-motion-fast)]',
-              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
-              view === 'unread'
-                ? 'bg-[var(--lumi-accent-soft)] font-medium text-[var(--lumi-accent-text)]'
-                // 未激活 chip 可能落在选中分组表面上；tertiary 在该表面上
-                // 对比度 4.43:1 不满足 WCAG AA → 用 secondary
-                : 'text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)]',
-            )}
-          >
-            未读
-          </button>
-        </div>
-
-        <RssTree
+      {/* ===== 注册表分组（阅读 → 内容来源 → 工具；R3 契约 §3） ===== */}
+      {navGroupsForSidebar().map((group, i) => (
+        <SidebarGroup
+          key={group.group}
+          group={group}
+          first={i === 0}
           onNavigate={onNavigate}
           onAddSource={isDesktop ? () => setAddSourceOpen(true) : undefined}
         />
-
-        {/* P04：统一来源页（GET /api/v1/sources 的分组总览 + 管理深链）。
-            RSS 订阅行保留在上（scope 直达 + 分类树），订阅中心 section
-            仍可从来源页 RSS 组深链进入。 */}
-        <NavItem
-          active={section === 'sources'}
-          onClick={() => {
-            selectSection('sources')
-            onNavigate?.()
-          }}
-        >
-          <Layers aria-hidden className={icon16} />
-          来源
-        </NavItem>
-
-        {/* phase2 M1：书签（library 域）已可用——section 导航，替代原
-            Phase 2 禁用占位（保持同位置，信息来源组内）。
-            phase2 Gate 3：网页剪藏 / 网页快照同样激活为 section 导航。 */}
-        <div className="mt-1 flex flex-col gap-0.5">
-          <NavItem
-            active={section === 'bookmarks'}
-            onClick={() => {
-              selectSection('bookmarks')
-              onNavigate?.()
-            }}
-          >
-            <Bookmark aria-hidden className={icon16} />
-            书签
-          </NavItem>
-          <NavItem
-            active={section === 'clips'}
-            onClick={() => {
-              selectSection('clips')
-              onNavigate?.()
-            }}
-          >
-            <Globe aria-hidden className={icon16} />
-            网页剪藏
-          </NavItem>
-          <NavItem
-            active={section === 'snapshots'}
-            onClick={() => {
-              selectSection('snapshots')
-              onNavigate?.()
-            }}
-          >
-            <Link2 aria-hidden className={icon16} />
-            网页快照
-          </NavItem>
-          {/* 0021：收件箱（推送式来源）已可用——section 导航。 */}
-          <NavItem
-            active={section === 'inbox'}
-            onClick={() => {
-              selectSection('inbox')
-              onNavigate?.()
-            }}
-          >
-            <Archive aria-hidden className={icon16} />
-            收件箱
-          </NavItem>
-          {/* P0-12：API 来源 / 邮件简报已是真实可用能力（Settings 的
-              ApiSourcesSection / MailSection）——导航不再是 PlannedItem，
-              而是真实入口：打开设置壳并直达对应分类。 */}
-          <NavItem
-            active={false}
-            onClick={() => {
-              requestOpenSettings('api-sources')
-              onNavigate?.()
-            }}
-          >
-            <FileText aria-hidden className={icon16} />
-            API 来源
-          </NavItem>
-          <NavItem
-            active={false}
-            onClick={() => {
-              requestOpenSettings('mail')
-              onNavigate?.()
-            }}
-          >
-            <Mail aria-hidden className={icon16} />
-            邮件简报
-          </NavItem>
-          {/* phase2 G6：Obsidian 库（只读投影）已可用——section 导航。 */}
-          <NavItem
-            active={section === 'obsidian'}
-            onClick={() => {
-              selectSection('obsidian')
-              onNavigate?.()
-            }}
-          >
-            <FileText aria-hidden className={icon16} />
-            Obsidian 库
-          </NavItem>
-        </div>
-      </div>
-
-      {/* ===== 工作区（稍后读 / 收藏——工作区为全局视图，scope 重置为全部） ===== */}
-      <div className="mt-2 flex flex-col gap-0.5" role="group" aria-label="工作区">
-        <GroupLabel>工作区</GroupLabel>
-
-        <NavItem
-          active={view === 'read-later'}
-          onClick={() => {
-            selectSection('home')
-            selectScope(ALL_SCOPE)
-            selectView('read-later')
-            onNavigate?.()
-          }}
-        >
-          <Clock aria-hidden className={icon16} />
-          稍后读
-        </NavItem>
-
-        <NavItem
-          active={view === 'starred'}
-          onClick={() => {
-            selectSection('home')
-            selectScope(ALL_SCOPE)
-            selectView('starred')
-            onNavigate?.()
-          }}
-        >
-          <Star aria-hidden className={icon16} />
-          收藏
-        </NavItem>
-
-        {/* 0022：全局搜索（section=search；桌面渲染在 Timeline 列位） */}
-        <NavItem
-          active={section === 'search'}
-          onClick={() => {
-            selectSection('search')
-            onNavigate?.()
-          }}
-        >
-          <SearchIcon aria-hidden className={icon16} />
-          搜索
-        </NavItem>
-
-        {/* phase2 M1：工作区列表页（section=workspaces；桌面 Timeline 列位） */}
-        <NavItem
-          active={section === 'workspaces'}
-          onClick={() => {
-            selectSection('workspaces')
-            onNavigate?.()
-          }}
-        >
-          <FolderOpen aria-hidden className={icon16} />
-          工作区
-        </NavItem>
-
-        <div className="mt-1 flex flex-col gap-0.5">
-          {/* phase2 G7：Agent 工作台已可用——section 导航。 */}
-          <NavItem
-            active={section === 'agent'}
-            onClick={() => {
-              selectSection('agent')
-              onNavigate?.()
-            }}
-          >
-            <Bot aria-hidden className={icon16} />
-            Agent 工作台
-          </NavItem>
-          {/* P0-12 + Q-P2-24：RAG 管理入口已落地（设置 → AI 的
-              RagSettingsSection）——导航不再说「独立管理入口尚未提供」
-              （文案漂移回潮），直达该分类。 */}
-          <NavItem
-            active={false}
-            onClick={() => {
-              requestOpenSettings('ai')
-              onNavigate?.()
-            }}
-          >
-            <Zap aria-hidden className={icon16} />
-            RAG 索引
-          </NavItem>
-          {/* phase2 G8：标签 / 图谱已可用——section 导航。 */}
-          <NavItem
-            active={section === 'graph'}
-            onClick={() => {
-              selectSection('graph')
-              onNavigate?.()
-            }}
-          >
-            <Tags aria-hidden className={icon16} />
-            标签 / 图谱
-          </NavItem>
-        </div>
-      </div>
+      ))}
 
       {/* 0067 多账户：当前身份 + 账号菜单（basic 模式零渲染，现状兼容） */}
       <AccountMenu />
@@ -706,6 +459,158 @@ function Sidebar({
 }
 
 export default memo(Sidebar)
+
+/** 注册表分组的侧栏渲染（行样式留在本组件，入口数据来自注册表）。 */
+function SidebarGroup({
+  group,
+  first,
+  onNavigate,
+  onAddSource,
+}: {
+  group: ReturnType<typeof navGroupsForSidebar>[number]
+  first: boolean
+  onNavigate?: () => void
+  onAddSource?: () => void
+}) {
+  return (
+    <div
+      className={cx('flex flex-col gap-0.5', !first && 'mt-2')}
+      role="group"
+      aria-label={group.label}
+    >
+      <GroupLabel>{group.label}</GroupLabel>
+      {group.entries.map((entry) => {
+        // 特殊渲染形态：全部信息源行（未读 chip）/ RSS 订阅行（分类树）
+        if (entry.id === 'home') {
+          return <AllSourcesRow key={entry.id} entry={entry} onNavigate={onNavigate} />
+        }
+        if (entry.id === 'source:rss') {
+          return <RssTree key={entry.id} onNavigate={onNavigate} onAddSource={onAddSource} />
+        }
+        return <SidebarEntryRow key={entry.id} entry={entry} onNavigate={onNavigate} />
+      })}
+    </div>
+  )
+}
+
+/** 通用注册表行：section 导航 / settings 深链（API 来源、邮件简报、
+ * RAG 索引）。active 语义与历史实现一致——home 视图入口只看 view
+ * （scope=all 是「无过滤」缺省态，不参与高亮），RSS scope 行额外要求
+ * scope.kind 命中；纯 section 行只看 section。 */
+function SidebarEntryRow({
+  entry,
+  onNavigate,
+}: {
+  entry: NavEntry
+  onNavigate?: () => void
+}) {
+  const view = useReaderUi((s) => s.view)
+  const section = useReaderUi((s) => s.section)
+  const scope = useReaderUi((s) => s.scope)
+  const selectView = useReaderUi((s) => s.selectView)
+  const selectScope = useReaderUi((s) => s.selectScope)
+  const selectSection = useReaderUi((s) => s.selectSection)
+
+  const category = settingsCategoryOf(entry.id)
+  const target = navTargetOf(entry)
+  const active =
+    category === null &&
+    target.section === section &&
+    (target.view !== undefined ? view === target.view : true) &&
+    (target.scope !== undefined && target.scope.kind !== 'all'
+      ? scope.kind === target.scope.kind
+      : true)
+
+  const follow = () => {
+    if (category !== null) {
+      requestOpenSettings(category)
+      onNavigate?.()
+      return
+    }
+    selectSection(target.section)
+    if (target.scope !== undefined) selectScope(target.scope)
+    if (target.view !== undefined) selectView(target.view)
+    onNavigate?.()
+  }
+
+  const Icon = entry.icon
+  return (
+    <NavItem active={active} onClick={follow}>
+      <Icon aria-hidden className={icon16} />
+      {entry.label}
+    </NavItem>
+  )
+}
+
+/** 全部信息源行（注册表 home 条目的特殊形态）：主区域 = all/all，
+ * 「未读」chip 子项 = view 过滤（并排不嵌套 button）。 */
+function AllSourcesRow({
+  entry,
+  onNavigate,
+}: {
+  entry: NavEntry
+  onNavigate?: () => void
+}) {
+  const view = useReaderUi((s) => s.view)
+  const selectView = useReaderUi((s) => s.selectView)
+  const selectScope = useReaderUi((s) => s.selectScope)
+  const selectSection = useReaderUi((s) => s.selectSection)
+  const Icon = entry.icon
+
+  return (
+    <div
+      className={cx(
+        'flex items-center gap-1 rounded-[var(--lumi-radius-md)]',
+        view === 'all' || view === 'unread'
+          ? 'bg-[var(--lumi-surface-selected)]'
+          : 'transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)]',
+      )}
+    >
+      <button
+        type="button"
+        onClick={() => {
+          selectSection('home')
+          selectScope(ALL_SCOPE)
+          selectView('all')
+          onNavigate?.()
+        }}
+        aria-current={view === 'all' ? 'true' : undefined}
+        className={cx(
+          'flex min-w-0 flex-1 items-center gap-2.5 rounded-[var(--lumi-radius-md)] px-2.5 text-left text-sm',
+          'min-h-8 py-1 max-lg:min-h-11 max-lg:items-center',
+          'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+          view === 'all'
+            ? 'font-medium text-[var(--lumi-accent-text)]'
+            : 'text-[var(--lumi-text-secondary)] hover:text-[var(--lumi-text-primary)]',
+        )}
+      >
+        <Icon aria-hidden className={icon16} />
+        <span className="truncate">{entry.label}</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          selectSection('home')
+          selectView('unread')
+          onNavigate?.()
+        }}
+        aria-pressed={view === 'unread'}
+        className={cx(
+          'mr-1.5 shrink-0 rounded-[var(--lumi-radius-full)] px-2 py-0.5 text-[11px]',
+          'min-h-6 transition-colors duration-[var(--lumi-motion-fast)]',
+          'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+          view === 'unread'
+            ? 'bg-[var(--lumi-accent-soft)] font-medium text-[var(--lumi-accent-text)]'
+            // 未激活 chip 可能落在选中分组表面上；tertiary 在该表面上
+            // 对比度 4.43:1 不满足 WCAG AA → 用 secondary
+            : 'text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)]',
+        )}
+      >
+        未读
+      </button>
+    </div>
+  )
+}
 
 /** F035：单个固定视图行（实时计数徽标；失败态诚实显示 '—' 而非 0）。 */
 function PinnedViewRow({ id, name }: { id: string; name: string }) {

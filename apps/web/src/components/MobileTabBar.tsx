@@ -3,6 +3,11 @@
  * 四个一级入口（Spec §设计规格，替代 0010 的 时间线/收藏/设置 三 tab）：
  *   首页（AppSection home）/ 来源（sources）/ 搜索（search）/ 收藏（favorites）
  *
+ * R3 契约 §3：入口数据（成员、顺序、图标、紧凑标签）唯一真源是
+ * lib/nav-registry（tabbar 表面 + shortLabel），本组件只保留渲染层。
+ * 首页 tab 的注册表 label 是「全部信息源」，底栏用注册表 shortLabel
+ * 「首页」（sidebar 同一入口保持全称）。
+ *
  * P04：原「订阅」tab 升级为「来源」（统一来源管理页）——RSS 订阅仍
  * 可达（来源页 RSS 组深链 + 侧栏 RSS 订阅行 / 订阅中心 section）。 *
  * 导航岛形态（参考图 05-home 意图，非像素复刻）：
@@ -23,8 +28,8 @@
  * 切换器延伸到整个 <1024 区间即修复该缺口（沿用既有响应式系统，
  * 不重新设计导航）。 */
 
-import { Home, Layers, Search, Star } from 'lucide-react'
-import { useReaderUi, type AppSection } from '../store/reader-ui'
+import { useReaderUi } from '../store/reader-ui'
+import { navEntriesForSurface, navTargetOf } from '../lib/nav-registry'
 import { cx } from './ui/cx'
 
 export default function MobileTabBar() {
@@ -35,12 +40,8 @@ export default function MobileTabBar() {
   // Reader 打开 → 底栏隐藏（全屏阅读）
   const readerOpen = selectedEntryRef !== null
 
-  const tabs: { key: AppSection; label: string; icon: React.ReactNode }[] = [
-    { key: 'home', label: '首页', icon: <Home aria-hidden className="size-5" /> },
-    { key: 'sources', label: '来源', icon: <Layers aria-hidden className="size-5" /> },
-    { key: 'search', label: '搜索', icon: <Search aria-hidden className="size-5" /> },
-    { key: 'favorites', label: '收藏', icon: <Star aria-hidden className="size-5" /> },
-  ]
+  // 入口数据来自导航注册表（tabbar 表面按 order 排列）
+  const tabs = navEntriesForSurface('tabbar')
 
   if (readerOpen) return null
 
@@ -53,12 +54,14 @@ export default function MobileTabBar() {
         )}
       >
         {tabs.map((tab) => {
-          const active = section === tab.key
+          const target = navTargetOf(tab)
+          const active = section === target.section
+          const Icon = tab.icon
           return (
             <button
-              key={tab.key}
+              key={tab.id}
               type="button"
-              onClick={() => selectSection(tab.key)}
+              onClick={() => selectSection(target.section)}
               aria-current={active ? 'page' : undefined}
               className={cx(
                 'flex min-h-12 flex-1 flex-col items-center justify-center gap-0.5 px-1 py-1.5',
@@ -69,9 +72,9 @@ export default function MobileTabBar() {
                   : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-secondary)]',
               )}
             >
-              {tab.icon}
+              <Icon aria-hidden className="size-5" />
               <span className={cx('text-[11px] leading-tight', active && 'font-semibold')}>
-                {tab.label}
+                {tab.shortLabel ?? tab.label}
               </span>
             </button>
           )
