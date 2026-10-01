@@ -334,7 +334,13 @@ images_pull_or_build() { # $1 = "--build" (dev-only; refused on prod compose)
   fi
   local tag="${IMAGE_TAG:-$(cat VERSION 2>/dev/null || echo latest)}"
   log "pulling prebuilt images (tag: $tag)"
-  if DC_D pull 2>&1 | grep -qE " Pulled| up to date"; then
+  # 直接 docker pull：compose pull 的进度输出随版本/TTY 变化，grep 匹配
+  # 不上时会落到本地镜像回退——SSH 非 TTY 升级场景曾三次静默使用陈旧
+  # 镜像（2026-10-01 生产实测）。docker pull 的退出码与输出契约稳定。
+  local pulled_ok=1
+  docker_cmd pull "ghcr.io/paidethon/lumirss/lumirss-bff:$tag" >/dev/null 2>&1 || pulled_ok=0
+  docker_cmd pull "ghcr.io/paidethon/lumirss/lumirss-web:$tag" >/dev/null 2>&1 || pulled_ok=0
+  if ((pulled_ok)); then
     return 0
   fi
   # Pull output varies across compose versions; when the images are already

@@ -260,7 +260,7 @@ rc=$?
 assert_eq "update completes against stub docker" "0" "$rc"
 assert_contains "update reports completion" "update complete" "$update_out"
 
-echo "== 8. ambiguous pull output must not silently rebuild images =="
+echo "== 8. pull failure must fall back to existing local images, never a rebuild =="
 cat > "$stub_dir/docker" <<'STUB'
 #!/bin/sh
 # stub docker that logs invocations; compose pull output is ambiguous
@@ -269,6 +269,7 @@ cmd="$1"; [ $# -gt 0 ] && shift
 case "$cmd" in
   info) exit 0;;
   run) exit 0;;
+  pull) echo 'Error response from daemon: Get "https://ghcr.io/v2/": dial tcp: connection refused' >&2; exit 1;;
   image) echo "sha256:stub-image-id";;   # images exist locally
   inspect)
     case "$*" in
@@ -463,6 +464,7 @@ cmd="$1"; [ $# -gt 0 ] && shift
 case "$cmd" in
   info) exit 0;;
   run) exit 0;;
+  pull) echo 'Error response from daemon: Get "https://ghcr.io/v2/": dial tcp: connection refused' >&2; exit 1;;
   image) exit 1;;     # `docker image inspect`: no local images for this tag
   ps) exit 0;;
   compose)
@@ -697,6 +699,11 @@ cmd="$1"; [ $# -gt 0 ] && shift
 case "$cmd" in
   info) exit 0;;
   run) exit 0;;
+  pull)
+    # widen the window: run #1 holds the update lock inside this pull
+    [ -n "${LUMIRSS_TEST_LOCK_MARK:-}" ] && printf 'pull-started\n' > "$LUMIRSS_TEST_LOCK_MARK"
+    sleep 6
+    exit 0;;
   image) echo "sha256:stub-image-id";;
   inspect)
     case "$*" in
@@ -746,6 +753,7 @@ cat > "$stub_dir/docker" <<'STUB'
 cmd="$1"; [ $# -gt 0 ] && shift
 case "$cmd" in
   info) exit 0;;
+  pull) echo 'Error response from daemon: connection refused' >&2; exit 1;;
   image)  # `docker image inspect` fails: no local images either
     sub="$1"; shift
     case "$sub" in inspect) exit 1;; *) exit 0;; esac;;
@@ -1173,6 +1181,11 @@ cmd="$1"; [ $# -gt 0 ] && shift
 case "$cmd" in
   info) exit 0;;
   run) exit 0;;
+  pull)
+    # widen the window: run #1 holds the update lock inside this pull
+    [ -n "${LUMIRSS_TEST_LOCK_MARK:-}" ] && printf 'pull-started\n' > "$LUMIRSS_TEST_LOCK_MARK"
+    sleep 6
+    exit 0;;
   image) echo "sha256:stub-image-id";;
   inspect)
     case "$*" in
@@ -1253,6 +1266,11 @@ cmd="$1"; [ $# -gt 0 ] && shift
 case "$cmd" in
   info) exit 0;;
   run) exit 0;;
+  pull)
+    # widen the window: run #1 holds the update lock inside this pull
+    [ -n "${LUMIRSS_TEST_LOCK_MARK:-}" ] && printf 'pull-started\n' > "$LUMIRSS_TEST_LOCK_MARK"
+    sleep 6
+    exit 0;;
   image) echo "sha256:stub-image-id";;
   inspect)
     case "$*" in
