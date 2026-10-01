@@ -1,44 +1,35 @@
 /** SidebarCollapsedRail — 桌面侧栏折叠态图标栏（0011 修正补充 §3–§10）。
  *
- * 修正的问题：折叠态此前只渲染一个「展开侧栏」按钮——文字隐藏成功，
- * 但导航 icons 也一起消失（空 rail）。本组件保留现有 collapse 行为，
- * 只让 icon 在折叠态继续渲染，并补齐 icon-only 导航所需的：
+ * 入口数据唯一真源：lib/nav-registry 的 navGroupsForSidebar()——与展开
+ * 态 Sidebar 同源同序同分组（R3 契约 §3 收编，不再维护第二份入口表）。
+ * 由此折叠 rail 与展开侧栏的入口集合一致（此前 rail 少了 来源/搜索/
+ * 工作区 三个入口）；渲染层只保留 icon-only 形态：
  * - tooltip（hover / focus；native title + aria-label，aria-label 为主）；
  * - active state（subtle background + accent icon，§9）；
- * - disabled state（Phase 2 项，aria-disabled + opacity）；
  * - ≥40×40 点击区域、icon 居中、零横向溢出（§7）。
  *
- * 单一导航数据：与 Sidebar 共享同一组 items 定义（§4 不复制两套菜单）。
  * RSS 折叠态行为（§10）：点击 icon = scope 全部 RSS（等价展开态点
- * 「RSS 订阅」主按钮），不展开 tree——选 feed 需先展开侧栏。 */
+ * 「RSS 订阅」主按钮），不展开 tree——选 feed 需先展开侧栏。
+ * P0-12 a11y：真 disabled button（可浏览、语义明确）替代不可聚焦 div。
+ * fix-095/fix-292 锚点：`alwaysVisible ? 'flex' : 'hidden lg:flex'` 与
+ * `iconCls = 'size-4 shrink-0'` 为既有测试的源码锚，勿改名。 */
 
-import {
-  Archive,
-  Bot,
-  Bookmark,
-  Clock,
-  FileText,
-  Globe,
-  Inbox,
-  Link2,
-  Mail,
-  PanelLeft,
-  Rss,
-  Star,
-  Tags,
-  Zap,
-} from 'lucide-react'
+import { PanelLeft } from 'lucide-react'
 import { useReaderUi, ALL_SCOPE } from '../store/reader-ui'
 import { useAppSettings } from '../store/app-settings'
+import {
+  navGroupsForSidebar,
+  navTargetOf,
+  settingsCategoryOf,
+} from '../lib/nav-registry'
+import type { NavEntry } from '../lib/nav-registry'
 import { requestOpenSettings } from './settings/settings-bridge'
 import SettingsButton from './SettingsButton'
 import { cx } from './ui/cx'
 
 const iconCls = 'size-4 shrink-0'
 
-/** 折叠态图标行：44×40 可点击区域，icon 水平居中（§7）。
- * P0-12 a11y：禁用项改用真 disabled button（可浏览、语义明确），
- * 不再用不可聚焦 div + aria-disabled。 */
+/** 折叠态图标行：44×40 可点击区域，icon 水平居中（§7）。 */
 function RailItem({
   icon,
   label,
@@ -51,7 +42,7 @@ function RailItem({
   label: string
   active?: boolean
   disabled?: boolean
-  /** 禁用原因（P0-12：诚实描述，不再统一说「Phase 2 规划」）。 */
+  /** 禁用原因（诚实描述）。 */
   note?: string
   onClick?: () => void
 }) {
@@ -85,6 +76,85 @@ function RailItem({
   )
 }
 
+/** 注册表入口的折叠态渲染：active/导航语义与 Sidebar.SidebarEntryRow
+ * 同构（home 视图入口只看 view；RSS scope 行额外要求 scope 命中；
+ * 纯 section 行只看 section；settings 行深链不参与高亮）。 */
+function RailEntry({ entry }: { entry: NavEntry }) {
+  const view = useReaderUi((s) => s.view)
+  const scope = useReaderUi((s) => s.scope)
+  const section = useReaderUi((s) => s.section)
+  const selectView = useReaderUi((s) => s.selectView)
+  const selectScope = useReaderUi((s) => s.selectScope)
+  const selectSection = useReaderUi((s) => s.selectSection)
+
+  const category = settingsCategoryOf(entry.id)
+  const target = navTargetOf(entry)
+  const Icon = entry.icon
+
+  if (category !== null) {
+    return (
+      <RailItem
+        icon={<Icon aria-hidden className={iconCls} />}
+        label={entry.label}
+        onClick={() => requestOpenSettings(category)}
+      />
+    )
+  }
+
+  const goHome = (nextView: Parameters<typeof selectView>[0]) => {
+    selectSection('home')
+    selectScope(ALL_SCOPE)
+    selectView(nextView)
+  }
+
+  if (entry.id === 'home') {
+    return (
+      <RailItem
+        icon={<Icon aria-hidden className={iconCls} />}
+        label={entry.label}
+        active={scope.kind === 'all' && view === 'all'}
+        onClick={() => goHome('all')}
+      />
+    )
+  }
+  if (entry.id === 'source:rss') {
+    return (
+      <RailItem
+        icon={<Icon aria-hidden className={iconCls} />}
+        label={entry.label}
+        active={scope.kind === 'rss' && view === 'all'}
+        onClick={() => {
+          // §10：折叠态点击 RSS icon = scope 全部 RSS（不展开 tree）
+          selectSection('home')
+          selectScope({ kind: 'rss' })
+          selectView('all')
+        }}
+      />
+    )
+  }
+
+  const isViewEntry = target.view !== undefined
+  return (
+    <RailItem
+      icon={<Icon aria-hidden className={iconCls} />}
+      label={entry.label}
+      active={
+        isViewEntry
+          ? view === target.view
+          : target.section === section
+      }
+      onClick={() => {
+        if (target.view !== undefined) {
+          goHome(target.view)
+          return
+        }
+        selectSection(target.section)
+        if (target.scope !== undefined) selectScope(target.scope)
+      }}
+    />
+  )
+}
+
 /** P03：平板层复用——`alwaysVisible` 让折叠 rail 不依赖 lg: 媒体查询
  * （tablet 档 <1024，lg: 恒不激活，由 App 的 tier 判定负责挂载）；
  * `onExpand` 覆盖展开动作（平板层的展开/收起是会话内方向默认，
@@ -95,19 +165,7 @@ interface SidebarCollapsedRailProps {
 }
 
 export default function SidebarCollapsedRail({ alwaysVisible = false, onExpand }: SidebarCollapsedRailProps) {
-  const view = useReaderUi((s) => s.view)
-  const scope = useReaderUi((s) => s.scope)
-  const section = useReaderUi((s) => s.section)
-  const selectView = useReaderUi((s) => s.selectView)
-  const selectScope = useReaderUi((s) => s.selectScope)
-  const selectSection = useReaderUi((s) => s.selectSection)
   const update = useAppSettings((s) => s.update)
-
-  const goHome = (nextView: Parameters<typeof selectView>[0]) => () => {
-    selectSection('home')
-    selectScope(ALL_SCOPE)
-    selectView(nextView)
-  }
 
   return (
     <nav
@@ -126,111 +184,22 @@ export default function SidebarCollapsedRail({ alwaysVisible = false, onExpand }
         title="展开侧栏"
         className="flex size-10 items-center justify-center rounded-[var(--lumi-radius-md)] text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
       >
-        <PanelLeft aria-hidden className="size-4" />
+        <PanelLeft aria-hidden className={iconCls} />
       </button>
 
-      {/* 信息来源：icon only（active = scope 命中） */}
-      <div className="flex flex-col items-center gap-1" role="group" aria-label="信息来源">
-        <RailItem
-          icon={<Inbox aria-hidden className={iconCls} />}
-          label="全部信息流"
-          active={scope.kind === 'all' && view === 'all'}
-          onClick={goHome('all')}
-        />
-        <RailItem
-          icon={<Rss aria-hidden className={iconCls} />}
-          label="RSS 订阅"
-          active={scope.kind === 'rss' && view === 'all'}
-          onClick={() => {
-            // §10：折叠态点击 RSS icon = scope 全部 RSS（不展开 tree）
-            selectSection('home')
-            selectScope({ kind: 'rss' })
-            selectView('all')
-          }}
-        />
-        {/* phase2 Gate 3：网页剪藏 / 网页快照（library 域）已可用 */}
-        <RailItem
-          icon={<Globe aria-hidden className={iconCls} />}
-          label="网页剪藏"
-          active={section === 'clips'}
-          onClick={() => selectSection('clips')}
-        />
-        <RailItem
-          icon={<Link2 aria-hidden className={iconCls} />}
-          label="网页快照"
-          active={section === 'snapshots'}
-          onClick={() => selectSection('snapshots')}
-        />
-        {/* 0021：收件箱（推送式来源）已可用 */}
-        <RailItem
-          icon={<Archive aria-hidden className={iconCls} />}
-          label="收件箱"
-          active={section === 'inbox'}
-          onClick={() => selectSection('inbox')}
-        />
-        {/* P0-12：API 来源 / 邮件简报真实可用 → 真实入口（设置深链）。 */}
-        <RailItem
-          icon={<FileText aria-hidden className={iconCls} />}
-          label="API 来源"
-          onClick={() => requestOpenSettings('api-sources')}
-        />
-        <RailItem
-          icon={<Mail aria-hidden className={iconCls} />}
-          label="邮件简报"
-          onClick={() => requestOpenSettings('mail')}
-        />
-        {/* phase2 M1：书签（library 域）已可用 */}
-        <RailItem
-          icon={<Bookmark aria-hidden className={iconCls} />}
-          label="书签"
-          active={section === 'bookmarks'}
-          onClick={() => selectSection('bookmarks')}
-        />
-        {/* phase2 G6：Obsidian 库（只读投影）已可用——section 导航。 */}
-        <RailItem
-          icon={<FileText aria-hidden className={iconCls} />}
-          label="Obsidian 库"
-          active={section === 'obsidian'}
-          onClick={() => selectSection('obsidian')}
-        />
-      </div>
-
-      {/* 工作区 */}
-      <div className="mt-2 flex flex-col items-center gap-1" role="group" aria-label="工作区">
-        <RailItem
-          icon={<Clock aria-hidden className={iconCls} />}
-          label="稍后读"
-          active={view === 'read-later'}
-          onClick={goHome('read-later')}
-        />
-        <RailItem
-          icon={<Star aria-hidden className={iconCls} />}
-          label="收藏"
-          active={view === 'starred'}
-          onClick={goHome('starred')}
-        />
-        {/* phase2 G7：Agent 工作台已可用。 */}
-        <RailItem
-          icon={<Bot aria-hidden className={iconCls} />}
-          label="Agent 工作台"
-          active={section === 'agent'}
-          onClick={() => selectSection('agent')}
-        />
-        {/* P0-12 + Q-P2-24：RAG 管理入口已落地（设置 → AI）——不再诚实
-            禁用+旧文案（「独立管理入口尚未提供」已不成立）。 */}
-        <RailItem
-          icon={<Zap aria-hidden className={iconCls} />}
-          label="RAG 索引"
-          onClick={() => requestOpenSettings('ai')}
-        />
-        {/* phase2 G8：标签 / 图谱已可用。 */}
-        <RailItem
-          icon={<Tags aria-hidden className={iconCls} />}
-          label="标签 / 图谱"
-          active={section === 'graph'}
-          onClick={() => selectSection('graph')}
-        />
-      </div>
+      {/* 注册表分组（阅读 → 内容来源 → 工具；与展开态侧栏同源同序） */}
+      {navGroupsForSidebar().map((group, i) => (
+        <div
+          key={group.group}
+          role="group"
+          aria-label={group.label}
+          className={cx('flex flex-col items-center gap-1', i > 0 && 'mt-2')}
+        >
+          {group.entries.map((entry) => (
+            <RailEntry key={entry.id} entry={entry} />
+          ))}
+        </div>
+      ))}
 
       {/* 设置（§6：折叠态保留设置 icon，同一语义位置） */}
       <div className="mt-auto">

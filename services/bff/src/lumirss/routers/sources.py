@@ -38,6 +38,8 @@ from lumirss.models import (
     SourceOverrideUpdate,
     SourceRegistryEntry,
     SourceRegistryResponse,
+    SourcesSummaryResponse,
+    SourceTypeSummary,
     StaleSourcesResponse,
     SubscriptionVolumeItem,
     SubscriptionVolumeResponse,
@@ -140,6 +142,191 @@ async def list_sources(request: Request) -> SourceRegistryResponse:
         )
 
     return SourceRegistryResponse(sources=entries, generatedAt=utc_now())
+
+
+@router.get("/api/v1/sources/summary", response_model=SourcesSummaryResponse)
+async def sources_summary(request: Request) -> SourcesSummaryResponse:
+    """来源中心按类型汇总（R02）：一次返回当前账号全部内容来源类型的
+    {count, status, lastActivityAt}，全部来自 owning store 的本地读取。
+
+    零上游调用（负向契约）：本端点任何代码路径都不触 FreshRSS/RSSHub
+    ——计数是 per-user 库的派生投影口径（可重建），延迟上界即本地
+    SQLite（连接级 busy_timeout=5000ms）。「服务未配置」（not_configured）
+    与「集合为空」（empty）是两个严格区分的状态，绝不互相冒充：
+    - rss / rsshub / api_source：从来源注册表同源的 owning store 推导
+      （订阅投影 search_feeds / API 来源配置表）；rss 零订阅 =
+      not_configured；RSSHub base 未配置 = not_configured，已配置但无
+      路由订阅 = empty；
+    - bookmark / clip / snapshot / inbox：per-user 库真实计数；零行 =
+      empty（集合本身可用，只是没内容）——inbox 例外：无收件连接器时
+      是 not_configured（没有入口就收不到东西）；
+    - newsletter / obsidian：连接状态（配置与否），count 只在真实存在
+      时给出（邮件桥不数列表，Obsidian 给真实笔记数），绝不写伪计数。
+    """
+    db = request.app.state.db
+    await db.migrate()
+    items: list[SourceTypeSummary] = []
+
+    # rss —— 订阅投影 search_feeds（每次同步从 FreshRSS 订阅列表刷新，
+    # 派生可重建；零上游调用口径下的诚实计数）。
+    feed_rows = await db.fetch_one(
+        "SELECT COUNT(*) AS n, (SELECT MAX(published_at) FROM search_entries) AS last FROM search_feeds"
+    )
+    rss_count = int(feed_rows["n"]) if feed_rows is not None else 0
+    items.append(
+        SourceTypeSummary(
+            type="rss",
+            count=rss_count,
+            status="ok" if rss_count > 0 else "not_configured",
+            lastActivityAt=(
+                str(feed_rows["last"]) if feed_rows["last"] is not None else None
+            ),
+        )
+    )
+
+    # rsshub —— RSSHub base 未配置 = 服务未配置（诚实 None，不冒充 0）；
+    # 已配置则数订阅投影里指向该 base 的路由。
+    rsshub_base = RssHubSettings().RSSHUB_BASE_URL.strip()
+    if not rsshub_base:
+        items.append(
+            SourceTypeSummary(type="rsshub", count=None, status="not_configured")
+        )
+    else:
+        route_row = await db.fetch_one(
+            "SELECT COUNT(*) AS n, (SELECT MAX(published_at) FROM search_entries WHERE substr(feed_url, 1, length(?)) = ?) AS last FROM search_feeds WHERE substr(feed_url, 1, length(?)) = ?",
+            (rsshub_base, rsshub_base, rsshub_base, rsshub_base),
+        )
+        route_count = int(route_row["n"]) if route_row is not None else 0
+        items.append(
+            SourceTypeSummary(
+                type="rsshub",
+                count=route_count,
+                status="ok" if route_count > 0 else "empty",
+                lastActivityAt=(
+                    str(route_row["last"])
+                    if route_row is not None and route_row["last"] is not None
+                    else None
+                ),
+            )
+        )
+
+    # api_source —— 配置表即真源（注册表同源）；任一 last_error → error。
+    api_rows = await _get_api_source_store(request).list_sources()
+    api_errors = [str(row.last_error) for row in api_rows if row.last_error]
+    api_last = max(
+        (str(row.last_success_at) for row in api_rows if row.last_success_at),
+        default=None,
+    )
+    items.append(
+        SourceTypeSummary(
+            type="api_source",
+            count=len(api_rows),
+            status=(
+                "not_configured"
+                if not api_rows
+                else ("error" if api_errors else "ok")
+            ),
+            lastActivityAt=api_last,
+            detail=api_errors[0] if api_errors else None,
+        )
+    )
+
+    # newsletter —— 邮件桥连接状态（有列表 = 已配置）；不数列表
+    # （count=None），最近活动 = 桥实收邮件的最新 received_at。
+    mail_lists = await _get_mail_bridge_store(request).list_lists()
+    mail_last_row = await db.fetch_one(
+        "SELECT MAX(received_at) AS last FROM mail_bridge_entries"
+    )
+    items.append(
+        SourceTypeSummary(
+            type="newsletter",
+            count=None,
+            status="ok" if mail_lists else "not_configured",
+            lastActivityAt=(
+                str(mail_last_row["last"])
+                if mail_last_row is not None and mail_last_row["last"] is not None
+                else None
+            ),
+        )
+    )
+
+    # inbox —— 连接器在（≥1 个来源）才算配置；无来源 = not_configured
+    #（推送式来源没有入口就收不到内容，与「集合为空」不同）。
+    inbox_store = _get_inbox_store(request)
+    inbox_counts = await inbox_store.counts()
+    inbox_sources = await inbox_store.list_sources()
+    inbox_errors = [
+        str(row["lastError"]) for row in inbox_sources if row["lastError"]
+    ]
+    inbox_last_row = await db.fetch_one(
+        "SELECT MAX(created_at) AS last FROM library_inbox"
+    )
+    items.append(
+        SourceTypeSummary(
+            type="inbox",
+            count=inbox_counts["items"],
+            status=(
+                "not_configured"
+                if not inbox_sources
+                else ("error" if inbox_errors else "ok")
+            ),
+            lastActivityAt=(
+                str(inbox_last_row["last"])
+                if inbox_last_row is not None and inbox_last_row["last"] is not None
+                else None
+            ),
+            detail=inbox_errors[0] if inbox_errors else None,
+        )
+    )
+
+    # obsidian —— vault 配置与否 = 连接状态；笔记数是真实计数
+    #（get_status 本地读取 obsidian_notes，无 vault 扫描、无上游）。
+    obsidian = await _get_obsidian_service(request).get_status()
+    vault_configured = bool(obsidian.get("envRootConfigured")) or bool(
+        obsidian.get("vaultPath")
+    )
+    obsidian_error = obsidian.get("lastError")
+    items.append(
+        SourceTypeSummary(
+            type="obsidian",
+            count=int(obsidian.get("noteCount") or 0) if vault_configured else None,
+            status=(
+                "error"
+                if obsidian_error
+                else ("ok" if vault_configured else "not_configured")
+            ),
+            lastActivityAt=(
+                str(obsidian["lastScanAt"])
+                if obsidian.get("lastScanAt") is not None
+                else None
+            ),
+            detail=str(obsidian_error) if obsidian_error else None,
+        )
+    )
+
+    # bookmark / clip / snapshot —— per-user 库集合计数（store 同款
+    # COUNT 口径，SQL 内联在执行点）；零行 = empty（集合可用）。
+    for collection_type, table in (
+        ("bookmark", "library_bookmarks"),
+        ("clip", "library_clips"),
+        ("snapshot", "library_assets"),
+    ):
+        row = await db.fetch_one(
+            f"SELECT COUNT(*) AS n, MAX(created_at) AS last FROM {table}"
+        )
+        count = int(row["n"]) if row is not None else 0
+        items.append(
+            SourceTypeSummary(
+                type=collection_type,
+                count=count,
+                status="ok" if count > 0 else "empty",
+                lastActivityAt=(
+                    str(row["last"]) if row is not None and row["last"] is not None else None
+                ),
+            )
+        )
+
+    return SourcesSummaryResponse(items=items, generatedAt=utc_now())
 
 
 @router.get("/api/v1/sources/overrides", response_model=SourceOverrideList)

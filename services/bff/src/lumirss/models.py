@@ -4596,6 +4596,30 @@ class SourceRegistryResponse(BaseModel):
     generatedAt: str
 
 
+class SourceTypeSummary(BaseModel):
+    """One content-source-type row of GET /api/v1/sources/summary.
+
+    口径（诚实标注，绝不冒充）：
+    - count：该类型的真实数量；None = 不可数（连接状态型，如邮件桥
+      列表、Obsidian vault 配置存在性之外的维度），绝不写 0 冒充；
+    - status：ok（已连接/正常）/ empty（集合为空）/ not_configured
+      （服务未配置——与「集合为空」严格区分）/ error（最近错误）；
+    - lastActivityAt：owning store 维护的最近活动时间，未知为 None；
+    - detail：error 时的诚实错误摘录（owning store 已有字段，不新造）。
+    """
+
+    type: str
+    count: int | None = None
+    status: Literal["ok", "empty", "not_configured", "error"]
+    lastActivityAt: str | None = None
+    detail: str | None = None
+
+
+class SourcesSummaryResponse(BaseModel):
+    items: list[SourceTypeSummary]
+    generatedAt: str
+
+
 # ---------------------------------------------------------------------------
 # F021 手工关联内容
 # ---------------------------------------------------------------------------
