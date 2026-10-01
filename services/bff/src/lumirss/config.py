@@ -241,6 +241,13 @@ class LumiSettings(BaseSettings):
     # UI shows the mount instead of asking for host paths. Empty = dev
     # mode with a DB-configured path.
     LUMIRSS_OBSIDIAN_VAULT_DIR: str = ""
+    # R07 服务端受限写入导出：CONTAINER path of the WRITABLE export root
+    # (production overlay bind-mounts LUMIRSS_OBSIDIAN_EXPORT_HOST_DIR at
+    # /vault-export). Writes only ever land in <root>/<subdir>/<user_id>/
+    # as new files (never overwrite — see obsidian_export.py). The
+    # read-only projection mount above is untouched. Empty = export
+    # unavailable (endpoints report export_unconfigured honestly).
+    LUMIRSS_OBSIDIAN_EXPORT_DIR: str = ""
     # Background incremental scan cadence in seconds; 0 disables the
     # poll loop (tests, explicit-rescan-only deployments).
     LUMIRSS_OBSIDIAN_SCAN_INTERVAL: float = 0.0
