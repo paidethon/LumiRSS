@@ -289,10 +289,20 @@ configure() { # interactive when values are missing; env vars win
     sed -i "s|^LUMIRSS_EXTERNAL_CADDY=.*|LUMIRSS_EXTERNAL_CADDY=1|" "$ENV_FILE"
     sed -i "s|^LUMIRSS_UPSTREAM_PORT=.*|LUMIRSS_UPSTREAM_PORT=$UPSTREAM_PORT|" "$ENV_FILE"
   fi
-  # Persist the deployed image tag so update/rollback reuse the exact same
-  # immutable reference without needing the env var again (env still wins).
-  # .env.prod files copied from older examples lack the key — append it.
-  # FIX-184: the fallback is the release VERSION, never mutable latest.
+  # Persist the deployed image tag (shared with cmd_update's success path;
+  # update 此前只在 deploy 回写 pin——升级后 pin 滞留旧版本，下次无参
+  # update 会回退旧镜像，2026-10-01 生产实测)。
+  persist_image_tag
+  local mode_note=""
+  if ((EXTERNAL_MODE == 1)); then mode_note=", external-caddy"; fi
+  log "config: $ENV_FILE (DOMAIN=$domain${user:+, auth user=$user}$mode_note)"
+}
+
+# Persist the deployed image tag so update/rollback reuse the exact same
+# immutable reference without needing the env var again (env still wins).
+# .env.prod files copied from older examples lack the key — append it.
+# FIX-184: the fallback is the release VERSION, never mutable latest.
+persist_image_tag() {
   local tag_now="${LUMIRSS_IMAGE_TAG:-$(env_value LUMIRSS_IMAGE_TAG)}"
   tag_now="${tag_now:-$(cat VERSION 2>/dev/null || echo latest)}"
   if grep -qE '^LUMIRSS_IMAGE_TAG=' "$ENV_FILE"; then
@@ -300,9 +310,6 @@ configure() { # interactive when values are missing; env vars win
   else
     printf 'LUMIRSS_IMAGE_TAG=%s\n' "$tag_now" >> "$ENV_FILE"
   fi
-  local mode_note=""
-  if ((EXTERNAL_MODE == 1)); then mode_note=", external-caddy"; fi
-  log "config: $ENV_FILE (DOMAIN=$domain${user:+, auth user=$user}$mode_note)"
 }
 
 # ---------------------------------------------------------------------------
@@ -756,6 +763,9 @@ cmd_update() {
         "${LUMIRSS_EXPECTED_COMMIT:-$(release_expected_commit)}"; then
       deploy_status_write verify ok
       deploy_status_write result success
+      # 升级成功即把 pin 持久化到本次 tag：否则 .env.prod 滞留旧版本，
+      # 下一次无参 update 会回退旧镜像（2026-10-01 生产实测）。
+      persist_image_tag
       log "update complete (verified: version endpoint + image digests match)."
       ./lumirss status || true
     else
