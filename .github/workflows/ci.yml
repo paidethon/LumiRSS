@@ -20,9 +20,10 @@ jobs:
     runs-on: ubuntu-latest
     # 套件增长到 ~16.5 min（r5 轮 2000+ 用例）；15 min 上限会在 80%
     # 处超时取消（真实发生过），放宽到 25。R2 后 3300+ 用例 + --extra rag
-    # 依赖同步，CI 实测在 25:20 两次整点超时取消（2026-10-01），按同法
-    # 放宽到 45。
-    timeout-minutes: 45
+    # 依赖同步，CI 实测 25:20 整点超时（2026-10-01），放宽到 45 后实测
+    # 45:16 处仍在 67%（推算全量约 65 min），按同法再放宽到 75。
+    # 不做 xdist 分片：sqlite 会话级夹具与并行 worker 冲突，不引新依赖。
+    timeout-minutes: 75
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
