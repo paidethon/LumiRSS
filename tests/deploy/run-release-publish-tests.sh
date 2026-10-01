@@ -375,7 +375,17 @@ else
   ok "sums naming a phantom file caught"
 fi
 mk_assets 1 1
+# SHA256SUMS 不自列（自指哈希不可能，标准惯例）；缺失覆盖的负向样例
+# 改用真实形态：bundle 是资产但 sums 只列了 manifest。
 printf '%s  release-manifest.json\n' "$(printf 'a%.0s' $(seq 64))" > "$astage/SHA256SUMS"
+printf 'bundle\n' > "$astage/lumirss-release-bundle-2.8.0.tar.gz.fake"
+python3 - "$astage" <<'PY'
+import json, sys, pathlib
+stage = pathlib.Path(sys.argv[1])
+assets = [{"name": p.name[:-len(".fake")], "size": p.stat().st_size}
+          for p in sorted(stage.glob("*.fake"))]
+(stage / "assets.json").write_text(json.dumps({"assets": assets}))
+PY
 if assets_ok "$astage/SHA256SUMS"; then
   bad "asset without a sums entry NOT caught"
 else

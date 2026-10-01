@@ -65,7 +65,12 @@ def check_assets(assets_json: dict, sums_path: Path | None, required: list[str])
         for name in sorted(set(names)):
             if name not in by_name:
                 failures.append(f"SHA256SUMS names a file that is not a release asset: {name}")
+        # SHA256SUMS 不给自身出校验项（自指哈希不可能，标准惯例）：
+        # 自身作为资产存在，但不要求出现在自己的清单里。
+        sums_name = sums_path.name
         for name in sorted(set(by_name) - set(names)):
+            if name == sums_name:
+                continue
             failures.append(f"release asset has no SHA256SUMS entry: {name}")
 
     return failures
