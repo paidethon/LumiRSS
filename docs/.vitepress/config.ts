@@ -46,7 +46,12 @@ export default defineConfig({
   // 唯一豁免：上游功能对照矩阵是 docs/public/reference/ 下的独立 HTML
   // 资产（离线单文件，非 VitePress 页面），md 里以相对 .html 链接引用，
   // 构建期无法解析为页面——运行时路径经 public/ 拷贝后成立。
-  ignoreDeadLinks: [/^\.?\/?(reference\/)?upstream-feature-matrix$/],
+  ignoreDeadLinks: [
+    // docs/public/reference/ 下的独立 HTML 资产（离线单文件，非 VitePress
+    // 页面）：md 里以相对 .html 链接引用，构建期无法解析为页面——运行时
+    // 路径经 public/ 拷贝后成立。两种书写位（reference/ 内与根 ROADMAP）。
+    /^\.?\/?(reference\/|public\/reference\/)?upstream-feature-matrix$/,
+  ],
   rewrites: {
     // docs/README.md is the docs homepage on GitHub AND the site home —
     // one source, no index copy.

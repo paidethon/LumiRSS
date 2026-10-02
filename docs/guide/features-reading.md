@@ -11,7 +11,7 @@
 
 ### 全部信息源（首页时间线） {#reading-nav-home}
 
-<!-- screenshot-pending: reading.nav.home -->
+![reading.nav.home](../public/screenshots/login.png)
 
 按时间倒序展示你有权限阅读的全部来源条目。入口：侧栏「阅读 → 全部信息源」，
 移动端为底部 tab「首页」。步骤：登录后默认进入；点列表项打开阅读页。结果：
@@ -20,7 +20,7 @@
 
 ### 稍后读 {#reading-nav-read-later}
 
-<!-- screenshot-pending: reading.nav.read-later -->
+![reading.nav.read-later](../public/screenshots/login.png)
 
 把想晚点看的文章收进独立的稍后读队列。入口：侧栏「阅读 → 稍后读」。步骤：
 在列表项或阅读页选择「加入稍后读」，之后从该入口统一消化。结果：与收藏
@@ -28,7 +28,7 @@
 
 ### 收藏（视图与底部 tab） {#reading-nav-starred}
 
-<!-- screenshot-pending: reading.nav.starred -->
+![reading.nav.starred](../public/screenshots/login.png)
 
 星标文章的统一视图。入口：侧栏「阅读 → 收藏」；移动端另有底部 tab「收藏」。
 步骤：在列表或阅读页点星形收藏，回到该入口查看。结果：收藏跨来源聚合，
@@ -41,28 +41,28 @@
 
 ### 收藏（工具栏） {#reading-toolbar-star}
 
-<!-- screenshot-pending: reading.toolbar.star -->
+![reading.toolbar.star](../public/screenshots/reader-article.png)
 
 给当前文章加星/取消星标。入口：阅读页工具栏星形按钮（锁定常显）。步骤：
 点击切换。结果：写入 FreshRSS 的星标状态（set 语义，不做盲目 toggle）。
 
 ### 打开原文 {#reading-toolbar-open-original}
 
-<!-- screenshot-pending: reading.toolbar.open-original -->
+![reading.toolbar.open-original](../public/screenshots/reader-article.png)
 
 在新标签页打开文章原始网页。入口：阅读页工具栏外链按钮。结果：外链使用
 安全协议并带适当 `rel` 值；Lumi 不代理原文页面。
 
 ### 保存快照 {#reading-toolbar-snapshot}
 
-<!-- screenshot-pending: reading.toolbar.snapshot -->
+![reading.toolbar.snapshot](../public/screenshots/reader-article.png)
 
 把当前文章保存为网页快照，防原文失效。入口：阅读页工具栏相机按钮。
 结果：快照归入「来源 → 网页快照」，可回看历史版本。
 
 ### AI 对话 {#reading-toolbar-ai-chat}
 
-<!-- screenshot-pending: reading.toolbar.ai-chat -->
+![reading.toolbar.ai-chat](../public/screenshots/reader-article.png)
 
 针对当前文章与 AI 追问对话。入口：阅读页工具栏对话按钮。前提：设置 → AI
 已配置 Profile 并分配 chat 用途（未配置时入口诚实提示不可用，不会假装
@@ -70,28 +70,28 @@
 
 ### 语言视图 {#reading-toolbar-language-view}
 
-<!-- screenshot-pending: reading.toolbar.language-view -->
+![reading.toolbar.language-view](../public/screenshots/reader-article.png)
 
 切换当前文章的原文/译文视图。入口：阅读页工具栏语言按钮。结果：切换的是
 展示层，不改动原文与译文数据；翻译本身见 [AI 功能](./features-ai)。
 
 ### 文内查找 {#reading-toolbar-find}
 
-<!-- screenshot-pending: reading.toolbar.find -->
+![reading.toolbar.find](../public/screenshots/reader-article.png)
 
 在当前文章正文内查找关键词并逐个跳转。入口：阅读页工具栏搜索按钮。结果：
 命中处高亮，可上下切换；不改动阅读位置记忆。
 
 ### 文中链接 {#reading-toolbar-links}
 
-<!-- screenshot-pending: reading.toolbar.links -->
+![reading.toolbar.links](../public/screenshots/reader-article.png)
 
 列出当前文章全部链接，集中处理外链。入口：阅读页工具栏链接按钮。结果：
 可逐条打开或复制；追踪参数按隐私设置清理。
 
 ### 朗读 {#reading-toolbar-speech}
 
-<!-- screenshot-pending: reading.toolbar.speech -->
+![reading.toolbar.speech](../public/screenshots/reader-article.png)
 
 把正文转成语音朗读。入口：阅读页工具栏喇叭按钮。前提：设置 → AI 已分配
 tts 用途（OpenAI 兼容 /audio/speech）。结果：音频经服务端缓存（50MB LRU），
@@ -100,14 +100,14 @@ tts 用途（OpenAI 兼容 /audio/speech）。结果：音频经服务端缓存�
 
 ### 分享 {#reading-toolbar-share}
 
-<!-- screenshot-pending: reading.toolbar.share -->
+![reading.toolbar.share](../public/screenshots/reader-article.png)
 
 分享当前文章链接。入口：阅读页工具栏分享按钮。结果：优先调系统分享，
 不支持时回退为复制链接（F21 回退路径诚实降级，不假装成功）。
 
 ### 复制引用 {#reading-toolbar-quote}
 
-<!-- screenshot-pending: reading.toolbar.quote -->
+![reading.toolbar.quote](../public/screenshots/reader-article.png)
 
 把文章整理成「标题 / 来源 / 链接 + 选区引文」的引用文本。入口：阅读页
 工具栏引用按钮，支持纯文本与 Markdown 两种格式。结果：写入剪贴板；
@@ -115,14 +115,14 @@ tts 用途（OpenAI 兼容 /audio/speech）。结果：音频经服务端缓存�
 
 ### 打印 {#reading-toolbar-print}
 
-<!-- screenshot-pending: reading.toolbar.print -->
+![reading.toolbar.print](../public/screenshots/reader-article.png)
 
 用浏览器打印/另存 PDF 当前文章。入口：阅读页工具栏打印按钮。结果：打印
 视图只保留正文与元信息，去掉界面 chrome。
 
 ### 位置校准 {#reading-toolbar-calibrate}
 
-<!-- screenshot-pending: reading.toolbar.calibrate -->
+![reading.toolbar.calibrate](../public/screenshots/reader-article.png)
 
 手动校正本机的阅读位置记忆（章节 + 段落显式选择）。入口：阅读页工具栏
 准星按钮。结果：写回本机位置记忆，下次打开恢复到校正位置。限制：位置
@@ -130,14 +130,14 @@ tts 用途（OpenAI 兼容 /audio/speech）。结果：音频经服务端缓存�
 
 ### 媒体预算 {#reading-toolbar-budget}
 
-<!-- screenshot-pending: reading.toolbar.budget -->
+![reading.toolbar.budget](../public/screenshots/reader-article.png)
 
 查看并限制单篇文章的媒体流量（已知体积 + 只读文字/按次加载）。入口：
 阅读页工具栏仪表按钮。结果：大图/视频按次确认加载，节省流量。
 
 ### 更多操作 {#reading-toolbar-more}
 
-<!-- screenshot-pending: reading.toolbar.more -->
+![reading.toolbar.more](../public/screenshots/reader-article.png)
 
 收纳低频动作并提供工具栏自定义对话框。入口：阅读页工具栏「⋯」（锁定
 常显）。步骤：点开菜单使用收纳的动作，或进入「自定义工具栏」重排/隐藏。
@@ -200,7 +200,7 @@ tts 用途（OpenAI 兼容 /audio/speech）。结果：音频经服务端缓存�
 
 ### 纯键盘阅读定位 {#reading-behavior-key-nav}
 
-<!-- screenshot-pending: reading.behavior.key-nav -->
+![reading.behavior.key-nav](../public/screenshots/mobile-home.png)
 
 Alt+↑/↓ 在标题/链接/代码块/批注间跳转，Alt+Shift+↑/↓ 切换类别。入口：
 设置 → 阅读 → 阅读行为（设备本地开关）。结果：只定位，不改动已读状态；
@@ -299,7 +299,7 @@ Alt+↑/↓ 在标题/链接/代码块/批注间跳转，Alt+Shift+↑/↓ 切�
 
 ### 界面外观 {#appearance-interface}
 
-<!-- screenshot-pending: appearance.interface -->
+![appearance.interface](../public/screenshots/login.png)
 
 主题模式（浅色/深色/跟随系统）、强调色板与自定义取色、界面字号与字体、
 玻璃效果、侧滑返回、减少动效。入口：设置 → 外观。结果：整体缩放只作用于
@@ -307,7 +307,7 @@ Alt+↑/↓ 在标题/链接/代码块/批注间跳转，Alt+Shift+↑/↓ 切�
 
 ### 功能组合场景向导 {#general-scenario-wizard}
 
-<!-- screenshot-pending: general.scenario-wizard -->
+![general.scenario-wizard](../public/screenshots/login.png)
 
 按使用场景（如通勤听读）一键组合多项设置。入口：设置 → 通用 → 功能组合
 场景向导。步骤：选场景 → 查看 diff 预览 → 应用。结果：改动可整体撤销，

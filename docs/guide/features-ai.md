@@ -12,7 +12,7 @@
 
 ### AI 配置（Profile 与用途分配） {#ai-profiles}
 
-<!-- screenshot-pending: ai.profiles -->
+![ai.profiles](../public/screenshots/agent-workbench.png)
 
 自备 API 端点与密钥：每个 Profile 有自己的模型与密钥，四个用途
 （summary / translation / chat / tts）分别映射到 Profile。入口：设置 →
@@ -37,14 +37,14 @@ AI 或 Agent 工作台 → 任务。结果：失败诚实可见，重试只对�
 
 ### 文章摘要 {#ai-summary}
 
-<!-- screenshot-pending: ai.summary -->
+![ai.summary](../public/screenshots/reader-article.png)
 
 为当前文章生成摘要，保留多版本并可指定激活版本。入口：阅读页 → AI
 摘要。结果：失败可重试（J4 旅程覆盖「失败诚实」路径）。
 
 ### 文章翻译（AI / 浏览器） {#ai-translation}
 
-<!-- screenshot-pending: ai.translation -->
+![ai.translation](../public/screenshots/reader-article.png)
 
 两种引擎：AI 翻译（需 translation 用途）与浏览器内置翻译。入口：阅读页
 语言视图，或设置 → 翻译。限制：R21 重写后只有这两种方式（LibreTranslate
@@ -60,7 +60,7 @@ AI 或 Agent 工作台 → 任务。结果：失败诚实可见，重试只对�
 
 ### 文章对话（追问） {#ai-conversation}
 
-<!-- screenshot-pending: ai.conversation -->
+![ai.conversation](../public/screenshots/agent-workbench.png)
 
 针对当前文章的多轮追问，支持批量提问与多篇对比。入口：阅读页工具栏
 AI 对话。
@@ -82,7 +82,7 @@ OpenAI 兼容 /audio/speech 语音合成朗读。入口：阅读页工具栏朗�
 
 ### 语义检索 RAG {#ai-rag}
 
-<!-- screenshot-pending: ai.rag -->
+![ai.rag](../public/screenshots/rag-index.png)
 
 对全部条目建语义索引（sqlite-vec 单文件实现，无外部向量库）并问答，
 答案带证据。入口：设置 → AI → 语义检索（启用/重建/状态），侧栏「RAG
@@ -91,7 +91,7 @@ OpenAI 兼容 /audio/speech 语音合成朗读。入口：阅读页工具栏朗�
 
 ### Agent 工作台 {#ai-agent}
 
-<!-- screenshot-pending: ai.agent -->
+![ai.agent](../public/screenshots/agent-workbench.png)
 
 AI 会话 + 工具调用审批：每个工具调用先展示再批准，作用域受限。入口：
 侧栏「工具 → Agent 工作台」。结果：审批制，无静默执行。
@@ -104,7 +104,7 @@ AI 会话 + 工具调用审批：每个工具调用先展示再批准，作用�
 
 ### GPT 日报 {#ai-gpt-digest}
 
-<!-- screenshot-pending: ai.gpt-digest -->
+![ai.gpt-digest](../public/screenshots/newsletter.png)
 
 按配置定期把选题池生成日报，可订阅其 Atom。入口：设置 → 邮件简报 →
 GPT 日报。结果：日报以 Atom feed 输出，任何阅读器可订。限制：OpenAI
@@ -112,7 +112,7 @@ GPT 日报。结果：日报以 Atom feed 输出，任何阅读器可订。限�
 
 ### 简报工作台 {#ai-briefings}
 
-<!-- screenshot-pending: ai.briefings -->
+![ai.briefings](../public/screenshots/newsletter.png)
 
 人工策展 + AI 起草的简报：选题、生成、修订溯源、确认、导出 eml、
 Atom 订阅。入口：工作区 → 简报。结果：生成只是草稿，发布需显式确认。

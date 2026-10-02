@@ -10,7 +10,7 @@
 
 ### RSS 订阅 {#sources-nav-rss}
 
-<!-- screenshot-pending: sources.nav.rss -->
+![sources.nav.rss](../public/screenshots/sources-center.png)
 
 原生 RSS/Atom 订阅，经 FreshRSS 拉取与管理。入口：侧栏「内容来源 →
 RSS 订阅」。步骤：设置 → 订阅与来源添加订阅，或来源中心选「RSS 订阅」。
@@ -20,7 +20,7 @@ RSS 订阅」。步骤：设置 → 订阅与来源添加订阅，或来源中�
 
 ### 来源中心 {#sources-center}
 
-<!-- screenshot-pending: sources.center -->
+![sources.center](../public/screenshots/sources-center.png)
 
 九类来源的统一入口与分组总览（RSS 订阅 / RSSHub 路由 / API 来源 / 邮件桥
 / 收件箱 / Obsidian / 书签 / 网页剪藏 / 网页快照）。入口：侧栏「内容来源 →
@@ -28,35 +28,35 @@ RSS 订阅」。步骤：设置 → 订阅与来源添加订阅，或来源中�
 
 ### 书签 {#sources-bookmarks}
 
-<!-- screenshot-pending: sources.bookmarks -->
+![sources.bookmarks](../public/screenshots/sources-center.png)
 
 保存 URL 供以后读，附链接有效性检查。入口：侧栏「内容来源 → 书签」。
 结果：书签是独立来源类型，与收藏（星标）无关。
 
 ### 网页剪藏 {#sources-clips}
 
-<!-- screenshot-pending: sources.clips -->
+![sources.clips](../public/screenshots/sources-center.png)
 
 抓取网页正文存为剪藏（服务端经 SSRF 代理抓取，正文经清洗管线）。入口：
 侧栏「内容来源 → 网页剪藏」。结果：可重新抓取、保留修订版本。
 
 ### 网页快照 {#sources-snapshots}
 
-<!-- screenshot-pending: sources.snapshots -->
+![sources.snapshots](../public/screenshots/sources-center.png)
 
 把文章或 URL 存为网页快照防失效。入口：侧栏「内容来源 → 网页快照」或
 阅读页工具栏「保存快照」。结果：快照有版本，可回看。
 
 ### 收件箱 {#sources-inbox}
 
-<!-- screenshot-pending: sources.inbox -->
+![sources.inbox](../public/screenshots/sources-center.png)
 
 暂存待整理的条目，配规则自动分流。入口：侧栏「内容来源 → 收件箱」。
 结果：规则（GET/POST /api/v1/inbox/rules）按条件自动归位。
 
 ### API 来源 {#sources-api-sources}
 
-<!-- screenshot-pending: sources.api-sources -->
+![sources.api-sources](../public/screenshots/sources-center.png)
 
 把 JSON API 变成 Atom 订阅：JMESPath 映射 → Atom → FreshRSS 订阅。入口：
 侧栏「内容来源 → API 来源」（设置深链）或设置 → API 来源。结果：适合
@@ -71,7 +71,7 @@ RSS 订阅」。步骤：设置 → 订阅与来源添加订阅，或来源中�
 
 ### 邮件简报（Newsletter 归档） {#sources-newsletter}
 
-<!-- screenshot-pending: sources.newsletter -->
+![sources.newsletter](../public/screenshots/sources-center.png)
 
 邮件列表/简报的归档视图。入口：侧栏「内容来源 → 邮件简报」。限制：收信
 依赖实例的邮件桥配置（见下条）。

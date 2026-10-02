@@ -39,7 +39,7 @@
 
 ### 搜索命中高亮 {#general-search-highlight}
 
-<!-- screenshot-pending: general.search-highlight -->
+![general.search-highlight](../public/screenshots/login.png)
 
 搜索结果中高亮命中片段（默认开）。入口：设置 → 通用 → 搜索。
 

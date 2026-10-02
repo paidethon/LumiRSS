@@ -121,7 +121,7 @@ FreshRSS 账户池的容量与分配视图。入口：/admin → FreshRSS 池。
 
 ### 服务健康页 {#services-health}
 
-<!-- screenshot-pending: services.health -->
+![services.health](../public/screenshots/settings-services.png)
 
 BFF / FreshRSS / RSSHub / AI / 邮件 / Obsidian / RAG 的真实健康：五态
 语义（尚未检查 → 进程存活 → 接口可达 → 认证成功 → 业务可用）+ 错误

@@ -155,7 +155,7 @@ HTTPS 时用 `https://<DOMAIN>/`；自签本地证书需 `-k`）。
 （php-fpm）+ RSSHub** 放进同一个 s6-overlay 监管的容器
 （`lumirss-allinone` 镜像，GHCR 预构建）。决策背景见
 [../decisions/0008-single-container-topology.md](../decisions/0008-single-container-topology.md)，
-镜像内部结构见 [../../docker/all-in-one/README.md](../../docker/all-in-one/README.md)。
+镜像内部结构见仓库文件 `docker/all-in-one/README.md`（docs 树外，VitePress 死链门禁不做站内链接）。
 
 **何时用**：小规格单机（如 1.6 GB 内存 VPS）想少管几个容器时。四容器
 拓扑仍是默认与首选——单容器是**一个 cgroup 装四个负载**：内存隔离变弱
