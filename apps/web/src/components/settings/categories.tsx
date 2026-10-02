@@ -6,7 +6,10 @@
  *
  * 信息架构（本次控制面整理）：「备份与恢复」并入「数据控制」——
  * 缓存 / 设置 / 配置迁移 / 完整备份 / 备份历史 / WebDAV / 恢复同页管理。
- * RSSHub 分类只保留真实控制面（浏览器侧参考清单假控制已退役）。 */
+ * RSSHub 分类只保留真实控制面（浏览器侧参考清单假控制已退役）。
+ * R03：「账户与服务」拆为「账户」与「服务」两个独立分类；
+ * R17：工作区改为真实设置面；R16：个人术语本迁到「文章过滤」；
+ * R21：翻译只剩 AI / 浏览器两种方式；R26：只读演示入口移除。 */
 
 import { useQueryClient } from '@tanstack/react-query'
 import {
@@ -24,9 +27,9 @@ import {
   Palette,
   Rss,
   Satellite,
+  ServerCog,
   Settings2,
-  Sparkles,
-  UserCog,
+  UserRound,
   Webhook,
 } from 'lucide-react'
 import { useAppSettings } from '../../store/app-settings'
@@ -91,8 +94,8 @@ import { ReaderTypographyControls } from './reader/ReaderTypographyControls'
 import { AboutVersion } from './AboutVersion'
 // F34：能力可用性统一说明（复用既有状态端点，只读聚合）
 import { CapabilitiesSection } from './CapabilitiesSection'
-// F21：个人术语本（手工维护，与 AI 无关）
-import { GlossarySection } from './GlossarySection'
+// R16：个人术语本迁到「文章过滤」分类下（数据与 ID 不动）
+import { GlossarySection } from './filters/GlossarySection'
 // F32：非敏感偏好迁移（导出/导入版本化 JSON，diff 预览后应用）
 import { PreferencesMigrationSection } from './PreferencesMigrationSection'
 // F36：存储用量统计卡
@@ -120,10 +123,11 @@ import { GesturePracticeSettings } from '../GesturePracticeSettings'
 // NEW-351/352：阅读手势训练（合成文章演练 + 启用选择）；外接键盘阅读模式。
 import ReadingGestureTraining from '../new351/ReadingGestureTraining'
 import KeyboardReadingModePanel from '../new351/KeyboardReadingModePanel'
-// NEW-360：只读演示模式（隔离合成数据；设置入口 + 全屏浮层）。
-import { ReadOnlyDemoSetting } from '../new351/ReadOnlyDemo'
 // N069：选词词典来源配置（用户自选端点；未配置零外发）
 import { DictSourceSettings } from './DictSourceSettings'
+// R03：账户与服务拆分——账户身份卡 + 服务真实健康页
+import { AccountProfileSection } from './AccountProfileSection'
+import { WorkspaceSettingsSection } from './WorkspaceSettingsSection'
 
 // ---- 分类定义 ----
 
@@ -140,6 +144,7 @@ export type CategoryId =
   | 'mail'
   | 'ai'
   | 'data'
+  | 'account'
   | 'services'
   | 'workspace'
   | 'about'
@@ -157,7 +162,10 @@ export const CATEGORIES: { id: CategoryId; label: string; icon: React.ReactNode 
   { id: 'mail', label: '邮件简报', icon: <Mail aria-hidden className="size-4 shrink-0" /> },
   { id: 'ai', label: 'AI', icon: <Bot aria-hidden className="size-4 shrink-0" /> },
   { id: 'data', label: '数据控制', icon: <Database aria-hidden className="size-4 shrink-0" /> },
-  { id: 'services', label: '账户与服务', icon: <UserCog aria-hidden className="size-4 shrink-0" /> },
+  // R03：「账户与服务」拆成两个独立分类（账户=本人资料/密码/设备/导出；
+  // 服务=BFF/FreshRSS/RSSHub/AI/邮件/Obsidian/RAG 真实健康）。
+  { id: 'account', label: '账户', icon: <UserRound aria-hidden className="size-4 shrink-0" /> },
+  { id: 'services', label: '服务', icon: <ServerCog aria-hidden className="size-4 shrink-0" /> },
   { id: 'workspace', label: '工作区', icon: <LayoutGrid aria-hidden className="size-4 shrink-0" /> },
   { id: 'about', label: '关于', icon: <Info aria-hidden className="size-4 shrink-0" /> },
 ]
@@ -181,7 +189,7 @@ export const CATEGORY_GROUPS: { label: string; ids: CategoryId[] }[] = [
   { label: '主设置', ids: ['general', 'appearance', 'reading', 'shortcuts', 'translation', 'filters', 'rsshub'] },
   { label: '数据', ids: ['data'] },
   { label: '订阅与增强', ids: ['sources', 'api-sources', 'mail', 'ai', 'workspace'] },
-  { label: '其他', ids: ['services', 'about'] },
+  { label: '其他', ids: ['account', 'services', 'about'] },
 ]
 
 export function categoryLabel(id: CategoryId): string {
@@ -529,8 +537,6 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         { type: 'custom', node: <GesturePracticeSettings /> },
         // NEW-351：阅读手势训练（合成文章演练侧滑返回；启用选择读写既有设置）
         { type: 'custom', node: <ReadingGestureTraining /> },
-        // NEW-360：只读演示模式（合成数据；会话级，退出零残留）
-        { type: 'custom', node: <ReadOnlyDemoSetting /> },
         {
           type: 'toggle',
           label: '启动时仅看未读',
@@ -570,12 +576,16 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         },
       ]
     case 'translation':
-      // Gate：翻译统一入口——引擎（运行位置）/ 目标语言 / LibreTranslate /
-      // 本地翻译说明；AI Profile 管理仍在「AI」分类（同一份存储）。
+      // R21：翻译重写后只有 AI / 浏览器两种方式（LibreTranslate 已移除）。
       return [{ type: 'custom', node: <TranslationSettingsSection /> }]
     case 'filters':
       // 0010a F3（AC24）：OrigRead 过滤页复刻 + 显示层过滤
-      return [{ type: 'custom', node: <FilterRulesSection /> }]
+      // R16：个人术语本从「关于」迁来，作为「个人术语」子区（数据/ID 不动）。
+      return [
+        { type: 'custom', node: <FilterRulesSection /> },
+        { type: 'title', value: '个人术语' },
+        { type: 'custom', node: <GlossarySection /> },
+      ]
     case 'rsshub':
       // 唯一真实控制面：服务端 RSSHUB_BASE_URL + Control Center（配置 /
       // 密钥 / 应用引导）。浏览器侧「参考实例清单」假控制已退役。
@@ -687,36 +697,42 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         // 情境展开，折叠零请求）
         { type: 'custom', node: <NotificationHelpCenter /> },
       ]
-    case 'services':
-      // 0018 Gate 9：账户与服务 —— 会话账户安全（session 模式）+ 真实
-      // 依赖状态（不再 plannedFor 0018）
+    case 'account':
+      // R03：账户（与「服务」拆分）——本人身份 / 密码与会话设备 / 导出。
+      // 头像、显示名、邮箱暂无服务端字段，身份只展示服务端核实的
+      // 用户名与角色；导出与「数据控制」同一份端点（轻量入口放这里）。
       return [
+        { type: 'custom', node: <AccountProfileSection /> },
+        { type: 'title', value: '安全与会话' },
         { type: 'custom', node: <AccountSecuritySection /> },
-        { type: 'custom', node: <OperationsSettingsSection /> },
+        { type: 'title', value: '数据导出' },
+        {
+          type: 'action',
+          label: '导出我的数据',
+          description: '导出工作区、标签、书签笔记与日报配置为版本化 JSON（不含密钥）。',
+          buttonText: '导出',
+          action: () => {
+            void exportLumiData()
+          },
+        },
       ]
+    case 'services':
+      // R03：服务——BFF/FreshRSS/RSSHub/AI/邮件/Obsidian/RAG 真实健康
+      //（五态语义：尚未检查/进程存活/接口可达/认证成功/业务可用 + 错误）。
+      return [{ type: 'custom', node: <OperationsSettingsSection /> }]
     case 'workspace':
-      // P0-12：本分类不再是「占位」——Agent 工作台与工作区均已上线，
-      // 这里如实指路（不复制功能，只描述入口与现状）。
+      // R17：工作区真实设置面——名称/说明/归档/导出/删除全部走
+      // workspaces API；后端没有的能力（图标/颜色、逐工作区默认筛选
+      // 排序）不做假开关。
       return [
+        { type: 'custom', node: <WorkspaceSettingsSection /> },
         {
           type: 'custom',
           node: (
-            <div className="py-4">
-              <div className="flex items-center gap-2">
-                <Sparkles aria-hidden className="size-4 text-[var(--lumi-text-tertiary)]" />
-                <h3 className="text-sm font-medium text-[var(--lumi-text-primary)]">
-                  知识工作台
-                </h3>
-                <span className="ml-auto rounded-[var(--lumi-radius-full)] bg-[var(--lumi-accent-soft)] px-2 py-0.5 text-[11px] text-[var(--lumi-accent-text)]">
-                  已上线
-                </span>
-              </div>
-              <p className="mt-2 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-                工作区（条目收集与整理）与 Agent 工作台（AI 会话 / 工具审批 /
-                RAG 状态）均已可用：入口在侧栏「工作区」与「Agent 工作台」。
-                网页剪藏、API 来源、邮件简报与 Obsidian 库也按各自入口独立可用。
-              </p>
-            </div>
+            <p className="text-[11px] leading-relaxed text-[var(--lumi-text-tertiary)]">
+              日常工作区入口在侧栏「工作区」；Agent 工作台（AI 会话 / 工具审批 /
+              RAG 状态）在侧栏「Agent 工作台」。
+            </p>
           ),
         },
       ]
@@ -778,9 +794,15 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         { type: 'title', value: '能力可用性' },
         // F34：本实例能力状态统一说明（只读；区分配置与探测，不产生费用）
         { type: 'custom', node: <CapabilitiesSection /> },
-        // F21：个人术语本（手工维护，与 AI 无关）
-        { type: 'title', value: '个人术语本' },
-        { type: 'custom', node: <GlossarySection /> },
+        // R16：个人术语本已迁至「文章过滤 → 个人术语」；留一行指路避免死链感。
+        {
+          type: 'custom',
+          node: (
+            <p className="text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
+              个人术语本已移到「文章过滤 → 个人术语」。
+            </p>
+          ),
+        },
       ]
     default:
       return []

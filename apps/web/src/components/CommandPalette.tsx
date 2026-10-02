@@ -43,7 +43,6 @@ import {
   speakText,
   speechSynthesisAvailable,
 } from '../lib/reader-speech'
-import { isPrivacyEnabled } from '../lib/privacy-mask'
 import { cx } from './ui/cx'
 
 const OVERLAY_ID = 'command-palette'
@@ -143,7 +142,6 @@ export default function CommandPalette() {
         listDensity,
         listTimeFormat,
         capabilities: {
-          privacyDemoOn: isPrivacyEnabled(),
           speechEnabled: speechSynthesisAvailable(),
         },
         // 防御：mock/降级上下文里缓存可能不是数组——形状不符按空处理，
@@ -182,8 +180,8 @@ export default function CommandPalette() {
         },
       },
     )
-    // F120：section 上下文动作（导出/朗读当前文章；无选中文章/privacy
-    // 开启/语音不可用时不装配）
+    // F120：section 上下文动作（导出/朗读当前文章；无选中文章/语音
+    // 不可用时不装配）
     const context = buildContextCommands(
       {
         section,
@@ -193,7 +191,6 @@ export default function CommandPalette() {
         listDensity,
         listTimeFormat,
         capabilities: {
-          privacyDemoOn: isPrivacyEnabled(),
           speechEnabled: speechSynthesisAvailable(),
         },
       },

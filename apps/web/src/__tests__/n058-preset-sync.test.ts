@@ -178,7 +178,9 @@ describe('N058 预设 portable 同步', () => {
 
     const payload = server.patchCalls[server.patchCalls.length - 1]
     expect(payload).not.toHaveProperty('readerBackgroundImage')
-    expect(payload).not.toHaveProperty('readerPresetId')
+    // R25：readerPresetId 引用已同步的 readerPresets，现随 portable 上云
+    //（本地未改 → 值为默认 'default'，原样透传）。
+    expect(payload.readerPresetId).toBe('default')
     // 同步后设备本地状态原样。
     const s = useAppSettings.getState().settings
     expect(s.readerBackgroundImage).toBe('data:image/png;base64,AAA')

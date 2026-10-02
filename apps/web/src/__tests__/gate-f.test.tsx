@@ -162,7 +162,7 @@ describe('外观页（F1/F6/F7 UI，AC10–AC22）', () => {
   })
 })
 
-describe('翻译页（Gate：统一翻译设置入口）', () => {
+describe('翻译页（R21：AI / 浏览器两方式，无自托管引擎）', () => {
   it('引擎（运行位置）+ 目标语言 + 按需说明 + AI Profile 指引', async () => {
     vi.stubGlobal(
       'fetch',
@@ -171,24 +171,30 @@ describe('翻译页（Gate：统一翻译设置入口）', () => {
           return Promise.resolve(new Response(JSON.stringify({
             provider: 'openai_compatible', baseUrl: '', model: '',
             summaryLanguage: 'zh-CN', translationLanguage: 'zh-CN',
-            translationEngine: 'ai', libretranslateUrl: '',
-            libretranslateKeyConfigured: false,
+            translationEngine: 'ai',
             configured: false, envKeyConfigured: false, defaultKeyConfigured: false,
             purposes: { translation: 'default' },
             purposeStatus: { translation: { profileId: 'default', source: 'default', baseUrl: '', model: '', keyConfigured: false } },
           }), { status: 200, headers: { 'content-type': 'application/json' } }))
         }
+        if (String(input) === '/api/v1/settings/ai/profiles') {
+          return Promise.resolve(new Response(JSON.stringify([]), { status: 200, headers: { 'content-type': 'application/json' } }))
+        }
         return Promise.resolve(new Response('{}', { status: 404 }))
       }),
     )
     openCategory(/^翻译$/)
-    // 旧多 Provider 配置与旧指针文案不存在
+    // R21：LibreTranslate UI 全部移除；旧多 Provider 假配置不存在
     expect(screen.queryByText('Microsoft Translator')).not.toBeInTheDocument()
     expect(screen.queryByText('DeepL（免费版）')).not.toBeInTheDocument()
-    expect(await screen.findByText('翻译引擎与目标语言')).toBeInTheDocument()
+    expect(await screen.findByText('翻译方式与目标语言')).toBeInTheDocument()
     expect(screen.getByText(/AI 翻译 — AI 提供者执行/)).toBeInTheDocument()
-    expect(screen.getByText(/此浏览器执行/)).toBeInTheDocument()
-    expect(screen.getByText(/自托管服务器执行/)).toBeInTheDocument()
+    // jsdom 无 Translator API → 运行时探测如实标注不支持并禁用该选项
+    const browserOption = screen.getByLabelText('翻译方式').querySelector('option[value="browser"]') as HTMLOptionElement | null
+    expect(browserOption?.disabled).toBe(true)
+    expect(browserOption?.textContent).toContain('此浏览器不支持')
+    expect(screen.queryByText(/自托管服务器执行/)).toBeNull()
+    expect(screen.queryByText(/LibreTranslate/i)).toBeNull()
     expect(screen.getByText(/打开文章绝不自动翻译/)).toBeInTheDocument()
     // Profile 管理指向 AI 分类（同一份存储）
     expect(screen.getByText(/「设置 → AI」/)).toBeInTheDocument()

@@ -79,7 +79,7 @@ describe('EntryCard（AC10）', () => {
     expect(screen.getByText('示例源 A')).toBeInTheDocument()
     expect(screen.getByText('刚刚')).toBeInTheDocument()
     const title = screen.getByText('文章 e1.a')
-    // F113：标题文本包在 data-privacy-text span 里，字重在最近 button 祖先上
+    // 字重在标题按钮自身（打开 Reader 的宿主元素）上
     expect(title.closest('button')?.className).toContain('font-medium') // 未读
     // 动作区：稍后读 + 收藏按钮（§19）
     expect(screen.getByRole('button', { name: '加入稍后读' })).toBeInTheDocument()

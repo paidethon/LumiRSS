@@ -6,8 +6,8 @@
  * - 默认渲染序 = 既有视觉序的忠实快照（桌面平铺序 + O127 移动收纳序）；
  * - 自定义对话框（更多操作 → 自定义工具栏）：上移/下移、显隐开关、
  *   锁定动作开关禁用、恢复默认 / 取消 / 保存；
- * - 持久化：保存 → store（设备本地两键，不进 PORTABLE_KEYS）→ 重挂载 /
- *   loadSettings 模拟重启后仍生效；
+ * - 持久化：保存 → store（两断点各自记忆，R25 起随 portable 同步上云）→
+ *   重挂载 / loadSettings 模拟重启后仍生效；
  * - jsdom 无 matchMedia → useIsMobile 视为移动端（与既有约定一致）；
  *   桌面按钮仍渲染在 DOM（max-lg:hidden 折叠组），菜单为移动端收纳。 */
 
@@ -272,9 +272,11 @@ describe('P07 app-settings 集成 — 设备本地两键', () => {
     expect(normalizeSettings(null)).toEqual(DEFAULT_APP_SETTINGS)
   })
 
-  it('工具栏键不进 PORTABLE_KEYS——设备本地，不参与服务端同步', () => {
-    expect(PORTABLE_KEYS).not.toContain('readerToolbarDesktopOrder')
-    expect(PORTABLE_KEYS).not.toContain('readerToolbarMobileOrder')
+  it('工具栏键进 PORTABLE_KEYS（R25 起随 portable 同步；服务端透传 -id 占位）', () => {
+    // R25 迁移：工具栏排布从设备本地升级为云端偏好。存储格式不变
+    // （'-id' 隐藏占位），服务端只做 ^[a-z0-9-]+$ 透传校验。
+    expect(PORTABLE_KEYS).toContain('readerToolbarDesktopOrder')
+    expect(PORTABLE_KEYS).toContain('readerToolbarMobileOrder')
   })
 
   it('persistSettings → loadSettings 往返保留自定义（重启语义）', () => {

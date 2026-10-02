@@ -8,15 +8,21 @@
  * 密码只经 POST body 一次性传输，不进 localStorage / 状态持久化。
  */
 
-import { useState } from 'react'
+import { useState, useSyncExternalStore } from 'react'
 import { KeyRound, LogOut, MonitorSmartphone } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ApiError, changePassword, logoutCurrent, logoutEverywhere } from '../../api/client'
 import { resetAccountState } from '../../lib/auth-reset'
 import { useAuthStore } from '../../store/auth'
+import {
+  getPendingSettingsSyncCount,
+  retryPendingSettingsSync,
+  subscribePendingSettingsSync,
+} from '../../store/settings-sync'
 import { useAuthSessions, useRevokeSessionMutation, useTotpStatus } from '../../api/queries'
 import { passwordStrength } from '../../lib/password-strength'
 import { Button } from '../ui/Button'
+import { SettingsRow } from '../ui/SettingsRow'
 import { PasswordStrengthMeter } from '../ui/PasswordStrengthMeter'
 import { RecentLoginsPanel } from './RecentLoginsPanel'
 import { PasskeysSection } from './PasskeysSection'
@@ -26,6 +32,39 @@ import { DeactivationSection } from './DeactivationSection'
 const MIN_PASSWORD = 8
 
 type Feedback = { kind: 'none' } | { kind: 'ok'; message: string } | { kind: 'error'; message: string }
+
+/** R25：偏好云端同步的断网补传轻提示。pending = 未落库的 portable 变更
+ * 数（与 settings-sync 的 dirty 键队列同源）；仅在有待同步内容时出现，
+ * 「立即重试」触发一次即时补传（成功或恢复后本行自动消失）。 */
+function PendingSyncHint() {
+  const pending = useSyncExternalStore(
+    subscribePendingSettingsSync,
+    getPendingSettingsSyncCount,
+  )
+  const [retrying, setRetrying] = useState(false)
+  if (pending === 0) return null
+  async function handleRetry() {
+    if (retrying) return
+    setRetrying(true)
+    try {
+      await retryPendingSettingsSync()
+    } finally {
+      setRetrying(false)
+    }
+  }
+  return (
+    <div className="mt-3 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] px-2">
+      <SettingsRow
+        label="待同步更改"
+        help={`有 ${pending} 项偏好更改尚未同步到云端，联网后自动补传。`}
+      >
+        <Button variant="secondary" size="sm" onClick={handleRetry} disabled={retrying}>
+          {retrying ? '重试中…' : '立即重试'}
+        </Button>
+      </SettingsRow>
+    </div>
+  )
+}
 
 function Field({
   id,
@@ -139,6 +178,9 @@ export function AccountSecuritySection() {
         修改密码后所有设备需要重新登录（本设备除外）。密码只以加密传输发送，
         不会保存在浏览器中。
       </p>
+
+      {/* R25：偏好云端同步断网补传提示（仅在有未落库变更时出现）。 */}
+      <PendingSyncHint />
 
       <form onSubmit={handleChangePassword} className="mt-3 flex flex-col gap-3" noValidate>
         <Field

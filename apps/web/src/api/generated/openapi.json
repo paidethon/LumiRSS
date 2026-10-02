@@ -3625,7 +3625,7 @@
    },
    "AppSettingsView": {
     "additionalProperties": false,
-    "description": "GET/PATCH /api/v1/settings — the portable document + ``stored`` flag.\n\n``stored=false`` means the server holds no explicit document yet (the\nclient may seed it from local values); otherwise the fields are the\nserver-durable values. ``revision`` (0021) is a content-hash of the\nstored document for optimistic concurrency: a PATCH may carry\n``baseRevision`` and is refused with a stable 409 when it no longer\nmatches.",
+    "description": "GET/PATCH /api/v1/settings — the portable document + ``stored`` flag.\n\n``stored=false`` means the server holds no explicit document yet (the\nclient may seed it from local values); otherwise the fields are the\nserver-durable values. ``revision`` (0021) is a content-hash of the\nstored document for optimistic concurrency: a PATCH may carry\n``baseRevision`` and is refused with a stable 409 when it no longer\nmatches. ``storedKeys`` (R25) lists the keys explicitly saved by the\nclient — keys absent from it are model defaults the user never wrote\n(e.g. fields a newer release introduced), so an upgrading client keeps\nits local value for those instead of adopting the padded default.",
     "properties": {
      "accentColor": {
       "default": "#6d78e8",
@@ -3643,6 +3643,31 @@
       "title": "Cardswipeaction",
       "type": "string"
      },
+     "customCss": {
+      "default": "",
+      "maxLength": 64000,
+      "title": "Customcss",
+      "type": "string"
+     },
+     "dictApiUrl": {
+      "default": "",
+      "maxLength": 512,
+      "title": "Dictapiurl",
+      "type": "string"
+     },
+     "dimRead": {
+      "default": false,
+      "title": "Dimread",
+      "type": "boolean"
+     },
+     "filterRules": {
+      "items": {
+       "$ref": "#/components/schemas/FilterRuleSync"
+      },
+      "maxItems": 256,
+      "title": "Filterrules",
+      "type": "array"
+     },
      "glassEffect": {
       "default": "auto",
       "enum": [
@@ -3652,6 +3677,11 @@
       ],
       "title": "Glasseffect",
       "type": "string"
+     },
+     "groupByDate": {
+      "default": false,
+      "title": "Groupbydate",
+      "type": "boolean"
      },
      "listDensity": {
       "default": "standard",
@@ -3687,6 +3717,11 @@
       "title": "Listtimeformat",
       "type": "string"
      },
+     "pauseReadingProgress": {
+      "default": false,
+      "title": "Pausereadingprogress",
+      "type": "boolean"
+     },
      "readLaterSort": {
       "default": "newest",
       "enum": [
@@ -3719,6 +3754,39 @@
       "title": "Readerbackgroundcustom",
       "type": "string"
      },
+     "readerBionic": {
+      "default": false,
+      "title": "Readerbionic",
+      "type": "boolean"
+     },
+     "readerBlockRemoteImages": {
+      "default": false,
+      "title": "Readerblockremoteimages",
+      "type": "boolean"
+     },
+     "readerBreakReminderMinutes": {
+      "default": 45,
+      "enum": [
+       0,
+       20,
+       30,
+       45,
+       60,
+       90
+      ],
+      "title": "Readerbreakreminderminutes",
+      "type": "integer"
+     },
+     "readerCaptionMode": {
+      "default": "show",
+      "enum": [
+       "show",
+       "hidden",
+       "hover"
+      ],
+      "title": "Readercaptionmode",
+      "type": "string"
+     },
      "readerChineseConversion": {
       "default": "off",
       "enum": [
@@ -3731,6 +3799,16 @@
       "title": "Readerchineseconversion",
       "type": "string"
      },
+     "readerCodeFontSize": {
+      "default": "m",
+      "enum": [
+       "s",
+       "m",
+       "l"
+      ],
+      "title": "Readercodefontsize",
+      "type": "string"
+     },
      "readerCodeHighlight": {
       "default": "auto",
       "enum": [
@@ -3739,6 +3817,11 @@
       ],
       "title": "Readercodehighlight",
       "type": "string"
+     },
+     "readerCodeLineNumbers": {
+      "default": false,
+      "title": "Readercodelinenumbers",
+      "type": "boolean"
      },
      "readerCodeTheme": {
       "default": "auto",
@@ -3762,6 +3845,25 @@
       "title": "Readercontentwidth",
       "type": "number"
      },
+     "readerContentWidthMode": {
+      "default": "fixed",
+      "enum": [
+       "fixed",
+       "viewport"
+      ],
+      "title": "Readercontentwidthmode",
+      "type": "string"
+     },
+     "readerContentWidthViewport": {
+      "default": 92,
+      "title": "Readercontentwidthviewport",
+      "type": "integer"
+     },
+     "readerFirstImageFullBleed": {
+      "default": false,
+      "title": "Readerfirstimagefullbleed",
+      "type": "boolean"
+     },
      "readerFontFamily": {
       "default": "system",
       "enum": [
@@ -3778,10 +3880,32 @@
       "title": "Readerfontsize",
       "type": "number"
      },
+     "readerFontWeight": {
+      "default": 400,
+      "enum": [
+       300,
+       400,
+       500,
+       600,
+       700
+      ],
+      "title": "Readerfontweight",
+      "type": "integer"
+     },
      "readerHangingPunctuation": {
       "default": false,
       "title": "Readerhangingpunctuation",
       "type": "boolean"
+     },
+     "readerImageMaxWidth": {
+      "default": "100%",
+      "enum": [
+       "100%",
+       "75%",
+       "60%"
+      ],
+      "title": "Readerimagemaxwidth",
+      "type": "string"
      },
      "readerImageMode": {
       "default": "all",
@@ -3793,9 +3917,29 @@
       "title": "Readerimagemode",
       "type": "string"
      },
+     "readerIndentLists": {
+      "default": false,
+      "title": "Readerindentlists",
+      "type": "boolean"
+     },
+     "readerIndentQuotes": {
+      "default": false,
+      "title": "Readerindentquotes",
+      "type": "boolean"
+     },
      "readerJustify": {
       "default": false,
       "title": "Readerjustify",
+      "type": "boolean"
+     },
+     "readerKeyNav": {
+      "default": false,
+      "title": "Readerkeynav",
+      "type": "boolean"
+     },
+     "readerLineBreakStrict": {
+      "default": false,
+      "title": "Readerlinebreakstrict",
       "type": "boolean"
      },
      "readerLineHeight": {
@@ -3813,10 +3957,22 @@
       "title": "Readerpagedmode",
       "type": "boolean"
      },
+     "readerPaperTexture": {
+      "default": false,
+      "title": "Readerpapertexture",
+      "type": "boolean"
+     },
      "readerParagraphSpacing": {
       "default": 0.85,
       "title": "Readerparagraphspacing",
       "type": "number"
+     },
+     "readerPresetId": {
+      "default": "default",
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Readerpresetid",
+      "type": "string"
      },
      "readerPresets": {
       "default": [],
@@ -3825,6 +3981,15 @@
       },
       "title": "Readerpresets",
       "type": "array"
+     },
+     "readerReadingMode": {
+      "default": "scroll",
+      "enum": [
+       "scroll",
+       "paged"
+      ],
+      "title": "Readerreadingmode",
+      "type": "string"
      },
      "readerShowReadingProgress": {
       "default": true,
@@ -3836,6 +4001,30 @@
       "title": "Readershowreadingtime",
       "type": "boolean"
      },
+     "readerStripFixedMedia": {
+      "default": true,
+      "title": "Readerstripfixedmedia",
+      "type": "boolean"
+     },
+     "readerTapZoneAxis": {
+      "default": "horizontal",
+      "enum": [
+       "horizontal",
+       "vertical"
+      ],
+      "title": "Readertapzoneaxis",
+      "type": "string"
+     },
+     "readerTapZoneSize": {
+      "default": "small",
+      "enum": [
+       "off",
+       "small",
+       "large"
+      ],
+      "title": "Readertapzonesize",
+      "type": "string"
+     },
      "readerTextIndent": {
       "default": "off",
       "enum": [
@@ -3844,6 +4033,20 @@
       ],
       "title": "Readertextindent",
       "type": "string"
+     },
+     "readerToolbarDesktopOrder": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Readertoolbardesktoporder",
+      "type": "array"
+     },
+     "readerToolbarMobileOrder": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Readertoolbarmobileorder",
+      "type": "array"
      },
      "reduceMotion": {
       "default": false,
@@ -3870,9 +4073,119 @@
       "title": "Searchhighlightmatches",
       "type": "boolean"
      },
+     "sidebarCollapsed": {
+      "default": false,
+      "title": "Sidebarcollapsed",
+      "type": "boolean"
+     },
+     "sidebarWidth": {
+      "default": 240,
+      "title": "Sidebarwidth",
+      "type": "integer"
+     },
+     "speechBilingualAlternate": {
+      "default": false,
+      "title": "Speechbilingualalternate",
+      "type": "boolean"
+     },
+     "speechBilingualGap": {
+      "default": "none",
+      "enum": [
+       "none",
+       "short",
+       "long"
+      ],
+      "title": "Speechbilingualgap",
+      "type": "string"
+     },
+     "speechLexicon": {
+      "items": {
+       "$ref": "#/components/schemas/SpeechLexiconEntrySync"
+      },
+      "maxItems": 50,
+      "title": "Speechlexicon",
+      "type": "array"
+     },
+     "speechRate": {
+      "default": 1.0,
+      "title": "Speechrate",
+      "type": "number"
+     },
+     "speechSkipCaptions": {
+      "default": false,
+      "title": "Speechskipcaptions",
+      "type": "boolean"
+     },
+     "speechSkipCode": {
+      "default": false,
+      "title": "Speechskipcode",
+      "type": "boolean"
+     },
+     "speechSkipFootnotes": {
+      "default": false,
+      "title": "Speechskipfootnotes",
+      "type": "boolean"
+     },
+     "speechSkipLinkOnly": {
+      "default": false,
+      "title": "Speechskiplinkonly",
+      "type": "boolean"
+     },
+     "speechSkipTables": {
+      "default": false,
+      "title": "Speechskiptables",
+      "type": "boolean"
+     },
+     "speechSleepTimerMinutes": {
+      "default": 0,
+      "enum": [
+       0,
+       5,
+       10,
+       15,
+       30
+      ],
+      "title": "Speechsleeptimerminutes",
+      "type": "integer"
+     },
+     "speechStopMode": {
+      "default": "article",
+      "enum": [
+       "article",
+       "queue"
+      ],
+      "title": "Speechstopmode",
+      "type": "string"
+     },
+     "speechVoiceURI": {
+      "default": "",
+      "maxLength": 256,
+      "title": "Speechvoiceuri",
+      "type": "string"
+     },
+     "speechVoiceURIEn": {
+      "default": "",
+      "maxLength": 256,
+      "title": "Speechvoiceurien",
+      "type": "string"
+     },
+     "speechVoiceURIZh": {
+      "default": "",
+      "maxLength": 256,
+      "title": "Speechvoiceurizh",
+      "type": "string"
+     },
      "stored": {
       "title": "Stored",
       "type": "boolean"
+     },
+     "storedKeys": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Storedkeys",
+      "type": "array"
      },
      "swipeBackGesture": {
       "default": true,
@@ -3889,6 +4202,11 @@
       "title": "Thememode",
       "type": "string"
      },
+     "timelineCollapsed": {
+      "default": false,
+      "title": "Timelinecollapsed",
+      "type": "boolean"
+     },
      "timelineOrder": {
       "default": "newest",
       "enum": [
@@ -3898,6 +4216,16 @@
       ],
       "title": "Timelineorder",
       "type": "string"
+     },
+     "timelineWidth": {
+      "default": 400,
+      "title": "Timelinewidth",
+      "type": "integer"
+     },
+     "translationLinkedScroll": {
+      "default": false,
+      "title": "Translationlinkedscroll",
+      "type": "boolean"
      },
      "translationMigratedFromLibre": {
       "default": false,
@@ -3925,6 +4253,11 @@
       ],
       "title": "Uifontstack",
       "type": "string"
+     },
+     "unreadOnly": {
+      "default": false,
+      "title": "Unreadonly",
+      "type": "boolean"
      }
     },
     "required": [
@@ -11435,6 +11768,29 @@
     "title": "ExportBody",
     "type": "object"
    },
+   "ExportInclude": {
+    "additionalProperties": false,
+    "description": "可选附加分区：AI 摘要 / 译文 / 批注（存在才写，缺失诚实省略）。",
+    "properties": {
+     "annotations": {
+      "default": false,
+      "title": "Annotations",
+      "type": "boolean"
+     },
+     "summary": {
+      "default": false,
+      "title": "Summary",
+      "type": "boolean"
+     },
+     "translation": {
+      "default": false,
+      "title": "Translation",
+      "type": "boolean"
+     }
+    },
+    "title": "ExportInclude",
+    "type": "object"
+   },
    "FavoritesResponse": {
     "description": "Federated favorites: rss star + library favorite, merged for\ndisplay only — each stays owned by its own domain.",
     "properties": {
@@ -11948,6 +12304,57 @@
      "entryRefs"
     ],
     "title": "FieldHitsBody",
+    "type": "object"
+   },
+   "FilterRuleSync": {
+    "additionalProperties": false,
+    "description": "过滤规则单条（与 Web FilterRule 同一口径；feedId=null = 全局）。",
+    "properties": {
+     "enabled": {
+      "default": true,
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "feedId": {
+      "anyOf": [
+       {
+        "maxLength": 256,
+        "minLength": 1,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Feedid"
+     },
+     "id": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Id",
+      "type": "string"
+     },
+     "keyword": {
+      "maxLength": 512,
+      "minLength": 1,
+      "title": "Keyword",
+      "type": "string"
+     },
+     "type": {
+      "default": "keyword",
+      "enum": [
+       "keyword",
+       "regex"
+      ],
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "keyword"
+    ],
+    "title": "FilterRuleSync",
     "type": "object"
    },
    "FollowupCreate": {
@@ -17730,6 +18137,42 @@
      "suggestion"
     ],
     "title": "ObsidianExportIssue",
+    "type": "object"
+   },
+   "ObsidianExportRequest": {
+    "additionalProperties": false,
+    "properties": {
+     "include": {
+      "$ref": "#/components/schemas/ExportInclude"
+     },
+     "refs": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 50,
+      "minItems": 1,
+      "title": "Refs",
+      "type": "array"
+     }
+    },
+    "required": [
+     "refs"
+    ],
+    "title": "ObsidianExportRequest",
+    "type": "object"
+   },
+   "ObsidianExportSubdirUpdate": {
+    "additionalProperties": false,
+    "properties": {
+     "subdir": {
+      "title": "Subdir",
+      "type": "string"
+     }
+    },
+    "required": [
+     "subdir"
+    ],
+    "title": "ObsidianExportSubdirUpdate",
     "type": "object"
    },
    "ObsidianExportTemplateUpdate": {
@@ -24144,6 +24587,20 @@
      "password"
     ],
     "title": "RegisterRequest",
+    "type": "object"
+   },
+   "RegistrationPolicy": {
+    "description": "GET /auth/registration-policy (R01)：匿名可探的实例注册策略。",
+    "properties": {
+     "allowPublicRegistration": {
+      "title": "Allowpublicregistration",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "allowPublicRegistration"
+    ],
+    "title": "RegistrationPolicy",
     "type": "object"
    },
    "RegistrationPolicyRequest": {
@@ -30702,6 +31159,64 @@
     "title": "SourceRegistryResponse",
     "type": "object"
    },
+   "SourceTypeSummary": {
+    "description": "One content-source-type row of GET /api/v1/sources/summary.\n\n口径（诚实标注，绝不冒充）：\n- count：该类型的真实数量；None = 不可数（连接状态型，如邮件桥\n  列表、Obsidian vault 配置存在性之外的维度），绝不写 0 冒充；\n- status：ok（已连接/正常）/ empty（集合为空）/ not_configured\n  （服务未配置——与「集合为空」严格区分）/ error（最近错误）；\n- lastActivityAt：owning store 维护的最近活动时间，未知为 None；\n- detail：error 时的诚实错误摘录（owning store 已有字段，不新造）。",
+    "properties": {
+     "count": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Count"
+     },
+     "detail": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Detail"
+     },
+     "lastActivityAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lastactivityat"
+     },
+     "status": {
+      "enum": [
+       "ok",
+       "empty",
+       "not_configured",
+       "error"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "type": {
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "type",
+     "status"
+    ],
+    "title": "SourceTypeSummary",
+    "type": "object"
+   },
    "SourceView": {
     "properties": {
      "createdAt": {
@@ -30738,6 +31253,27 @@
      "createdAt"
     ],
     "title": "SourceView",
+    "type": "object"
+   },
+   "SourcesSummaryResponse": {
+    "properties": {
+     "generatedAt": {
+      "title": "Generatedat",
+      "type": "string"
+     },
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/SourceTypeSummary"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items",
+     "generatedAt"
+    ],
+    "title": "SourcesSummaryResponse",
     "type": "object"
    },
    "SpaceCreate": {
@@ -30801,6 +31337,29 @@
      "name"
     ],
     "title": "SpaceFromTemplate",
+    "type": "object"
+   },
+   "SpeechLexiconEntrySync": {
+    "additionalProperties": false,
+    "description": "N095：发音词典单条（{match, replace} 子串替换；只作用于朗读文本）。",
+    "properties": {
+     "match": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Match",
+      "type": "string"
+     },
+     "replace": {
+      "default": "",
+      "maxLength": 256,
+      "title": "Replace",
+      "type": "string"
+     }
+    },
+    "required": [
+     "match"
+    ],
+    "title": "SpeechLexiconEntrySync",
     "type": "object"
    },
    "SpeedUpdateRequest": {
@@ -45424,6 +45983,25 @@
      }
     },
     "summary": "Register"
+   }
+  },
+  "/api/v1/auth/registration-policy": {
+   "get": {
+    "description": "匿名公开：登录页据此决定注册入口是表单还是邀请说明。\n\n只暴露这一个布尔位，不泄漏实例其他配置；探测失败由前端诚实\n回退（进 /register 由服务端 403 定案）。",
+    "operationId": "registration_policy_api_v1_auth_registration_policy_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RegistrationPolicy"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Registration Policy"
    }
   },
   "/api/v1/auth/session": {
@@ -63640,6 +64218,43 @@
     "summary": "Update Obsidian Device"
    }
   },
+  "/api/v1/obsidian/export": {
+   "post": {
+    "description": "逐条导出到服务端导出根；返回与输入同序的逐项结果。\n\n同一批内的重复 ref 去重（同 content-id 同内容本就幂等，去重只是\n少一次台账行）；收集失败与写入失败都不中断整批。",
+    "operationId": "export_to_obsidian_api_v1_obsidian_export_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ObsidianExportRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Export To Obsidian"
+   }
+  },
   "/api/v1/obsidian/export-handoff": {
    "post": {
     "description": "Compose + render + decide URI vs file fallback for one article.\n\nHonest handoff: ``mode='uri'`` means the obsidian://new link was\nbuilt (the USER's Obsidian does any writing after confirmation);\n``mode='file'`` with reason='tooLong' means the content exceeded the\nURI budget and the client falls back to download + clipboard.\n\nN137：交接组装成功后回标导出水位（mark 幂等，重复导出无害）；\nN135：命名策略体现在 filename（timestamp_suffix 追加 -YYYYMMDD-HHmm）；\nN140：自动落一条 pending 交接记录（confirmed 只能由用户显式确认）。",
@@ -63809,6 +64424,74 @@
      }
     },
     "summary": "Preview Obsidian Export Template"
+   }
+  },
+  "/api/v1/obsidian/export/settings": {
+   "get": {
+    "operationId": "get_obsidian_export_settings_api_v1_obsidian_export_settings_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get Obsidian Export Settings"
+   },
+   "put": {
+    "description": "设置导出子目录（vault 导出根内的相对子路径，默认 LumiRSS）。",
+    "operationId": "set_obsidian_export_settings_api_v1_obsidian_export_settings_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ObsidianExportSubdirUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Set Obsidian Export Settings"
+   }
+  },
+  "/api/v1/obsidian/export/status": {
+   "get": {
+    "description": "导出目标目录、今日用量、每日上限、最近导出台账（per-user）。",
+    "operationId": "obsidian_export_status_api_v1_obsidian_export_status_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Obsidian Export Status"
    }
   },
   "/api/v1/obsidian/handoff-log": {
@@ -80090,6 +80773,25 @@
      }
     },
     "summary": "Stale Sources"
+   }
+  },
+  "/api/v1/sources/summary": {
+   "get": {
+    "description": "来源中心按类型汇总（R02）：一次返回当前账号全部内容来源类型的\n{count, status, lastActivityAt}，全部来自 owning store 的本地读取。\n\n零上游调用（负向契约）：本端点任何代码路径都不触 FreshRSS/RSSHub\n——计数是 per-user 库的派生投影口径（可重建），延迟上界即本地\nSQLite（连接级 busy_timeout=5000ms）。「服务未配置」（not_configured）\n与「集合为空」（empty）是两个严格区分的状态，绝不互相冒充：\n- rss / rsshub / api_source：从来源注册表同源的 owning store 推导\n  （订阅投影 search_feeds / API 来源配置表）；rss 零订阅 =\n  not_configured；RSSHub base 未配置 = not_configured，已配置但无\n  路由订阅 = empty；\n- bookmark / clip / snapshot / inbox：per-user 库真实计数；零行 =\n  empty（集合本身可用，只是没内容）——inbox 例外：无收件连接器时\n  是 not_configured（没有入口就收不到东西）；\n- newsletter / obsidian：连接状态（配置与否），count 只在真实存在\n  时给出（邮件桥不数列表，Obsidian 给真实笔记数），绝不写伪计数。",
+    "operationId": "sources_summary_api_v1_sources_summary_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SourcesSummaryResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Sources Summary"
    }
   },
   "/api/v1/sources/volume": {

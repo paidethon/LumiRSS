@@ -119,10 +119,12 @@ describe('hydration — 首次访问迁移种子（stored=false）', () => {
     const pushed = server.patchCalls[0]
     expect(pushed.readerFontSize).toBe(22)
     expect(pushed.themeMode).toBe('dark')
-    // 种子包含全部 portable 键，且不携带任何 secret 字段
+    // 种子包含全部 portable 键（R25 起含工具栏 order 等数组键），
+    // 且不携带任何 secret 字段或设备本地键
     expect(pushed.readerLineHeight).toBe(1.85)
     expect(pushed).not.toHaveProperty('apiKey')
-    expect(pushed).not.toHaveProperty('filterRules')
+    expect(pushed).not.toHaveProperty('filterStats')
+    expect(pushed).not.toHaveProperty('readerBackgroundImage')
   })
 })
 
@@ -222,7 +224,7 @@ describe('离线 / 失败 — UI 不回滚', () => {
 })
 
 describe('portable 边界 — 非同步设置不触发设置 PATCH', () => {
-  it('布局/过滤规则等 device-local 变更不写 /api/v1/settings', async () => {
+  it('设备本地键（背景图片资产/统计缓存）变更不写 /api/v1/settings', async () => {
     const server = makeServer()
     server.stored = true
     stubFetch(server)
@@ -231,18 +233,22 @@ describe('portable 边界 — 非同步设置不触发设置 PATCH', () => {
     await vi.waitFor(() => expect(useAppSettings.getState().settings.readerFontSize).toBe(17))
 
     server.patchCalls.length = 0
-    useAppSettings.getState().update({ sidebarWidth: 280, timelineCollapsed: true })
+    useAppSettings.getState().update({
+      readerBackgroundImage: 'data:image/png;base64,iVBORw0KGgo=',
+      filterStats: { totalFiltered: 3, lastFilteredAt: 1, lastMatchedRule: 'r1' },
+    })
     // device-local 变更不调度 flush：给 debounce(0) 定时器足够时间，
     // 若被错误调度此刻必然发出；不手动 flush。
     await new Promise((r) => setTimeout(r, 20))
     expect(server.patchCalls.length).toBe(0)
 
-    // 而 portable 变更会触发
+    // 而 portable 变更（R25 起含 sidebarWidth）会触发
     useAppSettings.getState().update({ accentColor: '#5a9e6f' })
     await flush()
     expect(server.patchCalls.length).toBe(1)
     expect(server.patchCalls[0].accentColor).toBe('#5a9e6f')
-    expect(server.patchCalls[0]).not.toHaveProperty('sidebarWidth')
+    expect(server.patchCalls[0]).not.toHaveProperty('readerBackgroundImage')
+    expect(server.patchCalls[0]).not.toHaveProperty('filterStats')
   })
 })
 

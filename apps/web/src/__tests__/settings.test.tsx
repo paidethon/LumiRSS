@@ -18,11 +18,11 @@ function renderModal() {
 }
 
 describe('SettingsModal — AC3（结构）', () => {
-  it('左导航渲染 15 个分类（G4/G5 新增 API 来源/邮件简报）', () => {
+  it('左导航渲染 16 个分类（R03：账户与服务拆分）', () => {
     renderModal()
     const nav = screen.getByRole('navigation', { name: '设置分类' })
     const items = nav.querySelectorAll('button')
-    expect(items).toHaveLength(15)
+    expect(items).toHaveLength(16)
     expect(screen.getByRole('button', { name: /通用/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /外观/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^阅读$/ })).toBeInTheDocument()
@@ -31,6 +31,10 @@ describe('SettingsModal — AC3（结构）', () => {
     expect(screen.getByRole('button', { name: /RSSHub/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /数据控制/ })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /备份与恢复/ })).toBeNull()
+    // R03：合并分类不复存在，拆为「账户」与「服务」
+    expect(screen.queryByRole('button', { name: /账户与服务/ })).toBeNull()
+    expect(screen.getByRole('button', { name: /^账户$/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^服务$/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /关于/ })).toBeInTheDocument()
   })
 

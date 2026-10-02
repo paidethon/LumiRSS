@@ -11,15 +11,10 @@ import {
 import { clearSearchHistoryOnLogout } from './lib/search-history'
 import { useAuthStore } from './store/auth'
 import { clearAllDrafts } from './lib/draft-store'
-import { resetPrivacyOnBoot } from './lib/privacy-mask'
 import { EdgeSwipeBack } from './lib/edge-swipe'
 import { useAppRoute } from './lib/app-route'
 import { usePrefersReducedMotion } from './lib/reduced-motion'
 import { useTabletPortrait, useViewportTier } from './lib/use-viewport-tier'
-
-// F113：演示隐私遮罩是“会话内”开关——刷新即重置。模块加载（早于任何
-// 组件首渲染）清掉上次会话残留标记，抽屉开关态与 DOM 遮蔽态保持一致。
-resetPrivacyOnBoot()
 
 /** PWA Share Target（phase2 M2）：GET /?share=1&url=… 落地后把目标 URL
  * 经 sessionStorage 交给剪藏页（一次性交接，读取即清除）。 */

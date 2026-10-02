@@ -244,7 +244,7 @@ function EntryCard({
                   : 'font-medium text-[var(--lumi-text-primary)]',
               )}
             >
-              <span data-privacy-text="">{item.title}</span>
+              {item.title}
             </button>
             {showCover && item.coverUrl !== null && item.coverUrl !== undefined && (
               <EntryCover src={item.coverUrl} />

@@ -3696,6 +3696,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/registration-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Registration Policy
+         * @description 匿名公开：登录页据此决定注册入口是表单还是邀请说明。
+         *
+         *     只暴露这一个布尔位，不泄漏实例其他配置；探测失败由前端诚实
+         *     回退（进 /register 由服务端 403 定案）。
+         */
+        get: operations["registration_policy_api_v1_auth_registration_policy_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/session": {
         parameters: {
             query?: never;
@@ -11275,6 +11298,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/obsidian/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Export To Obsidian
+         * @description 逐条导出到服务端导出根；返回与输入同序的逐项结果。
+         *
+         *     同一批内的重复 ref 去重（同 content-id 同内容本就幂等，去重只是
+         *     少一次台账行）；收集失败与写入失败都不中断整批。
+         */
+        post: operations["export_to_obsidian_api_v1_obsidian_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/obsidian/export-handoff": {
         parameters: {
             query?: never;
@@ -11362,6 +11408,47 @@ export interface paths {
          *     honestly instead of passing through silently.
          */
         post: operations["preview_obsidian_export_template_api_v1_obsidian_export_template_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/obsidian/export/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Obsidian Export Settings */
+        get: operations["get_obsidian_export_settings_api_v1_obsidian_export_settings_get"];
+        /**
+         * Set Obsidian Export Settings
+         * @description 设置导出子目录（vault 导出根内的相对子路径，默认 LumiRSS）。
+         */
+        put: operations["set_obsidian_export_settings_api_v1_obsidian_export_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/obsidian/export/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Obsidian Export Status
+         * @description 导出目标目录、今日用量、每日上限、最近导出台账（per-user）。
+         */
+        get: operations["obsidian_export_status_api_v1_obsidian_export_status_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -18048,6 +18135,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sources/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sources Summary
+         * @description 来源中心按类型汇总（R02）：一次返回当前账号全部内容来源类型的
+         *     {count, status, lastActivityAt}，全部来自 owning store 的本地读取。
+         *
+         *     零上游调用（负向契约）：本端点任何代码路径都不触 FreshRSS/RSSHub
+         *     ——计数是 per-user 库的派生投影口径（可重建），延迟上界即本地
+         *     SQLite（连接级 busy_timeout=5000ms）。「服务未配置」（not_configured）
+         *     与「集合为空」（empty）是两个严格区分的状态，绝不互相冒充：
+         *     - rss / rsshub / api_source：从来源注册表同源的 owning store 推导
+         *       （订阅投影 search_feeds / API 来源配置表）；rss 零订阅 =
+         *       not_configured；RSSHub base 未配置 = not_configured，已配置但无
+         *       路由订阅 = empty；
+         *     - bookmark / clip / snapshot / inbox：per-user 库真实计数；零行 =
+         *       empty（集合本身可用，只是没内容）——inbox 例外：无收件连接器时
+         *       是 not_configured（没有入口就收不到东西）；
+         *     - newsletter / obsidian：连接状态（配置与否），count 只在真实存在
+         *       时给出（邮件桥不数列表，Obsidian 给真实笔记数），绝不写伪计数。
+         */
+        get: operations["sources_summary_api_v1_sources_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sources/volume": {
         parameters: {
             query?: never;
@@ -23495,7 +23617,10 @@ export interface components {
          *     server-durable values. ``revision`` (0021) is a content-hash of the
          *     stored document for optimistic concurrency: a PATCH may carry
          *     ``baseRevision`` and is refused with a stable 409 when it no longer
-         *     matches.
+         *     matches. ``storedKeys`` (R25) lists the keys explicitly saved by the
+         *     client — keys absent from it are model defaults the user never wrote
+         *     (e.g. fields a newer release introduced), so an upgrading client keeps
+         *     its local value for those instead of adopting the padded default.
          */
         AppSettingsView: {
             /**
@@ -23510,11 +23635,33 @@ export interface components {
              */
             cardSwipeAction: "none" | "read" | "readLater" | "star";
             /**
+             * Customcss
+             * @default
+             */
+            customCss: string;
+            /**
+             * Dictapiurl
+             * @default
+             */
+            dictApiUrl: string;
+            /**
+             * Dimread
+             * @default false
+             */
+            dimRead: boolean;
+            /** Filterrules */
+            filterRules?: components["schemas"]["FilterRuleSync"][];
+            /**
              * Glasseffect
              * @default auto
              * @enum {string}
              */
             glassEffect: "auto" | "on" | "off";
+            /**
+             * Groupbydate
+             * @default false
+             */
+            groupByDate: boolean;
             /**
              * Listdensity
              * @default standard
@@ -23543,6 +23690,11 @@ export interface components {
              */
             listTimeFormat: "relative" | "absolute";
             /**
+             * Pausereadingprogress
+             * @default false
+             */
+            pauseReadingProgress: boolean;
+            /**
              * Readlatersort
              * @default newest
              * @enum {string}
@@ -23565,17 +23717,50 @@ export interface components {
              */
             readerBackgroundCustom: string;
             /**
+             * Readerbionic
+             * @default false
+             */
+            readerBionic: boolean;
+            /**
+             * Readerblockremoteimages
+             * @default false
+             */
+            readerBlockRemoteImages: boolean;
+            /**
+             * Readerbreakreminderminutes
+             * @default 45
+             * @enum {integer}
+             */
+            readerBreakReminderMinutes: 0 | 20 | 30 | 45 | 60 | 90;
+            /**
+             * Readercaptionmode
+             * @default show
+             * @enum {string}
+             */
+            readerCaptionMode: "show" | "hidden" | "hover";
+            /**
              * Readerchineseconversion
              * @default off
              * @enum {string}
              */
             readerChineseConversion: "off" | "s2t" | "t2s" | "tw" | "hk";
             /**
+             * Readercodefontsize
+             * @default m
+             * @enum {string}
+             */
+            readerCodeFontSize: "s" | "m" | "l";
+            /**
              * Readercodehighlight
              * @default auto
              * @enum {string}
              */
             readerCodeHighlight: "auto" | "off";
+            /**
+             * Readercodelinenumbers
+             * @default false
+             */
+            readerCodeLineNumbers: boolean;
             /**
              * Readercodetheme
              * @default auto
@@ -23593,6 +23778,22 @@ export interface components {
              */
             readerContentWidth: number;
             /**
+             * Readercontentwidthmode
+             * @default fixed
+             * @enum {string}
+             */
+            readerContentWidthMode: "fixed" | "viewport";
+            /**
+             * Readercontentwidthviewport
+             * @default 92
+             */
+            readerContentWidthViewport: number;
+            /**
+             * Readerfirstimagefullbleed
+             * @default false
+             */
+            readerFirstImageFullBleed: boolean;
+            /**
              * Readerfontfamily
              * @default system
              * @enum {string}
@@ -23604,10 +23805,22 @@ export interface components {
              */
             readerFontSize: number;
             /**
+             * Readerfontweight
+             * @default 400
+             * @enum {integer}
+             */
+            readerFontWeight: 300 | 400 | 500 | 600 | 700;
+            /**
              * Readerhangingpunctuation
              * @default false
              */
             readerHangingPunctuation: boolean;
+            /**
+             * Readerimagemaxwidth
+             * @default 100%
+             * @enum {string}
+             */
+            readerImageMaxWidth: "100%" | "75%" | "60%";
             /**
              * Readerimagemode
              * @default all
@@ -23615,10 +23828,30 @@ export interface components {
              */
             readerImageMode: "all" | "grayscale" | "hidden";
             /**
+             * Readerindentlists
+             * @default false
+             */
+            readerIndentLists: boolean;
+            /**
+             * Readerindentquotes
+             * @default false
+             */
+            readerIndentQuotes: boolean;
+            /**
              * Readerjustify
              * @default false
              */
             readerJustify: boolean;
+            /**
+             * Readerkeynav
+             * @default false
+             */
+            readerKeyNav: boolean;
+            /**
+             * Readerlinebreakstrict
+             * @default false
+             */
+            readerLineBreakStrict: boolean;
             /**
              * Readerlineheight
              * @default 1.85
@@ -23635,15 +23868,31 @@ export interface components {
              */
             readerPagedMode: boolean;
             /**
+             * Readerpapertexture
+             * @default false
+             */
+            readerPaperTexture: boolean;
+            /**
              * Readerparagraphspacing
              * @default 0.85
              */
             readerParagraphSpacing: number;
             /**
+             * Readerpresetid
+             * @default default
+             */
+            readerPresetId: string;
+            /**
              * Readerpresets
              * @default []
              */
             readerPresets: components["schemas"]["ReaderPresetSync"][];
+            /**
+             * Readerreadingmode
+             * @default scroll
+             * @enum {string}
+             */
+            readerReadingMode: "scroll" | "paged";
             /**
              * Readershowreadingprogress
              * @default true
@@ -23655,11 +23904,32 @@ export interface components {
              */
             readerShowReadingTime: boolean;
             /**
+             * Readerstripfixedmedia
+             * @default true
+             */
+            readerStripFixedMedia: boolean;
+            /**
+             * Readertapzoneaxis
+             * @default horizontal
+             * @enum {string}
+             */
+            readerTapZoneAxis: "horizontal" | "vertical";
+            /**
+             * Readertapzonesize
+             * @default small
+             * @enum {string}
+             */
+            readerTapZoneSize: "off" | "small" | "large";
+            /**
              * Readertextindent
              * @default off
              * @enum {string}
              */
             readerTextIndent: "off" | "2em";
+            /** Readertoolbardesktoporder */
+            readerToolbarDesktopOrder?: string[];
+            /** Readertoolbarmobileorder */
+            readerToolbarMobileOrder?: string[];
             /**
              * Reducemotion
              * @default false
@@ -23683,8 +23953,93 @@ export interface components {
              * @default true
              */
             searchHighlightMatches: boolean;
+            /**
+             * Sidebarcollapsed
+             * @default false
+             */
+            sidebarCollapsed: boolean;
+            /**
+             * Sidebarwidth
+             * @default 240
+             */
+            sidebarWidth: number;
+            /**
+             * Speechbilingualalternate
+             * @default false
+             */
+            speechBilingualAlternate: boolean;
+            /**
+             * Speechbilingualgap
+             * @default none
+             * @enum {string}
+             */
+            speechBilingualGap: "none" | "short" | "long";
+            /** Speechlexicon */
+            speechLexicon?: components["schemas"]["SpeechLexiconEntrySync"][];
+            /**
+             * Speechrate
+             * @default 1
+             */
+            speechRate: number;
+            /**
+             * Speechskipcaptions
+             * @default false
+             */
+            speechSkipCaptions: boolean;
+            /**
+             * Speechskipcode
+             * @default false
+             */
+            speechSkipCode: boolean;
+            /**
+             * Speechskipfootnotes
+             * @default false
+             */
+            speechSkipFootnotes: boolean;
+            /**
+             * Speechskiplinkonly
+             * @default false
+             */
+            speechSkipLinkOnly: boolean;
+            /**
+             * Speechskiptables
+             * @default false
+             */
+            speechSkipTables: boolean;
+            /**
+             * Speechsleeptimerminutes
+             * @default 0
+             * @enum {integer}
+             */
+            speechSleepTimerMinutes: 0 | 5 | 10 | 15 | 30;
+            /**
+             * Speechstopmode
+             * @default article
+             * @enum {string}
+             */
+            speechStopMode: "article" | "queue";
+            /**
+             * Speechvoiceuri
+             * @default
+             */
+            speechVoiceURI: string;
+            /**
+             * Speechvoiceurien
+             * @default
+             */
+            speechVoiceURIEn: string;
+            /**
+             * Speechvoiceurizh
+             * @default
+             */
+            speechVoiceURIZh: string;
             /** Stored */
             stored: boolean;
+            /**
+             * Storedkeys
+             * @default []
+             */
+            storedKeys: string[];
             /**
              * Swipebackgesture
              * @default true
@@ -23697,11 +24052,26 @@ export interface components {
              */
             themeMode: "system" | "light" | "dark";
             /**
+             * Timelinecollapsed
+             * @default false
+             */
+            timelineCollapsed: boolean;
+            /**
              * Timelineorder
              * @default newest
              * @enum {string}
              */
             timelineOrder: "newest" | "oldest" | "received";
+            /**
+             * Timelinewidth
+             * @default 400
+             */
+            timelineWidth: number;
+            /**
+             * Translationlinkedscroll
+             * @default false
+             */
+            translationLinkedScroll: boolean;
             /**
              * Translationmigratedfromlibre
              * @default false
@@ -23719,6 +24089,11 @@ export interface components {
              * @enum {string}
              */
             uiFontStack: "default" | "sans" | "serif" | "mono";
+            /**
+             * Unreadonly
+             * @default false
+             */
+            unreadOnly: boolean;
         };
         /** ApplyRecipeBody */
         ApplyRecipeBody: {
@@ -26569,6 +26944,27 @@ export interface components {
             includeFullHeaders: boolean;
         };
         /**
+         * ExportInclude
+         * @description 可选附加分区：AI 摘要 / 译文 / 批注（存在才写，缺失诚实省略）。
+         */
+        ExportInclude: {
+            /**
+             * Annotations
+             * @default false
+             */
+            annotations: boolean;
+            /**
+             * Summary
+             * @default false
+             */
+            summary: boolean;
+            /**
+             * Translation
+             * @default false
+             */
+            translation: boolean;
+        };
+        /**
          * FavoritesResponse
          * @description Federated favorites: rss star + library favorite, merged for
          *     display only — each stays owned by its own domain.
@@ -26765,6 +27161,29 @@ export interface components {
             entryRefs: string[];
             /** Query */
             query: string;
+        };
+        /**
+         * FilterRuleSync
+         * @description 过滤规则单条（与 Web FilterRule 同一口径；feedId=null = 全局）。
+         */
+        FilterRuleSync: {
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Feedid */
+            feedId?: string | null;
+            /** Id */
+            id: string;
+            /** Keyword */
+            keyword: string;
+            /**
+             * Type
+             * @default keyword
+             * @enum {string}
+             */
+            type: "keyword" | "regex";
         };
         /** FollowupCreate */
         FollowupCreate: {
@@ -29240,6 +29659,17 @@ export interface components {
             kind: "broken_wikilink" | "missing_attachment" | "duplicate_block_id";
             /** Suggestion */
             suggestion: string;
+        };
+        /** ObsidianExportRequest */
+        ObsidianExportRequest: {
+            include?: components["schemas"]["ExportInclude"];
+            /** Refs */
+            refs: string[];
+        };
+        /** ObsidianExportSubdirUpdate */
+        ObsidianExportSubdirUpdate: {
+            /** Subdir */
+            subdir: string;
         };
         /**
          * ObsidianExportTemplateUpdate
@@ -31989,6 +32419,14 @@ export interface components {
             username: string;
         };
         /**
+         * RegistrationPolicy
+         * @description GET /auth/registration-policy (R01)：匿名可探的实例注册策略。
+         */
+        RegistrationPolicy: {
+            /** Allowpublicregistration */
+            allowPublicRegistration: boolean;
+        };
+        /**
          * RegistrationPolicyRequest
          * @description PUT /admin/registration-policy.
          */
@@ -34722,6 +35160,33 @@ export interface components {
             /** Sources */
             sources: components["schemas"]["SourceRegistryEntry"][];
         };
+        /**
+         * SourceTypeSummary
+         * @description One content-source-type row of GET /api/v1/sources/summary.
+         *
+         *     口径（诚实标注，绝不冒充）：
+         *     - count：该类型的真实数量；None = 不可数（连接状态型，如邮件桥
+         *       列表、Obsidian vault 配置存在性之外的维度），绝不写 0 冒充；
+         *     - status：ok（已连接/正常）/ empty（集合为空）/ not_configured
+         *       （服务未配置——与「集合为空」严格区分）/ error（最近错误）；
+         *     - lastActivityAt：owning store 维护的最近活动时间，未知为 None；
+         *     - detail：error 时的诚实错误摘录（owning store 已有字段，不新造）。
+         */
+        SourceTypeSummary: {
+            /** Count */
+            count?: number | null;
+            /** Detail */
+            detail?: string | null;
+            /** Lastactivityat */
+            lastActivityAt?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "empty" | "not_configured" | "error";
+            /** Type */
+            type: string;
+        };
         /** SourceView */
         SourceView: {
             /** Createdat */
@@ -34736,6 +35201,13 @@ export interface components {
             name: string;
             /** Value */
             value: string;
+        };
+        /** SourcesSummaryResponse */
+        SourcesSummaryResponse: {
+            /** Generatedat */
+            generatedAt: string;
+            /** Items */
+            items: components["schemas"]["SourceTypeSummary"][];
         };
         /** SpaceCreate */
         SpaceCreate: {
@@ -34763,6 +35235,19 @@ export interface components {
             description: string;
             /** Name */
             name: string;
+        };
+        /**
+         * SpeechLexiconEntrySync
+         * @description N095：发音词典单条（{match, replace} 子串替换；只作用于朗读文本）。
+         */
+        SpeechLexiconEntrySync: {
+            /** Match */
+            match: string;
+            /**
+             * Replace
+             * @default
+             */
+            replace: string;
         };
         /** SpeedUpdateRequest */
         SpeedUpdateRequest: {
@@ -44269,6 +44754,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    registration_policy_api_v1_auth_registration_policy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistrationPolicy"];
                 };
             };
         };
@@ -58807,6 +59312,39 @@ export interface operations {
             };
         };
     };
+    export_to_obsidian_api_v1_obsidian_export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObsidianExportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     export_obsidian_handoff_api_v1_obsidian_export_handoff_post: {
         parameters: {
             query?: never;
@@ -58955,6 +59493,79 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_obsidian_export_settings_api_v1_obsidian_export_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    set_obsidian_export_settings_api_v1_obsidian_export_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObsidianExportSubdirUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    obsidian_export_status_api_v1_obsidian_export_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
@@ -71665,6 +72276,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sources_summary_api_v1_sources_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourcesSummaryResponse"];
                 };
             };
         };

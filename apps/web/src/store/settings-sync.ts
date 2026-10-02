@@ -5,15 +5,23 @@
  *   绝不阻塞 UI（slider 拖动永远即时生效）；
  * - 变更 → 600ms debounce → PATCH 最新快照（请求串行化，最新值必胜）；
  * - 启动 hydration：server 无文档（stored=false）→ 本地值作迁移种子
- *   PUSH；server 有文档 → server 值覆盖本地（本会话用户已改过的
- *   dirty key 除外，防止覆盖正在拖动的 slider）；
- * - 失败静默（不打扰用户、不回滚 UI）；下一次变更自然重试；
- *   pagehide 时用 keepalive 补发最终值（不丢最后一次调整）。 */
+ *   PUSH；server 有文档 → storedKeys 在册键 server 值覆盖本地（本会话
+ *   用户已改过的 dirty key 除外，防止覆盖正在拖动的 slider）；不在册
+ *   的键（用户从未写过，含新版本新增键）保留本地值，与默认不同则标
+ *   dirty 上传为初始云值（R25 升级迁移）；
+ * - 断网补传（R25）：PATCH 失败 → 失败键留在 pending 队列（dirty 键集，
+ *   内存 + localStorage 待同步标记；值由 lumirss-settings 本地快照承载
+ *   ——同键后写覆盖先写，天然「按序重放到最新」）→ online / 下次变更 /
+ *   重载时重放，成功后清队；计数经 subscribePendingSettingsSync 暴露给
+ *   设置·账户页轻提示；换账号（resetAccountSettingsSync）清空队列；
+ * - 失败静默（不打扰用户、不回滚 UI）；pagehide 时用 keepalive 补发
+ *   最终值（不丢最后一次调整）。 */
 
 import { ApiError, getServerSettings, patchServerSettings } from '../api/client'
 import { useAuthStore, type AuthGateStatus } from './auth'
 import { PORTABLE_DEFAULTS } from '../api/generated/settings-meta'
 import {
+  DEFAULT_APP_SETTINGS,
   portableSettings,
   PORTABLE_KEYS,
   useAppSettings,
@@ -50,17 +58,48 @@ let unsubscribeAuth: (() => void) | null = null
  * （旧服务端 / 尚未读取）→ PATCH 不带 baseRevision，行为与历史一致。 */
 let serverRevision: number | null = null
 
+/** R25 断网补传提示：pending（= 未落库 dirty 键）计数的极简发布订阅。
+ * 队列语义与 dirty 键集合同源（内存 + localStorage 待同步标记；值以
+ * lumirss-settings 本地快照承载）：PATCH 失败键保留 → online / 下次
+ * 变更 / 重载时按序重放（全量快照，同键后写覆盖先写），成功后清队；
+ * 换账号（resetAccountSettingsSync → clearPendingSettingsSync）清空。 */
+const pendingListeners = new Set<() => void>()
+
+function notifyPendingChanged(): void {
+  for (const listener of pendingListeners) listener()
+}
+
+export function subscribePendingSettingsSync(listener: () => void): () => void {
+  pendingListeners.add(listener)
+  return () => {
+    pendingListeners.delete(listener)
+  }
+}
+
+export function getPendingSettingsSyncCount(): number {
+  return dirtyKeys.size
+}
+
+/** 账户页「立即重试」：把未落库变更立即补传（无 pending 时 no-op）。 */
+export async function retryPendingSettingsSync(): Promise<void> {
+  if (dirtyKeys.size === 0) return
+  await sendNow()
+}
+
 export interface SettingsSyncOptions {
   /** 测试注入：debounce 时长（0 = 立即）。 */
   debounceMs?: number
 }
 
-/** N058：预设列表按内容比较（normalizeSettings 每次产出新数组引用，
- * 引用比较会把无关变更误标为 dirty → 无谓 PATCH 循环）。 */
+/** N058：数组/对象键按内容比较（normalizeSettings 每次产出新引用，
+ * 引用比较会把无关变更误标为 dirty → 无谓 PATCH 循环）。R25 起
+ * portable 键含多个数组键（工具栏 order / 发音词典 / 过滤规则），
+ * 统一走 JSON 比较——键顺序由 normalize 的确定性构造保证稳定。 */
 function samePortableValue(key: string, prev: unknown, next: unknown): boolean {
-  if (key === 'readerPresets') {
+  if (typeof prev === 'object' && prev !== null) {
     return JSON.stringify(prev) === JSON.stringify(next)
   }
+  if (typeof next === 'object' && next !== null) return false
   return prev === next
 }
 
@@ -126,6 +165,7 @@ async function flush(): Promise<void> {
       if (typeof revision === 'number') serverRevision = revision
       for (const key of sending) dirtyKeys.delete(key)
       persistDirtyKeys()
+      notifyPendingChanged()
     })
     .catch(async (error: unknown) => {
       if (isSettingsConflict(error) && serverRevision !== null) {
@@ -191,13 +231,37 @@ async function hydrate(): Promise<void> {
       await sendPatch(portableSettings(useAppSettings.getState().settings))
       dirtyKeys.clear()
       persistDirtyKeys()
+      notifyPendingChanged()
       return
     }
     // server 有明确值 → server 优先；本会话已改过的 key 不覆盖。
+    // R25 升级迁移：storedKeys = 服务端显式存过的键（缺字段 = 旧服务端
+    // → 视为全部显式，历史行为）。不在册的键是「用户从未写过」（多为
+    // 新版本新增键）——保留本地值；若与本地默认不同，标 dirty，由末尾
+    // flush 上传为初始云值（本地偏好不被升级时补齐的模型默认覆盖）。
+    const storedKeys = Array.isArray(server.storedKeys)
+      ? new Set(server.storedKeys as string[])
+      : null
     const patch: Record<string, unknown> = {}
+    let seededUpgradeKeys = false
     for (const key of PORTABLE_KEYS) {
       if (dirtyKeys.has(key)) continue
-      if (key in server) patch[key] = server[key]
+      if (storedKeys === null || storedKeys.has(key)) {
+        if (key in server) patch[key] = server[key]
+      } else if (
+        !samePortableValue(
+          key,
+          DEFAULT_APP_SETTINGS[key],
+          useAppSettings.getState().settings[key],
+        )
+      ) {
+        dirtyKeys.add(key)
+        seededUpgradeKeys = true
+      }
+    }
+    if (seededUpgradeKeys) {
+      persistDirtyKeys()
+      notifyPendingChanged()
     }
     if (Object.keys(patch).length > 0) {
       applyingServerValues = true
@@ -208,8 +272,8 @@ async function hydrate(): Promise<void> {
       }
     }
     // AUDIT-010：不清除未解决的 dirty 键。若仍有 dirty（例如上次会话
-    // 失败的 PATCH 持久化下来），重试推送一次以达成落库（成功后
-    // 由 flush 自行清除）；无 dirty 时不发多余请求。
+    // 失败的 PATCH 持久化下来，或本轮升级种子键），重试推送一次以达成
+    // 落库（成功后由 flush 自行清除）；无 dirty 时不发多余请求。
     if (dirtyKeys.size > 0) void flush()
   } catch {
     /* 启动 hydration 失败静默：本地设置照常工作，下次启动重试 */
@@ -252,6 +316,7 @@ export function clearPendingSettingsSync(): void {
   }
   dirtyKeys = new Set()
   persistDirtyKeys()
+  notifyPendingChanged()
   flushedFinal = false
 }
 
@@ -316,6 +381,7 @@ export function initSettingsSync(options: SettingsSyncOptions = {}): void {
     flushedFinal = false
     for (const key of keys) dirtyKeys.add(key)
     persistDirtyKeys()
+    notifyPendingChanged()
     scheduleFlush()
   })
 
@@ -349,6 +415,7 @@ export function resetSettingsSyncForTests(): void {
   debounceMs = DEFAULT_DEBOUNCE_MS
   dirtyKeys = new Set()
   persistDirtyKeys()
+  notifyPendingChanged()
   applyingServerValues = false
   hydratedOk = false
   serverRevision = null

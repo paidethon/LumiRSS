@@ -392,7 +392,7 @@ function RssTree({
                         style={{ backgroundColor: feedColor(feed.feedUrl) }}
                       />
                       <span className="truncate" title={feed.title}>
-                        <span data-privacy-text="">{feed.title}</span>
+                        {feed.title}
                       </span>
                     </NavItem>
                   ))}

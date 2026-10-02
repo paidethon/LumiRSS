@@ -7,7 +7,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { GlossarySection } from '../components/settings/GlossarySection'
+import { GlossarySection } from '../components/settings/filters/GlossarySection'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {

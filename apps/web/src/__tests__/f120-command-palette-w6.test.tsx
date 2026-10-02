@@ -2,7 +2,7 @@
  *
  * - 模糊打分：子序列匹配；连续命中 > 分隔命中；前缀加分；不匹配剔除；
  * - 数据源：订阅来源 / 保存的视图命令装配与执行（scope 切换 / 事件
- *   通道）；无权限动作隐藏（privacy demo → 上下文导出命令缺席）；
+ *   通道）；能力门（语音不可用 → 朗读命令缺席）；
  * - 关闭回焦：打开前聚焦的元素在关闭后重新获得焦点。 */
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -61,7 +61,6 @@ const SAVED_VIEWS = [
 
 beforeEach(() => {
   vi.clearAllMocks()
-  localStorage.removeItem('lumirss-privacy-demo')
   mocks.getSubscriptions.mockResolvedValue(SUBSCRIPTIONS)
   mocks.getSavedSearchViews.mockResolvedValue({ items: SAVED_VIEWS })
   useReaderUi.getState().selectSection('home')
@@ -140,38 +139,29 @@ describe('F120 数据源与权限门', () => {
     })
   })
 
-  it('F120: 无权限动作隐藏——privacy demo 开启 → 上下文导出/朗读命令不装配', async () => {
-    localStorage.setItem('lumirss-privacy-demo', '1')
+  it('F120: 能力门——语音不可用 → 朗读命令缺席；可用 → 导出/朗读装配', async () => {
     useReaderUi.getState().selectEntry('e1.abc')
-    const caps = { privacyDemoOn: true, speechEnabled: true }
-    const contextCommands = buildContextCommands(
-      {
-        section: 'home',
-        view: 'all',
-        themeMode: 'system',
-        glassEffect: 'auto',
-        listDensity: 'standard',
-        listTimeFormat: 'relative',
-        capabilities: caps,
-      },
-      { exportReader: () => {}, speakReader: () => {} },
-    )
-    expect(contextCommands).toEqual([]) // 负向：privacy 期间一个都不出现
+    const context = {
+      section: 'home' as const,
+      view: 'all' as const,
+      themeMode: 'system' as const,
+      glassEffect: 'auto' as const,
+      listDensity: 'standard' as const,
+      listTimeFormat: 'relative' as const,
+    }
+    const actions = { exportReader: () => {}, speakReader: () => {} }
 
-    // 权限恢复 → 动作装配（需有选中文章）
-    const contextCommands2 = buildContextCommands(
-      {
-        section: 'home',
-        view: 'all',
-        themeMode: 'system',
-        glassEffect: 'auto',
-        listDensity: 'standard',
-        listTimeFormat: 'relative',
-        capabilities: { privacyDemoOn: false, speechEnabled: true },
-      },
-      { exportReader: () => {}, speakReader: () => {} },
+    const noSpeech = buildContextCommands(
+      { ...context, capabilities: { speechEnabled: false } },
+      actions,
     )
-    expect(contextCommands2.map((command) => command.id)).toEqual([
+    expect(noSpeech.map((command) => command.id)).toEqual(['ctx-reader-export'])
+
+    const withSpeech = buildContextCommands(
+      { ...context, capabilities: { speechEnabled: true } },
+      actions,
+    )
+    expect(withSpeech.map((command) => command.id)).toEqual([
       'ctx-reader-export',
       'ctx-reader-speech',
     ])

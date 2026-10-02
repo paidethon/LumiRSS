@@ -204,8 +204,8 @@ export const NAV_ENTRIES: NavEntry[] = [
     surfaces: ['sidebar'],
   },
   {
-    id: 'settings:mail',
-    kind: 'settings',
+    id: 'newsletter',
+    kind: 'section',
     label: '邮件简报',
     icon: Mail,
     order: 27,
@@ -253,8 +253,8 @@ export const NAV_ENTRIES: NavEntry[] = [
     surfaces: ['sidebar'],
   },
   {
-    id: 'settings:ai',
-    kind: 'settings',
+    id: 'rag',
+    kind: 'section',
     label: 'RAG 索引',
     icon: Zap,
     order: 33,

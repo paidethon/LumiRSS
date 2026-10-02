@@ -2363,27 +2363,6 @@ export async function getTranslationVerification(
   return (await response.json()) as TranslationVerificationView
 }
 
-export async function saveLibreTranslateKey(value: string): Promise<void> {
-  await rawRequest(`${API_BASE}/settings/translation/libretranslate-key`, {
-    method: 'PUT',
-    body: JSON.stringify({ value }),
-    contentType: 'application/json',
-  })
-}
-
-export async function clearLibreTranslateKey(): Promise<void> {
-  await rawRequest(`${API_BASE}/settings/translation/libretranslate-key`, {
-    method: 'DELETE',
-  })
-}
-
-export async function testLibreTranslate(): Promise<{ status: 'ok' | 'failed'; message: string | null }> {
-  const response = await rawRequest(`${API_BASE}/settings/translation/libretranslate-test`, {
-    method: 'POST',
-  })
-  return (await response.json()) as { status: 'ok' | 'failed'; message: string | null }
-}
-
 export interface RssHubCredentialEntry {
   id: string
   name: string

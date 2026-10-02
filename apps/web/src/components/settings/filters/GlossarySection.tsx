@@ -1,4 +1,8 @@
-/** GlossarySection — F21：个人术语本（设置 → 通用）。
+/** GlossarySection — F21：个人术语本（设置 → 文章过滤 → 个人术语）。
+ *
+ * R16 信息架构迁移：从「关于」分类移到「文章过滤」分类下作为
+ * 「个人术语」子区（注册位置变更；数据与 ID 不动，服务端
+ * glossary_hits.py 契约不变）。
  *
  * 用户手工维护的术语与解释：新建/修改/删除/搜索；同词不同含义可并存。
  * 定义是纯文本（客户端转义渲染）。N083：术语可设「保留」—— 翻译时
@@ -15,9 +19,9 @@ import {
   listGlossary,
   parseGlossaryImportText,
   updateGlossaryTerm,
-} from '../../api/client'
-import type { GlossaryImportOutcome } from '../../api/client'
-import { Button } from '../ui/Button'
+} from '../../../api/client'
+import type { GlossaryImportOutcome } from '../../../api/client'
+import { Button } from '../../ui/Button'
 
 /** F028：导入面板（粘贴 JSON → 预览条数/冲突数 → skip/overwrite 提交）。 */
 function GlossaryImportBox({ onDone }: { onDone: () => void }) {

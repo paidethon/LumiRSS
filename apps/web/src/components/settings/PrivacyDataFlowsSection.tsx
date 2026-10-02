@@ -14,7 +14,6 @@ const CAPABILITY_LABELS: Record<string, string> = {
   'ai-summary': 'AI 摘要',
   'ai-translation': 'AI 翻译',
   'ai-chat': 'AI 对话',
-  libretranslate: 'LibreTranslate 翻译',
   'remote-images': '远程图片',
   tts: '语音朗读（TTS）',
   webdav: 'WebDAV 备份',

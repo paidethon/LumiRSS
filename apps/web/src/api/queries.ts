@@ -34,7 +34,6 @@ import {
   applyRssHubConfig,
   clearAiProfileSecret,
   clearDefaultAiSecret,
-  clearLibreTranslateKey,
   clearRssHubSecret,
   createAiProfile,
   createBackup,
@@ -191,7 +190,6 @@ import {
   renameWorkspace,
   reorderWorkspaceItems,
   resolveItems,
-  saveLibreTranslateKey,
   searchEntries,
   createSavedSearchView,
   deleteRssHubFavorite,
@@ -204,7 +202,6 @@ import {
   setEntryState,
   setRssHubSecret,
   subscribeFeed,
-  testLibreTranslate,
   testWebDav,
   unsubscribeFeed,
   updateAiProfile,
@@ -994,8 +991,9 @@ export function useUpdateAiSettingsMutation() {
       model?: string
       summaryLanguage?: 'zh-CN' | 'en'
       translationLanguage?: 'zh-CN' | 'en'
-      translationEngine?: 'ai' | 'libretranslate' | 'browser'
-      libretranslateUrl?: string
+      // R21：引擎域收敛为 ai | browser（libretranslate 已随 BFF 移除，
+      // libretranslateUrl 字段同步删除——PUT 该键会 422）。
+      translationEngine?: 'ai' | 'browser'
     }) => updateAiSettings(update),
     onSuccess: async () => {
       await Promise.all([
@@ -1428,32 +1426,6 @@ export function useDeleteRssHubCredentialMutation() {
         queryClient.invalidateQueries({ queryKey: ['rsshub-config'] }),
       ])
     },
-  })
-}
-
-export function useSaveLibreTranslateKeyMutation() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (value: string) => saveLibreTranslateKey(value),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['ai-settings'] })
-    },
-  })
-}
-
-export function useClearLibreTranslateKeyMutation() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: () => clearLibreTranslateKey(),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['ai-settings'] })
-    },
-  })
-}
-
-export function useTestLibreTranslateMutation() {
-  return useMutation({
-    mutationFn: () => testLibreTranslate(),
   })
 }
 

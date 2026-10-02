@@ -23,8 +23,8 @@ export interface Command {
   /** 额外匹配词（英文别名/拼音缩写等；casefold includes 匹配）。 */
   keywords?: string
   run: () => void
-  /** F120：权限/可用性门——false 的命令不出现在面板（负向：privacy/
-   * demo 或禁用态动作隐藏）。 */
+  /** F120：权限/可用性门——false 的命令不出现在面板（负向：禁用态
+   * 动作隐藏）。 */
   available?: boolean
 }
 
@@ -36,10 +36,8 @@ export interface CommandContext {
   glassEffect: AppSettings['glassEffect']
   listDensity: AppSettings['listDensity']
   listTimeFormat: AppSettings['listTimeFormat']
-  /** F120：能力开关（无权限动作不装配）。 */
+  /** F120：能力开关（禁用态动作不装配）。 */
   capabilities?: {
-    /** 演示隐私开启时：导出/朗读等会泄露内容的动作隐藏。 */
-    privacyDemoOn?: boolean
     speechEnabled?: boolean
     quizEnabled?: boolean
     searchExportEnabled?: boolean
@@ -147,7 +145,7 @@ export function filterCommandsFuzzy(commands: Command[], query: string): Command
 
 /** F120：上下文动作（随 section 变化）。
  * 阅读器内（home + 打开文章）→ 导出/朗读/自测；搜索页 → 导出清单。
- * 无对应上下文 → 空数组。能力关闭/privacy demo → 不装配（负向隐藏）。 */
+ * 无对应上下文 → 空数组。能力关闭 → 不装配（负向隐藏）。 */
 export function buildContextCommands(
   context: CommandContext,
   actions: {
@@ -160,37 +158,35 @@ export function buildContextCommands(
   const commands: Command[] = []
   const caps = context.capabilities ?? {}
   if (context.section === 'home') {
-    if (caps.privacyDemoOn !== true) {
-      if (actions.exportReader !== undefined) {
-        commands.push({
-          id: 'ctx-reader-export',
-          title: '导出当前文章',
-          section: '当前页',
-          keywords: 'export 文章 导出',
-          run: actions.exportReader,
-        })
-      }
-      if (caps.speechEnabled !== false && actions.speakReader !== undefined) {
-        commands.push({
-          id: 'ctx-reader-speech',
-          title: '朗读当前文章',
-          section: '当前页',
-          keywords: 'speech 朗读 tts',
-          run: actions.speakReader,
-        })
-      }
-      if (caps.quizEnabled !== false && actions.quizReader !== undefined) {
-        commands.push({
-          id: 'ctx-reader-quiz',
-          title: '自测当前文章',
-          section: '当前页',
-          keywords: 'quiz 自测 测验',
-          run: actions.quizReader,
-        })
-      }
+    if (actions.exportReader !== undefined) {
+      commands.push({
+        id: 'ctx-reader-export',
+        title: '导出当前文章',
+        section: '当前页',
+        keywords: 'export 文章 导出',
+        run: actions.exportReader,
+      })
+    }
+    if (caps.speechEnabled !== false && actions.speakReader !== undefined) {
+      commands.push({
+        id: 'ctx-reader-speech',
+        title: '朗读当前文章',
+        section: '当前页',
+        keywords: 'speech 朗读 tts',
+        run: actions.speakReader,
+      })
+    }
+    if (caps.quizEnabled !== false && actions.quizReader !== undefined) {
+      commands.push({
+        id: 'ctx-reader-quiz',
+        title: '自测当前文章',
+        section: '当前页',
+        keywords: 'quiz 自测 测验',
+        run: actions.quizReader,
+      })
     }
   }
-  if (context.section === 'search' && caps.privacyDemoOn !== true) {
+  if (context.section === 'search') {
     if (caps.searchExportEnabled !== false && actions.exportSearchList !== undefined) {
       commands.push({
         id: 'ctx-search-export',

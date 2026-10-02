@@ -78,7 +78,7 @@ export function CapabilityProbePanel() {
           {Object.entries(report.sides).map(([sideName, side]) => (
             <div key={sideName} className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-2 text-xs">
               <p className="font-medium text-[var(--lumi-text-primary)]">
-                {sideName === 'ai' ? 'AI 翻译' : sideName === 'libretranslate' ? 'LibreTranslate' : sideName}
+                {sideName === 'ai' ? 'AI 翻译' : sideName}
                 {!side.configured && <span className="ml-2 text-[var(--lumi-text-tertiary)]">未配置 · {side.reason}</span>}
               </p>
               {side.configured && side.samples !== undefined && (
