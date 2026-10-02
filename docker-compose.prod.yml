@@ -29,7 +29,7 @@ name: ${COMPOSE_PROJECT_NAME:-lumirss-prod}
 
 services:
   web:
-    image: ghcr.io/paidethon/lumirss/lumirss-web:${LUMIRSS_IMAGE_TAG:-2.8.0}
+    image: ghcr.io/paidethon/lumirss/lumirss-web:${LUMIRSS_IMAGE_TAG:-3.0.0}
     container_name: lumirss-web
     restart: unless-stopped
     # ARCH-10/FIX-070: web(=Caddy) 容器只注入它实际需要的 6 个变量；
@@ -62,7 +62,7 @@ services:
     cpus: 0.5
 
   bff:
-    image: ghcr.io/paidethon/lumirss/lumirss-bff:${LUMIRSS_IMAGE_TAG:-2.8.0}
+    image: ghcr.io/paidethon/lumirss/lumirss-bff:${LUMIRSS_IMAGE_TAG:-3.0.0}
     container_name: lumirss-bff
     restart: unless-stopped
     env_file: .env.prod

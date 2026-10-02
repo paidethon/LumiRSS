@@ -37,7 +37,7 @@ name: ${COMPOSE_PROJECT_NAME:-lumirss-prod}
 
 services:
   lumirss:
-    image: ghcr.io/paidethon/lumirss/lumirss-allinone:${LUMIRSS_IMAGE_TAG:-2.8.0}
+    image: ghcr.io/paidethon/lumirss/lumirss-allinone:${LUMIRSS_IMAGE_TAG:-3.0.0}
     container_name: lumirss-app
     restart: unless-stopped
     env_file: .env.prod
