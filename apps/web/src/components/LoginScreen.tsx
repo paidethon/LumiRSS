@@ -545,7 +545,9 @@ export default function LoginScreen() {
                       spellCheck={false}
                       disabled={pending}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
+                        // FIX-012：提交类 Enter 必须尊重输入法组合态——
+                        // 候选词确认的 Enter 不触发激活。
+                        if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
                           e.preventDefault()
                           activateFromInvitePaste()
                         }

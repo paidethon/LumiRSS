@@ -1441,7 +1441,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Threads */
+        /**
+         * List Threads
+         * @description R20：archived=False（默认）= 未归档工作集；True = 已归档视图。
+         */
         get: operations["list_threads_api_v1_agent_threads_get"];
         put?: never;
         /** Create Thread */
@@ -1488,7 +1491,8 @@ export interface paths {
         head?: never;
         /**
          * Update Thread Settings
-         * @description F094/F098/N165：会话设置（scope / toolPolicy / budget / 标题）。下轮生效。
+         * @description F094/F098/N165/R20：会话设置（scope / toolPolicy / budget / 标题 /
+         *     归档）。下轮生效（归档/标题即时）。
          */
         patch: operations["update_thread_settings_api_v1_agent_threads__thread_id__patch"];
         trace?: never;
@@ -1657,6 +1661,30 @@ export interface paths {
          *     the SSE stream (real deltas; replay on reconnect).
          */
         post: operations["post_message_api_v1_agent_threads__thread_id__messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/threads/{thread_id}/obsidian-export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Export Thread To Obsidian
+         * @description R20：会话导出到 Obsidian——复用 F096 的 markdown 渲染（角色轮次
+         *     + 机密剥离 + 结构转义）与 R07 的受限写入面（containment / 幂等 /
+         *     per-user 隔离 / 每日配额全部在 ObsidianExportService，本路由只做
+         *     内容收集）。会话不是 ItemRef：synthetic ref ``agent:<thread_id>``
+         *     走同一 content-id 幂等（重复导出 = exists，绝不覆盖）。
+         */
+        post: operations["export_thread_to_obsidian_api_v1_agent_threads__thread_id__obsidian_export_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7169,6 +7197,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/gpt-digest/configs/{config_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Gpt Digest Run
+         * @description 请求取消进行中的生成（协作式：在阶段边界生效——绝不半写期号；
+         *     已花费的模型调用不退回）。无进行中运行 → 200 cancelled=false（幂等）。
+         */
+        post: operations["cancel_gpt_digest_run_api_v1_gpt_digest_configs__config_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/gpt-digest/configs/{config_id}/feed": {
         parameters: {
             query?: never;
@@ -7457,6 +7506,27 @@ export interface paths {
          *     材料身份——与生成请求共用同一选材函数，预览即所得。
          */
         get: operations["preview_config_digest_api_v1_gpt_digest_configs__config_id__preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gpt-digest/configs/{config_id}/run-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Gpt Digest Run Status
+         * @description 生成运行状态（手动与调度共用同一注册表）。``stage`` 是服务端
+         *     真实阶段（select/summarize/polish/generate），绝不虚构进度。
+         */
+        get: operations["get_gpt_digest_run_status_api_v1_gpt_digest_configs__config_id__run_status_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -10861,6 +10931,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/newsletter/issues": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Newsletter Issues
+         * @description 按状态过滤的发送账本（新→旧，有界 ≤50）。
+         *
+         *     draft / scheduled 当前没有持久化形态（无草稿机制；计划发送是
+         *     digest 设置而非期号）→ 诚实空列表，不伪造记录。
+         */
+        get: operations["list_newsletter_issues_api_v1_newsletter_issues_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/newsletter/issues/{issue_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Newsletter Issue */
+        get: operations["get_newsletter_issue_api_v1_newsletter_issues__issue_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/newsletter/issues/{issue_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Newsletter Issue
+         * @description 重试一次失败的发送：只投递账目中尚未成功的收件人。
+         *
+         *     已 sent 的收件人绝不重发（逐收件人账目 + 地址合并，见
+         *     mail_digest.retry_digest_issue）；账目显示全部已送达时不触碰
+         *     SMTP，直接把该行修复为 sent。SMTP 未配置 → 稳定 503。
+         */
+        post: operations["retry_newsletter_issue_api_v1_newsletter_issues__issue_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/note-templates": {
         parameters: {
             query?: never;
@@ -12168,6 +12302,64 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opml/import/rsshub-apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Opml Rsshub Apply
+         * @description R18：应用 RSSHub 优化导入。
+         *
+         *     strategy=prefer_rsshub（默认，只执行唯一高置信且无凭据需求的
+         *     自动建议）/ prefer_native（全部按原生合并导入）/ manual（只替换
+         *     approved 参数勾选的条目；chosen 重复参数可逐项指定计划内的候选
+         *     路由，格式 "index|routePath"，缺省用该项首选候选）。
+         *
+         *     替换 = 先实际验证（从本站实例拉取该路由确认 200 + 可解析 feed，
+         *     有界预算）再经 FreshRSS 实际订阅入库；原地址已订阅的来源**保留
+         *     旧源**并写映射台账（FreshRSS 已读/收藏状态绑定条目地址，无法跨
+         *     源安全迁移——绝不自动退订）；新导入来源的原始地址进台账，可经
+         *     rsshub-mappings 撤销回原生。RSSHub 未配置 → 503 rsshub_not_configured。
+         */
+        post: operations["opml_rsshub_apply_api_v1_opml_import_rsshub_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opml/import/rsshub-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Opml Rsshub Plan
+         * @description R18：OPML → RSSHub 匹配计划（严格只读，零网络零写入）。
+         *
+         *     逐条给出决策（autoReplace / manualChoice / needsCredentials /
+         *     needsParams / alreadyRsshub / keepNative / unsupported）与带置信
+         *     度依据的候选列表。规则数据 = vendored pinned-image 快照
+         *     （rsshub_routes.generated.json），结构化匹配，不执行任何上游
+         *     代码。候选的实际可用性在 apply 阶段验证（拉取 200+feed）；
+         *     RSSHub 未配置时 rsshubConfigured=false，apply 会拒绝。
+         */
+        post: operations["opml_rsshub_plan_api_v1_opml_import_rsshub_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/opml/import/tree-apply": {
         parameters: {
             query?: never;
@@ -12236,6 +12428,53 @@ export interface paths {
          *     界面清理。
          */
         post: operations["opml_import_undo_api_v1_opml_import__log_id__undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opml/rsshub-mappings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Rsshub Source Mappings
+         * @description R18：原生 ↔ RSSHub 来源映射台账（per-user，新→旧，有界 200）。
+         *
+         *     来源运维工作台展示「原始地址 / 当前 RSSHub 地址 / 撤销映射」；
+         *     凭据不落库，本表只存地址与路由结构。
+         */
+        get: operations["list_rsshub_source_mappings_api_v1_opml_rsshub_mappings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opml/rsshub-mappings/{mapping_uuid}/revert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revert Rsshub Source Mapping
+         * @description R18：撤销一条映射——重新订阅原始地址并把台账置 reverted。
+         *
+         *     诚实边界：RSSHub 源**不自动退订**（避免破坏性动作；可稍后在来源
+         *     管理手动退订）；原始地址订阅失败 → 502（台账保持 active，撤销未
+         *     完成，如实报告）。幂等：已 reverted 的行原样返回。
+         */
+        post: operations["revert_rsshub_source_mapping_api_v1_opml_rsshub_mappings__mapping_uuid__revert_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -14221,6 +14460,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/rag/index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Rag Index Delete
+         * @description 清空本账号的派生索引（向量 + 分块元数据 + staging）。
+         *
+         *     原文投影（search_entries / search_library）绝不触碰——索引可随时
+         *     从原文重建，删除零损失；进行中的 rebuild 持有同一把锁，删除会在
+         *     其安全点后排队而不是与 swap 竞争。
+         */
+        delete: operations["rag_index_delete_api_v1_rag_index_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/rag/index-version": {
         parameters: {
             query?: never;
@@ -14245,6 +14508,119 @@ export interface paths {
          *     切换本身零写入现有索引；目录外模型诚实 400 unknown_model。
          */
         post: operations["rag_index_version_switch_api_v1_rag_index_version_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rag/index/converge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rag Index Converge
+         * @description 手动触发一次增量收敛（与后台增量任务同一管线，一轮有界）。
+         */
+        post: operations["rag_index_converge_api_v1_rag_index_converge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rag/index/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rag Index Overview
+         * @description 当前账号索引集合总览（RAG 索引页的数据源）。
+         *
+         *     全部数值来自真实行与作业证据：来源 × 语料/索引数（rag_chunks 按
+         *     LIVE 模型）、队列口径同 coverage（pending/done/failed/stale）、
+         *     磁盘占用优先 dbstat 页级真实值（无 dbstat 编译项时诚实降级为
+         *     载荷字节并标注 basis）、失败明细来自最近 rag_jobs 的 skipped 与
+         *     作业错误（脱敏截断，绝不携带堆栈）。绝不返回任何 embedding 数组。
+         */
+        get: operations["rag_index_overview_api_v1_rag_index_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rag/index/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rag Index Pause
+         * @description 暂停本账号的增量索引收敛（用户级 settings 键）。
+         *
+         *     不影响手动 rebuild/search；NEW-371 实例级暂停是另一条独立通道
+         *     （admin task-calendar，本循环已实时消费）。
+         */
+        post: operations["rag_index_pause_api_v1_rag_index_pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rag/index/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rag Index Resume
+         * @description 恢复本账号的增量索引收敛（幂等）。
+         */
+        post: operations["rag_index_resume_api_v1_rag_index_resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rag/index/retry-failed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rag Index Retry Failed
+         * @description 只重试失败项（增量管线，绝不全量重建）。
+         *
+         *     refs 缺省 = 最近作业 skipped 的全部失败项（≤limit）；显式 refs =
+         *     单项重试（失败列表的「单独重试」）。已从投影消失的失败项诚实进
+         *     ``missing``（它们已无可索引的原文，绝不冒充成功）。
+         */
+        post: operations["rag_index_retry_failed_api_v1_rag_index_retry_failed_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -22612,6 +22988,8 @@ export interface components {
          * @description One conversation thread.
          */
         AgentThread: {
+            /** Archivedat */
+            archivedAt?: string | null;
             /** Createdat */
             createdAt: string;
             /** Id */
@@ -22636,6 +23014,43 @@ export interface components {
         AgentThreadListResponse: {
             /** Items */
             items: components["schemas"]["AgentThread"][];
+        };
+        /**
+         * AgentThreadObsidianExportRequest
+         * @description R20 POST /api/v1/agent/threads/{id}/obsidian-export body。
+         */
+        AgentThreadObsidianExportRequest: {
+            /**
+             * Rounds
+             * @default 20
+             */
+            rounds: number;
+        };
+        /**
+         * AgentThreadObsidianExportResult
+         * @description R20 单条导出结果（written | exists | failed + 原因；同 R07 口径）。
+         */
+        AgentThreadObsidianExportResult: {
+            /**
+             * Bytes
+             * @default 0
+             */
+            bytes: number;
+            /** Contentid */
+            contentId?: string | null;
+            /** Message */
+            message?: string | null;
+            /** Path */
+            path?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /** Ref */
+            ref: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "written" | "exists" | "failed";
         };
         /**
          * AgentThreadSearchHit
@@ -22668,6 +23083,8 @@ export interface components {
          * @description PATCH /api/v1/agent/threads/{id} response（下轮生效）。
          */
         AgentThreadSettings: {
+            /** Archivedat */
+            archivedAt?: string | null;
             /** Branchof */
             branchOf?: string | null;
             budget?: components["schemas"]["AgentThreadBudget"] | null;
@@ -22683,8 +23100,11 @@ export interface components {
          * AgentThreadUpdate
          * @description F094/F098 会话设置（scope / toolPolicy / N165 budget；None =
          *     清除/不修改按键）。scope=None 显式清除范围锁定；键缺省 = 不修改。
+         *     R20：title 重命名、archived 归档/恢复（None = 不改状态）。
          */
         AgentThreadUpdate: {
+            /** Archived */
+            archived?: boolean | null;
             /** Budget */
             budget?: {
                 [key: string]: unknown;
@@ -23798,7 +24218,7 @@ export interface components {
              * @default system
              * @enum {string}
              */
-            readerFontFamily: "system" | "sans" | "serif" | "mono";
+            readerFontFamily: "system" | "sans" | "serif" | "mono" | "source-han-sans" | "source-han-serif" | "lxgw-wenkai" | "zhuque-fangsong" | "zcool-xiaowei" | "ma-shan-zheng" | "source-sans-3" | "source-serif-4";
             /**
              * Readerfontsize
              * @default 17
@@ -28019,6 +28439,23 @@ export interface components {
              */
             url: string;
         };
+        /**
+         * GptDigestRunStatus
+         * @description GET /api/v1/gpt-digest/configs/{id}/run-status — 手动/调度生成
+         *     的运行状态（阶段进度 + 取消语义的状态源）。
+         *
+         *     ``stage`` 为服务端真实阶段：``select``（选材）/``summarize``（总结）/
+         *     ``polish``（润色）/``generate``（单阶段路径一次完成）。取消在阶段
+         *     边界生效——绝不半写期号。
+         */
+        GptDigestRunStatus: {
+            /** Running */
+            running: boolean;
+            /** Stage */
+            stage?: string | null;
+            /** Startedat */
+            startedAt?: string | null;
+        };
         /** GptDigestSection */
         GptDigestSection: {
             /** Heading */
@@ -29294,6 +29731,100 @@ export interface components {
         MoveBody: {
             /** Direction */
             direction: string;
+        };
+        /**
+         * NewsletterIssueDetail
+         * @description 详情：正文快照仅在存在时给出（历史/失败行诚实 bodyAvailable=false）。
+         */
+        NewsletterIssueDetail: {
+            /** Bodyavailable */
+            bodyAvailable: boolean;
+            /** Createdat */
+            createdAt: string;
+            /** Dedupekey */
+            dedupeKey: string;
+            /** Error */
+            error?: string | null;
+            /** Html */
+            html?: string | null;
+            /** Id */
+            id: number;
+            /** Itemcount */
+            itemCount: number;
+            /** Origin */
+            origin: string;
+            /** Providerreceipt */
+            providerReceipt: string;
+            /** Recipientcount */
+            recipientCount: number;
+            /** Recipients */
+            recipients: components["schemas"]["NewsletterIssueRecipient"][];
+            /** Sentat */
+            sentAt?: string | null;
+            /** Source */
+            source: string;
+            /** Status */
+            status: string;
+            /** Subject */
+            subject: string;
+            /** Text */
+            text?: string | null;
+        };
+        /** NewsletterIssueList */
+        NewsletterIssueList: {
+            /** Items */
+            items: components["schemas"]["NewsletterIssueSummary"][];
+        };
+        /**
+         * NewsletterIssueRecipient
+         * @description 逐收件人账目（非管理员 address 为脱敏形态）。
+         */
+        NewsletterIssueRecipient: {
+            /** Address */
+            address: string;
+            /** Error */
+            error?: string | null;
+            /** Sentat */
+            sentAt?: string | null;
+            /** Status */
+            status: string;
+        };
+        /**
+         * NewsletterIssueSummary
+         * @description 列表行：主题 / 时间 / 状态 / 来源 / 收件人数。
+         */
+        NewsletterIssueSummary: {
+            /** Createdat */
+            createdAt: string;
+            /** Error */
+            error?: string | null;
+            /** Id */
+            id: number;
+            /** Itemcount */
+            itemCount: number;
+            /** Origin */
+            origin: string;
+            /** Recipientcount */
+            recipientCount: number;
+            /** Sentat */
+            sentAt?: string | null;
+            /** Source */
+            source: string;
+            /** Status */
+            status: string;
+            /** Subject */
+            subject: string;
+        };
+        /** NewsletterRetryResult */
+        NewsletterRetryResult: {
+            /** Issueid */
+            issueId: number;
+            /** Sentcount */
+            sentCount: number;
+            /** Skippedcount */
+            skippedCount: number;
+            /** Status */
+            status: string;
         };
         /** NoteActiveResponse */
         NoteActiveResponse: {
@@ -31817,6 +32348,282 @@ export interface components {
             items: components["schemas"]["RagInconsistencyItem"][];
             /** Modelid */
             modelId: string;
+        };
+        /**
+         * RagIndexConvergeResult
+         * @description POST /api/v1/rag/index/converge —— 手动触发一次增量收敛。
+         */
+        RagIndexConvergeResult: {
+            /**
+             * Indexed
+             * @default 0
+             */
+            indexed: number;
+            /** Skipped */
+            skipped?: string | null;
+            /**
+             * Swept
+             * @default 0
+             */
+            swept: number;
+        };
+        /**
+         * RagIndexDeleteResult
+         * @description DELETE /api/v1/rag/index —— 清空本账号索引（绝不删原文）。
+         */
+        RagIndexDeleteResult: {
+            /**
+             * Removedchunks
+             * @default 0
+             */
+            removedChunks: number;
+            /**
+             * Removedvecrows
+             * @default 0
+             */
+            removedVecRows: number;
+        };
+        /**
+         * RagIndexOverview
+         * @description GET /api/v1/rag/index/overview —— RAG 索引页总览。
+         *
+         *     当前账号索引集合的真实盘点：来源 × 语料/索引数、模型/维度、最近
+         *     更新、磁盘占用、队列进度与失败明细。全部数值来自真实行/作业；
+         *     跨用户天然隔离（每用户自己的库）。
+         */
+        RagIndexOverview: {
+            /**
+             * Aidisabledfeeds
+             * @default 0
+             */
+            aiDisabledFeeds: number;
+            /**
+             * Calendarpaused
+             * @default false
+             */
+            calendarPaused: boolean;
+            /**
+             * Chunks
+             * @default 0
+             */
+            chunks: number;
+            /** Configuredmodel */
+            configuredModel?: string | null;
+            /** Dim */
+            dim: number;
+            /**
+             * Documents
+             * @default 0
+             */
+            documents: number;
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Excludedfeeds
+             * @default 0
+             */
+            excludedFeeds: number;
+            /**
+             * Failures
+             * @default []
+             */
+            failures: components["schemas"]["RagIndexOverviewFailure"][];
+            /**
+             * Fastembedavailable
+             * @default false
+             */
+            fastembedAvailable: boolean;
+            /**
+             * Incrementalpaused
+             * @default false
+             */
+            incrementalPaused: boolean;
+            job?: components["schemas"]["RagIndexOverviewJob"] | null;
+            /** Lasterror */
+            lastError?: string | null;
+            /** Lastrebuildat */
+            lastRebuildAt?: string | null;
+            /** Lastupdatedat */
+            lastUpdatedAt?: string | null;
+            /** Modelid */
+            modelId: string;
+            queue?: components["schemas"]["RagIndexOverviewQueue"];
+            /**
+             * Sources
+             * @default []
+             */
+            sources: components["schemas"]["RagIndexOverviewSource"][];
+            storage?: components["schemas"]["RagIndexOverviewStorage"];
+            /**
+             * Vectable
+             * @default false
+             */
+            vecTable: boolean;
+        };
+        /**
+         * RagIndexOverviewFailure
+         * @description R24 失败项明细（脱敏：原因截断，绝不携带堆栈或上游内容）。
+         */
+        RagIndexOverviewFailure: {
+            /** At */
+            at?: string | null;
+            /** Reason */
+            reason: string;
+            /** Ref */
+            ref?: string | null;
+        };
+        /**
+         * RagIndexOverviewJob
+         * @description R24 最近作业段（F093 口径；running 时前端可提供取消 = 暂停）。
+         */
+        RagIndexOverviewJob: {
+            /**
+             * Done
+             * @default 0
+             */
+            done: number;
+            /** Jobid */
+            jobId?: string | null;
+            /** Remaining */
+            remaining?: number | null;
+            /** Stage */
+            stage?: string | null;
+            /** Status */
+            status?: string | null;
+            /** Updatedat */
+            updatedAt?: string | null;
+        };
+        /**
+         * RagIndexOverviewQueue
+         * @description R24 队列进度（口径同 coverage：全部来自真实行与作业证据）。
+         *
+         *     pending = 可索引但当前模型下还没有任何分块；done = 已索引；
+         *     failed = 最近作业 skipped 的 ref（去重）；stale = 已索引但正文
+         *     hash 已过期。「处理完任务 ≠ 全部成功」由 failed 直接承载。
+         */
+        RagIndexOverviewQueue: {
+            /**
+             * Done
+             * @default 0
+             */
+            done: number;
+            /**
+             * Failed
+             * @default 0
+             */
+            failed: number;
+            /**
+             * Pending
+             * @default 0
+             */
+            pending: number;
+            /**
+             * Stale
+             * @default 0
+             */
+            stale: number;
+        };
+        /**
+         * RagIndexOverviewSource
+         * @description R24 总览的一类可索引来源（语料数 + 该 kind 已索引/分块数）。
+         */
+        RagIndexOverviewSource: {
+            /**
+             * Chunks
+             * @default 0
+             */
+            chunks: number;
+            /**
+             * Corpusdocs
+             * @default 0
+             */
+            corpusDocs: number;
+            /**
+             * Indexeddocs
+             * @default 0
+             */
+            indexedDocs: number;
+            /** Kind */
+            kind: string;
+        };
+        /**
+         * RagIndexOverviewStorage
+         * @description R24 索引磁盘占用（vec 表 + 分块元数据的实际字节数）。
+         *
+         *     basis=dbstat：SQLite dbstat 页级真实占用；basis=payload：无 dbstat
+         *     编译项时的载荷字节兜底（诚实标注口径，绝不估算页开销）。
+         */
+        RagIndexOverviewStorage: {
+            /**
+             * Basis
+             * @enum {string}
+             */
+            basis: "dbstat" | "payload";
+            /**
+             * Chunkbytes
+             * @default 0
+             */
+            chunkBytes: number;
+            /**
+             * Totalbytes
+             * @default 0
+             */
+            totalBytes: number;
+            /**
+             * Vecbytes
+             * @default 0
+             */
+            vecBytes: number;
+        };
+        /**
+         * RagIndexPauseResult
+         * @description POST /api/v1/rag/index/pause|resume —— 本账号增量索引暂停开关。
+         */
+        RagIndexPauseResult: {
+            /** Paused */
+            paused: boolean;
+        };
+        /**
+         * RagIndexRetryFailedRequest
+         * @description POST /api/v1/rag/index/retry-failed body。
+         *
+         *     refs 缺省 = 重试全部失败项（≤limit）；显式 refs = 单项重试
+         *     （失败项列表的「单独重试」按钮）。只动失败项，绝不全量重建。
+         */
+        RagIndexRetryFailedRequest: {
+            /**
+             * Limit
+             * @default 50
+             */
+            limit: number;
+            /** Refs */
+            refs?: string[] | null;
+        };
+        /**
+         * RagIndexRetryFailedResult
+         * @description retry-failed 结果：missing = 来源已不存在的失败项（诚实汇报）。
+         */
+        RagIndexRetryFailedResult: {
+            /**
+             * Chunks
+             * @default 0
+             */
+            chunks: number;
+            /**
+             * Missing
+             * @default []
+             */
+            missing: string[];
+            /**
+             * Requested
+             * @default 0
+             */
+            requested: number;
+            /**
+             * Updated
+             * @default 0
+             */
+            updated: number;
         };
         /**
          * RagIndexVersion
@@ -40425,7 +41232,9 @@ export interface operations {
     };
     list_threads_api_v1_agent_threads_get: {
         parameters: {
-            query?: never;
+            query?: {
+                archived?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -40439,6 +41248,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentThreadListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -40849,6 +41667,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentTurnAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_thread_to_obsidian_api_v1_agent_threads__thread_id__obsidian_export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentThreadObsidianExportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentThreadObsidianExportResult"];
                 };
             };
             /** @description Validation Error */
@@ -51328,6 +52181,37 @@ export interface operations {
             };
         };
     };
+    cancel_gpt_digest_run_api_v1_gpt_digest_configs__config_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                config_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_config_feed_api_v1_gpt_digest_configs__config_id__feed_get: {
         parameters: {
             query?: never;
@@ -51845,6 +52729,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GptDigestPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_gpt_digest_run_status_api_v1_gpt_digest_configs__config_id__run_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                config_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GptDigestRunStatus"];
                 };
             };
             /** @description Validation Error */
@@ -58356,6 +59271,99 @@ export interface operations {
             };
         };
     };
+    list_newsletter_issues_api_v1_newsletter_issues_get: {
+        parameters: {
+            query?: {
+                status?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewsletterIssueList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_newsletter_issue_api_v1_newsletter_issues__issue_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                issue_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewsletterIssueDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_newsletter_issue_api_v1_newsletter_issues__issue_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                issue_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewsletterRetryResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_templates_api_v1_note_templates_get: {
         parameters: {
             query?: never;
@@ -60948,6 +61956,63 @@ export interface operations {
             };
         };
     };
+    opml_rsshub_apply_api_v1_opml_import_rsshub_apply_post: {
+        parameters: {
+            query?: {
+                strategy?: string | null;
+                approved?: string | null;
+                chosen?: string[] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    opml_rsshub_plan_api_v1_opml_import_rsshub_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     opml_tree_apply_api_v1_opml_import_tree_apply_post: {
         parameters: {
             query?: never;
@@ -61006,6 +62071,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpmlUndoResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_rsshub_source_mappings_api_v1_opml_rsshub_mappings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    revert_rsshub_source_mapping_api_v1_opml_rsshub_mappings__mapping_uuid__revert_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mapping_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -64613,6 +65733,26 @@ export interface operations {
             };
         };
     };
+    rag_index_delete_api_v1_rag_index_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagIndexDeleteResult"];
+                };
+            };
+        };
+    };
     rag_index_version_api_v1_rag_index_version_get: {
         parameters: {
             query?: never;
@@ -64653,6 +65793,119 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RagIndexVersionSwitch"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rag_index_converge_api_v1_rag_index_converge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagIndexConvergeResult"];
+                };
+            };
+        };
+    };
+    rag_index_overview_api_v1_rag_index_overview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagIndexOverview"];
+                };
+            };
+        };
+    };
+    rag_index_pause_api_v1_rag_index_pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagIndexPauseResult"];
+                };
+            };
+        };
+    };
+    rag_index_resume_api_v1_rag_index_resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagIndexPauseResult"];
+                };
+            };
+        };
+    };
+    rag_index_retry_failed_api_v1_rag_index_retry_failed_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RagIndexRetryFailedRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagIndexRetryFailedResult"];
                 };
             };
             /** @description Validation Error */
