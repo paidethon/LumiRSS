@@ -8,6 +8,8 @@
  * - F026 一键打开来源主页（feed 地址的 http(s) origin）
  * - F037 一键复制 feed 原始地址
  * - F038 QR code（uqr renderSVG；扫码在移动端打开同一 feed）
+ * - R18 RSSHub 替换映射：原始地址 / 当前 RSSHub 地址 / 撤销映射
+ *   （撤销只恢复订阅原始地址，RSSHub 源不自动退订——服务端语义）
  *
  * 数据 = GET /sources/volume?days=30&daily=true（派生投影聚合，只读，
  * 不复制 RSS 全文）。 */
@@ -17,7 +19,11 @@ import { useQuery } from '@tanstack/react-query'
 import { CalendarDays, Check, Copy, ExternalLink, QrCode } from 'lucide-react'
 import { renderSVG } from 'uqr'
 import { getSubscriptionVolume, listSourceOverrides } from '../api/client'
-import { useSetSourceOverrideMutation } from '../api/queries'
+import {
+  useRsshubMappings,
+  useRsshubRevertMutation,
+  useSetSourceOverrideMutation,
+} from '../api/queries'
 import { Button } from './ui/Button'
 import { Dialog } from './ui/Dialog'
 import { EmptyState } from './ui/EmptyState'
@@ -246,7 +252,131 @@ export function SourceStatsDrawer({
           </section>
         </div>
       )}
+
+      {/* R18：RSSHub 替换映射（独立于投影数据，任何卷状态下都如实呈现） */}
+      <SourceRsshubMappingSection feedUrl={feedUrl} open={open} />
     </Dialog>
+  )
+}
+
+/** R18 RSSHub 替换映射区：原始地址 / 当前 RSSHub 地址 / 撤销映射。
+ *
+ * 台账（GET /opml/rsshub-mappings）与本订阅地址双向对照：
+ * - 本订阅是 RSSHub 替换源（rsshubUrl === feedUrl）→ 显示原始地址 +
+ *   「恢复原始地址」撤销（服务端语义：只重新订阅原地址，RSSHub 源
+ *   不自动退订，绝不破坏性动作）；
+ * - 本订阅是保留的原始源（originalUrl === feedUrl 且存在并存的新源）
+ *   → 只读显示关联的 RSSHub 地址（撤销入口在该新源的详情里）。
+ * 无映射的订阅不渲染本区，不制造噪音。 */
+function SourceRsshubMappingSection({
+  feedUrl,
+  open,
+}: {
+  feedUrl: string
+  open: boolean
+}) {
+  const mappings = useRsshubMappings({ enabled: open })
+  const revert = useRsshubRevertMutation()
+  const [revertedId, setRevertedId] = useState<string | null>(null)
+
+  const items = useMemo(
+    () => (mappings.data?.items ?? []).filter((m) => m.status === 'active'),
+    [mappings.data],
+  )
+  const replacement = items.find((m) => m.rsshubUrl === feedUrl) ?? null
+  const twin =
+    items.find((m) => m.originalUrl === feedUrl && m.rsshubUrl !== feedUrl) ??
+    null
+
+  if (mappings.isPending) {
+    return (
+      <div className="flex flex-col gap-2 border-t border-[var(--lumi-border)] pt-3" data-testid="source-mapping-loading">
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="h-4 w-3/4" />
+      </div>
+    )
+  }
+  if (mappings.isError) {
+    return (
+      <p
+        role="status"
+        className="border-t border-[var(--lumi-border)] pt-3 text-xs text-[var(--lumi-text-tertiary)]"
+      >
+        来源映射暂时不可用，稍后重试。
+      </p>
+    )
+  }
+  if (replacement === null && twin === null) {
+    return null
+  }
+  return (
+    <section className="flex flex-col gap-2 border-t border-[var(--lumi-border)] pt-3">
+      <h4 className="text-sm font-medium text-[var(--lumi-text-secondary)]">
+        RSSHub 替换映射
+      </h4>
+      {replacement !== null && (
+        <>
+          <dl className="flex flex-col gap-1 text-xs text-[var(--lumi-text-secondary)]">
+            <div className="flex min-w-0 gap-2">
+              <dt className="shrink-0">原始地址</dt>
+              <dd
+                className="min-w-0 truncate text-[var(--lumi-text-primary)]"
+                title={replacement.originalUrl}
+              >
+                {replacement.originalUrl}
+              </dd>
+            </div>
+            <div className="flex min-w-0 gap-2">
+              <dt className="shrink-0">当前地址</dt>
+              <dd
+                className="min-w-0 truncate text-[var(--lumi-text-primary)]"
+                title={replacement.rsshubUrl}
+              >
+                {replacement.rsshubUrl}
+                <span className="ml-1 text-[var(--lumi-text-tertiary)]">（本订阅）</span>
+              </dd>
+            </div>
+          </dl>
+          {revert.isSuccess && revertedId === replacement.id ? (
+            <p role="status" className="text-xs text-[var(--lumi-text-secondary)]">
+              {revert.data?.note}
+            </p>
+          ) : (
+            <div>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={revert.isPending}
+                onClick={() =>
+                  revert.mutate(replacement.id, {
+                    onSuccess: () => setRevertedId(replacement.id),
+                  })
+                }
+              >
+                恢复原始地址
+              </Button>
+              <p className="mt-1 text-xs text-[var(--lumi-text-tertiary)]">
+                撤销只恢复订阅原始地址；本 RSSHub 源不会被自动退订。
+              </p>
+            </div>
+          )}
+          {revert.isError && (
+            <p role="alert" className="text-xs text-[var(--lumi-danger)]">
+              撤销失败：原始地址恢复未完成，请稍后重试。
+            </p>
+          )}
+        </>
+      )}
+      {twin !== null && (
+        <p className="text-xs text-[var(--lumi-text-secondary)]">
+          已关联 RSSHub 源：
+          <span className="truncate" title={twin.rsshubUrl}>
+            {twin.rsshubUrl}
+          </span>
+          （本订阅为保留的原始源；撤销入口在该 RSSHub 源的详情里。）
+        </p>
+      )}
+    </section>
   )
 }
 

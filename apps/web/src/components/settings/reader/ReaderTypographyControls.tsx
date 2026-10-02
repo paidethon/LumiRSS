@@ -19,6 +19,7 @@ import {
 import { Slider } from '../../ui/Slider'
 import { Select } from '../../ui/Select'
 import { cx } from '../../ui/cx'
+import { BuiltinFontPicker } from './BuiltinFontPicker'
 
 /** F067：字号+行高联动预设按钮组（与单项滑杆并存；命中档高亮）。 */
 function SizePresetButtons() {
@@ -94,6 +95,16 @@ export function ReaderTypographyControls() {
       </p>
 
       <div className="mt-3 flex flex-col gap-3">
+        {/* R08：内置字体（6 中 2 英）——自身字体渲染名称样张，按需加载 */}
+        <div>
+          <p className="text-sm text-[var(--lumi-text-primary)]">内置字体</p>
+          <p className="mt-0.5 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+            选中后按需加载对应字体分片；默认不加载任何字体文件。
+          </p>
+          <div className="mt-1.5">
+            <BuiltinFontPicker />
+          </div>
+        </div>
         {/* F067：联动预设（一键同设字号+行高；滑杆单项微调后自动去高亮） */}
         <SizePresetButtons />
         <Slider

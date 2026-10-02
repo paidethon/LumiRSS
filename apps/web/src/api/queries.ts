@@ -179,6 +179,10 @@ import {
   patchRssHubConfig,
   previewFeed,
   previewOpmlImport,
+  planRsshubImport,
+  applyRsshubImport,
+  listRsshubMappings,
+  revertRsshubMapping,
   previewRestore,
   previewRssHub,
   putRssHubFavorite,
@@ -826,6 +830,44 @@ export function useFreshRssUiUrl() {
   return useQuery({
     queryKey: ['freshrss-ui'],
     queryFn: ({ signal }) => getFreshRssUiUrl(signal),
+  })
+}
+
+/** R18：OPML → RSSHub 匹配计划（无副作用 mutation，同 preview 语义）。 */
+export function useRsshubPlanMutation() {
+  return useMutation({
+    mutationFn: (file: File) => planRsshubImport(file),
+  })
+}
+
+/** R18：应用 RSSHub 优化导入（server-confirmed 后失效订阅状态）。 */
+export function useRsshubApplyMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { file: File; options?: Parameters<typeof applyRsshubImport>[1] }) =>
+      applyRsshubImport(vars.file, vars.options),
+    onSuccess: () => invalidateSubscriptionState(queryClient),
+  })
+}
+
+/** R18：来源映射台账（来源运维工作台列表）。 */
+export function useRsshubMappings(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: ['rsshub-mappings'],
+    queryFn: () => listRsshubMappings(),
+    enabled: options?.enabled ?? true,
+  })
+}
+
+/** R18：撤销一条映射（恢复原地址订阅；台账与新源列表失效）。 */
+export function useRsshubRevertMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (mappingId: string) => revertRsshubMapping(mappingId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['rsshub-mappings'] })
+      await queryClient.invalidateQueries({ queryKey: ['subscriptions'] })
+    },
   })
 }
 
@@ -2072,6 +2114,8 @@ import {
   getDigestSettings,
   generateGptDigest,
   generateConfigDigest,
+  getDigestRunStatus,
+  cancelDigestRun,
   getConfigFeed,
   getGptDigestFeed,
   compareFactsGptDigestIssue,
@@ -2457,6 +2501,23 @@ export function useGenerateConfigMutation() {
     mutationFn: (input: { configId: number; putBack?: string[] }) =>
       generateConfigDigest(input.configId, input.putBack),
     onSuccess: invalidate,
+  })
+}
+
+/** 生成运行状态（生成请求进行中才轮询；stage 供进度展示与取消）。 */
+export function useDigestRunStatusQuery(configId: number, enabled: boolean) {
+  return useQuery({
+    queryKey: ['gpt-digest', 'run-status', configId],
+    queryFn: () => getDigestRunStatus(configId),
+    enabled,
+    refetchInterval: 800,
+  })
+}
+
+/** 请求取消进行中的生成（阶段边界生效；幂等）。 */
+export function useCancelDigestRunMutation() {
+  return useMutation({
+    mutationFn: (configId: number) => cancelDigestRun(configId),
   })
 }
 

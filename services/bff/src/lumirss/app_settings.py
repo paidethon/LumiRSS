@@ -71,6 +71,24 @@ _NUMERIC_RANGES: dict[str, tuple[float, float, float]] = {
 
 _HEX_COLOR_RE = r"^#[0-9a-fA-F]{6}$"
 
+# R08：内置阅读字体（6 中 2 英，OFL 分发；随 portable 同步）。
+# 值序 = Web 设置项展示序（四档系统栈在前，内置字体在后）。
+_READER_FONT_FAMILY_VALUES: tuple[str, ...] = (
+    "system",
+    "sans",
+    "serif",
+    "mono",
+    "source-han-sans",
+    "source-han-serif",
+    "lxgw-wenkai",
+    "zhuque-fangsong",
+    "zcool-xiaowei",
+    "ma-shan-zheng",
+    "source-sans-3",
+    "source-serif-4",
+)
+ReaderFontFamilyValue = Literal[tuple(_READER_FONT_FAMILY_VALUES)]  # type: ignore[valid-type]
+
 # N058：预设 vars 允许的键（与 Web ReaderPreset['vars'] 同一口径）；
 # 数值有界，未知键拒绝（extra=forbid）——任意 JSON 绝不入库。
 _PRESET_VAR_NUMERIC: dict[str, tuple[float, float]] = {
@@ -81,7 +99,7 @@ _PRESET_VAR_NUMERIC: dict[str, tuple[float, float]] = {
     "readerColumns": (1.0, 3.0),
 }
 _PRESET_VAR_ENUMS: dict[str, tuple[str, ...]] = {
-    "readerFontFamily": ("system", "sans", "serif", "mono"),
+    "readerFontFamily": _READER_FONT_FAMILY_VALUES,
     "readerBackground": ("follow", "sepia", "warm", "paper", "mint", "custom"),
     "deviceScope": ("all", "desktop"),
 }
@@ -207,7 +225,7 @@ class PortableSettings(BaseModel):
     uiFontSize: Literal[15, 16, 18, 20] = 16
     reduceMotion: bool = False
 
-    readerFontFamily: Literal["system", "sans", "serif", "mono"] = "system"
+    readerFontFamily: ReaderFontFamilyValue = "system"
     readerFontSize: float = 17.0
     readerLineHeight: float = 1.85
     readerParagraphSpacing: float = 0.85
@@ -434,7 +452,7 @@ class PortableSettingsPatch(BaseModel):
     uiFontStack: Literal["default", "sans", "serif", "mono"] | None = None
     uiFontSize: Literal[15, 16, 18, 20] | None = None
     reduceMotion: bool | None = None
-    readerFontFamily: Literal["system", "sans", "serif", "mono"] | None = None
+    readerFontFamily: ReaderFontFamilyValue | None = None
     readerFontSize: float | None = None
     readerLineHeight: float | None = None
     readerParagraphSpacing: float | None = None

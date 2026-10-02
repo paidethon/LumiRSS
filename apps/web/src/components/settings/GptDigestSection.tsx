@@ -1,9 +1,16 @@
-/** GptDigestSection — M4/F01：GPT 日报（多主题配置）设置页。
+/** GptDigestSection — AI 日报（历史名：GPT 日报；代码标识保持
+ * gpt-digest 兼容旧路由/token）设置页。M4/F01 多配置。
  *
  * 一份配置 = 一个主题日报：独立调度/窗口/上限/单源配额/来源白名单，
- * 互不覆盖也互不串用。顶部选择配置 + 新建；表单编辑（暂停 = 关闭
- * 开关）；操作：预览选材（F06，无副作用）、立即生成/修订、订阅地址
- * 展示与复制；删除仅非默认配置可点。生成失败原样透出服务端消息。 */
+ * 互不覆盖也互不串用。配置面分两层：基础（默认可见——名称/启用/
+ * 材料来源/时间范围/条目上限/长度/发布时间/时区/来源白名单/模型说明
+ * + 手动生成与预览）；高级（折叠——单源限额/去重周期/发布时点与
+ * 发布日/分阶段模型/固定栏目/聚合/缺刊策略/订阅与素材池）。
+ *
+ * 生成流程：手动生成带服务端真实阶段进度（选材/总结/润色，来自
+ * run-status）+ 可取消（POST cancel 在阶段边界生效，绝不半写期号，
+ * 已花费的模型调用不退回）+ 失败可重试；预览选材无副作用；生成产出
+ * 草稿，确认发布是显式的第二步（幂等：重复发布不产生第二行）。 */
 
 import { useEffect, useState } from 'react'
 
@@ -15,6 +22,7 @@ import type {
 } from '../../api/client'
 import {
   useAddDigestPoolEntryMutation,
+  useCancelDigestRunMutation,
   useConfigFeed,
   useConfigIssues,
   useConfigPreviewMutation,
@@ -23,6 +31,7 @@ import {
   useCreateGptDigestConfigMutation,
   useDeleteGptDigestConfigMutation,
   useDigestPool,
+  useDigestRunStatusQuery,
   useDigestTrimPreviewQuery,
   useExplainGptDigestIssueMutation,
   useGenerateConfigMutation,
@@ -50,6 +59,14 @@ import { Skeleton } from '../ui/Skeleton'
 import { useSettingsDirtySection } from './settings-dirty'
 
 const DAY_LABELS = ['一', '二', '三', '四', '五', '六', '日']
+
+/** 服务端真实阶段 → 用户文案（不虚构百分比；单阶段路径只有 generate）。 */
+const STAGE_LABELS: Record<string, string> = {
+  generate: '生成中',
+  select: '选题',
+  summarize: '总结',
+  polish: '润色排版',
+}
 
 /** N173：与服务端 split_sentences 同一正则语义（句子索引两端一致）。 */
 function splitSentences(text: string): string[] {
@@ -147,6 +164,98 @@ function CreateButton({ onCreated }: { onCreated: (id: number) => void }) {
   )
 }
 
+/** 生成运行面板：服务端真实阶段 + 取消 + 失败/取消后的结果说明。
+ * 取消是协作式——在阶段边界生效（绝不半写期号）；若最后一阶段已
+ * 完成，生成仍会成功返回（界面如实呈现成功与已保留的期号）。 */
+function GenerationPanel({
+  config,
+  generate,
+  onRetry,
+}: {
+  config: GptDigestConfig
+  generate: ReturnType<typeof useGenerateConfigMutation>
+  onRetry: () => void
+}) {
+  const cancel = useCancelDigestRunMutation()
+  const status = useDigestRunStatusQuery(config.id, generate.isPending)
+  const [cancelledSeen, setCancelledSeen] = useState(false)
+
+  useEffect(() => {
+    if (generate.isPending) setCancelledSeen(false)
+  }, [generate.isPending])
+
+  const error = generate.error instanceof ApiError ? generate.error : null
+  const cancelled =
+    !generate.isPending && error !== null && error.type === 'cancelled'
+  const showCancelled = cancelled || (cancelledSeen && generate.isSuccess)
+
+  if (generate.isPending) {
+    const stage = status.data?.running && status.data.stage ? STAGE_LABELS[status.data.stage] ?? status.data.stage : null
+    return (
+      <div
+        className="flex flex-col gap-1 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-2.5"
+        data-lumi-digest-generating=""
+        role="status"
+        aria-live="polite"
+      >
+        <p className="text-xs text-[var(--lumi-text-secondary)]">
+          {stage ? `正在生成 · 阶段：${stage}` : '正在启动生成…'}
+          {stage && stage !== STAGE_LABELS.generate ? '（选材 → 总结 → 润色）' : ''}
+        </p>
+        <p className="text-xs text-[var(--lumi-text-tertiary)]">
+          取消将在阶段边界生效；不会写入半成品。
+        </p>
+        <div>
+          <Button
+            variant="secondary"
+            size="sm"
+            data-lumi-digest-cancel=""
+            disabled={cancel.isPending}
+            onClick={() =>
+              cancel.mutate(config.id, { onSuccess: () => setCancelledSeen(true) })
+            }
+          >
+            {cancel.isPending ? '正在停止…' : '停止生成'}
+          </Button>
+        </div>
+      </div>
+    )
+  }
+  if (showCancelled) {
+    return (
+      <div
+        className="flex flex-col gap-1 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-2.5"
+        data-lumi-digest-cancelled=""
+        role="status"
+      >
+        <p className="text-xs text-[var(--lumi-text-secondary)]">
+          已停止生成（阶段边界生效）；本次未写入新期刊，已完成的期号保留。
+        </p>
+        <div>
+          <Button variant="secondary" size="sm" onClick={onRetry}>
+            重新生成
+          </Button>
+        </div>
+      </div>
+    )
+  }
+  if (generate.isError) {
+    return (
+      <div className="flex flex-col gap-1" data-lumi-digest-generate-error="">
+        <p className="text-xs text-[var(--lumi-danger)]" role="alert">
+          生成失败：{error?.message ?? '请稍后重试。'}
+        </p>
+        <div>
+          <Button variant="secondary" size="sm" onClick={onRetry}>
+            重试生成
+          </Button>
+        </div>
+      </div>
+    )
+  }
+  return null
+}
+
 function ConfigForm({ config }: { config: GptDigestConfig }) {
   const update = useUpdateGptDigestConfigMutation()
   const del = useDeleteGptDigestConfigMutation()
@@ -157,6 +266,8 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
   const rotate = useRotateGptDigestFeedMutation()
   const rotateDry = useRotateGptDigestDryRunMutation()
   const weekly = useWeeklyDigestMutation()
+  // 配置面两层：基础默认可见；高级折叠（生成机制与运维面）。
+  const [advancedOpen, setAdvancedOpen] = useState(false)
 
   const [name, setName] = useState(config.name)
   const [hour, setHour] = useState(config.hour)
@@ -185,7 +296,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
       .map((column) => `${column.name}|${column.count}|${column.emptyPolicy}`)
       .join('\n'),
   )
-  // N175：目标阅读时长（分钟；0 = 不启用）
+  // N175：目标阅读时长（分钟；0 = 不启用）——基础层的「长度」旋钮
   const [targetReadingMinutes, setTargetReadingMinutes] = useState(
     config.targetReadingMinutes ?? 0,
   )
@@ -322,6 +433,44 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
     preview.mutate({ configId: config.id })
   }
 
+  const runGenerate = () => {
+    generate.mutate({ configId: config.id, putBack: putBackKeys })
+  }
+
+  const saveButton = (
+    <Button
+      variant="primary"
+      size="sm"
+      disabled={!dirty || update.isPending}
+      onClick={() =>
+        update.mutate({
+          configId: config.id,
+          patch: {
+            name,
+            hour,
+            timezone,
+            windowHours,
+            limitCount,
+            perSourceCap,
+            feedUrlAllow,
+            sourceKind,
+            lookbackDays,
+            slots: slotsText.trim() === '' ? [] : parsedSlots,
+            days,
+            weekendHours: nextWeekendHours,
+            stageModels: nextStageModels,
+            columns: nextColumns,
+            targetReadingMinutes,
+            clusterEnabled,
+            missedIssuePolicy,
+          },
+        })
+      }
+    >
+      保存设置
+    </Button>
+  )
+
   return (
     <div className="flex flex-col gap-1">
       <Row label="名称">
@@ -341,7 +490,61 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
           onCheckedChange={(checked) => update.mutate({ configId: config.id, patch: { enabled: checked } })}
         />
       </Row>
-      <Row label="发布小时（0–23）" hint="按下方时区解释；错过时刻后重启会当日补跑一次">
+      <Row label="材料来源" hint="窗口 = 订阅时间窗；稍后读/收藏 = 生成时从对应队列取材（只读，不改状态）">
+        <select
+          aria-label="材料来源"
+          className="min-h-9 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2.5 text-sm text-[var(--lumi-text-primary)]"
+          value={sourceKind}
+          onChange={(e) => setSourceKind(e.target.value)}
+        >
+          <option value="window">订阅窗口</option>
+          <option value="read_later">稍后读队列</option>
+          <option value="starred">收藏</option>
+        </select>
+      </Row>
+      <Row label="来源白名单" hint="feed 地址包含任一子串才入选（换行/逗号分隔）；留空 = 全部订阅">
+        <textarea
+          aria-label="来源白名单"
+          className={`${textInputCls} min-h-16`}
+          placeholder={'tech.example.com\noss.example.org/feed'}
+          value={feedUrlAllow}
+          onChange={(e) => setFeedUrlAllow(e.target.value)}
+        />
+      </Row>
+      <Row label="时间范围（小时，1–72）" hint="只选发布时间落在最近该窗口内的文章">
+        <input
+          aria-label="选材窗口小时"
+          type="number"
+          min={1}
+          max={72}
+          className={numberInputCls}
+          value={windowHours}
+          onChange={(e) => setWindowHours(Number(e.target.value))}
+        />
+      </Row>
+      <Row label="单期文章上限（1–40）">
+        <input
+          aria-label="单期条目上限"
+          type="number"
+          min={1}
+          max={40}
+          className={numberInputCls}
+          value={limitCount}
+          onChange={(e) => setLimitCount(Number(e.target.value))}
+        />
+      </Row>
+      <Row label="长度（目标阅读时长，分钟）" hint="0–600：超预算条目移入素材篮（不删除）；0 = 不限；估算按每分钟 400 字">
+        <input
+          aria-label="目标阅读时长分钟"
+          type="number"
+          min={0}
+          max={600}
+          className={numberInputCls}
+          value={targetReadingMinutes}
+          onChange={(e) => setTargetReadingMinutes(Number(e.target.value))}
+        />
+      </Row>
+      <Row label="发布时间（0–23 点）" hint="按下方时区解释；错过时刻后重启会当日补跑一次">
         <input
           aria-label="发布小时"
           type="number"
@@ -362,246 +565,15 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
           onChange={(e) => setTimezone(e.target.value)}
         />
       </Row>
-      <Row label="选材窗口（小时，1–72）">
-        <input
-          aria-label="选材窗口小时"
-          type="number"
-          min={1}
-          max={72}
-          className={numberInputCls}
-          value={windowHours}
-          onChange={(e) => setWindowHours(Number(e.target.value))}
-        />
+      <Row label="模型" hint="由「设置 → AI」的摘要用途映射决定；分阶段模型路由在高级设置">
+        <span className="text-xs text-[var(--lumi-text-tertiary)]" data-lumi-digest-model-hint="">
+          跟随 AI 设置（摘要用途）
+        </span>
       </Row>
-      <Row label="近期已刊用去重（F101）" hint="回看天数（0–90）：窗口内已发布期刊引用过的材料不再入选；0 = 关闭；草稿不计入">
-        <input
-          aria-label="回看去重天数"
-          type="number"
-          min={0}
-          max={90}
-          className={numberInputCls}
-          value={lookbackDays}
-          onChange={(e) => setLookbackDays(Number(e.target.value))}
-        />
-      </Row>
-      <Row label="单期条目上限（1–40）">
-        <input
-          aria-label="单期条目上限"
-          type="number"
-          min={1}
-          max={40}
-          className={numberInputCls}
-          value={limitCount}
-          onChange={(e) => setLimitCount(Number(e.target.value))}
-        />
-      </Row>
-      <Row label="单一来源占比上限（0–5）" hint="每个来源最多入选条数；0 = 不限制">
-        <input
-          aria-label="单一来源占比上限"
-          type="number"
-          min={0}
-          max={5}
-          className={numberInputCls}
-          value={perSourceCap}
-          onChange={(e) => setPerSourceCap(Number(e.target.value))}
-        />
-      </Row>
-      <Row label="来源白名单" hint="feed 地址包含任一子串才入选（换行/逗号分隔）；留空 = 全部订阅">
-        <textarea
-          aria-label="来源白名单"
-          className={`${textInputCls} min-h-16`}
-          placeholder={'tech.example.com\noss.example.org/feed'}
-          value={feedUrlAllow}
-          onChange={(e) => setFeedUrlAllow(e.target.value)}
-        />
-      </Row>
-      <Row label="材料来源（F04）" hint="窗口 = 订阅时间窗；稍后读/收藏 = 生成时从对应队列取材（只读，不改状态）">
-        <select
-          aria-label="材料来源"
-          className="min-h-9 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2.5 text-sm text-[var(--lumi-text-primary)]"
-          value={sourceKind}
-          onChange={(e) => setSourceKind(e.target.value)}
-        >
-          <option value="window">订阅窗口</option>
-          <option value="read_later">稍后读队列</option>
-          <option value="starred">收藏</option>
-        </select>
-      </Row>
-      <Row label="发布时点（F02 早晚刊）" hint="逗号分隔的多个小时（如 8,20）：窗口按相邻时点切分；留空 = 单时点（用发布小时），期号退化为日期">
-        <input
-          aria-label="发布时点列表"
-          type="text"
-          className={textInputCls}
-          placeholder="8,20"
-          value={slotsText}
-          onChange={(e) => setSlotsText(e.target.value)}
-        />
-      </Row>
-      <Row label="发布日（N171）" hint="点击切换；全部不选 = 每天发布；周末（六/日）可单独配置发布时点">
-        <div className="flex flex-wrap items-center gap-1">
-          {DAY_LABELS.map((label, day) => {
-            const active = days.includes(day)
-            return (
-              <button
-                key={day}
-                type="button"
-                aria-pressed={active}
-                aria-label={`发布日 周${label}`}
-                data-lumi-digest-day={day}
-                className={`min-h-9 w-9 rounded-[var(--lumi-radius-md)] border text-xs ${
-                  active
-                    ? 'border-[var(--lumi-accent)] bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
-                    : 'border-[var(--lumi-border)] bg-[var(--lumi-surface)] text-[var(--lumi-text-secondary)]'
-                }`}
-                onClick={() =>
-                  setDays(
-                    active
-                      ? days.filter((d) => d !== day)
-                      : [...days, day].sort((x, y) => x - y),
-                  )
-                }
-              >
-                {label}
-              </button>
-            )
-          })}
-        </div>
-      </Row>
-      <Row label="周末发布时点（N171）" hint="周六/周日改用这套小时（逗号分隔，如 10,16）；留空 = 沿用平日计划">
-        <input
-          aria-label="周末发布时点"
-          type="text"
-          className={textInputCls}
-          placeholder="10,16"
-          value={weekendHoursText}
-          onChange={(e) => setWeekendHoursText(e.target.value)}
-        />
-      </Row>
-      <Row label="选材模型（N172）" hint="仅选材阶段使用的模型名；留空 = 用基础模型">
-        <input
-          aria-label="选材模型"
-          type="text"
-          className={textInputCls}
-          placeholder="model-id"
-          value={selectModel}
-          onChange={(e) => setSelectModel(e.target.value)}
-        />
-      </Row>
-      <Row label="总结模型（N172）" hint="仅总结阶段使用的模型名；留空 = 用基础模型">
-        <input
-          aria-label="总结模型"
-          type="text"
-          className={textInputCls}
-          placeholder="model-id"
-          value={summarizeModel}
-          onChange={(e) => setSummarizeModel(e.target.value)}
-        />
-      </Row>
-      <Row label="润色模型（N172）" hint="仅润色阶段使用的模型名；留空 = 用基础模型。同一 provider 配置内路由">
-        <input
-          aria-label="润色模型"
-          type="text"
-          className={textInputCls}
-          placeholder="model-id"
-          value={polishModel}
-          onChange={(e) => setPolishModel(e.target.value)}
-        />
-      </Row>
-      <Row
-        label="固定栏目（N174）"
-        hint="每行「名称|数量|hide 或 placeholder」，如：人工智能|5|placeholder；≤8 栏；留空 = 不启用"
-      >
-        <textarea
-          aria-label="固定栏目结构"
-          className={`${textInputCls} min-h-16`}
-          placeholder={'人工智能|5|placeholder\n开源|3|hide'}
-          value={columnsText}
-          onChange={(e) => setColumnsText(e.target.value)}
-        />
-      </Row>
-      <Row label="目标阅读时长（N175）" hint="分钟（0–600）：超预算条目移入素材篮（不删除）；0 = 不启用；估算按每分钟 400 字">
-        <input
-          aria-label="目标阅读时长分钟"
-          type="number"
-          min={0}
-          max={600}
-          className={numberInputCls}
-          value={targetReadingMinutes}
-          onChange={(e) => setTargetReadingMinutes(Number(e.target.value))}
-        />
-      </Row>
-      <Row label="同事件聚合（N176）" hint="开启后：标题高度相似且 48 小时内发布的条目聚合为一条多来源条目；数字不一致时如实标注分歧">
-        <Switch
-          id={`gpt-digest-cluster-${config.id}`}
-          label={`同事件聚合 ${config.name}`}
-          checked={clusterEnabled}
-          onCheckedChange={(checked) => setClusterEnabled(checked)}
-        />
-      </Row>
-      <Row label="缺刊处理（N179）" hint="错过发布时点且超出补刊窗口的期号：补刊（默认，原期号补生成）/ 并入下一期（窗口材料经素材池并入）/ 跳过并记录">
-        <Select
-          aria-label={`缺刊处理策略 ${config.name}`}
-          className="min-h-10"
-          value={missedIssuePolicy}
-          onChange={(e) => setMissedIssuePolicy(e.target.value)}
-          options={[
-            { value: 'backfill', label: '补刊（默认）' },
-            { value: 'merge_into_next', label: '并入下一期' },
-            { value: 'skip', label: '跳过并记录' },
-          ]}
-        />
-      </Row>
-      {(config.skipLog?.length ?? 0) > 0 && (
-        <Row label="缺刊记录（N179）" hint="策略处理过的缺刊（最多保留 30 条）">
-          <ul
-            className="flex max-h-28 flex-col gap-0.5 overflow-y-auto text-xs text-[var(--lumi-text-secondary)]"
-            data-testid="lumi-digest-skip-log"
-          >
-            {[...config.skipLog].reverse().map((entry) => (
-              <li key={`${entry.date}:${entry.reason}`}>
-                {entry.date} ·{' '}
-                {entry.reason === 'policy_skip'
-                  ? '按策略跳过'
-                  : entry.reason === 'merged_into_next'
-                    ? '已并入下一期'
-                    : entry.reason}
-              </li>
-            ))}
-          </ul>
-        </Row>
-      )}
+
+      {/* 操作行：保存 / 预览（无副作用）→ 生成（草稿）→ 审阅发布（两步） */}
       <div className="flex flex-wrap items-center gap-2 py-2">
-        <Button
-          variant="primary"
-          size="sm"
-          disabled={!dirty || update.isPending}
-          onClick={() =>
-            update.mutate({
-              configId: config.id,
-              patch: {
-                name,
-                hour,
-                timezone,
-                windowHours,
-                limitCount,
-                perSourceCap,
-                feedUrlAllow,
-                sourceKind,
-                lookbackDays,
-                slots: slotsText.trim() === '' ? [] : parsedSlots,
-                days,
-                weekendHours: nextWeekendHours,
-                stageModels: nextStageModels,
-                columns: nextColumns,
-                targetReadingMinutes,
-                clusterEnabled,
-                missedIssuePolicy,
-              },
-            })
-          }
-        >
-          保存设置
-        </Button>
+        {saveButton}
         <Button
           variant="secondary"
           size="sm"
@@ -614,49 +586,21 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
           variant="secondary"
           size="sm"
           disabled={generate.isPending}
-          onClick={() => generate.mutate({ configId: config.id, putBack: putBackKeys })}
+          onClick={runGenerate}
+          data-lumi-digest-generate=""
         >
-          {generate.isPending ? '生成中…' : '立即生成/修订今日'}
+          {generate.isPending ? '生成中…' : '生成今日日报'}
         </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={weekly.isPending}
-          onClick={() => weekly.mutate(config.id)}
-        >
-          {weekly.isPending ? '周报生成中…' : '生成周报'}
-        </Button>
-        {config.id > 1 ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={del.isPending}
-            onClick={() => {
-              if (window.confirm(`删除「${config.name}」及其全部期刊？`)) del.mutate(config.id)
-            }}
-          >
-            删除配置
-          </Button>
-        ) : null}
       </div>
-      {weekly.isError && weekly.error instanceof ApiError ? (
-        <p className="text-xs text-[var(--lumi-danger)]" role="alert">
-          周报失败：{weekly.error.message}
-        </p>
-      ) : null}
-      {generate.isError && generate.error instanceof ApiError ? (
-        <p className="text-xs text-[var(--lumi-danger)]" role="alert">
-          生成失败：{generate.error.message}
-        </p>
-      ) : null}
+      <GenerationPanel config={config} generate={generate} onRetry={runGenerate} />
       {preview.isError && preview.error instanceof ApiError ? (
         <p className="text-xs text-[var(--lumi-danger)]" role="alert">
           预览失败：{preview.error.message}
         </p>
       ) : null}
       {generate.isSuccess ? (
-        <p className="text-xs text-[var(--lumi-text-secondary)]">
-          已生成/修订：{generate.data.issue.title}
+        <p className="text-xs text-[var(--lumi-text-secondary)]" role="status">
+          已生成草稿：{generate.data.issue.title}；审阅无误后点该期的「审阅并发布」。
         </p>
       ) : null}
       {config.lastError ? (
@@ -758,98 +702,6 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
         </div>
       ) : null}
 
-      <h3 className="mt-4 text-sm font-semibold text-[var(--lumi-text-primary)]">订阅本日报</h3>
-      {feed.isPending ? (
-        <Skeleton className="h-9 w-full" />
-      ) : feedHidden ? (
-        <p className="text-xs text-[var(--lumi-text-tertiary)]" data-lumi-feed-hidden="">
-          订阅地址已隐藏（token 只存哈希，无法再次查看）；点下方「轮换 token」获取一次新地址。
-        </p>
-      ) : (
-        <div className="flex flex-wrap items-center gap-2">
-          <code className="min-w-0 flex-1 truncate rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-pressed)] px-2 py-1.5 text-xs text-[var(--lumi-text-secondary)]">
-            {feedUrl || '—'}
-          </code>
-          <Button variant="ghost" size="sm" onClick={() => void navigator.clipboard?.writeText(feedUrl)}>
-            复制
-          </Button>
-        </div>
-      )}
-      <p className="text-xs text-[var(--lumi-text-tertiary)]">
-        订阅地址含私密 token（持有即访问）；所有配置共享同一 token，轮换后旧地址立即失效。
-      </p>
-      {/* F103：轮换两步——先拉影响报告（零变更），确认后才执行 */}
-      <div data-lumi-digest-rotate="">
-        {rotateStep === 'idle' ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={rotateDry.isPending}
-            onClick={() => rotateDry.mutate(undefined, { onSuccess: () => setRotateStep('confirm') })}
-          >
-            {rotateDry.isPending ? '读取影响中…' : '轮换 token'}
-          </Button>
-        ) : rotateStep === 'confirm' ? (
-          <div
-            className="flex flex-col gap-1.5 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-2.5"
-            data-lumi-digest-rotate-confirm=""
-          >
-            <p className="text-xs font-medium text-[var(--lumi-text-primary)]">确认轮换订阅 token？</p>
-            {rotateDry.data ? (
-              <p className="text-xs text-[var(--lumi-text-secondary)]">
-                当前 token 建于{' '}
-                {rotateDry.data.impact.tokenRotatedAt != null && rotateDry.data.impact.tokenRotatedAt !== ''
-                  ? `${formatTimestamp(rotateDry.data.impact.tokenRotatedAt)}${
-                      rotateDry.data.impact.ageDays != null ? `（${rotateDry.data.impact.ageDays} 天前）` : ''
-                    }`
-                  : '（时间未知）'}
-                ；所有配置共享同一 token。
-              </p>
-            ) : null}
-            <p className="text-xs text-[var(--lumi-text-tertiary)]">
-              轮换后旧链接立即失效，所有订阅方需更新地址；已发布期刊不受影响。
-            </p>
-            <div className="flex gap-2">
-              <Button
-                variant="danger"
-                size="sm"
-                disabled={rotate.isPending}
-                onClick={() =>
-                  rotate.mutate(undefined, { onSuccess: () => setRotateStep('done') })
-                }
-              >
-                {rotate.isPending ? '轮换中…' : '确认轮换'}
-              </Button>
-              <Button variant="ghost" size="sm" disabled={rotate.isPending} onClick={() => setRotateStep('idle')}>
-                取消
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-1" data-lumi-digest-rotate-done="" role="status">
-            <p className="text-xs text-[var(--lumi-text-secondary)]">
-              已轮换。新订阅地址（旧地址已失效，请更新订阅方）：
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <code className="min-w-0 flex-1 truncate rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-pressed)] px-2 py-1.5 text-xs text-[var(--lumi-text-secondary)]">
-                {rotate.data ? `${window.location.origin}${rotate.data.atomPath}` : '—'}
-              </code>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => void navigator.clipboard?.writeText(rotate.data ? `${window.location.origin}${rotate.data.atomPath}` : '')}
-              >
-                复制
-              </Button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <MissingDatesPanel configId={config.id} />
-
-      <MaterialPoolPanel configId={config.id} onMergePreview={runPreview} />
-
       <h3 className="mt-4 text-sm font-semibold text-[var(--lumi-text-primary)]">最近期刊</h3>
       {issues.isPending ? (
         <Skeleton className="h-9 w-full" />
@@ -865,8 +717,300 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
           ))}
         </ul>
       ) : (
-        <p className="text-sm text-[var(--lumi-text-tertiary)]">还没有期刊；点上方「立即生成」试一次。</p>
+        <p className="text-sm text-[var(--lumi-text-tertiary)]">还没有期刊；点上方「生成今日日报」试一次。</p>
       )}
+
+      {/* 高级设置（折叠）：生成机制与运维面。 */}
+      <div className="mt-3">
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-expanded={advancedOpen}
+          aria-label="高级设置"
+          data-lumi-digest-advanced-toggle=""
+          onClick={() => setAdvancedOpen(!advancedOpen)}
+        >
+          {advancedOpen ? '收起高级设置' : '高级设置'}
+        </Button>
+      </div>
+      {advancedOpen ? (
+        <div className="flex flex-col gap-1" data-lumi-digest-advanced="">
+          <Row label="单一来源占比上限（0–5）" hint="每个来源最多入选条数；0 = 不限制">
+            <input
+              aria-label="单一来源占比上限"
+              type="number"
+              min={0}
+              max={5}
+              className={numberInputCls}
+              value={perSourceCap}
+              onChange={(e) => setPerSourceCap(Number(e.target.value))}
+            />
+          </Row>
+          <Row label="近期已刊用去重" hint="回看天数（0–90）：窗口内已发布期刊引用过的材料不再入选；0 = 关闭；草稿不计入">
+            <input
+              aria-label="回看去重天数"
+              type="number"
+              min={0}
+              max={90}
+              className={numberInputCls}
+              value={lookbackDays}
+              onChange={(e) => setLookbackDays(Number(e.target.value))}
+            />
+          </Row>
+          <Row label="发布时点（早晚刊）" hint="逗号分隔的多个小时（如 8,20）：窗口按相邻时点切分；留空 = 单时点（用发布时间），期号退化为日期">
+            <input
+              aria-label="发布时点列表"
+              type="text"
+              className={textInputCls}
+              placeholder="8,20"
+              value={slotsText}
+              onChange={(e) => setSlotsText(e.target.value)}
+            />
+          </Row>
+          <Row label="发布日" hint="点击切换；全部不选 = 每天发布；周末（六/日）可单独配置发布时点">
+            <div className="flex flex-wrap items-center gap-1">
+              {DAY_LABELS.map((label, day) => {
+                const active = days.includes(day)
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    aria-pressed={active}
+                    aria-label={`发布日 周${label}`}
+                    data-lumi-digest-day={day}
+                    className={`min-h-9 w-9 rounded-[var(--lumi-radius-md)] border text-xs ${
+                      active
+                        ? 'border-[var(--lumi-accent)] bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
+                        : 'border-[var(--lumi-border)] bg-[var(--lumi-surface)] text-[var(--lumi-text-secondary)]'
+                    }`}
+                    onClick={() =>
+                      setDays(
+                        active
+                          ? days.filter((d) => d !== day)
+                          : [...days, day].sort((x, y) => x - y),
+                      )
+                    }
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+          </Row>
+          <Row label="周末发布时点" hint="周六/周日改用这套小时（逗号分隔，如 10,16）；留空 = 沿用平日计划">
+            <input
+              aria-label="周末发布时点"
+              type="text"
+              className={textInputCls}
+              placeholder="10,16"
+              value={weekendHoursText}
+              onChange={(e) => setWeekendHoursText(e.target.value)}
+            />
+          </Row>
+          <Row label="选材模型" hint="仅选材阶段使用的模型名；留空 = 用基础模型">
+            <input
+              aria-label="选材模型"
+              type="text"
+              className={textInputCls}
+              placeholder="model-id"
+              value={selectModel}
+              onChange={(e) => setSelectModel(e.target.value)}
+            />
+          </Row>
+          <Row label="总结模型" hint="仅总结阶段使用的模型名；留空 = 用基础模型">
+            <input
+              aria-label="总结模型"
+              type="text"
+              className={textInputCls}
+              placeholder="model-id"
+              value={summarizeModel}
+              onChange={(e) => setSummarizeModel(e.target.value)}
+            />
+          </Row>
+          <Row label="润色模型" hint="仅润色阶段使用的模型名；留空 = 用基础模型。同一 provider 配置内路由">
+            <input
+              aria-label="润色模型"
+              type="text"
+              className={textInputCls}
+              placeholder="model-id"
+              value={polishModel}
+              onChange={(e) => setPolishModel(e.target.value)}
+            />
+          </Row>
+          <Row
+            label="固定栏目"
+            hint="每行「名称|数量|hide 或 placeholder」，如：人工智能|5|placeholder；≤8 栏；留空 = 不启用"
+          >
+            <textarea
+              aria-label="固定栏目结构"
+              className={`${textInputCls} min-h-16`}
+              placeholder={'人工智能|5|placeholder\n开源|3|hide'}
+              value={columnsText}
+              onChange={(e) => setColumnsText(e.target.value)}
+            />
+          </Row>
+          <Row label="同事件聚合" hint="开启后：标题高度相似且 48 小时内发布的条目聚合为一条多来源条目；数字不一致时如实标注分歧">
+            <Switch
+              id={`gpt-digest-cluster-${config.id}`}
+              label={`同事件聚合 ${config.name}`}
+              checked={clusterEnabled}
+              onCheckedChange={(checked) => setClusterEnabled(checked)}
+            />
+          </Row>
+          <Row label="缺刊处理" hint="错过发布时点且超出补刊窗口的期号：补刊（默认，原期号补生成）/ 并入下一期（窗口材料经素材池并入）/ 跳过并记录">
+            <Select
+              aria-label={`缺刊处理策略 ${config.name}`}
+              className="min-h-10"
+              value={missedIssuePolicy}
+              onChange={(e) => setMissedIssuePolicy(e.target.value)}
+              options={[
+                { value: 'backfill', label: '补刊（默认）' },
+                { value: 'merge_into_next', label: '并入下一期' },
+                { value: 'skip', label: '跳过并记录' },
+              ]}
+            />
+          </Row>
+          {(config.skipLog?.length ?? 0) > 0 && (
+            <Row label="缺刊记录" hint="策略处理过的缺刊（最多保留 30 条）">
+              <ul
+                className="flex max-h-28 flex-col gap-0.5 overflow-y-auto text-xs text-[var(--lumi-text-secondary)]"
+                data-testid="lumi-digest-skip-log"
+              >
+                {[...config.skipLog].reverse().map((entry) => (
+                  <li key={`${entry.date}:${entry.reason}`}>
+                    {entry.date} ·{' '}
+                    {entry.reason === 'policy_skip'
+                      ? '按策略跳过'
+                      : entry.reason === 'merged_into_next'
+                        ? '已并入下一期'
+                        : entry.reason}
+                  </li>
+                ))}
+              </ul>
+            </Row>
+          )}
+          <div className="flex flex-wrap items-center gap-2 py-2">
+            {saveButton}
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={weekly.isPending}
+              onClick={() => weekly.mutate(config.id)}
+            >
+              {weekly.isPending ? '周报生成中…' : '生成周报'}
+            </Button>
+            {config.id > 1 ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={del.isPending}
+                onClick={() => {
+                  if (window.confirm(`删除「${config.name}」及其全部期刊？`)) del.mutate(config.id)
+                }}
+              >
+                删除配置
+              </Button>
+            ) : null}
+          </div>
+          {weekly.isError && weekly.error instanceof ApiError ? (
+            <p className="text-xs text-[var(--lumi-danger)]" role="alert">
+              周报失败：{weekly.error.message}
+            </p>
+          ) : null}
+
+          <h3 className="mt-4 text-sm font-semibold text-[var(--lumi-text-primary)]">订阅本日报</h3>
+          {feed.isPending ? (
+            <Skeleton className="h-9 w-full" />
+          ) : feedHidden ? (
+            <p className="text-xs text-[var(--lumi-text-tertiary)]" data-lumi-feed-hidden="">
+              订阅地址已隐藏（token 只存哈希，无法再次查看）；点下方「轮换 token」获取一次新地址。
+            </p>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <code className="min-w-0 flex-1 truncate rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-pressed)] px-2 py-1.5 text-xs text-[var(--lumi-text-secondary)]">
+                {feedUrl || '—'}
+              </code>
+              <Button variant="ghost" size="sm" onClick={() => void navigator.clipboard?.writeText(feedUrl)}>
+                复制
+              </Button>
+            </div>
+          )}
+          <p className="text-xs text-[var(--lumi-text-tertiary)]">
+            订阅地址含私密 token（持有即访问）；所有配置共享同一 token，轮换后旧地址立即失效。
+          </p>
+          {/* F103：轮换两步——先拉影响报告（零变更），确认后才执行 */}
+          <div data-lumi-digest-rotate="">
+            {rotateStep === 'idle' ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={rotateDry.isPending}
+                onClick={() => rotateDry.mutate(undefined, { onSuccess: () => setRotateStep('confirm') })}
+              >
+                {rotateDry.isPending ? '读取影响中…' : '轮换 token'}
+              </Button>
+            ) : rotateStep === 'confirm' ? (
+              <div
+                className="flex flex-col gap-1.5 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-2.5"
+                data-lumi-digest-rotate-confirm=""
+              >
+                <p className="text-xs font-medium text-[var(--lumi-text-primary)]">确认轮换订阅 token？</p>
+                {rotateDry.data ? (
+                  <p className="text-xs text-[var(--lumi-text-secondary)]">
+                    当前 token 建于{' '}
+                    {rotateDry.data.impact.tokenRotatedAt != null && rotateDry.data.impact.tokenRotatedAt !== ''
+                      ? `${formatTimestamp(rotateDry.data.impact.tokenRotatedAt)}${
+                          rotateDry.data.impact.ageDays != null ? `（${rotateDry.data.impact.ageDays} 天前）` : ''
+                        }`
+                      : '（时间未知）'}
+                    ；所有配置共享同一 token。
+                  </p>
+                ) : null}
+                <p className="text-xs text-[var(--lumi-text-tertiary)]">
+                  轮换后旧链接立即失效，所有订阅方需更新地址；已发布期刊不受影响。
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    disabled={rotate.isPending}
+                    onClick={() =>
+                      rotate.mutate(undefined, { onSuccess: () => setRotateStep('done') })
+                    }
+                  >
+                    {rotate.isPending ? '轮换中…' : '确认轮换'}
+                  </Button>
+                  <Button variant="ghost" size="sm" disabled={rotate.isPending} onClick={() => setRotateStep('idle')}>
+                    取消
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1" data-lumi-digest-rotate-done="" role="status">
+                <p className="text-xs text-[var(--lumi-text-secondary)]">
+                  已轮换。新订阅地址（旧地址已失效，请更新订阅方）：
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <code className="min-w-0 flex-1 truncate rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-pressed)] px-2 py-1.5 text-xs text-[var(--lumi-text-secondary)]">
+                    {rotate.data ? `${window.location.origin}${rotate.data.atomPath}` : '—'}
+                  </code>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => void navigator.clipboard?.writeText(rotate.data ? `${window.location.origin}${rotate.data.atomPath}` : '')}
+                  >
+                    复制
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <MissingDatesPanel configId={config.id} />
+
+          <MaterialPoolPanel configId={config.id} onMergePreview={runPreview} />
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -943,6 +1087,9 @@ function IssueRow({
   }
 
   const meta = (issue.meta ?? {}) as Record<string, unknown>
+  // 发布幂等：成功响应携带最新期号 DTO（issues 列表键与发布失效键不同，
+  // 不会自动重取）——行内状态直接反映发布结果，无需等待外部重取。
+  const view = publish.data && publish.data.issueKey === issue.issueKey ? publish.data : issue
   const stageModels = (meta.stageModels ?? {}) as Record<string, string>
   const polishFailed = meta.polishFailed === true
   const leftoverPool = (meta.leftoverPool ?? []) as Array<{
@@ -984,7 +1131,7 @@ function IssueRow({
         <span className="min-w-0 flex-1 truncate">
           {issue.issueKey} · {issue.title}
         </span>
-        {issue.status === 'draft' ? (
+        {view.status === 'draft' ? (
           <>
             <span
               className="shrink-0 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-2 py-0.5 text-[11px] text-[var(--lumi-text-secondary)]"
@@ -1067,6 +1214,11 @@ function IssueRow({
           {editing ? '收起' : '修订'}
         </Button>
       </div>
+      {publish.isError && publish.error instanceof ApiError ? (
+        <p className="text-xs text-[var(--lumi-danger)]" role="alert">
+          发布失败：{publish.error.message}
+        </p>
+      ) : null}
       {Object.keys(stageModels).length > 0 ? (
         <p className="text-xs text-[var(--lumi-text-tertiary)]" data-lumi-stage-models="">
           模型（按阶段）：

@@ -102,8 +102,22 @@ export type ReaderLineHeight = number
 export type ReaderContentWidth = number
 /** 0010a F6：背景扩展（+paper/mint/custom，OrigRead 双主题色板原值） */
 export type ReaderBackground = 'follow' | 'sepia' | 'warm' | 'paper' | 'mint' | 'custom'
-/** 字体族四档（OrigRead reader-font 栈原值，inspired） */
-export type ReaderFontFamily = 'system' | 'sans' | 'serif' | 'mono'
+/** 字体族四档（OrigRead reader-font 栈原值，inspired）+ R08 内置字体
+ * （6 中 2 英，OFL 分发；值域与 BFF _READER_FONT_FAMILY_VALUES /
+ * generated SETTING_ENUMS.readerFontFamily 同源，经 settings:generate 对齐）。 */
+export type ReaderFontFamily =
+  | 'system'
+  | 'sans'
+  | 'serif'
+  | 'mono'
+  | 'source-han-sans'
+  | 'source-han-serif'
+  | 'lxgw-wenkai'
+  | 'zhuque-fangsong'
+  | 'zcool-xiaowei'
+  | 'ma-shan-zheng'
+  | 'source-sans-3'
+  | 'source-serif-4'
 export type ReaderParagraphSpacing = number
 export type ReaderImageMode = 'all' | 'grayscale' | 'hidden'
 // ---- R5 阅读器域批1：排版扩展（R25 起排版偏好进 PORTABLE_KEYS 同步） ----

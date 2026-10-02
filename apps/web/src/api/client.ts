@@ -1740,6 +1740,158 @@ export async function listOpmlImportLog(): Promise<{ items: OpmlImportLogEntry[]
   return request<{ items: OpmlImportLogEntry[] }>(`${API_BASE}/opml/import/log`)
 }
 
+// ---- R18 RSSHub 优化导入（plan → apply → 映射台账） -------------------------
+// 注意：以下类型为手写本地形状（BFF 以稳定 dict 返回），待主 Agent 集成
+// 时统一 `pnpm api:generate` 替换为 OpenAPI 生成类型（与 G6Schemas 同源）。
+
+export interface RsshubMatchCandidate {
+  routePath: string
+  namespace: string
+  title: string
+  params: Record<string, string>
+  missingParams: string[]
+  confidence: 'high' | 'medium'
+  basis: string
+  ambiguous: boolean
+  requires: Record<string, boolean | null> | null
+  needsCredentials: boolean
+}
+
+export interface RsshubImportPlanItem {
+  index: number
+  title: string
+  xmlUrl: string
+  htmlUrl: string | null
+  category: string | null
+  decision:
+    | 'autoReplace'
+    | 'manualChoice'
+    | 'needsCredentials'
+    | 'needsParams'
+    | 'alreadyRsshub'
+    | 'keepNative'
+    | 'unsupported'
+  chosenRoutePath: string | null
+  note: string | null
+  match: {
+    kind: 'self_rsshub' | 'external_rsshub' | 'native' | 'unknown'
+    candidates: RsshubMatchCandidate[]
+    autoRoutePath: string | null
+    note: string | null
+  }
+}
+
+export interface RsshubImportPlan {
+  rsshubConfigured: boolean
+  totalFeeds: number
+  fileDuplicates: number
+  invalidEntries: number
+  counts: Record<string, number>
+  items: RsshubImportPlanItem[]
+}
+
+export interface RsshubImportApplyResult {
+  strategy: 'prefer_rsshub' | 'prefer_native' | 'manual'
+  replaced: {
+    originalUrl: string
+    title: string
+    keptOldSource: boolean
+    rsshubUrl: string
+    validated: boolean
+    mapping?: RsshubSourceMapping
+  }[]
+  addedNative: {
+    originalUrl: string
+    title: string
+    reason?: string
+    categoryLabel?: string | null
+    categoryApplied?: boolean
+  }[]
+  keptOldSource: { originalUrl: string; rsshubUrl: string }[]
+  skipped: { feedUrl: string; title: string; reason: string }[]
+  failed: { feedUrl: string; title: string; error: string }[]
+  mappings: RsshubSourceMapping[]
+  counts: {
+    replaced: number
+    addedNative: number
+    keptOldSource: number
+    skipped: number
+    failed: number
+  }
+  entryStateNote: string
+}
+
+export interface RsshubSourceMapping {
+  id: string
+  originalUrl: string
+  rsshubUrl: string
+  namespace: string | null
+  routePath: string | null
+  strategy: string
+  keptOldSource: boolean
+  status: 'active' | 'reverted'
+  createdAt: string
+  revertedAt: string | null
+}
+
+export type RsshubImportStrategy = 'prefer_rsshub' | 'prefer_native' | 'manual'
+
+/** R18：OPML → RSSHub 匹配计划（严格只读，零网络零写入）。 */
+export async function planRsshubImport(file: File): Promise<RsshubImportPlan> {
+  const response = await rawRequest(`${API_BASE}/opml/import/rsshub-plan`, {
+    method: 'POST',
+    body: file,
+    contentType: file.type || 'application/xml',
+  })
+  return (await response.json()) as RsshubImportPlan
+}
+
+/** R18：应用 RSSHub 优化导入（先实际验证再经 FreshRSS 订阅；
+ * manual 策略 approved/chosen 逐项显式选择）。 */
+export async function applyRsshubImport(
+  file: File,
+  options?: {
+    strategy?: RsshubImportStrategy
+    approved?: number[]
+    chosen?: { index: number; routePath: string }[]
+  },
+): Promise<RsshubImportApplyResult> {
+  const params = new URLSearchParams()
+  const strategy = options?.strategy ?? 'prefer_rsshub'
+  if (strategy !== 'prefer_rsshub') params.set('strategy', strategy)
+  if (options?.approved?.length) params.set('approved', options.approved.join(','))
+  for (const item of options?.chosen ?? []) {
+    params.append('chosen', `${item.index}|${item.routePath}`)
+  }
+  const encoded = params.toString()
+  const qs = encoded.length > 0 ? `?${encoded}` : ''
+  const response = await rawRequest(`${API_BASE}/opml/import/rsshub-apply` + qs, {
+    method: 'POST',
+    body: file,
+    contentType: file.type || 'application/xml',
+  })
+  return (await response.json()) as RsshubImportApplyResult
+}
+
+/** R18：原生 ↔ RSSHub 来源映射台账（来源运维工作台）。 */
+export async function listRsshubMappings(): Promise<{ items: RsshubSourceMapping[] }> {
+  return request<{ items: RsshubSourceMapping[] }>(`${API_BASE}/opml/rsshub-mappings`)
+}
+
+/** R18：撤销一条映射（恢复订阅原始地址；RSSHub 源不自动退订）。 */
+export async function revertRsshubMapping(mappingId: string): Promise<{
+  mapping: RsshubSourceMapping
+  originalSubscribed: boolean
+  rsshubSourceRemoved: boolean
+  note: string
+}> {
+  const response = await rawRequest(
+    `${API_BASE}/opml/rsshub-mappings/${encodeURIComponent(mappingId)}/revert`,
+    { method: 'POST' },
+  )
+  return await response.json()
+}
+
 /** 0013 Gate 4：FreshRSS 高级逃生入口（未配置 → null；BFF 永不暴露
  * 内部 base URL）。 */
 export async function getFreshRssUiUrl(signal?: AbortSignal): Promise<FreshRssUiInfo> {
@@ -3596,6 +3748,29 @@ export async function generateConfigDigest(
     contentType: putBack !== undefined && putBack.length > 0 ? 'application/json' : undefined,
   })
   return (await response.json()) as { issue: GptDigestIssue; promptVersion: string }
+}
+
+/** 生成运行状态（手动与调度共用；stage = select/summarize/polish/generate）。 */
+export interface GptDigestRunStatus {
+  running: boolean
+  stage: string | null
+  startedAt: string | null
+}
+
+/** 查询某配置的生成运行状态（阶段进度与取消语义的状态源）。 */
+export async function getDigestRunStatus(configId: number): Promise<GptDigestRunStatus> {
+  const response = await rawRequest(`${API_BASE}/gpt-digest/configs/${configId}/run-status`, {
+    method: 'GET',
+  })
+  return (await response.json()) as GptDigestRunStatus
+}
+
+/** 请求取消进行中的生成（协作式：在阶段边界生效，绝不半写期号）。 */
+export async function cancelDigestRun(configId: number): Promise<{ cancelled: boolean }> {
+  const response = await rawRequest(`${API_BASE}/gpt-digest/configs/${configId}/cancel`, {
+    method: 'POST',
+  })
+  return (await response.json()) as { cancelled: boolean }
 }
 
 /** 指定配置的最近期刊。 */

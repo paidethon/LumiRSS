@@ -1,8 +1,9 @@
-/** M4/F01：GPT 日报设置 UI 行为测试。
+/** M4/F01：AI 日报设置 UI 行为测试（历史名 GPT 日报；路由标识
+ * gpt-digest 为兼容保留）。
  *
  * 断言 DOM 语义与交互：配置选择与新建、保存 PUT 载荷、来源白名单、
- * 立即生成失败透出、预览渲染、订阅地址。fetch 全部 stub，绝不触网
- * （真实 GPT 调用与订阅端在集成层另行验证）。 */
+ * 生成失败透出、预览渲染、订阅地址。fetch 全部 stub，绝不触网
+ * （真实模型调用与订阅端在集成层另行验证）。 */
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -122,7 +123,7 @@ describe('GptDigestSection（F01 多配置）', () => {
     })
   })
 
-  it('立即生成失败原样透出服务端消息', async () => {
+  it('生成失败原样透出服务端消息并提供重试入口', async () => {
     renderSection((url, init) => {
       if (/\/configs\/\d+\/generate/.test(url) && init?.method === 'POST') {
         return jsonResponse(
@@ -133,10 +134,11 @@ describe('GptDigestSection（F01 多配置）', () => {
       return baseHandler(url, init)
     })
     await screen.findByLabelText('选择日报配置')
-    fireEvent.click(screen.getByRole('button', { name: /立即生成/ }))
+    fireEvent.click(screen.getByRole('button', { name: /生成今日日报/ }))
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent('窗口内没有可用材料')
     })
+    expect(screen.getByRole('button', { name: '重试生成' })).toBeInTheDocument()
   })
 
   it('新建配置发出 POST 并切换到新配置', async () => {

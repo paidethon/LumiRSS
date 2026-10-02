@@ -107,7 +107,7 @@ export const SETTING_ENUMS = {
   themeMode: ['system', 'light', 'dark'],
   uiFontStack: ['default', 'sans', 'serif', 'mono'],
   uiFontSize: [15, 16, 18, 20],
-  readerFontFamily: ['system', 'sans', 'serif', 'mono'],
+  readerFontFamily: ['system', 'sans', 'serif', 'mono', 'source-han-sans', 'source-han-serif', 'lxgw-wenkai', 'zhuque-fangsong', 'zcool-xiaowei', 'ma-shan-zheng', 'source-sans-3', 'source-serif-4'],
   readerBackground: ['follow', 'sepia', 'warm', 'paper', 'mint', 'custom'],
   readerImageMode: ['all', 'grayscale', 'hidden'],
   readerTextIndent: ['off', '2em'],

@@ -2991,6 +2991,19 @@ class GptDigestConfigUpdate(BaseModel):
     missedIssuePolicy: str | None = None
 
 
+class GptDigestRunStatus(BaseModel):
+    """GET /api/v1/gpt-digest/configs/{id}/run-status — 手动/调度生成
+    的运行状态（阶段进度 + 取消语义的状态源）。
+
+    ``stage`` 为服务端真实阶段：``select``（选材）/``summarize``（总结）/
+    ``polish``（润色）/``generate``（单阶段路径一次完成）。取消在阶段
+    边界生效——绝不半写期号。"""
+
+    running: bool
+    stage: str | None = None
+    startedAt: str | None = None
+
+
 class StorageUsage(BaseModel):
     """GET /api/v1/storage/usage — F36 用量口径（未知为 null，不冒充零）。"""
 

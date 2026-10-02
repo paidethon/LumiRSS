@@ -2,6 +2,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
+// R08：内置阅读字体 @font-face（unicode-range 分片，public/fonts 自托管）。
+// 仅声明不加载：无 preload，用户选中对应字体或渲染名称样张时才按需取分片。
+import './styles/fonts.css'
 import App from './App.tsx'
 import AuthEntrance from './components/AuthEntrance.tsx'
 import { useAuthGate } from './lib/auth-gate.ts'

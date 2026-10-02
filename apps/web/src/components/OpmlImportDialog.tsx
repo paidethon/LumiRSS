@@ -20,13 +20,16 @@ import {
   OpmlPreviewCard,
   OpmlPreviewItemsCard,
   OpmlResultCard,
+  RsshubPlanCard,
+  RsshubResultCard,
 } from './OpmlImportFlow'
-import { useOpmlImportFlow } from '../lib/opml-import'
+import { useOpmlImportFlow, useRsshubImportFlow } from '../lib/opml-import'
 import {
   applyOpmlTreeImport,
   listOpmlImportLog,
   previewOpmlTreeImport,
   undoOpmlImport,
+  type RsshubImportStrategy,
 } from '../api/client'
 import { Button } from './ui/Button'
 import { Dialog } from './ui/Dialog'
@@ -229,7 +232,126 @@ function TreeImportSection() {
   )
 }
 
-// ---- 对话框外壳（flat / tree 两种模式共用） -----------------------------------
+// ---- R18 RSSHub 优化导入流程 ---------------------------------------------------
+
+const STRATEGY_OPTIONS: { value: RsshubImportStrategy; label: string; help: string }[] = [
+  { value: 'prefer_rsshub', label: '优先已验证 RSSHub', help: '唯一高置信候选先实际验证，通过才替换；失败回落原生。' },
+  { value: 'prefer_native', label: '优先原生', help: '全部按原始地址导入，不使用 RSSHub。' },
+  { value: 'manual', label: '手动确认', help: '只替换你逐项勾选的候选。' },
+]
+
+function RsshubImportSection() {
+  const queryClient = useQueryClient()
+  const flow = useRsshubImportFlow()
+
+  // apply 成功后失效订阅 server state（mutation hook 已做）；此处只兜底
+  // result 渲染。文件选择复用 flat 模式的 sr-only input 形态。
+  void queryClient
+
+  return (
+    <div className="flex flex-col gap-3">
+      {!flow.result && (
+        <label htmlFor="opml-rsshub-import-file">
+          <span
+            className={
+              flow.file === null
+                ? 'flex min-h-11 items-center gap-2 text-sm font-medium text-[var(--lumi-text-primary)]'
+                : 'sr-only'
+            }
+          >
+            <Upload aria-hidden className="size-4" />
+            选择 OPML 文件（RSSHub 优化）
+          </span>
+          <input
+            id="opml-rsshub-import-file"
+            type="file"
+            accept=".opml,.xml,application/xml,text/xml,text/x-opml"
+            disabled={flow.busy}
+            className="sr-only"
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              if (f) flow.selectFile(f)
+              e.target.value = ''
+            }}
+          />
+        </label>
+      )}
+      {flow.file !== null && !flow.result && (
+        <p className="truncate text-xs text-[var(--lumi-text-tertiary)]" title={flow.file.name}>
+          文件：{flow.file.name}
+        </p>
+      )}
+      {flow.errorVisible && flow.error !== null && (
+        <OpmlErrorCard title={flow.error.title} detail={flow.error.detail} />
+      )}
+
+      {!flow.result && flow.plan !== null && (
+        <div role="radiogroup" aria-label="替换策略" className="flex flex-col gap-1.5">
+          {STRATEGY_OPTIONS.map((option) => (
+            <label
+              key={option.value}
+              className="flex min-h-11 cursor-pointer items-center gap-2.5 rounded-[var(--lumi-radius-md)] px-2 hover:bg-[var(--lumi-surface-hover)]"
+            >
+              <input
+                type="radio"
+                name="rsshub-import-strategy"
+                value={option.value}
+                checked={flow.strategy === option.value}
+                onChange={() => flow.setStrategy(option.value)}
+                className="size-4 shrink-0 accent-[var(--lumi-accent)]"
+              />
+              <span className="min-w-0">
+                <span className="block text-sm text-[var(--lumi-text-primary)]">{option.label}</span>
+                <span className="block truncate text-xs text-[var(--lumi-text-tertiary)]">{option.help}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
+
+      {flow.planPending && (
+        <div className="flex flex-col gap-2" aria-label="正在解析 OPML">
+          <Skeleton className="h-5 w-2/3" />
+          <Skeleton className="h-4 w-1/2" />
+        </div>
+      )}
+
+      {!flow.result && flow.plan !== null && flow.strategy !== 'prefer_native' && (
+        <RsshubPlanCard
+          plan={flow.plan}
+          manualSelected={flow.manualSelected}
+          onToggleManual={flow.toggleManual}
+          strategy={flow.strategy}
+        />
+      )}
+
+      {flow.applyPending && (
+        <p role="status" className="text-sm text-[var(--lumi-text-secondary)]">
+          正在验证并导入，请勿关闭窗口…
+        </p>
+      )}
+
+      {!flow.result && flow.plan !== null && (
+        <Button
+          variant="primary"
+          disabled={!flow.canConfirm}
+          onClick={flow.confirmImport}
+        >
+          {flow.applyPending ? '正在导入…' : '确认导入'}
+        </Button>
+      )}
+
+      {flow.result !== null && <RsshubResultCard result={flow.result} />}
+      {flow.result !== null && (
+        <Button variant="primary" onClick={flow.reset}>
+          再导入一份
+        </Button>
+      )}
+    </div>
+  )
+}
+
+// ---- 对话框外壳（flat / tree / rsshub 三种模式共用） -----------------------------------
 
 export default function OpmlImportDialog({
   open,
@@ -239,20 +361,24 @@ export default function OpmlImportDialog({
   onClose: () => void
 }) {
   const flow = useOpmlImportFlow()
-  const [mode, setMode] = useState<'flat' | 'tree'>('flat')
+  const rsshubFlow = useRsshubImportFlow()
+  const [mode, setMode] = useState<'flat' | 'tree' | 'rsshub'>('flat')
 
   // 打开时重置全部本地状态（上一次会话不留残留）
   useEffect(() => {
     if (open) {
       flow.reset()
+      rsshubFlow.reset()
       setMode('flat')
     }
     // reset 是流程 hook 的稳定方法；依赖只看 open
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
+  const rsshubBusy = rsshubFlow.planPending || rsshubFlow.applyPending
+
   function close() {
-    if (mode === 'flat' ? flow.busy : false) return // 提交中不允许误关
+    if (mode === 'flat' ? flow.busy : mode === 'rsshub' ? rsshubBusy : false) return // 提交中不允许误关
     onClose()
   }
 
@@ -268,6 +394,10 @@ export default function OpmlImportDialog({
       panelClassName="max-w-lg"
       footer={
         mode === 'tree' ? (
+          <Button variant="primary" onClick={onClose}>
+            关闭
+          </Button>
+        ) : mode === 'rsshub' ? (
           <Button variant="primary" onClick={onClose}>
             关闭
           </Button>
@@ -288,12 +418,14 @@ export default function OpmlImportDialog({
       }
     >
       <div className="flex flex-col gap-4">
-        {/* N018：模式切换（逐项导入 = 既有合并语义；树对照 = 分类对照计划）。 */}
+        {/* N018：模式切换（逐项导入 = 既有合并语义；树对照 = 分类对照计划；
+            RSSHub 优化 = 匹配/验证/替换）。 */}
         <div role="tablist" aria-label="导入模式" className="flex gap-1.5">
           {(
             [
               ['flat', '逐项导入'],
               ['tree', '树对照导入'],
+              ['rsshub', 'RSSHub 优化'],
             ] as const
           ).map(([value, label]) => (
             <button
@@ -316,6 +448,8 @@ export default function OpmlImportDialog({
 
         {mode === 'tree' ? (
           <TreeImportSection />
+        ) : mode === 'rsshub' ? (
+          <RsshubImportSection />
         ) : (
           <>
             {!flow.result && (
