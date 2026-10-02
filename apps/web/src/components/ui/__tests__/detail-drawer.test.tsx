@@ -4,6 +4,7 @@
  * 桌面形态用 matchMedia stub 显式模拟（use-viewport-tier 的
  * '(min-width: 64rem)' 查询）。 */
 
+import '@testing-library/jest-dom/vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DetailDrawer } from '../DetailDrawer'

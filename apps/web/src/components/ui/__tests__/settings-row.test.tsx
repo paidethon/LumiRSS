@@ -1,5 +1,6 @@
 /** SettingsRow — 行结构、详情折叠与控件关联守卫。 */
 
+import '@testing-library/jest-dom/vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { SettingsRow } from '../SettingsRow'

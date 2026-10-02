@@ -1,5 +1,6 @@
 /** FormDialog — 表单结构契约守卫（头部关闭/回车提交/busy/sticky 操作区）。 */
 
+import '@testing-library/jest-dom/vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'

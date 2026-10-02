@@ -4,6 +4,7 @@
  * 基线，fix-106 已验证定位）；这里钉住 ActionMenu 特有契约：分组小标题
  * 渲染但不可聚焦、danger 语义、onSelect 直调、Escape 关闭。 */
 
+import '@testing-library/jest-dom/vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { ActionMenu } from '../ActionMenu'

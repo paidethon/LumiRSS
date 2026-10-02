@@ -3,6 +3,7 @@
  * jsdom 无 matchMedia → useIsMobile=true（窄屏语义，项目既有约定）；
  * 桌面档用 matchMedia stub 显式模拟。 */
 
+import '@testing-library/jest-dom/vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Toolbar } from '../Toolbar'

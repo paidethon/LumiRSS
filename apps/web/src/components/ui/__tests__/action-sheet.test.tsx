@@ -1,5 +1,6 @@
 /** ActionSheet — 底部面板结构守卫（标题/关闭/footer/safe-area）。 */
 
+import '@testing-library/jest-dom/vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'

@@ -1,5 +1,6 @@
 /** PageHeader — 最小行为守卫（R3 契约 §2：title/subtitle/actions/back）。 */
 
+import '@testing-library/jest-dom/vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { PageHeader } from '../PageHeader'
