@@ -72,6 +72,11 @@ jobs:
       - name: Validate env example templates
         run: python3 scripts/check_env_example.py
 
+      # R09: feature manifest gate — ids unique, every doc slug resolves,
+      # screenshots only marked published when really on disk.
+      - name: Validate feature manifest (R09)
+        run: python3 scripts/check_feature_manifest.py
+
       - name: Basic repository sanity
         shell: bash
         run: |

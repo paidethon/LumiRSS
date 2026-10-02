@@ -43,6 +43,10 @@ export default defineConfig({
   description: '邀请制多账户、自托管、source-first 的信息阅读器',
   cleanUrls: true,
   base,
+  // 唯一豁免：上游功能对照矩阵是 docs/public/reference/ 下的独立 HTML
+  // 资产（离线单文件，非 VitePress 页面），md 里以相对 .html 链接引用，
+  // 构建期无法解析为页面——运行时路径经 public/ 拷贝后成立。
+  ignoreDeadLinks: [/^\.?\/?(reference\/)?upstream-feature-matrix$/],
   rewrites: {
     // docs/README.md is the docs homepage on GitHub AND the site home —
     // one source, no index copy.
@@ -85,6 +89,7 @@ export default defineConfig({
     socialLinks: [{ icon: 'github', link: 'https://github.com/paidethon/LumiRSS' }],
     nav: [
       { text: '开始', link: '/getting-started' },
+      { text: '功能', link: '/guide/features-reading', activeMatch: '/guide/' },
       { text: '使用', link: '/how-to/deploy' },
       { text: '配置', link: '/reference/configuration' },
       { text: '架构', link: '/explanation/architecture' },
@@ -104,12 +109,23 @@ export default defineConfig({
           ],
         },
         {
+          text: '功能清单',
+          items: [
+            { text: '阅读与时间线', link: '/guide/features-reading' },
+            { text: '内容来源', link: '/guide/features-sources' },
+            { text: '整理、搜索与数据控制', link: '/guide/features-organize' },
+            { text: 'AI 功能', link: '/guide/features-ai' },
+            { text: '管理与运维', link: '/guide/features-admin' },
+          ],
+        },
+        {
           text: '使用（How-to）',
           items: [
             { text: '部署 / 升级 / 回滚', link: '/how-to/deploy' },
             { text: '邀请成员（运营者）', link: '/how-to/invite-members' },
             { text: '备份与恢复', link: '/how-to/backup-restore' },
             { text: '故障排查', link: '/how-to/troubleshoot' },
+            { text: '文档站部署', link: '/how-to/docs-site' },
           ],
         },
         {
