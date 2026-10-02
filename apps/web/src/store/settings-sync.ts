@@ -95,7 +95,7 @@ export interface SettingsSyncOptions {
  * 引用比较会把无关变更误标为 dirty → 无谓 PATCH 循环）。R25 起
  * portable 键含多个数组键（工具栏 order / 发音词典 / 过滤规则），
  * 统一走 JSON 比较——键顺序由 normalize 的确定性构造保证稳定。 */
-function samePortableValue(key: string, prev: unknown, next: unknown): boolean {
+function samePortableValue(_key: string, prev: unknown, next: unknown): boolean {
   if (typeof prev === 'object' && prev !== null) {
     return JSON.stringify(prev) === JSON.stringify(next)
   }
@@ -208,7 +208,11 @@ function isSettingsConflict(error: unknown): boolean {
 }
 
 function sendPatch(payload: PortableValues): Promise<number | null> {
-  const body: Record<string, string | number | boolean> = { ...payload }
+  // R25 后 portable 值含对象/字符串数组（toolbar order、filterRules、
+  // speechLexicon…）——PATCH 体类型与 client 的对象数组口径一致。
+  const body: Record<string, string | number | boolean | object[]> = {
+    ...payload,
+  }
   if (serverRevision !== null) body.baseRevision = serverRevision
   return patchServerSettings(body).then((server) => server.revision ?? null)
 }
@@ -347,7 +351,16 @@ export function resetAccountSettingsSync(): void {
   try {
     // as const 白名单的 readerPresets 是 readonly 元组；默认空预设以
     // 可变数组覆盖展开结果，与 ReaderPreset[] 对齐。
-    useAppSettings.getState().update({ ...PORTABLE_DEFAULTS, readerPresets: [] })
+    useAppSettings.getState().update({
+      ...PORTABLE_DEFAULTS,
+      readerPresets: [],
+      // R25 新增的数组值默认项同为 readonly 元组，按 readerPresets
+      // 同款方式以可变空数组覆盖。
+      filterRules: [],
+      speechLexicon: [],
+      readerToolbarDesktopOrder: [],
+      readerToolbarMobileOrder: [],
+    })
   } finally {
     applyingServerValues = false
   }

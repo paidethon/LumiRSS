@@ -235,7 +235,7 @@ function AaControls({
                 readerFontUrl: null,
               })
             }
-            options={READER_FONT_OPTIONS}
+            options={[...READER_FONT_OPTIONS]}
           />
         </div>
         <div className={ROW}>
