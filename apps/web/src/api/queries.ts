@@ -1560,7 +1560,7 @@ export function useBookmarks(q: string) {
 export function useBookmarkRssRefs() {
   return useQuery({
     queryKey: ['library', 'bookmarks', 'rss-refs'],
-    queryFn: ({ signal }) => listBookmarks({ limit: 500 }, signal),
+    queryFn: ({ signal }) => listBookmarks({ limit: 200 }, signal), // 端点上限 200（library.py _MAX_LIMIT）
     staleTime: 30_000,
   })
 }

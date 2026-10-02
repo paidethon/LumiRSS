@@ -48,8 +48,8 @@ from lumirss.models import (
 from lumirss.util import utc_now
 
 from ..deps import (
-    _get_adapter,
     _get_api_source_store,
+    _get_control_adapter,
     _get_inbox_store,
     _get_mail_bridge_store,
     _get_obsidian_service,
@@ -358,7 +358,6 @@ async def set_source_alias(payload: SourceAliasUpdate, request: Request) -> Sour
 
     upstream_name_at_save = 保存时刻的上游标题快照（适配器不可用 →
     NULL，诚实缺省，绝不阻塞保存）。上游标题变更永不覆盖别名。"""
-    from lumirss.deps import _get_adapter
     from lumirss.source_aliases import SourceAliasStore
 
     upstream_name: str | None = None
@@ -366,7 +365,7 @@ async def set_source_alias(payload: SourceAliasUpdate, request: Request) -> Sour
         subscription = next(
             (
                 sub
-                for sub in await _get_adapter(request).list_subscriptions()
+                for sub in await _get_control_adapter(request).list_subscriptions()
                 if sub.feed_url == payload.feedUrl
             ),
             None,
@@ -566,8 +565,8 @@ async def stale_sources(
         )
     db = request.app.state.db
     configs = await SourceOverrideStore(db).stale_alert_configs()
-    adapter = _get_adapter(request)
-    subscriptions = await adapter.list_subscriptions()
+    control = _get_control_adapter(request)
+    subscriptions = await control.list_subscriptions()
     now = datetime.now(UTC)
 
     try:
@@ -685,8 +684,8 @@ async def subscription_volume(
     days = min(max(days, 1), 30)
     now = datetime.now(UTC)
     since = (now - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    adapter = _get_adapter(request)
-    subscriptions = await adapter.list_subscriptions()
+    control = _get_control_adapter(request)
+    subscriptions = await control.list_subscriptions()
     db = request.app.state.db
     await db.migrate()
     try:
@@ -885,7 +884,7 @@ async def freshness_suggestions(request: Request) -> dict[str, object]:
             advisory_map[override["feedUrl"]] = override.get("refreshAdvisory")
     by_url = {
         subscription.feed_url: subscription
-        for subscription in await _get_adapter(request).list_subscriptions()
+        for subscription in await _get_control_adapter(request).list_subscriptions()
     }
     items: list[FreshnessSuggestionItem] = []
     for item in suggestions:
@@ -939,7 +938,7 @@ async def apply_freshness_advisory(
 
     subscribed = any(
         subscription.feed_url == body.feedUrl
-        for subscription in await _get_adapter(request).list_subscriptions()
+        for subscription in await _get_control_adapter(request).list_subscriptions()
     )
     if not subscribed:
         return JSONResponse(
