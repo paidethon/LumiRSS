@@ -13,8 +13,10 @@ image references — the same identities the OCI labels carry at build time):
      image builds received as LUMIRSS_COMMIT / VITE_GIT_COMMIT;
   3. manifest.git_sha == that same SHA — the manifest promotes THIS build;
   4. manifest.version == the tag's version (VERSION file of the tested tree);
-  5. both image references are digest-pinned (immutable @sha256:...) and the
-     digests equal the ones THIS run's build steps actually pushed.
+  5. the image references are digest-pinned (immutable @sha256:...) and the
+     digests equal the ones THIS run's build steps actually pushed — bff+web
+     always, allinone when the caller passed --allinone-digest (i.e. this
+     run also built and pushed the single-container image).
 
 Any mismatch -> exit 1; the tag never gets a manifest describing a different
 build. Deterministic, stdlib only; publish-images.yml + tests/deploy call it.
@@ -43,6 +45,7 @@ def verify_promotion(
     bff_digest: str,
     web_digest: str,
     expected_platform: str | None = None,
+    allinone_digest: str | None = None,
 ) -> list[str]:
     failures: list[str] = []
 
@@ -83,7 +86,14 @@ def verify_promotion(
         )
 
     images = manifest.get("images") or {}
-    for role, digest in (("bff", bff_digest), ("web", web_digest)):
+    roles = [("bff", bff_digest), ("web", web_digest)]
+    if allinone_digest is not None:
+        # The all-in-one image digest is part of the promoted identity only
+        # when THIS run built and pushed one (--allinone-digest); a caller
+        # that did not build it (older callers, negative tests) keeps the
+        # two-image contract, so the manifest's extra entry is allowed.
+        roles.append(("allinone", allinone_digest))
+    for role, digest in roles:
         ref = images.get(role, "")
         if not _is_digest(digest):
             _fail(failures, f"{role} digest from the build is not a sha256 digest: {digest!r}")
@@ -124,6 +134,11 @@ def main() -> int:
     )
     parser.add_argument("--bff-digest", required=True)
     parser.add_argument("--web-digest", required=True)
+    parser.add_argument(
+        "--allinone-digest", default=None,
+        help="digest of the lumirss-allinone image pushed by THIS run; when "
+        "given, manifest.images.allinone must be digest-pinned to it",
+    )
     args = parser.parse_args()
 
     failures = verify_promotion(
@@ -134,6 +149,7 @@ def main() -> int:
         args.bff_digest,
         args.web_digest,
         expected_platform=args.expected_platform,
+        allinone_digest=args.allinone_digest,
     )
     if failures:
         for failure in failures:
@@ -142,10 +158,13 @@ def main() -> int:
     platform_note = (
         f"; platform {args.expected_platform}" if args.expected_platform else ""
     )
+    allinone_note = (
+        "; allinone digest-pinned to this run's push" if args.allinone_digest else ""
+    )
     print(
         f"promotion identity ok: tag commit == tested SHA == manifest git_sha "
         f"({args.expected_sha[:12]}); v{args.expected_version}; "
-        f"bff+web digest-pinned to this run's pushes{platform_note}"
+        f"bff+web digest-pinned to this run's pushes{allinone_note}{platform_note}"
     )
     return 0
 

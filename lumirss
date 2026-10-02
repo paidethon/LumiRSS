@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # LumiRSS self-hosted lifecycle: deploy / update / status / logs / backup /
-# restore / doctor / rollback / export-images / import-images.
+# restore / doctor / rollback / export-images / import-images /
+# migrate-single / rollback-single.
 #
 # Quick start on a fresh Ubuntu 22.04/24.04 x86_64 server:
 #   git clone https://github.com/paidethon/LumiRSS.git && cd LumiRSS
@@ -22,6 +23,16 @@ BACKUP_DIR="${LUMIRSS_BACKUP_DIR:-./backups}"
 # `deploy --external-caddy` sets it and persists LUMIRSS_EXTERNAL_CADDY=1
 # in $ENV_FILE, so update/status/doctor/rollback reuse the same topology.
 EXTERNAL_MODE=0
+# Single-container topology (docker-compose.allinone.yml — Caddy + BFF +
+# FreshRSS + RSSHub in one s6-supervised container). Set by
+# `deploy/update --single`, persisted as LUMIRSS_SINGLE=1 in $ENV_FILE by
+# migrate-single (rollback-single writes 0), reused by later invocations.
+# The all-in-one image is external-caddy-only by construction.
+SINGLE_MODE=0
+# Compose service / container the app probes exec into (topology-aware;
+# resolved in main()).
+APP_SVC="bff"
+APP_CONTAINER="lumirss-bff"
 # Auth mode: "" = whatever $ENV_FILE says; `deploy --auth-mode=basic|session`
 # persists LUMIRSS_AUTH_MODE there. session = BFF login + long-lived
 # cookies (Caddy adds no Basic Auth in that mode).
@@ -32,12 +43,15 @@ LOW_MEMORY=0
 COMPOSE_ARGS=(-f docker-compose.prod.yml)
 UPSTREAM_PORT="18080"
 
-DC_D() { # compose via docker_cmd; export the persisted .env.prod values that
-         # compose interpolation consumes, so a service's `environment:` always
-         # matches the file. ARCH-10: the web container no longer receives the
-         # whole .env.prod (BFF secrets must not live in the web/Caddy env) —
-         # it gets exactly the variables its entrypoint/Caddyfile render with,
-         # exported here right before the compose call.
+DC_ARGS() { # compose with explicit -f args + the exported .env.prod values
+            # that compose interpolation consumes, so a service's
+            # `environment:` always matches the file. ARCH-10: the web
+            # container no longer receives the whole .env.prod (BFF secrets
+            # must not live in the web/Caddy env) — it gets exactly the
+            # variables its entrypoint/Caddyfile render with, exported here
+            # right before the compose call. Used by DC_D and by the
+            # topology-switching commands (migrate-single/rollback-single)
+            # which target the OTHER stack's compose files explicitly.
   local k v
   export LUMIRSS_UPSTREAM_PORT="$UPSTREAM_PORT"
   for k in DOMAIN LUMIRSS_AUTH_MODE LUMIRSS_AUTH_USER LUMIRSS_AUTH_HASH \
@@ -45,8 +59,11 @@ DC_D() { # compose via docker_cmd; export the persisted .env.prod values that
     v="$(env_value "$k")"
     export "$k=$v"
   done
-  docker_cmd compose \
-    "${COMPOSE_ARGS[@]}" "$@"
+  docker_cmd compose "$@"
+}
+
+DC_D() { # DC_D via DC_ARGS with this deployment's compose file set.
+  DC_ARGS "${COMPOSE_ARGS[@]}" "$@"
 }
 
 log()  { printf '\033[1;34m[lumirss]\033[0m %s\n' "$*"; }
@@ -73,12 +90,16 @@ LumiRSS — self-hosted reader lifecycle
   sudo ./lumirss deploy [--dry-run]             first-time / re-run install
   sudo ./lumirss deploy --external-caddy        … behind an existing host
                                   Caddy / reverse proxy (loopback-only web)
+  sudo ./lumirss deploy --single                single-container topology
+                                  (all-in-one image: Caddy + BFF + FreshRSS
+                                  + RSSHub in one s6-supervised container;
+                                  external-caddy-only, loopback HTTP)
   sudo ./lumirss deploy --auth-mode=session     persistent session login
                                   (BFF bcrypt + cookies; no more Basic-Auth
                                   prompts) — then './lumirss set-password'
   sudo ./lumirss deploy --low-memory            single-user resource preset
                                   (tighter container limits + RSSHub caps)
-  ./lumirss update                              backup → pull → up → health
+  ./lumirss update [--single]                   backup → pull → up → health
                                   (with LUMIRSS_DEPLOY_STATUS_FILE set, stage
                                   progress is written as JSON and shown
                                   read-only in the admin console)
@@ -94,6 +115,12 @@ LumiRSS — self-hosted reader lifecycle
                                   switching over a forward-migrated DB) and
                                   pinned to the image IDs that actually ran
                                   (FIX-204), not just mutable tags
+  sudo ./lumirss migrate-single                 running 4-container stack →
+                                  single container (backup-gated, volumes
+                                  kept; any failure aborts honestly)
+  sudo ./lumirss rollback-single                single container → the
+                                  previous 4-container stack (migration
+                                  rollback point)
   ./lumirss export-images [--out DIR]           docker save the pinned images
                                   to a tar + SHA256SUMS (+ release manifest
                                   when present) for air-gapped hosts
@@ -208,7 +235,7 @@ preflight() {
     if command -v getent >/dev/null && ! getent hosts "$domain" >/dev/null; then
       warn "DNS: '$domain' does not resolve yet — Let's Encrypt TLS will fail until it does."
     fi
-    if ((EXTERNAL_MODE == 0)) && command -v ss >/dev/null; then
+    if command -v ss >/dev/null && ((EXTERNAL_MODE == 0 && SINGLE_MODE == 0)); then
       for port in 80 443; do
         if ss -tln 2>/dev/null | grep -qE "[:.]$port\b"; then
           warn "port $port is already in use — stop the conflicting service or change the published ports."
@@ -216,12 +243,13 @@ preflight() {
       done
     fi
   fi
-  if ((EXTERNAL_MODE == 1)) && command -v ss >/dev/null; then
+  if ((EXTERNAL_MODE == 1 || SINGLE_MODE == 1)) && command -v ss >/dev/null; then
     # The host proxy owns 80/443; this stack's only host footprint is the
     # loopback port. Occupied is fine when it is our own running web.
+    local pub_name="lumirss-web"; ((SINGLE_MODE == 1)) && pub_name="lumirss-app"
     if ss -lnt 2>/dev/null | awk '{print $4}' | grep -qE ":${UPSTREAM_PORT}$"; then
       if ! docker_cmd ps --format '{{.Names}} {{.Ports}}' 2>/dev/null \
-          | grep -E "^lumirss-web .*127\.0\.0\.1:${UPSTREAM_PORT}->" >/dev/null; then
+          | grep -E "^$pub_name .*127\.0\.0\.1:${UPSTREAM_PORT}->" >/dev/null; then
         err "loopback port $UPSTREAM_PORT is used by another service — set LUMIRSS_UPSTREAM_PORT in $ENV_FILE to a free high port."
         exit 1
       fi
@@ -319,7 +347,7 @@ persist_image_tag() {
 # with a build from whatever this checkout happens to be).
 refuse_build_flag() {
   if [[ "${LUMIRSS_ENV:-}" == "production" ]] \
-      || printf '%s\n' "${COMPOSE_ARGS[@]}" | grep -qx "docker-compose.prod.yml"; then
+      || printf '%s\n' "${COMPOSE_ARGS[@]}" | grep -qE "docker-compose\.(prod|allinone)\.yml"; then
     err "--build is refused: production deploys are prebuilt-only (GHCR images pinned by LUMIRSS_IMAGE_TAG)."
     err "For a local dev/CI build use the overlay instead:"
     err "  LUMIRSS_BUILD_COMMIT=\"\$(git rev-parse HEAD)\" docker compose -f docker-compose.prod.yml -f docker-compose.build.yml build"
@@ -332,13 +360,24 @@ images_pull_or_build() { # $1 = "--build" (dev-only; refused on prod compose)
     refuse_build_flag
   fi
   local tag="${IMAGE_TAG:-$(cat VERSION 2>/dev/null || echo latest)}"
+  # The pinned set is topology-specific: the single-container stack runs the
+  # one lumirss-allinone image; the 4-container stack pins bff+web. Names
+  # must stay in sync with docker-compose.prod.yml /
+  # docker-compose.allinone.yml / publish-images.yml.
+  local -a refs=()
+  if ((SINGLE_MODE == 1)); then
+    refs=("ghcr.io/paidethon/lumirss/lumirss-allinone:$tag")
+  else
+    refs=("ghcr.io/paidethon/lumirss/lumirss-bff:$tag" "ghcr.io/paidethon/lumirss/lumirss-web:$tag")
+  fi
   log "pulling prebuilt images (tag: $tag)"
   # 直接 docker pull：compose pull 的进度输出随版本/TTY 变化，grep 匹配
   # 不上时会落到本地镜像回退——SSH 非 TTY 升级场景曾三次静默使用陈旧
   # 镜像（2026-10-01 生产实测）。docker pull 的退出码与输出契约稳定。
-  local pulled_ok=1
-  docker_cmd pull "ghcr.io/paidethon/lumirss/lumirss-bff:$tag" >/dev/null 2>&1 || pulled_ok=0
-  docker_cmd pull "ghcr.io/paidethon/lumirss/lumirss-web:$tag" >/dev/null 2>&1 || pulled_ok=0
+  local img pulled_ok=1
+  for img in ${refs[@]+"${refs[@]}"}; do
+    docker_cmd pull "$img" >/dev/null 2>&1 || pulled_ok=0
+  done
   if ((pulled_ok)); then
     return 0
   fi
@@ -349,8 +388,11 @@ images_pull_or_build() { # $1 = "--build" (dev-only; refused on prod compose)
   # sync with docker-compose.prod.yml / publish-images.yml (the registry
   # path gained the repository segment once already and this check missed
   # it).
-  if docker_cmd image inspect "ghcr.io/paidethon/lumirss/lumirss-web:$tag" >/dev/null 2>&1 \
-      && docker_cmd image inspect "ghcr.io/paidethon/lumirss/lumirss-bff:$tag" >/dev/null 2>&1; then
+  local local_ok=1
+  for img in ${refs[@]+"${refs[@]}"}; do
+    docker_cmd image inspect "$img" >/dev/null 2>&1 || local_ok=0
+  done
+  if ((local_ok)); then
     warn "pull output not confirmed — using existing local images (tag: $tag)"
     return 0
   fi
@@ -363,10 +405,11 @@ images_pull_or_build() { # $1 = "--build" (dev-only; refused on prod compose)
   return 1
 }
 
-wait_health() { # wait_health <timeout_seconds>
+wait_health() { # wait_health <timeout_seconds> [compose-service]; default APP_SVC
   local timeout="${1:-120}" waited=0
+  local svc="${2:-$APP_SVC}"
   log "waiting for health (max ${timeout}s)…"
-  until DC_D exec bff python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5).status==200 else 1)" >/dev/null 2>&1; do
+  until DC_D exec "$svc" python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5).status==200 else 1)" >/dev/null 2>&1; do
     sleep 3; waited=$((waited + 3))
     if [[ $waited -ge $timeout ]]; then
       err "health check timed out after ${timeout}s"
@@ -400,6 +443,7 @@ deploy_status_write() { # deploy_status_write STAGE STATUS [NOTE] ; result: depl
   LUMIRSS_DEPLOY_STAGE="$1" LUMIRSS_DEPLOY_STATE="$2" LUMIRSS_DEPLOY_NOTE="${3:-}" \
   LUMIRSS_DEPLOY_PATH="$LUMIRSS_DEPLOY_STATUS_FILE" LUMIRSS_DEPLOY_TAG="${IMAGE_TAG:-}" \
   LUMIRSS_DEPLOY_RUN_ID="${LUMIRSS_DEPLOY_RUN_ID:-}" \
+  LUMIRSS_DEPLOY_TOPOLOGY="${LUMIRSS_DEPLOY_TOPOLOGY:-multi}" \
   python3 -c '
 import datetime, json, os
 
@@ -409,6 +453,7 @@ stage = os.environ["LUMIRSS_DEPLOY_STAGE"]
 state = os.environ["LUMIRSS_DEPLOY_STATE"]
 note = os.environ.get("LUMIRSS_DEPLOY_NOTE", "")
 run_id = os.environ.get("LUMIRSS_DEPLOY_RUN_ID", "")
+topology = os.environ.get("LUMIRSS_DEPLOY_TOPOLOGY", "multi") or "multi"
 data = {}
 if os.path.exists(path):
     try:
@@ -418,18 +463,21 @@ if os.path.exists(path):
             data = loaded
     except (OSError, ValueError):
         data = {}
+command = os.environ.get("LUMIRSS_DEPLOY_COMMAND", "") or "update"
 data.setdefault("schema", "lumirss-deploy-status/v1")
-data.setdefault("command", "update")
+data.setdefault("command", command)
 data["imageTag"] = os.environ.get("LUMIRSS_DEPLOY_TAG", "") or None
+data["topology"] = topology   # "multi" | "single" (all-in-one container)
 data["updatedAt"] = now
 if run_id and data.get("runId") != run_id:
     # FIX-208: 新的一次 run —— 上一次的 startedAt/阶段/result 全部作废。
     data = {
         "schema": "lumirss-deploy-status/v1",
-        "command": "update",
+        "command": command,
         "runId": run_id,
         "startedAt": now,
         "imageTag": data.get("imageTag"),
+        "topology": topology,
         "stages": {},
     }
 if "startedAt" not in data:
@@ -481,8 +529,16 @@ snapshot_for_rollback() {
   # rollback gate degrades honestly — manifest writes never affect the
   # update/deploy itself.
   local id_bff id_web schema_versions
-  id_bff="$(docker_cmd inspect --format '{{.Image}}' lumirss-bff 2>/dev/null || true)"
-  id_web="$(docker_cmd inspect --format '{{.Image}}' lumirss-web 2>/dev/null || true)"
+  # Topology-aware ground truth: multi records the bff/web containers; the
+  # single container's image is recorded in previousImageIdBff (the manifest
+  # schema stays lumirss-rollback-manifest/v1; the BFF readiness endpoint
+  # passes the file through read-only).
+  id_bff="$(docker_cmd inspect --format '{{.Image}}' "$APP_CONTAINER" 2>/dev/null || true)"
+  if ((SINGLE_MODE == 1)); then
+    id_web=""
+  else
+    id_web="$(docker_cmd inspect --format '{{.Image}}' lumirss-web 2>/dev/null || true)"
+  fi
   printf '%s' "$id_bff" | grep -qE '^sha256:[0-9a-f]{6,64}$' || id_bff=""
   printf '%s' "$id_web" | grep -qE '^sha256:[0-9a-f]{6,64}$' || id_web=""
   schema_versions="$(control_schema_versions 2>/dev/null || true)"
@@ -561,7 +617,7 @@ print(";".join(str(r[0]) for r in rows))
 control_schema_versions() { # prints "1;2;3" ascending; rc!=0 = unknowable
   local out
   if out="$(DC_D exec -e LUMI_SCHEMA_DB_PATH=/data/lumi.sqlite \
-      bff python3 -c "$LUMI_SCHEMA_PROBE" 2>/dev/null)" \
+      "$APP_SVC" python3 -c "$LUMI_SCHEMA_PROBE" 2>/dev/null)" \
       && [[ "$out" =~ ^[0-9]+(;[0-9]+)*$ ]]; then
     printf '%s\n' "$out"
     return 0
@@ -612,9 +668,17 @@ acquire_update_lock() {
 cmd_deploy() {
   acquire_update_lock   # FIX-195: 与 update 互斥（重建容器/写 .env.prod 的两个入口）
   preflight
-  if ((LOW_MEMORY == 1)); then apply_low_memory_preset; fi
+  if ((LOW_MEMORY == 1)); then
+    ((SINGLE_MODE == 1)) && warn "the low-memory preset writes 4-container limits; the single container is sized by LUMIRSS_ALLINONE_MEM_LIMIT/_RESERVATION (defaults already fit a 1.6 GB host)."
+    apply_low_memory_preset
+  fi
   if [[ -n "$AUTH_MODE_ARG" ]]; then apply_auth_mode "$AUTH_MODE_ARG"; fi
   configure
+  if ((SINGLE_MODE == 1)); then
+    # Persist the topology so status/doctor/update/rollback reuse it
+    # (same mechanism as LUMIRSS_EXTERNAL_CADDY; rollback-single clears it).
+    env_set LUMIRSS_SINGLE 1
+  fi
   if [[ "${DRY_RUN:-0}" == "1" ]]; then
     log "dry-run: validated configuration and preflight only."
     DC_D config >/dev/null && log "compose config renders OK."
@@ -627,7 +691,18 @@ cmd_deploy() {
   images_pull_or_build "${1:-}" || exit 1
   DC_D up -d --remove-orphans
   if wait_health 180; then
-    if ((EXTERNAL_MODE == 1)); then
+    if ((SINGLE_MODE == 1)); then
+      log "deploy complete (single-container topology). Host Caddy/nginx site block — proxy to 127.0.0.1:${UPSTREAM_PORT}:"
+      # A healthy single-container deploy must not fail afterwards just
+      # because DOMAIN is not a FQDN yet (cmd_caddy_config exits 1 there) —
+      # point at the command instead.
+      local deploy_domain; deploy_domain="$(env_value DOMAIN)"
+      if [[ -n "$deploy_domain" && "$deploy_domain" != "localhost" && "$deploy_domain" != "127.0.0.1" ]]; then
+        cmd_caddy_config || true
+      else
+        log "set DOMAIN in $ENV_FILE to a real FQDN, then run './lumirss caddy-config' for the host site block."
+      fi
+    elif ((EXTERNAL_MODE == 1)); then
       log "deploy complete (external host Caddy mode). Host Caddy site block — add to the host Caddyfile and reload:"
       cmd_caddy_config || true
     else
@@ -638,7 +713,7 @@ cmd_deploy() {
         # One-shot runtime secret: hash lands in the BFF DB, plaintext is
         # never written to disk/env-files/logs (consumed and dropped here).
         if LUMIRSS_NEW_PASSWORD="${LUMIRSS_AUTH_PASSWORD}" DC_D run --rm -T --no-deps \
-            -e LUMIRSS_NEW_PASSWORD bff python scripts/set_password.py; then
+            -e LUMIRSS_NEW_PASSWORD "$APP_SVC" python scripts/set_password.py; then
           log "session password bootstrapped from LUMIRSS_AUTH_PASSWORD (hash only)."
           unset LUMIRSS_AUTH_PASSWORD
         else
@@ -688,11 +763,13 @@ PY
   git rev-parse HEAD 2>/dev/null || true
 }
 
-verify_deployment() { # verify_deployment TAG EXPECTED_COMMIT ; 0 = verified
-  local tag="$1" expected_commit="$2" rc=0
-  local token vout reported_commit svc img running_id pulled_id
+verify_deployment() { # verify_deployment TAG EXPECTED_COMMIT [single] ; 0 = verified
+  local tag="$1" expected_commit="$2" single="${3:-}" rc=0
+  local token vout reported_commit pair container img running_id pulled_id
+  local exec_svc="$APP_SVC"
+  if [[ "$single" == "single" ]]; then exec_svc="lumirss"; fi
   token="$(env_value LUMIRSS_INTERNAL_TOKEN)"
-  vout="$(DC_D exec -e LT="$token" bff python -c "import urllib.request,json,os; req=urllib.request.Request('http://127.0.0.1:8000/api/v1/version', headers={'X-Lumi-Token': os.environ.get('LT','')}); print(urllib.request.urlopen(req, timeout=10).read().decode())" 2>/dev/null || true)"
+  vout="$(DC_D exec -e LT="$token" "$exec_svc" python -c "import urllib.request,json,os; req=urllib.request.Request('http://127.0.0.1:8000/api/v1/version', headers={'X-Lumi-Token': os.environ.get('LT','')}); print(urllib.request.urlopen(req, timeout=10).read().decode())" 2>/dev/null || true)"
   reported_commit="$(printf '%s' "$vout" | python3 -c 'import json,sys
 try:
     print(json.load(sys.stdin).get("commit") or "")
@@ -708,15 +785,25 @@ except Exception:
   elif [[ -z "$expected_commit" || -z "$reported_commit" ]]; then
     warn "verify: commit comparison skipped (expected='${expected_commit:-(unknown)}', reported='${reported_commit:-(none)}') — the image-digest check remains the hard gate."
   fi
-  for svc in bff web; do
-    img="ghcr.io/paidethon/lumirss/lumirss-$svc:$tag"
-    running_id="$(docker_cmd inspect --format '{{.Image}}' "lumirss-$svc" 2>/dev/null || echo "")"
+  # Container -> pinned image pairs per topology: the single container must
+  # run the lumirss-allinone bytes; the 4-container stack pins bff+web.
+  local -a pairs=()
+  if [[ "$single" == "single" ]]; then
+    pairs=("lumirss-app ghcr.io/paidethon/lumirss/lumirss-allinone:$tag")
+  else
+    pairs=("lumirss-bff ghcr.io/paidethon/lumirss/lumirss-bff:$tag" \
+           "lumirss-web ghcr.io/paidethon/lumirss/lumirss-web:$tag")
+  fi
+  for pair in ${pairs[@]+"${pairs[@]}"}; do
+    container="${pair%% *}"
+    img="${pair#* }"
+    running_id="$(docker_cmd inspect --format '{{.Image}}' "$container" 2>/dev/null || echo "")"
     pulled_id="$(docker_cmd image inspect --format '{{.Id}}' "$img" 2>/dev/null || echo "")"
     if [[ -z "$running_id" || -z "$pulled_id" ]]; then
-      err "verify: cannot compare the image of lumirss-$svc (running container: '${running_id:-(none)}', pulled '$img': '${pulled_id:-(none)}')."
+      err "verify: cannot compare the image of $container (running container: '${running_id:-(none)}', pulled '$img': '${pulled_id:-(none)}')."
       rc=1
     elif [[ "$running_id" != "$pulled_id" ]]; then
-      err "verify: lumirss-$svc is NOT running the pinned image (running=$running_id, pulled=$pulled_id) — recreate did not take effect or the tag moved."
+      err "verify: $container is NOT running the pinned image (running=$running_id, pulled=$pulled_id) — recreate did not take effect or the tag moved."
       rc=1
     fi
   done
@@ -764,8 +851,9 @@ cmd_update() {
     # FIX-199: 健康检查只证明新容器活了；完成判定还要版本端点与镜像
     # digest 都对得上本次发布。
     deploy_status_write verify running "version endpoint + image digests must match the pinned release"
+    local verify_mode=""; ((SINGLE_MODE == 1)) && verify_mode="single"
     if verify_deployment "$IMAGE_TAG" \
-        "${LUMIRSS_EXPECTED_COMMIT:-$(release_expected_commit)}"; then
+        "${LUMIRSS_EXPECTED_COMMIT:-$(release_expected_commit)}" "$verify_mode"; then
       deploy_status_write verify ok
       deploy_status_write result success
       # 升级成功即把 pin 持久化到本次 tag：否则 .env.prod 滞留旧版本，
@@ -788,15 +876,62 @@ cmd_update() {
   fi
 }
 
+# ---------------------------------------------------------------------------
+# Single-container per-service truth (docker exec lumirss-app lumirss-health):
+# normalized "service state http" lines — state: s6 up/down/done/unknown,
+# http: ok|fail|none (none = the service has no loopback probe). `status`
+# and `doctor` both consume this; a failed exec yields NO output, which the
+# callers report as "cannot verify" instead of a green light.
+single_health_lines() {
+  docker_cmd exec "$APP_CONTAINER" lumirss-health 2>/dev/null | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    raise SystemExit(0)
+for svc in ("freshrss-init", "freshrss-php", "freshrss-cron", "bff", "caddy", "rsshub"):
+    e = data.get(svc)
+    if not isinstance(e, dict):
+        continue
+    http = e.get("http_ok")
+    hs = "none" if http is None else ("ok" if http else "fail")
+    print("%s %s %s" % (svc, e.get("state", "unknown"), hs))
+' 2>/dev/null || true
+}
+
 cmd_status() {
   require_env_file
   DC_D ps
   local port
   echo
-  if DC_D ps --status running 2>/dev/null | grep -q lumirss-web; then
+  if ((SINGLE_MODE == 1)); then
+    if ! DC_D ps --status running 2>/dev/null | grep -q lumirss-app; then
+      warn "single-container stack is not running — './lumirss deploy --single' to start."
+      return 0
+    fi
+    local commit health_summary
+    local token; token="$(env_value LUMIRSS_INTERNAL_TOKEN)"
+    commit="$(DC_D exec -e LT="$token" "$APP_SVC" python -c "import urllib.request,json,os; req=urllib.request.Request('http://127.0.0.1:8000/api/v1/version', headers={'X-Lumi-Token': os.environ.get('LT','')}); print(urllib.request.urlopen(req, timeout=5).read().decode())" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("commit") or "?")' 2>/dev/null || echo "?")"
+    # Per-service truth from inside the container (lumirss-health JSON);
+    # process-up and interface-ok stay distinguishable in the summary.
+    health_summary="$(single_health_lines | awk '{printf "%s=%s%s  ", $1, $2, ($3=="ok"?"/http-ok":($3=="fail"?"/HTTP-FAIL":""))}' || true)"
+    if [[ -n "$health_summary" ]]; then
+      log "services (lumirss-health): $health_summary"
+    else
+      warn "services: lumirss-health produced no output — inspect with 'docker exec lumirss-app lumirss-health'"
+    fi
+    # The image itself never does TLS — https:// exists only once a real
+    # FQDN sits behind the host proxy (loopback stays plain HTTP).
+    local status_domain; status_domain="$(env_value DOMAIN)"
+    local status_scheme="http"
+    if [[ -n "$status_domain" && "$status_domain" != "localhost" && "$status_domain" != "127.0.0.1" ]]; then
+      status_scheme="https"
+    fi
+    log "web: ${status_scheme}://${status_domain:-localhost}/ via host TLS proxy → 127.0.0.1:${UPSTREAM_PORT} (domain: $status_domain | bff commit: $commit | image tag: $(env_value LUMIRSS_IMAGE_TAG || echo latest) | topology: single)"
+  elif DC_D ps --status running 2>/dev/null | grep -q lumirss-web; then
     local commit port suffix
     local token; token="$(env_value LUMIRSS_INTERNAL_TOKEN)"
-    commit="$(DC_D exec -e LT="$token" bff python -c "import urllib.request,json,os; req=urllib.request.Request('http://127.0.0.1:8000/api/v1/version', headers={'X-Lumi-Token': os.environ.get('LT','')}); print(urllib.request.urlopen(req, timeout=5).read().decode())" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("commit") or "?")' 2>/dev/null || echo "?")"
+    commit="$(DC_D exec -e LT="$token" "$APP_SVC" python -c "import urllib.request,json,os; req=urllib.request.Request('http://127.0.0.1:8000/api/v1/version', headers={'X-Lumi-Token': os.environ.get('LT','')}); print(urllib.request.urlopen(req, timeout=5).read().decode())" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("commit") or "?")' 2>/dev/null || echo "?")"
     local meta
     meta="(domain: $(env_value DOMAIN) | bff commit: $commit | image tag: $(env_value LUMIRSS_IMAGE_TAG || echo latest))"
     if ((EXTERNAL_MODE == 1)); then
@@ -825,9 +960,19 @@ cmd_logs() {
 # inconsistent package (live databases are never bare-tarred, FIX-192).
 backup_image() { # prints the image reference for backup/restore containers
   if [[ -n "${LUMIRSS_BACKUP_IMAGE:-}" ]]; then printf '%s\n' "$LUMIRSS_BACKUP_IMAGE"; return; fi
+  # Topology-aware default: the single-container stack's python3+tar image
+  # is lumirss-allinone itself (service name "lumirss" in compose config);
+  # the 4-container stack resolves the bff service image. LUMIRSS_BACKUP_IMAGE
+  # still overrides both.
+  local svc="bff" fallback
+  fallback="ghcr.io/paidethon/lumirss/lumirss-bff:${IMAGE_TAG:-$(cat VERSION 2>/dev/null || echo latest)}"
+  if ((SINGLE_MODE == 1)); then
+    svc="lumirss"
+    fallback="ghcr.io/paidethon/lumirss/lumirss-allinone:${IMAGE_TAG:-$(cat VERSION 2>/dev/null || echo latest)}"
+  fi
   local img
-  img="$(DC_D config --format json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("services",{}).get("bff",{}).get("image",""))' 2>/dev/null || true)"
-  printf '%s\n' "${img:-ghcr.io/paidethon/lumirss/lumirss-bff:${IMAGE_TAG:-$(cat VERSION 2>/dev/null || echo latest)}}"
+  img="$(DC_D config --format json 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('services',{}).get('$svc',{}).get('image',''))" 2>/dev/null || true)"
+  printf '%s\n' "${img:-$fallback}"
 }
 
 # 快照程序（FIX-192 一致性备份的趟 1；经 stdin 喂给备份容器里的 python3，
@@ -1023,7 +1168,11 @@ cmd_backup() {
       return 1
     fi
   done
-  if ! tar czf "$dir/config.tar.gz" -C . "$ENV_FILE" docker-compose.prod.yml; then
+  # config.tar.gz covers the compose file of the ACTIVE topology (the
+  # rollback/restore path re-renders the stack from it).
+  local compose_file="docker-compose.prod.yml"
+  ((SINGLE_MODE == 1)) && compose_file="docker-compose.allinone.yml"
+  if ! tar czf "$dir/config.tar.gz" -C . "$ENV_FILE" "$compose_file"; then
     err "backup of config failed"
     rm -rf "$dir"
     return 1
@@ -1056,7 +1205,11 @@ cmd_restore() {
   # bff 时，恢复 freshrss-data 可能与 cron 的 actualize 撕裂。bff 对
   # freshrss-data 只是只读挂载，停它属于防御（operator 覆盖挂载场景）。
   local writers="bff"
-  [[ "$vol" == "freshrss-data" ]] && writers="bff freshrss"
+  if ((SINGLE_MODE == 1)); then
+    writers="lumirss"   # one container writes both volumes
+  elif [[ "$vol" == "freshrss-data" ]]; then
+    writers="bff freshrss"
+  fi
   log "stopping writers ($writers)…"
   # 有意不加引号：writers 展开为多个服务名。
   DC_D stop $writers >/dev/null 2>&1 || true
@@ -1117,6 +1270,58 @@ cmd_doctor() {
   fi
   if docker_cmd info >/dev/null 2>&1; then
     if [[ -f "$ENV_FILE" ]]; then
+      if ((SINGLE_MODE == 1)); then
+        # Single topology: compose defines exactly one service; per-service
+        # truth comes from lumirss-health INSIDE the container (s6 state +
+        # loopback http probe), never from invented container names.
+        state="$(docker_cmd inspect --format '{{.State.Status}}' lumirss-app 2>/dev/null || echo absent)"
+        health="$(docker_cmd inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' lumirss-app 2>/dev/null || echo absent)"
+        if [[ "$state" == "running" || "$state" == "healthy" ]]; then
+          case "$health" in
+            healthy|none|running)
+              check PASS "lumirss-app (single container) running (health: $health)";;
+            starting)
+              check WARN "lumirss-app running but its health check is still starting";;
+            *)
+              check FAIL "lumirss-app unhealthy (health: $health) — core dependency";;
+          esac
+        else
+          check FAIL "lumirss-app not running (state: $state) — core dependency"
+        fi
+        local health_lines hl_line hl_svc hl_state hl_http
+        health_lines="$(single_health_lines)"
+        if [[ -z "$health_lines" ]]; then
+          check WARN "lumirss-health produced no output — per-service state cannot be verified (try: docker exec lumirss-app lumirss-health)"
+        else
+          while IFS= read -r hl_line; do
+            [[ -n "$hl_line" ]] || continue
+            hl_svc="${hl_line%% *}"; hl_line="${hl_line#* }"
+            hl_state="${hl_line%% *}"; hl_http="${hl_line#* }"
+            case "$hl_svc" in
+              bff)
+                [[ "$hl_state" == "up" && "$hl_http" == "ok" ]] \
+                  && check PASS "bff up + http ok (single container)" \
+                  || check FAIL "bff degraded (s6: $hl_state, http: $hl_http) — core dependency";;
+              caddy|freshrss-php)
+                [[ "$hl_state" == "up" && "$hl_http" != "fail" ]] \
+                  && check PASS "$hl_svc up (http: $hl_http)" \
+                  || check FAIL "$hl_svc degraded (s6: $hl_state, http: $hl_http) — core dependency";;
+              freshrss-cron)
+                [[ "$hl_state" == "up" ]] \
+                  && check PASS "freshrss-cron up (feed refresh scheduled)" \
+                  || check WARN "freshrss-cron down — automatic feed refresh is disabled";;
+              freshrss-init)
+                [[ "$hl_state" == "done" || "$hl_state" == "running" ]] \
+                  && check PASS "freshrss-init $hl_state" \
+                  || check WARN "freshrss-init state: $hl_state (data preparation did not complete)";;
+              rsshub)
+                [[ "$hl_state" == "up" ]] \
+                  && check PASS "rsshub up (http: $hl_http)" \
+                  || check INFO "rsshub not up (optional service — source discovery/preview only)";;
+            esac
+          done <<< "$health_lines"
+        fi
+      else
       # FIX-207: 期望容器集合来自实际启用的 compose 服务（config --format
       # json），不再写死 "4/4"——被停用/裁剪的可选服务不误报缺失，关键
       # 服务缺失不允许只降级为 WARN（漏报）。可选集：rsshub（AD-0018-3，
@@ -1159,37 +1364,42 @@ except Exception:
           check INFO "$svc not running (optional service — off by design; start it explicitly if needed)"
         fi
       done
+      fi
       # FIX-198: live 与 ready 分开如实报告——live（/health/live）只证明
       # BFF 进程在、从不触碰 FreshRSS；ready（/health/ready）证明关键依赖
       # lumi.sqlite 可用（503 = unavailable）。二者语义不同，合并成一条
       # "health" 会把"进程活着但库坏了"误读为健康。这里只消费 BFF 现有
       # 端点（BFF 端点自身的增强属另一批次）。
-      if DC_D exec bff python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=5).status==200 else 1)" >/dev/null 2>&1; then
+      if DC_D exec "$APP_SVC" python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=5).status==200 else 1)" >/dev/null 2>&1; then
         check PASS "bff live (process up)"
       else
         check WARN "bff live not OK — process not answering"
       fi
-      if DC_D exec bff python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5).status==200 else 1)" >/dev/null 2>&1; then
+      if DC_D exec "$APP_SVC" python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5).status==200 else 1)" >/dev/null 2>&1; then
         check PASS "bff ready (lumi.sqlite usable)"
       else
         check WARN "bff ready not OK (lumi.sqlite/dependencies unavailable) — live above may still be true"
       fi
       # Resource-budget guard: a killed container means the limit is too
-      # low for real traffic, never a successful "lower number".
-      for svc in lumirss-web lumirss-bff lumirss-freshrss lumirss-rsshub; do
-        oom="$(docker_cmd inspect --format '{{.State.OOMKilled}}' "$svc" 2>/dev/null || echo missing)"
+      # low for real traffic, never a successful "lower number". The
+      # single topology has ONE cgroup (lumirss-app) instead of four.
+      local oom_containers=(lumirss-web lumirss-bff lumirss-freshrss lumirss-rsshub)
+      if ((SINGLE_MODE == 1)); then oom_containers=(lumirss-app); fi
+      local oom_container
+      for oom_container in "${oom_containers[@]}"; do
+        oom="$(docker_cmd inspect --format '{{.State.OOMKilled}}' "$oom_container" 2>/dev/null || echo missing)"
         if [[ "$oom" == "true" ]]; then
-          check FAIL "$svc was OOMKilled — raise its LUMIRSS_*_MEM_LIMIT"
+          check FAIL "$oom_container was OOMKilled — raise its memory limit"
         elif [[ "$oom" == "false" ]]; then
-          check PASS "$svc not OOMKilled"
+          check PASS "$oom_container not OOMKilled"
         fi
-        restarts="$(docker_cmd inspect --format '{{.RestartCount}}' "$svc" 2>/dev/null || echo 0)"
+        restarts="$(docker_cmd inspect --format '{{.RestartCount}}' "$oom_container" 2>/dev/null || echo 0)"
         if [[ "$restarts" =~ ^[0-9]+$ ]] && ((restarts > 0)); then
-          check WARN "$svc restarted ${restarts}x (see './lumirss logs')"
+          check WARN "$oom_container restarted ${restarts}x (see './lumirss logs')"
         fi
       done
       if [[ "$(env_value LUMIRSS_AUTH_MODE)" == "session" ]]; then
-        initialized="$(DC_D exec bff python -c "import sqlite3
+        initialized="$(DC_D exec "$APP_SVC" python -c "import sqlite3
 try:
     c = sqlite3.connect('/data/lumi.sqlite')
     n = c.execute('SELECT COUNT(*) FROM auth_password').fetchone()[0]
@@ -1203,14 +1413,14 @@ print(n)" 2>/dev/null || echo 0)"
         fi
       fi
       local token; token="$(env_value LUMIRSS_INTERNAL_TOKEN)"
-      if DC_D exec -e LT="$token" bff python -c "import urllib.request,json,os; req=urllib.request.Request('http://127.0.0.1:8000/api/v1/backups/capabilities', headers={'X-Lumi-Token': os.environ.get('LT','')}); print(json.load(urllib.request.urlopen(req, timeout=10)).get('fullBackupReady'))" 2>/dev/null | grep -q True; then
+      if DC_D exec -e LT="$token" "$APP_SVC" python -c "import urllib.request,json,os; req=urllib.request.Request('http://127.0.0.1:8000/api/v1/backups/capabilities', headers={'X-Lumi-Token': os.environ.get('LT','')}); print(json.load(urllib.request.urlopen(req, timeout=10)).get('fullBackupReady'))" 2>/dev/null | grep -q True; then
         check PASS "backup readiness (fullBackupReady)"
       else
         check WARN "fullBackupReady not OK (see /api/v1/backups/capabilities)"
       fi
-      if ((EXTERNAL_MODE == 1)); then
+      if ((EXTERNAL_MODE == 1 || SINGLE_MODE == 1)); then
         local pub
-        pub="$(docker_cmd ps --format '{{.Names}} {{.Ports}}' 2>/dev/null | grep '^lumirss-web ' || true)"
+        pub="$(docker_cmd ps --format '{{.Names}} {{.Ports}}' 2>/dev/null | grep -E '^lumirss-(web|app) ' || true)"
         if echo "$pub" | grep -E '(0\.0\.0\.0|\[::\]):(80|443)->' >/dev/null; then
           check FAIL "web publishes public 80/443 in external-caddy mode"
         else
@@ -1226,7 +1436,7 @@ print(n)" 2>/dev/null || echo 0)"
   else
     check WARN "no docker daemon access"
   fi
-  if ((EXTERNAL_MODE == 1)) && [[ -n "${domain:-}" && "$domain" != localhost ]]; then
+  if ((EXTERNAL_MODE == 1 || SINGLE_MODE == 1)) && [[ -n "${domain:-}" && "$domain" != localhost ]]; then
     if curl -fsS -o /dev/null --max-time 10 "https://$domain/" 2>/dev/null; then
       check PASS "public HTTPS https://$domain/"
     else
@@ -1356,6 +1566,221 @@ cmd_rollback() { # cmd_rollback [--yes]
   wait_health 180 && log "rollback complete (tag: $prev_tag)." || { err "rollback health check failed."; exit 1; }
 }
 
+# ---------------------------------------------------------------------------
+# Single-container migration: the running 4-container stack → the
+# lumirss-allinone container. Same compose project name and the SAME named
+# volumes (lumi-data / freshrss-data), so the data carries over unchanged —
+# only the containers around it are swapped. Safety chain (every step
+# reports the TRUE stack state when it fails):
+#   backup gate → pull single image → down old stack (NEVER -v) →
+#   up single container → health + version/image self-proof →
+#   persist LUMIRSS_SINGLE=1 (+ tag pin).
+# The rollback point (.env.prod.previous, .image-tag.previous,
+# .rollback-manifest.json with the running multi image IDs + schema) is
+# captured from the RUNNING multi stack BEFORE anything is touched;
+# './lumirss rollback-single' consumes it in reverse.
+cmd_migrate_single() {
+  acquire_update_lock   # same lock as deploy/update (recreates containers, writes .env.prod)
+  require_env_file
+  if ((SINGLE_MODE == 1)) || [[ "$(env_value LUMIRSS_SINGLE)" == "1" ]]; then
+    err "this deployment already runs the single-container topology (LUMIRSS_SINGLE=1) — nothing to migrate ('./lumirss status')."
+    exit 1
+  fi
+  preflight   # still checked in the CURRENT (multi) topology
+  export LUMIRSS_DEPLOY_COMMAND="migrate-single"
+  deploy_status_begin
+  local orig_args=("${COMPOSE_ARGS[@]}")   # the old stack's exact compose file set (incl. optional overlays)
+  # Rollback point first: the running containers' image IDs + pre-migration
+  # schema version + a copy of .env.prod.
+  snapshot_for_rollback
+  deploy_status_write backup running "consistent backup before the topology switch"
+  if ! cmd_backup; then
+    deploy_status_write backup failed
+    deploy_status_write result failed
+    err "migration aborted at the backup gate — NOTHING was changed; the 4-container stack keeps running."
+    exit 1
+  fi
+  deploy_status_write backup ok
+  # Pull the single image BEFORE stopping anything: a pull failure must
+  # never stop the old stack (same prebuilt-only policy as update).
+  deploy_status_write pull running
+  SINGLE_MODE=1
+  COMPOSE_ARGS=(-f docker-compose.allinone.yml)
+  APP_SVC="lumirss"
+  APP_CONTAINER="lumirss-app"
+  export LUMIRSS_DEPLOY_TOPOLOGY="single"
+  if ! images_pull_or_build; then
+    deploy_status_write pull failed
+    deploy_status_write result failed
+    err "migration aborted at the pull gate — NOTHING was changed; the 4-container stack keeps running."
+    exit 1
+  fi
+  deploy_status_write pull ok
+  # Stop the old stack KEEPING the named volumes (never -v): lumi-data and
+  # freshrss-data are exactly the volumes the single container mounts.
+  deploy_status_write migrate running "old 4-container stack stopped (volumes kept); starting the single container"
+  if ! DC_ARGS "${orig_args[@]}" down; then
+    deploy_status_write migrate failed
+    deploy_status_write result failed
+    err "stopping the old stack FAILED — migration stopped; the old containers may still be running (check 'docker ps'), nothing new was started."
+    exit 1
+  fi
+  if ! DC_D up -d --remove-orphans; then
+    deploy_status_write migrate failed
+    deploy_status_write result failed
+    err "starting the single container FAILED — the old 4-container stack is STOPPED but its volumes are intact."
+    err "Recover: re-run './lumirss migrate-single', or bring the old stack back: docker compose ${orig_args[*]} up -d  (or './lumirss rollback-single')."
+    exit 1
+  fi
+  deploy_status_write migrate ok
+  deploy_status_write health running
+  if ! wait_health 180; then
+    deploy_status_write health failed
+    deploy_status_write result failed
+    err "the single container failed its health check — the old stack is STOPPED, volumes intact."
+    err "Inspect: './lumirss logs' and 'docker exec lumirss-app lumirss-health'; recover: './lumirss rollback-single'."
+    exit 1
+  fi
+  deploy_status_write health ok
+  deploy_status_write verify running "version endpoint + allinone image digest must match the pinned release"
+  if ! verify_deployment "$IMAGE_TAG" \
+      "${LUMIRSS_EXPECTED_COMMIT:-$(release_expected_commit)}" single; then
+    deploy_status_write verify failed
+    deploy_status_write result failed
+    err "migration finished but verification FAILED — the running container does not match the intended release."
+    err "Treat this migration as unverified; './lumirss rollback-single' restores the previous stack."
+    exit 1
+  fi
+  deploy_status_write verify ok
+  # Persist the topology (status/doctor/update/rollback-single reuse it)
+  # and pin the tag that is actually running now.
+  env_set LUMIRSS_SINGLE 1
+  persist_image_tag
+  deploy_status_write result success
+  log "migration complete: single-container topology (volumes carried over; rollback point in $BACKUP_DIR)."
+  ./lumirss status || true
+}
+
+# Reverse migration: the single container → the previous 4-container stack,
+# from the rollback point migrate-single wrote (env copy + previous tag +
+# pinned image IDs). Volumes are shared, so everything written under the
+# single container stays — but a schema a NEWER single image forward-
+# migrated cannot be undone by the old images (same FIX-196 honesty as
+# './lumirss rollback').
+cmd_rollback_single() { # cmd_rollback_single [--yes]
+  acquire_update_lock
+  require_env_file
+  if ((SINGLE_MODE != 1)) && [[ "$(env_value LUMIRSS_SINGLE)" != "1" ]]; then
+    err "rollback-single applies to the single-container topology (no LUMIRSS_SINGLE=1 in $ENV_FILE) — nothing to roll back."
+    exit 1
+  fi
+  export LUMIRSS_DEPLOY_COMMAND="rollback-single"
+  local yes=""; [[ "${1:-}" == "--yes" ]] && yes=1
+  local manifest="$BACKUP_DIR/.rollback-manifest.json"
+  local prev_tag id_bff="" id_web="" value pre_schema="" versions cur
+  prev_tag="$(cat "$BACKUP_DIR/.image-tag.previous" 2>/dev/null || echo latest)"
+  if [[ -f "$manifest" ]]; then
+    value="$(rollback_manifest_field "$manifest" previousImageTag)"
+    [[ -n "$value" ]] && prev_tag="$value"
+    value="$(rollback_manifest_field "$manifest" previousImageIdBff)"
+    printf '%s' "$value" | grep -qE '^sha256:[0-9a-f]{6,64}$' && id_bff="$value"
+    value="$(rollback_manifest_field "$manifest" previousImageIdWeb)"
+    printf '%s' "$value" | grep -qE '^sha256:[0-9a-f]{6,64}$' && id_web="$value"
+    value="$(rollback_manifest_field "$manifest" preUpdateSchemaVersion)"
+    printf '%s' "$value" | grep -qE '^[0-9]+$' && pre_schema="$value"
+    if [[ -n "$pre_schema" ]]; then
+      if versions="$(control_schema_versions)"; then
+        cur="${versions##*;}"
+        if ((cur > pre_schema)); then
+          warn "DATA COMPATIBILITY: the control DB moved forward after this rollback point (schema $pre_schema → $cur) — the old 4-container images cannot undo those migrations."
+          if [[ -z "$yes" ]]; then
+            if [[ -t 0 ]]; then
+              read -r -p "Roll back to the 4-container stack on this newer schema anyway? Type ROLLBACK to continue: " ans
+              [[ "$ans" == "ROLLBACK" ]] || { log "aborted — nothing was changed."; return 0; }
+            else
+              err "refusing schema-forward rollback without --yes (non-interactive)."
+              err "Safer alternative: ./lumirss restore <backup.tar.gz> --yes  (backups in $BACKUP_DIR)."
+              exit 1
+            fi
+          fi
+        fi
+      else
+        err "rollback-single refused: the current control-DB schema version could not be read — refusing to switch over an unknown schema."
+        err "Restore a pre-migration backup instead: ./lumirss restore <backup.tar.gz> --yes"
+        exit 1
+      fi
+    elif [[ -n "$id_bff" || -n "$id_web" ]]; then
+      err "rollback-single refused: the rollback manifest records a running stack but NO pre-migration schema version — compatibility cannot be verified."
+      err "Restore a pre-migration backup instead: ./lumirss restore <backup.tar.gz> --yes"
+      exit 1
+    else
+      warn "rollback manifest carries no pinned images or schema version (first-deploy snapshot) — rolling back by tag, compatibility unverified."
+    fi
+  else
+    warn "no rollback manifest ($manifest) — rolling back by tag '$prev_tag'; schema compatibility CANNOT be verified."
+    warn "If the single image migrated the database, prefer ./lumirss restore of a pre-migration backup."
+  fi
+  # Restore the pre-migration config (external-caddy / obsidian settings
+  # live there) and derive the old stack's compose file set from it.
+  local multi_args=(-f docker-compose.prod.yml)
+  if [[ -f "$BACKUP_DIR/.env.prod.previous" ]]; then
+    cp -f "$BACKUP_DIR/.env.prod.previous" "$ENV_FILE"
+  fi
+  env_set LUMIRSS_SINGLE 0
+  if [[ "$(env_value LUMIRSS_EXTERNAL_CADDY)" == "1" ]]; then
+    multi_args+=(-f docker-compose.external-caddy.yml)
+  fi
+  if [[ -n "$(env_value LUMIRSS_OBSIDIAN_VAULT_HOST_DIR)" ]]; then
+    multi_args+=(-f docker-compose.obsidian.yml)
+    export LUMIRSS_OBSIDIAN_VAULT_HOST_DIR="$(env_value LUMIRSS_OBSIDIAN_VAULT_HOST_DIR)"
+  fi
+  # Stop the single container KEEPING the volumes (never -v).
+  if ! DC_ARGS -f docker-compose.allinone.yml down; then
+    err "stopping the single container failed — rollback stopped; the single topology is unchanged."
+    exit 1
+  fi
+  SINGLE_MODE=0
+  COMPOSE_ARGS=("${multi_args[@]}")
+  APP_SVC="bff"
+  APP_CONTAINER="lumirss-bff"
+  IMAGE_TAG="$prev_tag"
+  export LUMIRSS_IMAGE_TAG="$IMAGE_TAG"
+  export LUMIRSS_DEPLOY_TOPOLOGY="multi"
+  # FIX-204 semantics: prefer the exact image IDs recorded at migration
+  # time — retag the pinned images over the expected refs so `compose up`
+  # recreates with what actually ran before, not whatever the tag says now.
+  local svc pinned_id ref
+  for svc in bff web; do
+    pinned_id="$id_bff"; [[ "$svc" == "web" ]] && pinned_id="$id_web"
+    [[ -n "$pinned_id" ]] || continue
+    ref="ghcr.io/paidethon/lumirss/lumirss-$svc:$prev_tag"
+    if ! docker_cmd image inspect --format '{{.Id}}' "$ref" >/dev/null 2>&1 \
+        && docker_cmd image inspect --format '{{.Id}}' "$pinned_id" >/dev/null 2>&1; then
+      docker_cmd tag "$pinned_id" "$ref" \
+        || warn "could not retag the pinned image for $svc — falling back to whatever '$ref' resolves to."
+    fi
+  done
+  log "rolling the 4-container stack back up (image tag: $prev_tag, volumes kept)"
+  if ! DC_D up -d --remove-orphans; then
+    err "starting the 4-container stack FAILED — the single container is stopped, volumes intact."
+    err "Recover: fix the error and re-run './lumirss rollback-single', or restart the single container: docker compose -f docker-compose.allinone.yml up -d"
+    exit 1
+  fi
+  if ! wait_health 180; then
+    err "the rolled-back stack failed its health check — check './lumirss logs'; a pre-migration backup remains in $BACKUP_DIR."
+    exit 1
+  fi
+  if ! verify_deployment "$prev_tag" \
+      "${LUMIRSS_EXPECTED_COMMIT:-$(release_expected_commit)}"; then
+    err "rollback finished but verification FAILED — the running stack does not match the pinned pre-migration release."
+    exit 1
+  fi
+  persist_image_tag
+  deploy_status_write result success
+  log "rollback-single complete: 4-container topology restored (tag: $prev_tag)."
+  ./lumirss status || true
+}
+
 cmd_caddy_config() { # print the managed host-Caddy site block
   require_env_file
   local domain; domain="$(env_value DOMAIN)"
@@ -1396,7 +1821,7 @@ cmd_set_password() { # install/rotate the session-login password (hash only)
   if [[ -n "${LUMIRSS_NEW_PASSWORD:-}" ]]; then
     # Runtime secret via environment; never persisted, never echoed.
     LUMIRSS_NEW_PASSWORD="${LUMIRSS_NEW_PASSWORD}" DC_D run --rm -T --no-deps \
-      -e LUMIRSS_NEW_PASSWORD bff python scripts/set_password.py
+      -e LUMIRSS_NEW_PASSWORD "$APP_SVC" python scripts/set_password.py
   elif [[ ! -t 0 ]]; then
     # Piped stdin (non-interactive automation): read here, pipe onward —
     # the value never becomes an argument or an env-file line.
@@ -1405,16 +1830,28 @@ cmd_set_password() { # install/rotate the session-login password (hash only)
       err "empty password on stdin — export LUMIRSS_NEW_PASSWORD or pipe a password."
       exit 1
     fi
-    printf '%s' "$pw" | DC_D run --rm -T --no-deps bff python scripts/set_password.py
+    printf '%s' "$pw" | DC_D run --rm -T --no-deps "$APP_SVC" python scripts/set_password.py
   elif [[ -t 0 ]]; then
     read -r -s -p "New LumiRSS browser password: " pw; echo
     [[ -n "$pw" ]] || { err "empty password — aborted."; exit 1; }
-    printf '%s' "$pw" | DC_D run --rm -T --no-deps bff python scripts/set_password.py
+    printf '%s' "$pw" | DC_D run --rm -T --no-deps "$APP_SVC" python scripts/set_password.py
   else
     err "no password source — pipe it on stdin or export LUMIRSS_NEW_PASSWORD"
     exit 1
   fi
   log "password hash installed in the BFF database (plaintext not stored anywhere)."
+}
+
+# FreshRSS CLI runs inside whichever container provides php + FreshRSS:
+# lumirss-freshrss (4-container stack; the official image's WORKDIR is
+# /var/www/FreshRSS) or lumirss-app (single container; WORKDIR is /app, so
+# the working directory is passed explicitly).
+freshrss_exec() { # freshrss_exec argv…
+  if ((SINGLE_MODE == 1)); then
+    docker_cmd exec -w /var/www/FreshRSS lumirss-app "$@"
+  else
+    docker_cmd exec lumirss-freshrss "$@"
+  fi
 }
 
 cmd_freshrss_init() { # make the internal FreshRSS usable by the BFF
@@ -1434,11 +1871,11 @@ cmd_freshrss_init() { # make the internal FreshRSS usable by the BFF
   fi
 
   local installed
-  installed="$(docker_cmd exec lumirss-freshrss sh -c \
+  installed="$(freshrss_exec sh -c \
     'test -s /var/www/FreshRSS/data/config.php && echo yes || echo no' 2>/dev/null || echo unknown)"
   if [[ "$installed" != "yes" ]]; then
     log "installing FreshRSS (sqlite, default user '$user', greader API enabled)…"
-    docker_cmd exec lumirss-freshrss php ./cli/do-install.php \
+    freshrss_exec php ./cli/do-install.php \
       --default-user "$user" \
       --environment production \
       --base-url "$(env_value FRESHRSS_BASE_URL || echo http://freshrss)" \
@@ -1450,10 +1887,10 @@ cmd_freshrss_init() { # make the internal FreshRSS usable by the BFF
 
   # idempotent on already-installed instances: the greader API must be on,
   # and the BFF user must exist with a greader API password.
-  docker_cmd exec lumirss-freshrss php ./cli/reconfigure.php --api-enabled >/dev/null 2>&1 || \
+  freshrss_exec php ./cli/reconfigure.php --api-enabled >/dev/null 2>&1 || \
     warn "could not run FreshRSS reconfigure --api-enabled (installed via do-install is already enabled)"
 
-  if ! docker_cmd exec lumirss-freshrss php ./cli/list-users.php 2>/dev/null | grep -qx "$user"; then
+  if ! freshrss_exec php ./cli/list-users.php 2>/dev/null | grep -qx "$user"; then
     log "creating FreshRSS user '$user'…"
     # FIX-210: FreshRSS 1.29.1 的 create-user.php 只接受命令行参数传密码
     # （cli/CliOptionsParser 无 env/stdin/文件通道；Docker 入口的
@@ -1465,15 +1902,24 @@ cmd_freshrss_init() { # make the internal FreshRSS usable by the BFF
     # - 只保留 BFF 实际消费的 --api-password；明文仅存于 chmod 600 的
     #   $ENV_FILE，绝不出现在日志/输出。
     # 上游若未来提供 stdin/env/hash 通道，应立即替换此调用。
-    docker_cmd exec lumirss-freshrss php ./cli/create-user.php \
+    freshrss_exec php ./cli/create-user.php \
       --user "$user" \
       --api-password "$pw" \
       --no-default-feeds >/dev/null
+    # create-user.php runs as root and creates data/users/<user> as
+    # root:root — the php-fpm worker (www-data, uid 33) cannot traverse it,
+    # so every BFF greader call for this user would fail. The official
+    # access-permissions.sh fixes the ownership right here; the s6
+    # freshrss-init oneshot would only self-heal it on the NEXT container
+    # start, and the CLI must not leave the broken state behind.
+    if ! freshrss_exec ./cli/access-permissions.sh >/dev/null; then
+      warn "access-permissions.sh failed — user '$user' may be unreadable by FreshRSS php-fpm until the next container restart"
+    fi
   fi
 
   if [[ "$pw_changed" == 1 ]]; then
-    log "recreating bff to pick up FRESHRSS_API_PASSWORD…"
-    DC_D up -d bff
+    log "recreating $APP_SVC to pick up FRESHRSS_API_PASSWORD…"
+    DC_D up -d "$APP_SVC"
   fi
   log "FreshRSS ready: user '$user' (web + greader API share the password stored hashed in FreshRSS; only FRESHRSS_API_PASSWORD lives in $ENV_FILE)"
 }
@@ -1529,12 +1975,17 @@ cmd_export_images() { # ./lumirss export-images [--out DIR]
   # 按 digest 钉死，从 compose config 解析（单一事实来源，避免手抄 digest
   # 漂移）；config 渲染失败时如实告警并只出 web+bff（不再是完整的离线
   # 安装集）。FIX-206 的备份/恢复助手镜像 = 默认 BFF 镜像（backup_image），
-  # 已包含在包内，离线主机无需额外镜像。
-  local imgs=("$web_img" "$bff_img")
-  local stack_img
-  while IFS= read -r stack_img; do
-    [[ -n "$stack_img" ]] && imgs+=("$stack_img")
-  done < <(DC_D config --format json 2>/dev/null | python3 -c 'import json,sys
+  # 已包含在包内，离线主机无需额外镜像。单容器拓扑只有一个镜像：
+  # lumirss-allinone（freshrss/rsshub 已在其内部，无需解析）。
+  local imgs=()
+  if ((SINGLE_MODE == 1)); then
+    imgs=("ghcr.io/paidethon/lumirss/lumirss-allinone:$tag")
+  else
+    imgs=("$web_img" "$bff_img")
+    local stack_img
+    while IFS= read -r stack_img; do
+      [[ -n "$stack_img" ]] && imgs+=("$stack_img")
+    done < <(DC_D config --format json 2>/dev/null | python3 -c 'import json,sys
 try:
     svcs = json.load(sys.stdin).get("services", {})
     for name in ("freshrss", "rsshub"):
@@ -1543,8 +1994,9 @@ try:
             print(img)
 except Exception:
     pass' 2>/dev/null || true)
-  if (( ${#imgs[@]} < 4 )); then
-    warn "could not resolve the freshrss/rsshub pinned images from compose — this bundle covers web+bff only and is NOT a complete offline install set."
+    if (( ${#imgs[@]} < 4 )); then
+      warn "could not resolve the freshrss/rsshub pinned images from compose — this bundle covers web+bff only and is NOT a complete offline install set."
+    fi
   fi
   # FIX-189: export on a host that matches the target platform; a known
   # arch mismatch refuses the bundle here, before any tar exists.
@@ -1603,6 +2055,7 @@ main() {
   for a in "$@"; do
     case "$a" in
       --external-caddy) EXTERNAL_MODE=1;;
+      --single) SINGLE_MODE=1;;
       --low-memory) LOW_MEMORY=1;;
       --auth-mode=*) AUTH_MODE_ARG="${a#--auth-mode=}";;
       *) extra+=("$a");;
@@ -1612,8 +2065,18 @@ main() {
     err "invalid --auth-mode '$AUTH_MODE_ARG' (expected basic|session)"
     exit 1
   fi
-  # Subsequent invocations reuse the persisted mode.
-  if [[ "$(env_value LUMIRSS_EXTERNAL_CADDY)" == "1" ]]; then
+  if ((SINGLE_MODE == 1 && EXTERNAL_MODE == 1)); then
+    err "--single and --external-caddy cannot be combined — the all-in-one image is external-caddy-only by construction (loopback HTTP on 127.0.0.1:${UPSTREAM_PORT}, the host proxy owns TLS)."
+    exit 1
+  fi
+  # Subsequent invocations reuse the persisted modes.
+  if [[ "$(env_value LUMIRSS_SINGLE)" == "1" ]]; then
+    SINGLE_MODE=1
+  fi
+  # A persisted LUMIRSS_EXTERNAL_CADDY=1 (previous 4-container deployment)
+  # is redundant under the single topology — the allinone compose file is
+  # external-caddy-only by construction — so it is simply ignored there.
+  if ((SINGLE_MODE == 0)) && [[ "$(env_value LUMIRSS_EXTERNAL_CADDY)" == "1" ]]; then
     EXTERNAL_MODE=1
   fi
   # precedence: explicit env var > .env.prod > default
@@ -1626,15 +2089,33 @@ main() {
   # default is kept equal by scripts/check-version.py.
   IMAGE_TAG="${IMAGE_TAG:-$(cat VERSION 2>/dev/null || echo latest)}"
   export LUMIRSS_IMAGE_TAG="$IMAGE_TAG"
-  if ((EXTERNAL_MODE == 1)); then
-    COMPOSE_ARGS+=(-f docker-compose.external-caddy.yml)
+  if ((SINGLE_MODE == 1)); then
+    # Single-container topology: the compose file IS the topology. The
+    # external-caddy overlay targets the 4-container stack's web service
+    # and never applies (the allinone image is external-caddy-only by
+    # construction); the CLI probes exec into the one "lumirss" service.
+    COMPOSE_ARGS=(-f docker-compose.allinone.yml)
+    APP_SVC="lumirss"
+    APP_CONTAINER="lumirss-app"
+    export LUMIRSS_DEPLOY_TOPOLOGY="single"
+  else
+    if ((EXTERNAL_MODE == 1)); then
+      COMPOSE_ARGS+=(-f docker-compose.external-caddy.yml)
+    fi
+    export LUMIRSS_DEPLOY_TOPOLOGY="multi"
   fi
   # Obsidian read-only vault mount (Gate 4): when a host vault directory
   # is configured, overlay the fixed read-only /vault mount. The BFF only
-  # ever sees the container path LUMIRSS_OBSIDIAN_VAULT_DIR.
+  # ever sees the container path LUMIRSS_OBSIDIAN_VAULT_DIR. The overlay
+  # targets the 4-container stack's bff service — it cannot render against
+  # the single-container topology, so there it is skipped with a warning.
   if [[ -n "$(env_value LUMIRSS_OBSIDIAN_VAULT_HOST_DIR)" ]]; then
-    COMPOSE_ARGS+=(-f docker-compose.obsidian.yml)
-    export LUMIRSS_OBSIDIAN_VAULT_HOST_DIR="$(env_value LUMIRSS_OBSIDIAN_VAULT_HOST_DIR)"
+    if ((SINGLE_MODE == 1)); then
+      warn "LUMIRSS_OBSIDIAN_VAULT_HOST_DIR is set, but the Obsidian overlay (docker-compose.obsidian.yml) targets the 4-container stack — it is NOT applied in the single-container topology."
+    else
+      COMPOSE_ARGS+=(-f docker-compose.obsidian.yml)
+      export LUMIRSS_OBSIDIAN_VAULT_HOST_DIR="$(env_value LUMIRSS_OBSIDIAN_VAULT_HOST_DIR)"
+    fi
   fi
   # `--build` is a dev-only flag: refuse it before any production path
   # (preflight/configure/pull) gets a chance to run.
@@ -1653,6 +2134,8 @@ main() {
     restore)  cmd_restore "${extra[@]}";;
     doctor)   cmd_doctor;;
     rollback) cmd_rollback "${extra[@]}";;
+    migrate-single) cmd_migrate_single;;
+    rollback-single) cmd_rollback_single "${extra[@]}";;
     caddy-config) cmd_caddy_config;;
     freshrss-init) cmd_freshrss_init;;
     set-password) cmd_set_password;;
