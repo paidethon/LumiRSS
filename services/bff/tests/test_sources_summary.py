@@ -212,7 +212,7 @@ def test_summary_rsshub_not_configured_without_base(client, monkeypatch):
     assert rsshub["count"] is None  # 未配置绝不冒充 0
 
 
-def test_summary_obsidian_configured_reports_note_count(client, db, monkeypatch):
+def test_summary_obsidian_configured_reports_note_count(client, db, monkeypatch, tmp_path):
     # conftest 把 app.state.db 换成 plain Database，但 lifespan 在换库前
     # 构建的 obsidian_service 仍绑 RoutingDatabase（owner 用户库）——与其
     # 隔离打架。用同库测试替身替换 router 内解析函数，保证种子可见。
@@ -224,17 +224,17 @@ def test_summary_obsidian_configured_reports_note_count(client, db, monkeypatch)
         "_get_obsidian_service",
         lambda request: ObsidianService(db, env_root=""),
     )
-    run(_seed_obsidian_vault(db))
+    run(_seed_obsidian_vault(db, str(tmp_path / "vault")))
     obsidian = _summary_types(client)["obsidian"]
     assert obsidian["status"] == "ok"
     assert obsidian["count"] == 2
     assert obsidian["lastActivityAt"] == "2026-09-23T00:00:00Z"
 
 
-async def _seed_obsidian_vault(db):
+async def _seed_obsidian_vault(db, vault_root: str):
     await db.migrate()
     await db.execute(
-        "UPDATE obsidian_settings SET vault_path = '/tmp/vault', last_scan_at = '2026-09-23T00:00:00Z', last_error = NULL WHERE id = 1"
+        f"UPDATE obsidian_settings SET vault_path = '{vault_root}', last_scan_at = '2026-09-23T00:00:00Z', last_error = NULL WHERE id = 1"
     )
     for i in range(2):
         await db.execute(

@@ -4682,8 +4682,11 @@ export async function listAgentThreads(
   signal?: AbortSignal,
   archived = false,
 ): Promise<AgentThreadListResponse> {
-  const suffix = archived ? '?archived=true' : ''
-  return request<AgentThreadListResponse>(`${API_BASE}/agent/threads${suffix}`, signal)
+  // 契约测试按字面量抽取 /api/v1 路径——模板插值会留下 'threads{}'
+  // 形态误报 stale-BFF，故按分支写全两条字面量路径。
+  return archived
+    ? request<AgentThreadListResponse>(`${API_BASE}/agent/threads?archived=true`, signal)
+    : request<AgentThreadListResponse>(`${API_BASE}/agent/threads`, signal)
 }
 
 /** 新建会话（POST 201，返回服务端确认的新线程）。 */
