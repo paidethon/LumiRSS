@@ -138,6 +138,44 @@ Generate from `uv.lock` / installed metadata.
 |---|---|---|---|---|
 | Lumi branding | Lumi-owned | project license | | yes |
 | Reference screenshots | internal design research | verify before public redistribution | none/crops | not automatically |
+| 思源黑体 Source Han Sans CN Regular | [adobe-fonts/source-han-sans](https://github.com/adobe-fonts/source-han-sans) tag `2.005R`（SubsetOTF/CN/SourceHanSansCN-Regular.otf） | SIL OFL 1.1（Reserved Font Name “Source Han”；完整许可文本随字体存于 `apps/web/public/fonts/source-han-sans/LICENSE.txt`） | 子集化（见下方分片说明）；仅 400 一档 | yes（OFL 1.1 允许再分发与子集修改，随附许可与声明） |
+| 思源宋体 Source Han Serif CN Regular | [adobe-fonts/source-han-serif](https://github.com/adobe-fonts/source-han-serif) tag `2.003R`（SubsetOTF/CN/SourceHanSerifCN-Regular.otf） | SIL OFL 1.1（RFN “Source Han”；`apps/web/public/fonts/source-han-serif/LICENSE.txt`） | 同上分片子集化；仅 400 | yes |
+| 霞鹜文楷 LXGW WenKai Regular | [lxgw/LxgwWenKai](https://github.com/lxgw/LxgwWenKai) release `v1.522`（LXGWWenKai-Regular.ttf） | SIL OFL 1.1（`apps/web/public/fonts/lxgw-wenkai/LICENSE.txt`） | 同上分片子集化；仅 400 | yes |
+| 朱雀仿宋 Zhuque Fangsong Regular | [TrionesType/zhuque](https://github.com/TrionesType/zhuque) release `v0.212`（ZhuqueFangsong-Regular.ttf） | SIL OFL 1.1（`apps/web/public/fonts/zhuque-fangsong/LICENSE.txt`） | 同上分片子集化；仅 400（上游为 beta，缺字分片按实际 cmap 反推） | yes |
+| 站酷小薇 ZCOOL XiaoWei Regular | [google/fonts `ofl/zcoolxiaowei`](https://github.com/google/fonts/tree/main/ofl/zcoolxiaowei)（ZCOOLXiaoWei-Regular.ttf） | SIL OFL 1.1（`apps/web/public/fonts/zcool-xiaowei/LICENSE.txt`） | 整包单文件子集（GB2312 全集+拉丁+标点） | yes |
+| 马善政楷体 Ma Shan Zheng Regular | [google/fonts `ofl/mashanzheng`](https://github.com/google/fonts/tree/main/ofl/mashanzheng)（MaShanZheng-Regular.ttf） | SIL OFL 1.1（`apps/web/public/fonts/ma-shan-zheng/LICENSE.txt`） | 整包单文件子集（常用集：GB2312 一级+拉丁+标点，笔画繁密收窄以守 2MB 预算；次常用走系统栈回退） | yes |
+| Source Sans 3（latin） | [adobe-fonts/source-sans](https://github.com/adobe-fonts/source-sans) release `3.052R`（WOFF2-source-sans-3.052R.zip，latin 400/700/400i） | SIL OFL 1.1（RFN “Source”；`apps/web/public/fonts/source-sans-3/LICENSE.txt`） | latin 字符集子集化（pyftsubset 重切） | yes |
+| Source Serif 4（latin） | [adobe-fonts/source-serif](https://github.com/adobe-fonts/source-serif) release `4.005R`（source-serif-4.005_WOFF2.zip，latin 400/700/400i） | SIL OFL 1.1（RFN “Source”；`apps/web/public/fonts/source-serif-4/LICENSE.txt`） | latin 字符集子集化（pyftsubset 重切） | yes |
+
+### 内置字体分片说明（R08）
+
+- 产物位置：`apps/web/public/fonts/<family>/`（woff2 + LICENSE.txt），声明表
+  `apps/web/src/styles/fonts.css`（AUTO-GENERATED，@font-face + unicode-range）。
+  全部自托管相对路径，不引用任何外部字体 CDN；默认零 preload，仅当用户
+  在阅读设置选中该字体或渲染其样张时，浏览器按 unicode-range 拉取命中分片。
+  思源两款源文件为官方 CN 区域子集（内部名 "Source Han Sans/Serif CN"），
+  @font-face family 按消费端约定使用 SC 别名（"Source Han Sans SC"/
+  "Source Han Serif SC"）——family 别名与字体内部名无耦合，仅影响匹配。
+- 字符集推导（构建期，纯标准库编码表，可复现）：
+  - 常用分片 `p0-common` = ASCII + Latin-1 + 通用标点/货币/箭头/数学/圈数字 +
+    CJK 标点/全角（固定码位区间）∪ GB2312 符号区（行 0xA1-0xA9）∪
+    GB2312 一级常用字（行 0xB0-0xD7，3755 字）；
+  - 次常用分片 `p1-freq2` = GB2312 二级（行 0xD8-0xF7，3008 字）；
+  - 简繁混排分片 `p2-trad-a/b` = Big5 常用字区（0xA440-0xC67E）剔除
+    GB2312 与拉丁交集后对半，两片；
+  - 各分片码位两两不相交；unicode-range 从各分片 WOFF2 的实际 cmap 反推
+    （字体缺字不虚报，避免豆腐块）。
+  - 展示体（站酷小薇/马善政）= 整包单文件；站酷小薇覆盖 GB2312 全集+拉丁+标点，
+    马善政收窄为常用集（GB2312 一级+拉丁+标点）；
+    英文两款 = latin 子集（400/700/400i）。
+- 子集化配方：fonttools/pyftsubset + brotli（构建期临时 venv，不入项目
+  依赖）；`--flavor=woff2 --no-hinting --drop-tables+=BASE,DSIG
+  --name-IDs=0,1,2,3,6 --name-languages=0x409,0x804 --notdef-outline`，
+  CFF（思源两款）另加 `--desubroutinize`；layout features 保留
+  `kern,liga,ccmp,mark,mkmk,locl,vert,vrt2,vkrn`。
+- 未内置（走 reader 字体栈系统同族回退，真机验收补充）：CJK 扩展 A/B 区、
+  通用规范汉字表 8105 中 GB2312 之外的罕用字；内置中文字体仅 400 一档，
+  600/700 由浏览器合成加粗。
 
 Do not list or include Folo `icons/mgc` as a redistributable Lumi asset.
 
