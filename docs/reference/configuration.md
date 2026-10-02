@@ -17,7 +17,7 @@
 
 | 键 | 说明 |
 |---|---|
-| `LUMIRSS_AUTH_MODE` | `basic`（默认，历史行为：Caddy basic_auth）或 `session`（持久会话登录：bcrypt 密码 + 长效 Cookie，见下）。`./lumirss deploy --auth-mode=session` 自动写入 |
+| `LUMIRSS_AUTH_MODE` | `session`（主模式：BFF 账号登录 + 长效 Cookie，Caddy 不加代理层 basic auth）或 `basic`（兼容可选项，历史行为：Caddy basic_auth；**未显式设置时 env 缺省仍是 `basic`**，生产实例切换执行中）。`./lumirss deploy --auth-mode=session` 自动写入 |
 | `LUMIRSS_AUTH_USER` / `LUMIRSS_AUTH_HASH` | basic 模式的 Caddy basic_auth 边缘访问控制（单组共享凭据，历史兼容；账号级登录请用 session 模式）。bcrypt 哈希（不是明文密码），`$$` 转义。**两个要么都设要么都不设，只设一个容器拒绝启动**；都为空 = 无 auth（受信内网/已有外层认证）。session 模式下忽略 |
 | `LUMIRSS_SESSION_MAX_AGE_DAYS` | `180`（天）。session 模式的绝对不活跃窗口；活跃使用会滑动续期（临近过期自动延长），经常使用基本不需要重新登录 |
 | `LUMIRSS_SESSION_SECURE_COOKIES` | `1`。`__Host-` 前缀 + `Secure`（要求 HTTPS，所有生产部署都应保持 1）；仅纯 HTTP 本地调试才设 0（此时 cookie 名退化为 `lumirss_session`） |
@@ -41,8 +41,10 @@
 | `FRESHRSS_DATA_DIR` | 空 | FreshRSS 数据目录的**只读**挂载路径，供一致性在线备份；空 = 完整备份不可用（开发态）。生产 compose 固定为 `/freshrss-data` |
 | `LUMIRSS_SEARCH_SYNC_INTERVAL` | `60.0`（秒） | 搜索投影后台同步节奏；`0` 关闭后台同步（测试用）。机制见 [../explanation/search.md](../explanation/search.md) |
 | `LUMIRSS_ATOM_BASE_URL` | 空 | API 来源 / 邮件桥生成的 Atom feed 的 docker 内网基地址（freshrss 容器经它抓取 `/feeds/...`；`GET /api/v1/sources` 的 `atomPath` 始终是相对路径，浏览器走 Caddy）。空 = 回退 compose 默认 `http://bff:8000`（prod compose 服务名，见 `api_sources.py` 的 `atom_base()`）；dev compose（BFF 在宿主机）需显式设为 freshrss 容器可达地址，如 `http://host.docker.internal:8000` |
-| `LUMIRSS_OBSIDIAN_VAULT_DIR` | 空 | Obsidian vault 的容器内挂载路径（只读）。生产 compose 经 `LUMIRSS_OBSIDIAN_VAULT_HOST_DIR` 绑定宿主目录；空 = Obsidian 投影关闭 |
+| `LUMIRSS_OBSIDIAN_VAULT_DIR` | 空 | Obsidian vault 的容器内挂载路径（**只读**，读面投影）。生产 compose 经 `LUMIRSS_OBSIDIAN_VAULT_HOST_DIR` 绑定宿主目录；空 = Obsidian 投影关闭 |
 | `LUMIRSS_OBSIDIAN_SCAN_INTERVAL` | `0`（秒） | vault 增量扫描节奏（`config.py` 默认 `0` = 仅手动 rescan）；`0` 关闭后台扫描 |
+| `LUMIRSS_OBSIDIAN_EXPORT_HOST_DIR` | （空） | **唯一的写面**：宿主导出目录（通常指向 vault 内一个 Lumi 专用子树，如 `…/MyVault/LumiRSS`）。容器内固定挂到 `/vault-export`（rw）；与只读 `/vault` 可指向同一个 vault，导出的笔记会被扫描器当作普通笔记重新索引。留空 = 导出关闭（overlay `docker-compose.obsidian-export.yml` 叠加启用，见 [../decisions/0007-obsidian-server-side-export.md](../decisions/0007-obsidian-server-side-export.md)） |
+| `LUMIRSS_OBSIDIAN_EXPORT_DIR` | `/vault-export` | 导出根的容器内路径（overlay 固定注入；导出落在 `<子目录>/<账户id>/` 下，新文件、绝不覆盖、每日配额） |
 | `LUMIRSS_RAG_INDEX_INTERVAL` | `300`（秒） | RAG 语义索引增量收敛节奏（`config.py` 默认 `300`）；`0` 关闭（显式 rebuild 仍可用）。模型加载在显式启用后进行，空闲自动卸载 |
 | `LUMIRSS_FETCH_ALLOW_PRIVATE_HOSTS` | 空 | 逗号分隔主机名 allow-list：名单内的私网主机可作为**来源 URL / AI base URL** 被服务端访问（容器内 RSSHub、自托管 AI 等）。仅跳过"公网地址拒绝"，取回仍逐跳解析、校验、按钉住 IP 直连 |
 | `LUMIRSS_ACCESS_LOG` | `json` | BFF 访问日志：`json` = 每请求一行结构化 JSON（request_id/路由模板/status/duration_ms/服务端派生 actor）；`off` = 静默。脱敏边界：绝不记录 query string、请求体、header、凭据 |
@@ -58,6 +60,8 @@
 | `LUMIRSS_BUILD_COMMIT` | （空） | 部署/构建时注入的 git commit → Web `VITE_GIT_COMMIT` 与 BFF `LUMIRSS_COMMIT` 两个 build-arg，「关于」页与 `/api/v1/version` 展示，用于版本偏斜诊断 |
 | `LUMIRSS_HTTP_PORT` / `LUMIRSS_HTTPS_PORT` | `80` / `443` | Caddy 发布到宿主的端口；与 `COMPOSE_PROJECT_NAME` 一起用于同机隔离测试（避免端口与卷冲突） |
 | `LUMIRSS_EXTERNAL_CADDY` | （空） | `1` = 外部宿主反代模式：web 只发布 `127.0.0.1:LUMIRSS_UPSTREAM_PORT`（纯 HTTP、任意 Host，无 ACME/443），TLS 由宿主 Caddy/nginx 负责。`./lumirss deploy --external-caddy` 自动写入；见 [../how-to/deploy.md](../how-to/deploy.md) |
+| `LUMIRSS_SINGLE` | （空） | `1` = 单容器拓扑（`docker-compose.allinone.yml`）。`migrate-single` 写入、`rollback-single` 写 `0`，`status` / `doctor` / `update --single` 复用；见 [../how-to/deploy.md](../how-to/deploy.md) §4b 与 [../decisions/0008-single-container-topology.md](../decisions/0008-single-container-topology.md) |
+| `LUMIRSS_ALLINONE_MEM_LIMIT` / `_RESERVATION` | `1200m` / `256m` | 仅单容器拓扑：一个 cgroup 承载 Caddy+BFF+FreshRSS+RSSHub 的总 limit（按 1.6 GB 宿主定标；空闲实测约 340 MiB）。单容器下 per-container 内存键被合并，RSSHub V8 堆上限仍是主要约束杠杆 |
 | `LUMIRSS_UPSTREAM_PORT` | `18080` | external 模式下 web 发布的 loopback 端口（`127.0.0.1:<port> -> 80`）。必须与宿主反代 upstream 一致；`./lumirss caddy-config` 按它渲染站点块 |
 | `COMPOSE_PROJECT_NAME` | `lumirss-prod` | compose 项目名（决定卷前缀） |
 | `LUMIRSS_WEB_MEM_LIMIT` / `_RESERVATION` | `128m` / `64m` | web 容器内存 limit/reservation。`./lumirss deploy --low-memory` 写入低资源预设（96m/48m）；改完用 `./lumirss doctor` 验证无 OOMKilled |

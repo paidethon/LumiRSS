@@ -2,9 +2,12 @@
 
 Single-container production topology: **Caddy + FastAPI BFF + FreshRSS
 (php-fpm) + RSSHub** in one container, supervised by **s6-overlay v3**.
-Status: **wave-0 skeleton** — image + compose verified locally; the
-`./lumirss` CLI integration (`deploy --single` / `migrate-single`) and the
-GHCR publish pipeline are a follow-up step.
+Wired end to end: image + compose verified locally, the `./lumirss` CLI
+integration (`deploy --single` / `migrate-single` / `rollback-single`) is
+landed, and `publish-images.yml` publishes `lumirss-allinone` to GHCR
+(next to `lumirss-web` / `-bff`). Operator-facing runbook:
+[docs/how-to/deploy.md](../../docs/how-to/deploy.md) §4b (decision record:
+[docs/decisions/0008-single-container-topology.md](../../docs/decisions/0008-single-container-topology.md)).
 
 ```text
 published (loopback)                    inside the container
@@ -76,9 +79,12 @@ docker exec lumirss-app lumirss-health                   # per-service JSON
 docker exec lumirss-app s6-svstat /run/s6-rc/servicedirs/caddy   # any service
 ```
 
-Migration from the 4-container stack (manual, until `./lumirss
-migrate-single` lands): `./lumirss backup` → stop old stack (`docker
-compose -f docker-compose.prod.yml down`, NEVER `-v`) →
+Migration from the 4-container stack is the CLI's job:
+`./lumirss migrate-single` (backup gate → pull gate → stop old stack
+keeping volumes → start the single container → health + version
+verification → persist `LUMIRSS_SINGLE=1`; `./lumirss rollback-single`
+reverses it). Manual equivalent: `./lumirss backup` → stop old stack
+(`docker compose -f docker-compose.prod.yml down`, NEVER `-v`) →
 `docker compose -f docker-compose.allinone.yml up -d` → health checks. The
 named volumes and project name (`lumirss-prod`) are identical, so
 `lumi-data` / `freshrss-data` carry over unchanged.
@@ -199,18 +205,4 @@ or `docker stats lumirss-app`; never ship a limit that gets OOMKilled.
   is fine.
 - **Compose interpolation of `${LUMIRSS_UPSTREAM_PORT}` reads the shell /
   `.env`, not `.env.prod`** — same as `docker-compose.prod.yml`; `./lumirss`
-  exports those values before invoking compose (CLI wiring is step 2).
-- **CLI integration (`./lumirss deploy --single` / `migrate-single` /
-  `status` awareness) and GHCR publishing (`publish-images.yml` +
-  release-manifest digests) are NOT in wave-0** — tracked as follow-up.
-  Two integration notes already verified for that step:
-  - `./lumirss backup` works against this topology today with
-    `LUMIRSS_BACKUP_IMAGE=lumirss-allinone:<tag>` (image ships python3 +
-    tar; the sqlite online-backup + `--user 0:0` tar passes were executed
-    against the test volumes) — the default `backup_image()` resolves the
-    `bff` service name, so the CLI needs the single-service awareness.
-  - `./lumirss freshrss-init`'s `create-user.php` exec must be followed by
-    `access-permissions.sh` inside the container (the root-run CLI creates
-    `data/users/<user>` as root:root, which the php-fpm worker cannot
-    traverse; the s6 `freshrss-init` service self-heals this on the next
-    container start).
+  exports those values before invoking compose.

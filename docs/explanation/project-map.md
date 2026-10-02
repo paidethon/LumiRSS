@@ -68,7 +68,7 @@ FreshRSS 容器 cron（CRON_MIN 指定分钟）
 控制库 lumi.sqlite：身份/会话/邀请/FreshRSS 池/审计（账户控制面）
 每用户库 users/<uid>/lumi.sqlite：该账号全部业务数据（服务端身份路由）
 FreshRSS：订阅/条目/已读/收藏（RSS 域唯一真源，每账号一个 FreshRSS 用户）
-Obsidian Vault：只读投影，永不回写
+Obsidian Vault：读面只读投影；写入仅限受限服务端导出目录（ADR 0007）
 secrets.json：API 密钥/SMTP/订阅 token（永不进 SQLite/日志/浏览器）
 ```
 

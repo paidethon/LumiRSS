@@ -119,8 +119,10 @@ LumiRSS 的核心价值不是重新发明 RSS 抓取器，而是把成熟后端�
 - **移动 Web / PWA**：可安装 manifest、移动五屏信息架构、touch target
   与 safe-area。
 
-明确未实现：web clipping **浏览器扩展**、Obsidian **写回**（vault 只读
-投影已实现）、MCP surface、PWA Push / 后台同步（app-shell 离线缓存已
+明确未实现：web clipping **浏览器扩展**、Obsidian **自由写回**（vault
+只读投影已实现；受控的服务端导出到专用导出目录已实现，见
+[ADR 0007](../decisions/0007-obsidian-server-side-export.md)）、MCP
+surface、PWA Push / 后台同步（app-shell 离线缓存已
 实现）、多租户形态——见 §10。Phase 2 域（剪藏/快照、API 来源、
 邮件桥、Obsidian 投影、统一搜索、来源注册表、Agent 工作台、RAG）均已
 交付；邀请制多账户（含管理界面与 FreshRSS 账号池）已交付，操作见
@@ -328,7 +330,9 @@ LICENSE），以便合规适配 AGPL 参考代码；来源映射与声明文件�
 
 ## 10. 当前明确不做（Deferred）
 
-- web clipping 浏览器扩展、Obsidian 写回、MCP surface；
+- web clipping 浏览器扩展、Obsidian 自由写回（vault 读面投影永远只读；
+  写面仅限 [ADR 0007](../decisions/0007-obsidian-server-side-export.md)
+  的受限服务端导出目录）、MCP surface；
 - OAuth、多租户 / 多租户隔离保证（邀请制小规模多账户与可选公开注册
   ——默认关闭——已实现；开启后的公网暴露面由运营者自行评估）；
 - Folo 社交、推荐、公开 Profile、奖励经济；

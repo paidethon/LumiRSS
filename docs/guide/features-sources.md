@@ -84,13 +84,20 @@ RSS 订阅」。步骤：设置 → 订阅与来源添加订阅，或来源中�
 邮件简报。前提：运营者已配置实例邮件收信（IMAP）。结果：邮件材料可导入
 归档并生成 Atom 供订阅。
 
-### Obsidian 库（只读） {#sources-obsidian}
+### Obsidian 库（只读投影 + 受限导出） {#sources-obsidian}
 
 <!-- screenshot-pending: sources.obsidian -->
 
 浏览 Obsidian vault：笔记、反链、断链报告。入口：侧栏「内容来源 →
-Obsidian 库」。前提：账户已绑定库目录。结果与限制：vault 保持只读，没有
-写回；多设备同步（P16）为 partial，见实现台账。
+Obsidian 库」。前提：账户已绑定库目录。读面限制：vault 投影保持只读；
+唯一的写面是显式的「导出到 Obsidian」（阅读页「更多操作」→
+`POST /api/v1/obsidian/export`）：只写独立挂载的导出目录内
+`<子目录>/<账户id>/` 下的新文件——绝不覆盖既有文件、content-id 幂等、
+每日写入配额（前提：运营者已用
+`docker-compose.obsidian-export.yml` overlay 挂出
+`LUMIRSS_OBSIDIAN_EXPORT_HOST_DIR`，见
+[ADR 0007](../decisions/0007-obsidian-server-side-export.md)）。
+多设备同步（P16）为 partial，见实现台账。
 
 ### RSSHub 路由订阅 {#sources-rsshub-routes}
 
