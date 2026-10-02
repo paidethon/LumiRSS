@@ -115,7 +115,7 @@ describe('FIX-159 — 引用点击打开正确条目', () => {
     })
 
     withProviders(<AgentWorkbenchPage />)
-    fireEvent.click(await screen.findByRole('button', { name: /问答会话/ }, { timeout: 3000 }))
+    fireEvent.click(await screen.findByRole('button', { name: /^问答会话/ }, { timeout: 3000 }))
     const chip = await screen.findByRole('button', { name: '同名相似条目' })
     fireEvent.click(chip)
 

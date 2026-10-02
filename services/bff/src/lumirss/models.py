@@ -3938,6 +3938,7 @@ class AgentThread(BaseModel):
     id: str
     title: str
     createdAt: str
+    archivedAt: str | None = None
 
 
 class AgentThreadListResponse(BaseModel):
@@ -5880,7 +5881,8 @@ class RagAskResponse(BaseModel):
 
 class AgentThreadUpdate(BaseModel):
     """F094/F098 会话设置（scope / toolPolicy / N165 budget；None =
-    清除/不修改按键）。scope=None 显式清除范围锁定；键缺省 = 不修改。"""
+    清除/不修改按键）。scope=None 显式清除范围锁定；键缺省 = 不修改。
+    R20：title 重命名、archived 归档/恢复（None = 不改状态）。"""
 
     model_config = {"extra": "forbid"}
 
@@ -5891,6 +5893,7 @@ class AgentThreadUpdate(BaseModel):
     clearToolPolicy: bool = False
     budget: dict | None = None
     clearBudget: bool = False
+    archived: bool | None = None
 
 
 class AgentBranchRequest(BaseModel):
@@ -5954,6 +5957,27 @@ class AgentThreadSettings(BaseModel):
     toolPolicy: AgentToolPolicy | None = None
     budget: AgentThreadBudget | None = None
     branchOf: str | None = None
+    archivedAt: str | None = None
+
+
+class AgentThreadObsidianExportRequest(BaseModel):
+    """R20 POST /api/v1/agent/threads/{id}/obsidian-export body。"""
+
+    model_config = {"extra": "forbid"}
+
+    rounds: int = Field(default=20, ge=1, le=20)
+
+
+class AgentThreadObsidianExportResult(BaseModel):
+    """R20 单条导出结果（written | exists | failed + 原因；同 R07 口径）。"""
+
+    ref: str
+    status: Literal["written", "exists", "failed"]
+    path: str | None = None
+    reason: str | None = None
+    contentId: str | None = None
+    bytes: int = 0
+    message: str | None = None
 
 
 class AgentScopePreviewRequest(BaseModel):

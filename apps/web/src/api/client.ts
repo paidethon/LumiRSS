@@ -4676,9 +4676,14 @@ export interface AgentMessageListResponse {
  * BFF 侧是裸 str，OpenAPI 抓不到枚举，故在此手写联合）。 */
 export type AgentApprovalDecision = 'approve' | 'reject'
 
-/** 会话列表（GET 语义）。 */
-export async function listAgentThreads(signal?: AbortSignal): Promise<AgentThreadListResponse> {
-  return request<AgentThreadListResponse>(`${API_BASE}/agent/threads`, signal)
+/** 会话列表（GET 语义）。R20：archived=false（默认）= 未归档工作集；
+ * true = 已归档视图。 */
+export async function listAgentThreads(
+  signal?: AbortSignal,
+  archived = false,
+): Promise<AgentThreadListResponse> {
+  const suffix = archived ? '?archived=true' : ''
+  return request<AgentThreadListResponse>(`${API_BASE}/agent/threads${suffix}`, signal)
 }
 
 /** 新建会话（POST 201，返回服务端确认的新线程）。 */
@@ -7876,6 +7881,8 @@ export interface AgentThreadSettingsPatch {
   /** N165：线程级任务预算（键皆可缺省；null + clearBudget = 清除）。 */
   budget?: { maxToolCalls?: number; maxTurns?: number } | null
   clearBudget?: boolean
+  /** R20：归档/恢复（键缺省 = 不改归档状态；true/false = 归档/恢复）。 */
+  archived?: boolean
 }
 
 /** N163：一键研究模式预设（readonly + read-tool 白名单 + 回合上限，
@@ -7892,7 +7899,7 @@ export async function applyAgentResearchPreset(threadId: string): Promise<void> 
 export async function updateAgentThreadSettings(
   threadId: string,
   patch: AgentThreadSettingsPatch,
-): Promise<{ id: string; title: string; scope: unknown; toolPolicy: unknown; branchOf: string | null }> {
+): Promise<{ id: string; title: string; scope: unknown; toolPolicy: unknown; branchOf: string | null; archivedAt: string | null }> {
   const response = await rawRequest(
     `${API_BASE}/agent/threads/${encodeURIComponent(threadId)}`,
     {
@@ -7908,6 +7915,7 @@ export async function updateAgentThreadSettings(
     scope: unknown
     toolPolicy: unknown
     branchOf: string | null
+    archivedAt: string | null
   }
 }
 
@@ -8848,6 +8856,49 @@ export async function undoAgentStep(
     result: unknown
     conflictReason: string | null
   }
+}
+
+// ---- R20 工作台补缺（停止生成 / 会话导出到 Obsidian）--------------------------
+
+/** R20：停止生成——服务端取消运行中的回合（部分输出以 cancelled 终态
+ * 落库；无活动回合 → 稳定 409 no_active_run 信封）。 */
+export async function cancelAgentTurn(threadId: string): Promise<{ cancelled: boolean; status: string }> {
+  const response = await rawRequest(
+    `${API_BASE}/agent/threads/${encodeURIComponent(threadId)}/cancel`,
+    { method: 'POST' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { cancelled: boolean; status: string }
+}
+
+/** R20：会话导出到 Obsidian（服务端复用 F096 markdown 渲染 + R07 受限
+ * 写入面：containment / content-id 幂等 / per-user 隔离 / 每日配额）。
+ * written = 新写入；exists = 已存在（幂等，绝不覆盖）；failed = 诚实失败
+ * （如 export_unconfigured / quota_exceeded，原因见 reason）。 */
+export interface AgentThreadObsidianExportResult {
+  ref: string
+  status: 'written' | 'exists' | 'failed'
+  path: string | null
+  reason: string | null
+  contentId: string | null
+  bytes: number
+  message: string | null
+}
+
+export async function exportAgentThreadToObsidian(
+  threadId: string,
+  rounds: number,
+): Promise<AgentThreadObsidianExportResult> {
+  const response = await rawRequest(
+    `${API_BASE}/agent/threads/${encodeURIComponent(threadId)}/obsidian-export`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ rounds }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as AgentThreadObsidianExportResult
 }
 
 // ---- N170 任务配方 ------------------------------------------------------------

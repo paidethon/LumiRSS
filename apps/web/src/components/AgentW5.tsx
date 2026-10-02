@@ -12,10 +12,11 @@
 
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Download, GitBranch, Search, Settings2, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, Download, GitBranch, MoreHorizontal, Pencil, Search, Settings2, Square, Trash2 } from 'lucide-react'
 import {
   branchAgentThread,
   exportAgentThreadMarkdown,
+  exportAgentThreadToObsidian,
   previewAgentApproval,
   previewAgentRecipe,
   previewAgentScope,
@@ -33,14 +34,19 @@ import {
   useAgentResumeMutation,
   useAgentRetryMutation,
   useAgentReviseApprovalMutation,
+  useAgentThreadSettingsMutation,
   useAgentUndoMutation,
+  useCancelAgentTurnMutation,
   useCreateAgentRecipeMutation,
   useDeleteAgentRecipeMutation,
+  useDeleteAgentThreadMutation,
   useRunAgentRecipeMutation,
   useWorkspaces,
 } from '../api/queries'
+import { ActionMenu } from './ui/ActionMenu'
 import { Button } from './ui/Button'
 import { Dialog } from './ui/Dialog'
+import { FormDialog } from './ui/FormDialog'
 import { IconButton } from './ui/IconButton'
 import { cx } from './ui/cx'
 
@@ -368,6 +374,130 @@ export function ThreadSettingsButton({ threadId }: { threadId: string }) {
   )
 }
 
+// ---- R20 停止生成 -------------------------------------------------------------
+
+/** R20：停止生成——仅处理中可见；POST /cancel 服务端取消当前回合
+ * （部分输出以 cancelled 终态落库，轮询读回后 processing 自动收敛）。
+ * 服务端已终态时 409 no_active_run 也如实呈现（不静默吞掉）。 */
+export function StopGenerationButton({ threadId, processing }: { threadId: string; processing: boolean }) {
+  const cancel = useCancelAgentTurnMutation(threadId)
+  if (!processing) return null
+  return (
+    <span className="inline-flex items-center gap-1" data-stop-generation="">
+      <Button
+        size="sm"
+        variant="secondary"
+        disabled={cancel.isPending}
+        data-action="stop-generation"
+        onClick={() => cancel.mutate()}
+      >
+        <Square aria-hidden className="mr-1 inline size-3" />
+        {cancel.isPending ? '停止中…' : '停止'}
+      </Button>
+      {cancel.isError && (
+        <span role="alert" className="max-w-40 truncate text-[10px] text-[var(--lumi-danger)]">
+          {cancel.error instanceof Error ? cancel.error.message : '停止失败。'}
+        </span>
+      )}
+    </span>
+  )
+}
+
+// ---- R20 会话行操作（重命名 / 归档 / 删除）--------------------------------------
+
+/** R20：会话行 ActionMenu——重命名 / 归档（或已归档视图中的恢复）/
+ * 删除（danger）。归档是软状态：行不删除，可在「已归档」视图恢复。 */
+export function ThreadRowMenu({
+  threadId,
+  title,
+  archived,
+  onDeleted,
+}: {
+  threadId: string
+  title: string
+  archived: boolean
+  onDeleted: (threadId: string) => void
+}) {
+  const [renaming, setRenaming] = useState(false)
+  const [draft, setDraft] = useState(title)
+  const settings = useAgentThreadSettingsMutation()
+  const remove = useDeleteAgentThreadMutation()
+
+  const nextTitle = draft.trim()
+  const rename = () => {
+    if (nextTitle === '') return
+    settings.mutate(
+      { threadId, patch: { title: nextTitle } },
+      { onSuccess: () => setRenaming(false) },
+    )
+  }
+
+  return (
+    <span data-thread-row-menu="">
+      <ActionMenu
+        trigger={({ triggerProps }) => (
+          <IconButton
+            {...triggerProps}
+            icon={<MoreHorizontal aria-hidden className="size-4" />}
+            label={`会话操作：${title}`}
+            size="sm"
+            touch
+            className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 max-lg:opacity-100"
+          />
+        )}
+        entries={[
+          { type: 'item', label: '重命名', icon: <Pencil aria-hidden className="size-3.5" />, onSelect: () => setRenaming(true) },
+          {
+            type: 'item',
+            label: archived ? '恢复到工作集' : '归档',
+            icon: archived ? (
+              <ArchiveRestore aria-hidden className="size-3.5" />
+            ) : (
+              <Archive aria-hidden className="size-3.5" />
+            ),
+            onSelect: () => settings.mutate({ threadId, patch: { archived: !archived } }),
+            disabled: settings.isPending,
+          },
+          { type: 'sep' },
+          {
+            type: 'item',
+            label: '删除会话',
+            icon: <Trash2 aria-hidden className="size-3.5" />,
+            danger: true,
+            disabled: remove.isPending,
+            onSelect: () => remove.mutate(threadId, { onSuccess: () => onDeleted(threadId) }),
+          },
+        ]}
+      />
+      <FormDialog
+        open={renaming}
+        onClose={() => setRenaming(false)}
+        title="重命名会话"
+        submitLabel="保存"
+        busy={settings.isPending}
+        onSubmit={rename}
+      >
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="text-[var(--lumi-text-secondary)]">会话名称</span>
+          <input
+            type="text"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            aria-label="会话名称"
+            autoFocus
+            className={inputCls}
+          />
+        </label>
+        {settings.isError && (
+          <p role="alert" className="mt-1.5 text-xs text-[var(--lumi-danger)]">
+            {settings.error instanceof Error ? settings.error.message : '保存失败，请稍后重试。'}
+          </p>
+        )}
+      </FormDialog>
+    </span>
+  )
+}
+
 // ---- F096 会话导出 ------------------------------------------------------------
 
 export function ThreadExportButton({ threadId }: { threadId: string }) {
@@ -379,6 +509,13 @@ export function ThreadExportButton({ threadId }: { threadId: string }) {
     mutationFn: () => exportAgentThreadMarkdown(threadId, Math.max(1, Math.min(20, Number(rounds) || 5))),
     onSuccess: setPreview,
   })
+
+  // R20：保存到 Obsidian（服务端 R07 受限写入面：content-id 幂等、
+  // 重复导出 = exists 绝不覆盖；未配置 vault → 逐项诚实 failed）。
+  const toObsidian = useMutation({
+    mutationFn: () => exportAgentThreadToObsidian(threadId, Math.max(1, Math.min(20, Number(rounds) || 5))),
+  })
+  const obsidian = toObsidian.data ?? null
 
   function download() {
     if (preview === null) return
@@ -430,7 +567,34 @@ export function ThreadExportButton({ threadId }: { threadId: string }) {
               <Button variant="secondary" size="sm" disabled={build.isPending} onClick={() => build.mutate()}>
                 {build.isPending ? '生成中…' : '生成预览'}
               </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                data-action="save-to-obsidian"
+                disabled={toObsidian.isPending}
+                onClick={() => toObsidian.mutate()}
+              >
+                {toObsidian.isPending ? '保存中…' : '保存到 Obsidian'}
+              </Button>
             </label>
+            {obsidian !== null && (
+              <p
+                role="status"
+                data-obsidian-export-result={obsidian.status}
+                className="rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-selected)] px-2.5 py-1.5 text-xs text-[var(--lumi-text-secondary)]"
+              >
+                {obsidian.status === 'written'
+                  ? `已写入 Obsidian：${obsidian.path ?? ''}`
+                  : obsidian.status === 'exists'
+                    ? '已在 Obsidian 库中（幂等跳过，未覆盖既有文件）。'
+                    : `保存失败：${obsidian.reason ?? '未知原因'}${obsidian.message ? `（${obsidian.message}）` : ''}`}
+              </p>
+            )}
+            {toObsidian.isError && (
+              <p role="alert" className="text-xs text-[var(--lumi-danger)]">
+                {toObsidian.error instanceof Error ? toObsidian.error.message : '保存失败，请稍后重试。'}
+              </p>
+            )}
             {preview !== null && (
               <pre
                 data-export-preview=""

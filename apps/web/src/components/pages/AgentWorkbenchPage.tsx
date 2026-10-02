@@ -20,13 +20,13 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { AlertCircle, Bot, FileText, Plus, Trash2 } from 'lucide-react'
+import { AlertCircle, Bot, FileText, Plus } from 'lucide-react'
 import {
   useAgentApprovalMutation,
+  useAgentArchivedThreads,
   useAgentMessages,
   useAgentThreads,
   useCreateAgentThreadMutation,
-  useDeleteAgentThreadMutation,
   useRagStatus,
   useResolveRefs,
   useSendAgentMessageMutation,
@@ -40,8 +40,10 @@ import {
   BranchButton,
   PauseResumeControls,
   RecipePanel,
+  StopGenerationButton,
   ThreadExportButton,
   ThreadRetryButton,
+  ThreadRowMenu,
   ThreadSearchBox,
   ThreadSettingsButton,
   ToolTimelineRow,
@@ -49,7 +51,6 @@ import {
 import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
 import { EmptyState } from '../ui/EmptyState'
-import { IconButton } from '../ui/IconButton'
 import { Skeleton } from '../ui/Skeleton'
 import { cx } from '../ui/cx'
 
@@ -483,6 +484,8 @@ function ChatArea({
         <BranchBadge branchOf={branchOf} />
         <RagStatusChip />
         <div className="ml-auto flex shrink-0 items-center gap-1">
+          {/* R20：停止生成（仅处理中可见；服务端取消 + cancelled 终态落库）。 */}
+          <StopGenerationButton threadId={threadId} processing={processing} />
           <PauseResumeControls threadId={threadId} processing={processing} />
           <ThreadRetryButton threadId={threadId} processing={processing} />
           <ThreadSettingsButton threadId={threadId} />
@@ -620,22 +623,27 @@ function NoThreadPlaceholder() {
   )
 }
 
-/** 会话列表（左侧栏）。 */
+/** 会话列表（左侧栏）。R20：工作集 / 已归档两个视图；行内 ActionMenu
+ * 提供重命名 / 归档（或恢复）/ 删除。 */
 function ThreadList({
   activeId,
   onSelect,
   onOpenAt,
   onRunRecipe,
+  onDeleted,
 }: {
   activeId: string | null
   onSelect: (threadId: string) => void
   onOpenAt: (threadId: string, messageSeq: number) => void
   onRunRecipe: (threadId: string) => void
+  onDeleted: (threadId: string) => void
 }) {
-  const threads = useAgentThreads()
+  const [view, setView] = useState<'active' | 'archived'>('active')
+  const activeThreads = useAgentThreads()
+  const archivedThreads = useAgentArchivedThreads()
   const create = useCreateAgentThreadMutation()
-  const remove = useDeleteAgentThreadMutation()
 
+  const threads = view === 'active' ? activeThreads : archivedThreads
   const items = useMemo(() => threads.data?.items ?? [], [threads.data])
 
   return (
@@ -648,16 +656,54 @@ function ThreadList({
     >
       <div className="flex items-center gap-2 px-2.5 py-2">
         <h2 className="text-sm font-semibold text-[var(--lumi-text-primary)]">会话</h2>
-        <Button
-          size="sm"
-          variant="primary"
-          className="ml-auto"
-          onClick={() => create.mutate()}
-          disabled={create.isPending}
+        {/* R20：工作集 / 已归档视图切换（软归档：行不删除，可恢复）。 */}
+        <div
+          role="group"
+          aria-label="会话视图"
+          className="ml-auto flex items-center rounded-[var(--lumi-radius-sm)] border border-[var(--lumi-border)] p-0.5"
         >
-          <Plus aria-hidden className="size-3.5" />
-          新会话
-        </Button>
+          <button
+            type="button"
+            aria-pressed={view === 'active'}
+            data-view="active"
+            onClick={() => setView('active')}
+            className={cx(
+              'min-h-7 rounded-[var(--lumi-radius-sm)] px-2 text-[11px] transition-colors duration-[var(--lumi-motion-fast)]',
+              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+              view === 'active'
+                ? 'bg-[var(--lumi-surface-selected)] text-[var(--lumi-accent-text)]'
+                : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-primary)]',
+            )}
+          >
+            会话
+          </button>
+          <button
+            type="button"
+            aria-pressed={view === 'archived'}
+            data-view="archived"
+            onClick={() => setView('archived')}
+            className={cx(
+              'min-h-7 rounded-[var(--lumi-radius-sm)] px-2 text-[11px] transition-colors duration-[var(--lumi-motion-fast)]',
+              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+              view === 'archived'
+                ? 'bg-[var(--lumi-surface-selected)] text-[var(--lumi-accent-text)]'
+                : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-primary)]',
+            )}
+          >
+            已归档
+          </button>
+        </div>
+        {view === 'active' && (
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => create.mutate()}
+            disabled={create.isPending}
+          >
+            <Plus aria-hidden className="size-3.5" />
+            新会话
+          </Button>
+        )}
       </div>
 
       {/* F095：会话消息搜索（结果下拉 → 打开并滚动到消息）。 */}
@@ -669,11 +715,6 @@ function ThreadList({
       {create.isError && (
         <p role="alert" className="px-2.5 pb-1 text-xs text-[var(--lumi-danger)]">
           {create.error.message}
-        </p>
-      )}
-      {remove.isError && (
-        <p role="alert" className="px-2.5 pb-1 text-xs text-[var(--lumi-danger)]">
-          {remove.error.message}
         </p>
       )}
 
@@ -695,7 +736,9 @@ function ThreadList({
       )}
 
       {threads.data !== undefined && items.length === 0 && (
-        <p className="px-2.5 pb-2 text-xs text-[var(--lumi-text-tertiary)]">还没有会话</p>
+        <p className="px-2.5 pb-2 text-xs text-[var(--lumi-text-tertiary)]">
+          {view === 'active' ? '还没有会话' : '没有已归档的会话'}
+        </p>
       )}
 
       <ul className="flex flex-col gap-0.5 overflow-y-auto px-1.5 pb-2">
@@ -721,14 +764,12 @@ function ThreadList({
                 {formatRelative(thread.createdAt)}
               </span>
             </button>
-            <IconButton
-              icon={<Trash2 aria-hidden className="size-4" />}
-              label="删除会话"
-              size="sm"
-              touch
-              disabled={remove.isPending}
-              onClick={() => remove.mutate(thread.id)}
-              className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 max-lg:opacity-100"
+            {/* R20：行操作菜单（重命名 / 归档或恢复 / 删除）。 */}
+            <ThreadRowMenu
+              threadId={thread.id}
+              title={thread.title}
+              archived={view === 'archived'}
+              onDeleted={onDeleted}
             />
           </li>
         ))}
@@ -763,6 +804,15 @@ export default function AgentWorkbenchPage() {
   // N170：配方运行 → 打开服务端创建的新会话。
   const handleRunRecipe = handleBranched
 
+  // R20：删除当前打开的会话 → 回到无会话占位（诚实；列表由 mutation
+  // 缓存失效自行刷新）。
+  function handleDeleted(threadId: string) {
+    if (activeThreadId === threadId) {
+      setActiveThreadId(null)
+      setScrollSeq(null)
+    }
+  }
+
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col lg:flex-row">
       <ThreadList
@@ -770,6 +820,7 @@ export default function AgentWorkbenchPage() {
         onSelect={setActiveThreadId}
         onOpenAt={handleOpenAt}
         onRunRecipe={handleRunRecipe}
+        onDeleted={handleDeleted}
       />
       {activeThread !== null ? (
         <ChatArea

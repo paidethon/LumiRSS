@@ -3007,6 +3007,7 @@ export function useLibraryFavoriteToggle(ref: string) {
 
 import {
   assignTag,
+  cancelAgentTurn,
   createAgentRecipe,
   createAgentThread,
   decideAgentApproval,
@@ -3025,6 +3026,8 @@ import {
   sendAgentMessage,
   undoAgentStep,
   unassignTag,
+  updateAgentThreadSettings,
+  type AgentThreadSettingsPatch,
 } from './client'
 
 /** 会话列表。 */
@@ -3054,6 +3057,39 @@ export function useDeleteAgentThreadMutation() {
     onSuccess: async (_data, threadId) => {
       queryClient.removeQueries({ queryKey: ['agent', 'messages', threadId] })
       await queryClient.invalidateQueries({ queryKey: ['agent', 'threads'] })
+    },
+  })
+}
+
+/** R20：已归档会话视图（软归档：行不删除，可恢复）。 */
+export function useAgentArchivedThreads() {
+  return useQuery({
+    queryKey: ['agent', 'threads', 'archived'],
+    queryFn: ({ signal }) => listAgentThreads(signal, true),
+  })
+}
+
+/** R20：会话设置 PATCH（重命名 / 归档 / 恢复共用）。['agent','threads']
+ * 前缀失效同时命中工作集与已归档两个视图。 */
+export function useAgentThreadSettingsMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { threadId: string; patch: AgentThreadSettingsPatch }) =>
+      updateAgentThreadSettings(vars.threadId, vars.patch),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['agent', 'threads'] })
+    },
+  })
+}
+
+/** R20：停止生成——服务端取消当前回合；成功后失效消息（cancelled
+ * 终态消息随轮询落回，processing 自动收敛）。 */
+export function useCancelAgentTurnMutation(threadId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => cancelAgentTurn(threadId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['agent', 'messages', threadId] })
     },
   })
 }

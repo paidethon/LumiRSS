@@ -211,7 +211,7 @@ describe('Agent 引用可点击（wave 2）', () => {
       ],
     })
     render(withProviders(<AgentWorkbenchPage />))
-    fireEvent.click(await screen.findByRole('button', { name: /测试会话/ }, { timeout: 3000 }))
+    fireEvent.click(await screen.findByRole('button', { name: /^测试会话/ }, { timeout: 3000 }))
     expect(await screen.findByText('回答')).toBeInTheDocument()
 
     // 批量解析一次
@@ -245,7 +245,7 @@ describe('AgentWorkbenchPage', () => {
     render(withProviders(<AgentWorkbenchPage />))
 
     // 选中已有会话（行 = 标题 + 相对时间）
-    fireEvent.click(await screen.findByRole('button', { name: /测试会话/ }, { timeout: 3000 }))
+    fireEvent.click(await screen.findByRole('button', { name: /^测试会话/ }, { timeout: 3000 }))
     fireEvent.change(screen.getByLabelText('输入消息'), { target: { value: '你好' } })
     fireEvent.click(screen.getByRole('button', { name: '发送' }))
 
@@ -284,7 +284,7 @@ describe('AgentWorkbenchPage', () => {
     })
 
     render(withProviders(<AgentWorkbenchPage />))
-    fireEvent.click(await screen.findByRole('button', { name: /测试会话/ }, { timeout: 3000 }))
+    fireEvent.click(await screen.findByRole('button', { name: /^测试会话/ }, { timeout: 3000 }))
 
     expect(await screen.findByText(/需要批准的写入操作 · save_bookmark/)).toBeInTheDocument()
     // args pretty JSON 可见
