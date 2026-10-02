@@ -1,10 +1,12 @@
 """Outbound digest (phase2 G5, recovery P0-06a/b/j).
 
 Selected items → text+HTML email → the user's own SMTP relay → the
-single configured address. Content is ALWAYS server-derived (bridge
-lists' recent entries — P0-06b): the client can reference stored
-entries but never inject arbitrary title/url text, so the relay cannot
-be abused as an open sender.
+configured recipient address(es) (comma separated; each recipient gets
+an individual message with an honest per-recipient ledger — R19
+newsletter_issues). Content is ALWAYS server-derived (bridge lists'
+recent entries — P0-06b): the client can reference stored entries but
+never inject arbitrary title/url text, so the relay cannot be abused as
+an open sender.
 
 SMTP credentials live in the secrets store (never SQLite, never logs);
 sending happens only when explicitly configured (disabled by default).
@@ -13,12 +15,16 @@ scheduled path only sends when ``enabled`` is true (P0-06j). Scheduling
 is timezone-aware (migration 0024): ``hour`` is interpreted in the
 configured IANA timezone; ``timezone=''`` keeps the historical server-
 local semantics. Errors are typed for honest UI (unreachable / auth
-failed / TLS). Tests use a local in-process SMTP sink (aiosmtpd-style)
-— real third-party mail is never touched.
+failed / TLS). Every attempt writes the newsletter issue ledger
+(migration 0325): sent rows keep the body snapshot, failed rows keep
+the error and the per-recipient state a retry targets. Tests use a
+local in-process SMTP sink (aiosmtpd-style) — real third-party mail is
+never touched.
 """
 
 import asyncio
 import logging
+import re
 import smtplib
 import ssl
 from datetime import datetime, timedelta
@@ -27,6 +33,11 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from lumirss.mail_bridge import MailBridgeStore
+from lumirss.newsletter_issues import (
+    NewsletterIssueStore,
+    merge_recipients,
+    parse_recipients,
+)
 from lumirss.secrets_store import SecretsStore
 from lumirss.storage import Database
 from lumirss.util import utc_now
@@ -42,6 +53,10 @@ _VALID_SOURCES = ("read_later", "starred", "mail")
 
 class SmtpNotConfigured(Exception):
     """SMTP relay or recipient address is missing."""
+
+
+class DigestEmpty(Exception):
+    """A retry could not re-derive any digest item (never an empty email)."""
 
 
 class SmtpSendFailed(Exception):
@@ -227,6 +242,16 @@ def _esc(text: str) -> str:
     )
 
 
+def split_recipients(to_addr: str) -> list[str]:
+    """配置的收件地址（逗号/分号分隔）→ 去重后的逐收件人清单。"""
+    seen: list[str] = []
+    for part in re.split(r"[,;]", str(to_addr or "")):
+        address = part.strip()
+        if address and address not in seen:
+            seen.append(address)
+    return seen
+
+
 def send_digest_smtp(
     *,
     host: str,
@@ -238,8 +263,13 @@ def send_digest_smtp(
     subject: str,
     text: str,
     html: str,
-) -> None:
-    """One synchronous SMTP send with STARTTLS + typed failures."""
+) -> str:
+    """One synchronous SMTP send with STARTTLS + typed failures.
+
+    Returns a provider receipt summary. smtplib exposes no queue id /
+    Message-ID echo, so success is an empty string — the ledger records
+    honestly that no provider reference is available rather than
+    inventing one."""
     message = EmailMessage()
     message["Subject"] = subject
     message["From"] = from_addr or user
@@ -255,13 +285,84 @@ def send_digest_smtp(
                 pass  # relay is TLS-on-connect or plaintext local sink
             if user and password:
                 smtp.login(user, password)
-            smtp.send_message(message)
+            refused = smtp.send_message(message)
     except smtplib.SMTPAuthenticationError as exc:
         raise SmtpSendFailed("SMTP 认证失败。", "auth_failed") from exc
     except (smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected, OSError) as exc:
         raise SmtpSendFailed("SMTP 服务器无法连接。", "unreachable") from exc
     except smtplib.SMTPException as exc:
         raise SmtpSendFailed("SMTP 发送失败。", "send_failed") from exc
+    if refused:
+        return "拒绝: " + ", ".join(sorted(refused))
+    return ""
+
+
+def send_digest_to_recipients(
+    *,
+    host: str,
+    port: int,
+    user: str,
+    password: str,
+    from_addr: str,
+    targets: list[str],
+    subject: str,
+    text: str,
+    html: str,
+) -> list[dict[str, str]]:
+    """Per-recipient send loop with an honest per-recipient ledger.
+
+    One message per recipient (its own To header) so a partial failure
+    is attributable per address and a retry re-sends only to the ones
+    still missing. A connection-level failure (unreachable relay / bad
+    auth) fails every remaining recipient with the SAME reason —
+    re-dialing the relay per address would only multiply the wait."""
+    results: list[dict[str, str]] = []
+    for index, address in enumerate(targets):
+        try:
+            receipt = send_digest_smtp(
+                host=host,
+                port=port,
+                user=user,
+                password=password,
+                from_addr=from_addr,
+                to_addr=address,
+                subject=subject,
+                text=text,
+                html=html,
+            )
+        except SmtpSendFailed as exc:
+            results.append(
+                {
+                    "address": address,
+                    "status": "failed",
+                    "reason": exc.reason,
+                    "error": str(exc),
+                    "providerRef": "",
+                }
+            )
+            if exc.reason in ("unreachable", "auth_failed"):
+                for rest in targets[index + 1 :]:
+                    results.append(
+                        {
+                            "address": rest,
+                            "status": "failed",
+                            "reason": exc.reason,
+                            "error": str(exc),
+                            "providerRef": "",
+                        }
+                    )
+                break
+        else:
+            results.append(
+                {
+                    "address": address,
+                    "status": "sent",
+                    "reason": "",
+                    "error": "",
+                    "providerRef": receipt,
+                }
+            )
+    return results
 
 
 class DigestScheduler:
@@ -363,30 +464,201 @@ async def deliver_digest(
     secrets: SecretsStore,
     settings: dict[str, Any],
     items: list[dict[str, Any]],
-) -> None:
+    *,
+    origin: str = "manual",
+    dedupe_key: str = "",
+    ledger_issue_id: int | None = None,
+    only_recipients: list[str] | None = None,
+) -> dict[str, Any]:
     """Compose + send via the configured relay, then record the outcome.
 
-    Shared by the send-now route and the scheduler so both paths send
-    exactly the same server-derived shape."""
-    text, html = compose_digest(_DIGEST_TITLE, items)
+    Shared by the send-now route, the retry route and the scheduler so
+    every path sends exactly the same server-derived shape AND writes
+    the same per-attempt ledger row (R19): a sent row keeps the exact
+    body snapshot; a failed row keeps the typed error plus the
+    per-recipient ledger, so a retry (``only_recipients``) re-delivers
+    ONLY to recipients never recorded as sent.
+
+    ``dedupe_key`` makes scheduled completions idempotent (the same
+    hour window updates one row); ``ledger_issue_id`` pins the write to
+    an existing row (retry); manual sends leave both empty → new row.
+    Any recipient failure raises SmtpSendFailed after the ledger row is
+    written — the route surfaces the stable 502 while the row keeps the
+    honest per-address state."""
     store = DigestStore(db, secrets)
+    issues = NewsletterIssueStore(db)
+    recipients = split_recipients(settings["toAddr"])
+    if only_recipients is not None:
+        pending = [addr for addr in recipients if addr in set(only_recipients)]
+    else:
+        pending = recipients
+    if not pending:
+        raise SmtpNotConfigured("SMTP 收件地址缺失。")
+    text, html = compose_digest(_DIGEST_TITLE, items)
     password = secrets.get("digest_smtp_password") or ""
-    try:
-        send_digest_smtp(
-            host=settings["smtpHost"],
-            port=settings["smtpPort"],
-            user=settings["smtpUser"],
-            password=password,
-            from_addr=settings["fromAddr"] or settings["smtpUser"],
-            to_addr=settings["toAddr"],
-            subject=_DIGEST_TITLE,
-            text=text,
-            html=html,
+    results = send_digest_to_recipients(
+        host=settings["smtpHost"],
+        port=settings["smtpPort"],
+        user=settings["smtpUser"],
+        password=password,
+        from_addr=settings["fromAddr"] or settings["smtpUser"],
+        targets=pending,
+        subject=_DIGEST_TITLE,
+        text=text,
+        html=html,
+    )
+    sent_count = sum(1 for result in results if result["status"] == "sent")
+    failed = [result for result in results if result["status"] != "sent"]
+    sent_at = utc_now()
+    # 重试回写原行时，账目按地址合并（已 sent 的地址绝不降级/丢失）；
+    # 全新发送（无原行）直接以本次结果记账。
+    ledger_recipients = results
+    if ledger_issue_id is not None:
+        existing = await issues.get_issue(int(ledger_issue_id))
+        if existing is not None:
+            ledger_recipients = merge_recipients(
+                parse_recipients(existing["recipients_json"]), results
+            )
+    if failed:
+        reasons = "；".join(
+            f"{result['address']}（{result['reason']}）" for result in failed[:3]
         )
-    except SmtpSendFailed as exc:
-        await store.mark_error(str(exc))
-        raise
+        summary = f"发送失败（{len(failed)}/{len(results)} 个收件人）：{reasons}"
+        await issues.record_result(
+            subject=_DIGEST_TITLE,
+            source=str(settings.get("source") or ""),
+            origin=origin,
+            status="failed",
+            recipients=ledger_recipients,
+            item_count=len(items),
+            dedupe_key=dedupe_key,
+            items_json=_items_json(items),
+            provider_receipt="",
+            error=summary,
+            row_id=ledger_issue_id,
+        )
+        await store.mark_error(summary)
+        raise SmtpSendFailed(summary, failed[0]["reason"])
+    issue_id = await issues.record_result(
+        subject=_DIGEST_TITLE,
+        source=str(settings.get("source") or ""),
+        origin=origin,
+        status="sent",
+        recipients=ledger_recipients,
+        item_count=len(items),
+        dedupe_key=dedupe_key,
+        items_json=_items_json(items),
+        text=text,
+        html=html,
+        provider_receipt="；".join(
+            f"{result['address']}:{result['providerRef']}"
+            for result in results
+            if result["providerRef"]
+        ),
+        error=None,
+        sent_at=sent_at,
+        row_id=ledger_issue_id,
+    )
     await store.mark_sent()
+    return {
+        "issueId": issue_id,
+        "status": "sent",
+        "sentCount": sent_count,
+        "results": results,
+    }
+
+
+def _items_json(items: list[dict[str, Any]]) -> str:
+    """服务端派生条目的有界快照（重试按同一内容重组，不凭空重选）。"""
+    import json
+
+    bounded = [
+        {
+            "title": str(item.get("title") or "")[:300],
+            "url": str(item.get("url") or "")[:500],
+            "source": str(item.get("source") or "")[:200],
+        }
+        for item in items[:50]
+    ]
+    return json.dumps(bounded, ensure_ascii=False)
+
+
+async def retry_digest_issue(
+    db: Database,
+    secrets: SecretsStore,
+    settings: dict[str, Any],
+    issue: dict[str, Any],
+) -> dict[str, Any]:
+    """Retry a FAILED ledger row, re-delivering only pending recipients.
+
+    The item snapshot recorded with the attempt is reused verbatim (a
+    retry re-sends the same content, it does not silently re-select);
+    rows without a snapshot (pre-ledger shape) fall back to the same
+    server-derived bridge selection a fresh send would use. Returns the
+    deliver_digest result dict; the per-recipient ledger is merged back
+    into the ORIGINAL row — an address already recorded ``sent`` is
+    never re-delivered."""
+    issues = NewsletterIssueStore(db)
+    issue_id = int(issue["id"])
+    recipients = parse_recipients(issue["recipients_json"])
+    pending = [
+        str(entry.get("address") or "")
+        for entry in recipients
+        if str(entry.get("status") or "") != "sent"
+    ]
+    if not pending:
+        # 账目显示全部已送达（历史部分失败后已被补齐）→ 不重复投递
+        # 任何人，直接把该行修复为 sent。
+        await issues.record_result(
+            subject=str(issue["subject"]),
+            source=str(issue["source"] or ""),
+            origin=str(issue["origin"] or "manual"),
+            status="sent",
+            recipients=recipients,
+            item_count=int(issue["item_count"] or 0),
+            items_json=str(issue["items_json"] or "[]"),
+            provider_receipt=str(issue["provider_receipt"] or ""),
+            error=None,
+            sent_at=utc_now(),
+            row_id=issue_id,
+        )
+        return {
+            "issueId": issue_id,
+            "status": "sent",
+            "sentCount": 0,
+            "skippedCount": len(recipients),
+            "results": [],
+        }
+    items: list[dict[str, Any]] = []
+    try:
+        import json
+
+        raw = json.loads(str(issue["items_json"] or "[]"))
+        if isinstance(raw, list):
+            items = [entry for entry in raw if isinstance(entry, dict)]
+    except ValueError:
+        items = []
+    if not items:
+        items = await build_bridge_digest_items(
+            MailBridgeStore(db), int(settings.get("limitCount") or _DEFAULT_LIMIT)
+        )
+    if not items:
+        # 绝不发空邮件：快照缺失且 bridge 已无可派生条目 → 稳定错误，
+        # 由路由映射为 422 no_digest_items（账本行保持 failed 不动）。
+        raise DigestEmpty("重试无法重组任何摘要条目（快照缺失且 bridge 列表为空）。")
+    result = await deliver_digest(
+        db,
+        secrets,
+        settings,
+        items,
+        origin=str(issue["origin"] or "manual"),
+        ledger_issue_id=issue_id,
+        only_recipients=pending,
+    )
+    # deliver_digest 已把重试结果按地址合并回原行（已 sent 的地址绝不
+    # 降级/重发）；这里只补上「跳过数」的诚实口径。
+    result["skippedCount"] = len(recipients) - len(pending)
+    return result
 
 
 async def _send_scheduled_digest(app_state: Any) -> None:
@@ -413,7 +685,18 @@ async def _send_scheduled_digest(app_state: Any) -> None:
     if not items:
         await store.mark_error("没有可发送的摘要条目（bridge 列表暂无邮件）。")
         return
-    await deliver_digest(db, secrets, settings, items)
+    # 调度窗口幂等：dedupe_key 与 DigestScheduler 的租约 scope 同构——
+    # 同一小时窗口的补写（崩溃恢复/双进程竞态残余）UPDATE 同一行，
+    # 绝不产生第二条已发送记录。
+    now = now_in_timezone(settings["timezone"])
+    await deliver_digest(
+        db,
+        secrets,
+        settings,
+        items,
+        origin="scheduled",
+        dedupe_key=f"digest:{now.strftime('%Y-%m-%dT%H')}",
+    )
 
 
 async def digest_scheduler_loop(app_state: Any) -> None:

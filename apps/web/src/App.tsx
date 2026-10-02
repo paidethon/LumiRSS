@@ -84,6 +84,8 @@ const SnapshotsPage = lazy(() => import('./components/pages/SnapshotsPage'))
 const InboxPage = lazy(() => import('./components/pages/InboxPage'))
 // phase2 G6：Obsidian 只读库
 const ObsidianPage = lazy(() => import('./components/pages/ObsidianPage'))
+const NewsletterPage = lazy(() => import('./components/pages/NewsletterPage'))
+const RagIndexPage = lazy(() => import('./components/pages/RagIndexPage'))
 // phase2 G7/G8：Agent 工作台 / 标签与图谱
 const AgentWorkbenchPage = lazy(() => import('./components/pages/AgentWorkbenchPage'))
 const GraphPage = lazy(() => import('./components/pages/GraphPage'))
@@ -124,7 +126,7 @@ const TIMELINE_MAX = 460
 /** M1 布局契约：全宽 section 桌面独占侧栏外主内容区——Timeline、
  * Reader 与分隔条均不挂载（无文章域查询与空态 DOM）；移动端仍由
  * 上方 section 区承载。其余 section 保持 Sidebar | Timeline | Reader。 */
-const FULL_WIDTH_SECTIONS: ReadonlySet<string> = new Set(['agent', 'graph'])
+const FULL_WIDTH_SECTIONS: ReadonlySet<string> = new Set(['agent', 'graph', 'newsletter', 'rag'])
 
 /** 响应式 Web Shell（0010 Gate C + 0011 + P03 平板层）。
  *
@@ -370,7 +372,11 @@ export default function App() {
                         ? '收件箱'
                         : section === 'obsidian'
                           ? 'Obsidian 库'
-                          : section === 'agent'
+                          : section === 'newsletter'
+                            ? '邮件简报'
+                            : section === 'rag'
+                              ? 'RAG 索引'
+                              : section === 'agent'
                             ? 'Agent 工作台'
                             : section === 'graph'
                               ? '标签与图谱'
@@ -427,6 +433,16 @@ export default function App() {
                 <ObsidianPage />
               </RouteBoundary>
             )}
+            {section === 'newsletter' && (
+              <RouteBoundary label="邮件简报">
+                <NewsletterPage />
+              </RouteBoundary>
+            )}
+            {section === 'rag' && (
+              <RouteBoundary label="RAG 索引">
+                <RagIndexPage />
+              </RouteBoundary>
+            )}
             {section === 'agent' && (
               <RouteBoundary label="Agent 工作台">
                 <AgentWorkbenchPage />
@@ -448,10 +464,36 @@ export default function App() {
         {!mobileViewport && FULL_WIDTH_SECTIONS.has(section) && (
           <section
             className="hidden min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--lumi-surface)] lg:flex"
-            aria-label={section === 'agent' ? 'Agent 工作台' : '标签与图谱'}
+            aria-label={
+              section === 'agent'
+                ? 'Agent 工作台'
+                : section === 'newsletter'
+                  ? '邮件简报'
+                  : section === 'rag'
+                    ? 'RAG 索引'
+                    : '标签与图谱'
+            }
           >
-            <RouteBoundary label={section === 'agent' ? 'Agent 工作台' : '标签与图谱'}>
-              {section === 'agent' ? <AgentWorkbenchPage /> : <GraphPage />}
+            <RouteBoundary
+              label={
+                section === 'agent'
+                  ? 'Agent 工作台'
+                  : section === 'newsletter'
+                    ? '邮件简报'
+                    : section === 'rag'
+                      ? 'RAG 索引'
+                      : '标签与图谱'
+              }
+            >
+              {section === 'agent' ? (
+                <AgentWorkbenchPage />
+              ) : section === 'newsletter' ? (
+                <NewsletterPage />
+              ) : section === 'rag' ? (
+                <RagIndexPage />
+              ) : (
+                <GraphPage />
+              )}
             </RouteBoundary>
           </section>
         )}

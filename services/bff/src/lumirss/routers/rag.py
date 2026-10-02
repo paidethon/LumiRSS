@@ -6,6 +6,8 @@ coverage 覆盖分桶、chunk-preview 分块可视预览、ask 同步问答（�
 强弱 + 引用缺失拦截 + 摘录模式）。
 """
 
+import asyncio
+
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 
@@ -32,6 +34,17 @@ from lumirss.models import (
     RagExclusionPut,
     RagInconsistencyItem,
     RagInconsistencyList,
+    RagIndexConvergeResult,
+    RagIndexDeleteResult,
+    RagIndexOverview,
+    RagIndexOverviewFailure,
+    RagIndexOverviewJob,
+    RagIndexOverviewQueue,
+    RagIndexOverviewSource,
+    RagIndexOverviewStorage,
+    RagIndexPauseResult,
+    RagIndexRetryFailedRequest,
+    RagIndexRetryFailedResult,
     RagIndexVersion,
     RagIndexVersionSwitch,
     RagIndexVersionSwitchRequest,
@@ -52,6 +65,7 @@ from lumirss.rag import (
     RagService,
     chunk_scheme,
     chunk_text_with_spans,
+    rag_index_pass,
 )
 
 from ..deps import _get_rag_service
@@ -431,6 +445,297 @@ async def rag_rebuild_resume(request: Request) -> RagRebuildResult:
         elapsedMs=int(result.get("elapsedMs", 0)),
         jobId=result.get("jobId"),
         status=str(result.get("status") or "done"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# R24 RAG 索引页：总览 / 清空 / 失败重试 / 增量暂停 / 手动收敛
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/v1/rag/index/overview", response_model=RagIndexOverview)
+async def rag_index_overview(request: Request) -> RagIndexOverview:
+    """当前账号索引集合总览（RAG 索引页的数据源）。
+
+    全部数值来自真实行与作业证据：来源 × 语料/索引数（rag_chunks 按
+    LIVE 模型）、队列口径同 coverage（pending/done/failed/stale）、
+    磁盘占用优先 dbstat 页级真实值（无 dbstat 编译项时诚实降级为
+    载荷字节并标注 basis）、失败明细来自最近 rag_jobs 的 skipped 与
+    作业错误（脱敏截断，绝不携带堆栈）。绝不返回任何 embedding 数组。"""
+    from lumirss.new371_task_calendar import kind_exists, paused_task_kinds
+    from lumirss.rag_coverage import scan_coverage
+
+    service: RagService = _get_rag_service(request)
+    db = request.app.state.db
+    await db.migrate()
+
+    status = await service.status()
+    coverage = await scan_coverage(service)
+    model_id = str(status["model"])
+
+    chunk_rows = await db.fetch_all(
+        "SELECT kind, COUNT(DISTINCT ref) AS docs, COUNT(*) AS chunks FROM rag_chunks"
+        " WHERE model_id = ? GROUP BY kind",
+        (model_id,),
+    )
+    chunk_by_kind = {
+        str(row["kind"]): (int(row["docs"]), int(row["chunks"]))
+        for row in chunk_rows
+    }
+    corpus_by_kind: dict[str, int] = {"rss": 0}
+    rss_row = await db.fetch_one("SELECT COUNT(*) AS n FROM search_entries")
+    corpus_by_kind["rss"] = int(rss_row["n"]) if rss_row is not None else 0
+    for row in await db.fetch_all(
+        "SELECT kind, COUNT(*) AS n FROM search_library GROUP BY kind", ()
+    ):
+        corpus_by_kind[str(row["kind"])] = int(row["n"])
+    kinds = sorted(set(corpus_by_kind) | set(chunk_by_kind))
+    sources = [
+        RagIndexOverviewSource(
+            kind=kind,
+            corpusDocs=corpus_by_kind.get(kind, 0),
+            indexedDocs=chunk_by_kind.get(kind, (0, 0))[0],
+            chunks=chunk_by_kind.get(kind, (0, 0))[1],
+        )
+        for kind in kinds
+    ]
+
+    updated_row = await db.fetch_one(
+        "SELECT MAX(created_at) AS at FROM rag_chunks WHERE model_id = ?",
+        (model_id,),
+    )
+    last_updated = (
+        str(updated_row["at"]) if updated_row is not None and updated_row["at"] else None
+    )
+
+    excluded_row = await db.fetch_one(
+        "SELECT"
+        " SUM(CASE WHEN rag_excluded = 1 THEN 1 ELSE 0 END) AS excluded,"
+        " SUM(CASE WHEN ai_disabled = 1 THEN 1 ELSE 0 END) AS disabled"
+        " FROM source_overrides",
+        (),
+    )
+    excluded_feeds = int(excluded_row["excluded"] or 0) if excluded_row is not None else 0
+    disabled_feeds = int(excluded_row["disabled"] or 0) if excluded_row is not None else 0
+
+    failures, _failure_count = await _latest_job_failures(db)
+    storage = await _index_storage(service, model_id)
+
+    calendar_paused = False
+    control_db = getattr(request.app.state, "control_db", None)
+    if control_db is not None and kind_exists("rag_index"):
+        try:
+            calendar_paused = "rag_index" in await paused_task_kinds(control_db)
+        except Exception:  # noqa: BLE001 — 治理面缺席不阻断总览
+            calendar_paused = False
+
+    job = status.get("job") or {}
+    return RagIndexOverview(
+        enabled=bool(status["enabled"]),
+        modelId=model_id,
+        dim=int(status["dim"]),
+        configuredModel=status.get("configuredModel"),
+        documents=sum(docs for docs, _ in chunk_by_kind.values()),
+        chunks=int(status["chunks"]),
+        sources=sources,
+        excludedFeeds=excluded_feeds,
+        aiDisabledFeeds=disabled_feeds,
+        lastUpdatedAt=last_updated,
+        lastRebuildAt=status.get("lastRebuildAt"),
+        lastError=status.get("lastError"),
+        storage=RagIndexOverviewStorage(**storage),
+        queue=RagIndexOverviewQueue(
+            pending=max(int(coverage["indexable"]) - int(coverage["indexed"]), 0),
+            done=int(coverage["indexed"]),
+            failed=int(coverage["failed"]),
+            stale=int(coverage["stale"]),
+        ),
+        failures=[
+            RagIndexOverviewFailure(ref=item["ref"], reason=item["reason"], at=item["at"])
+            for item in failures
+        ],
+        incrementalPaused=await service.index_paused(),
+        calendarPaused=calendar_paused,
+        vecTable=bool(status["vecTable"]),
+        fastembedAvailable=bool(status["fastembedAvailable"]),
+        job=RagIndexOverviewJob(
+            jobId=job.get("jobId"),
+            status=job.get("status"),
+            stage=job.get("stage"),
+            done=int(job.get("done", 0) or 0),
+            remaining=job.get("remaining"),
+            updatedAt=job.get("updatedAt"),
+        ) if job else None,
+    )
+
+
+async def _latest_job_failures(db, limit: int = 20) -> tuple[list[dict], int]:
+    """最近一次作业的失败明细（脱敏；返回 (items, 总失败数)）。
+
+    - skipped refs（重建中途来源被删除）→ 每项一条，reason 固定文案；
+    - 作业整体 failed 的错误文案 → ref=None 一条（截断 200 字）。"""
+    row = await db.fetch_one(
+        "SELECT status, stats_json, updated_at FROM rag_jobs"
+        " ORDER BY updated_at DESC, id DESC LIMIT 1",
+        (),
+    )
+    if row is None:
+        return [], 0
+    try:
+        import json as _failures_json
+
+        stats = _failures_json.loads(str(row["stats_json"] or "{}"))
+    except ValueError:
+        stats = {}
+    if not isinstance(stats, dict):
+        stats = {}
+    items: list[dict] = []
+    count = 0
+    skipped = stats.get("skipped")
+    updated_at = str(row["updated_at"])
+    if isinstance(skipped, list):
+        unique = list(dict.fromkeys(str(ref) for ref in skipped if ref))
+        count += len(unique)
+        for ref in unique[:limit]:
+            items.append(
+                {
+                    "ref": ref,
+                    "reason": "重建期间来源已删除，已跳过",
+                    "at": updated_at,
+                }
+            )
+    if str(row["status"]) == "failed" and stats.get("error"):
+        items.insert(0, {"ref": None, "reason": str(stats["error"])[:200], "at": updated_at})
+        count += 1
+    return items, count
+
+
+def _dbstat_bytes_sync(service: RagService) -> dict[str, int]:
+    """dbstat 页级真实占用（vec0 影子表按 rag_vec% 前缀归入 vec 口径）。"""
+    connection = service._vec_connection()
+    rows = connection.execute(
+        "SELECT name, SUM(pgsize) AS n FROM dbstat"
+        " WHERE name LIKE 'rag_vec%' OR name IN ('rag_chunks', 'rag_rebuild_stage')"
+        " GROUP BY name"
+    ).fetchall()
+    sizes = {str(row["name"]): int(row["n"]) for row in rows}
+    vec_bytes = sum(v for k, v in sizes.items() if k.startswith("rag_vec"))
+    chunk_bytes = sizes.get("rag_chunks", 0) + sizes.get("rag_rebuild_stage", 0)
+    return {
+        "basis": "dbstat",
+        "vecBytes": vec_bytes,
+        "chunkBytes": chunk_bytes,
+        "totalBytes": vec_bytes + chunk_bytes,
+    }
+
+
+async def _index_storage(service: RagService, model_id: str) -> dict:
+    """索引磁盘占用：dbstat 优先；无 dbstat/无 sqlite-vec 时载荷字节
+    兜底（basis=payload，诚实标注口径——绝不估页开销冒充真实值）。"""
+    db = service._db  # noqa: SLF001 — 同域路由
+    await db.migrate()
+    payload_row = await db.fetch_one(
+        "SELECT COALESCE(SUM(LENGTH(text)), 0) AS t,"
+        " COALESCE(SUM(LENGTH(embedding)), 0) AS v"
+        " FROM rag_chunks WHERE model_id = ?",
+        (model_id,),
+    )
+    chunk_bytes = int(payload_row["t"]) if payload_row is not None else 0
+    vec_bytes = int(payload_row["v"]) if payload_row is not None else 0
+    if service._ensure_vec_table():  # noqa: SLF001 — 同域路由
+        try:
+            return await asyncio.to_thread(_dbstat_bytes_sync, service)
+        except Exception:  # noqa: BLE001 — dbstat 编译项缺失 → 兜底
+            pass
+    return {
+        "basis": "payload",
+        "vecBytes": vec_bytes,
+        "chunkBytes": chunk_bytes,
+        "totalBytes": vec_bytes + chunk_bytes,
+    }
+
+
+@router.delete("/api/v1/rag/index", response_model=RagIndexDeleteResult)
+async def rag_index_delete(request: Request) -> RagIndexDeleteResult:
+    """清空本账号的派生索引（向量 + 分块元数据 + staging）。
+
+    原文投影（search_entries / search_library）绝不触碰——索引可随时
+    从原文重建，删除零损失；进行中的 rebuild 持有同一把锁，删除会在
+    其安全点后排队而不是与 swap 竞争。"""
+    service: RagService = _get_rag_service(request)
+    result = await service.clear_index()
+    return RagIndexDeleteResult(
+        removedChunks=result["chunks"],
+        removedVecRows=result["vec"],
+    )
+
+
+@router.post(
+    "/api/v1/rag/index/retry-failed", response_model=RagIndexRetryFailedResult
+)
+async def rag_index_retry_failed(
+    payload: RagIndexRetryFailedRequest, request: Request
+) -> RagIndexRetryFailedResult:
+    """只重试失败项（增量管线，绝不全量重建）。
+
+    refs 缺省 = 最近作业 skipped 的全部失败项（≤limit）；显式 refs =
+    单项重试（失败列表的「单独重试」）。已从投影消失的失败项诚实进
+    ``missing``（它们已无可索引的原文，绝不冒充成功）。"""
+    from lumirss.rag_coverage import (  # noqa: SLF001 — 同模块族协作
+        _latest_job_skipped_refs,
+    )
+
+    service: RagService = _get_rag_service(request)
+    db = request.app.state.db
+    await db.migrate()
+    refs = payload.refs if payload.refs is not None else await _latest_job_skipped_refs(db)
+    refs = list(dict.fromkeys(str(ref) for ref in refs))[: payload.limit]
+    if not refs:
+        return RagIndexRetryFailedResult(requested=0)
+    present: list[str] = []
+    missing: list[str] = []
+    for ref in refs:
+        if await _ref_exists(db, ref):
+            present.append(ref)
+        else:
+            missing.append(ref)
+    result: dict = {"updated": 0, "chunks": 0}
+    if present:
+        result = await service.index_refs(present)
+    return RagIndexRetryFailedResult(
+        requested=len(refs),
+        updated=int(result.get("updated", 0)),
+        chunks=int(result.get("chunks", 0)),
+        missing=missing,
+    )
+
+
+@router.post("/api/v1/rag/index/pause", response_model=RagIndexPauseResult)
+async def rag_index_pause(request: Request) -> RagIndexPauseResult:
+    """暂停本账号的增量索引收敛（用户级 settings 键）。
+
+    不影响手动 rebuild/search；NEW-371 实例级暂停是另一条独立通道
+    （admin task-calendar，本循环已实时消费）。"""
+    service: RagService = _get_rag_service(request)
+    return RagIndexPauseResult(paused=await service.set_index_paused(True))
+
+
+@router.post("/api/v1/rag/index/resume", response_model=RagIndexPauseResult)
+async def rag_index_resume(request: Request) -> RagIndexPauseResult:
+    """恢复本账号的增量索引收敛（幂等）。"""
+    service: RagService = _get_rag_service(request)
+    return RagIndexPauseResult(paused=await service.set_index_paused(False))
+
+
+@router.post("/api/v1/rag/index/converge", response_model=RagIndexConvergeResult)
+async def rag_index_converge(request: Request) -> RagIndexConvergeResult:
+    """手动触发一次增量收敛（与后台增量任务同一管线，一轮有界）。"""
+    service: RagService = _get_rag_service(request)
+    result = await rag_index_pass(service)
+    return RagIndexConvergeResult(
+        indexed=int(result.get("indexed", 0)),
+        swept=int(result.get("swept", 0)),
+        skipped=result.get("skipped"),
     )
 
 

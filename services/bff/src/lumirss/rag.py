@@ -98,6 +98,8 @@ ENV_MODEL_DIM = "LUMI_RAG_MODEL_DIM"
 # settings 键（每用户库；N157 切换端点写入，rebuild/swap 消费）。
 SETTING_MODEL_ID = "rag_model_id"
 SETTING_VEC_DIM = "rag_vec_dim"
+# R24：本账号增量索引的暂停开关（用户级；rag_index_pass 消费）。
+SETTING_INDEX_PAUSED = "rag_index_paused"
 
 
 def model_dim_for(model_id: str) -> int | None:
@@ -1435,6 +1437,69 @@ class RagService:
             "missing": [ref for ref in cleaned if ref not in found],
         }
 
+    # -- R24 索引面：清空 / 暂停 ---------------------------------------------
+
+    async def clear_index(self) -> dict[str, int]:
+        """Delete ALL derived index rows for THIS user's index.
+
+        rag_chunks + rag_vec + staging rows are removed; the SOURCE
+        projections (search_entries / search_library) are never touched —
+        the index is derived and rebuildable, deleting it loses nothing.
+        A running rebuild holds the same lock, so deletion waits for the
+        current safe point instead of racing a swap."""
+        async with self._rebuild_lock:
+            await self._db.migrate()
+            row = await self._db.fetch_one("SELECT COUNT(*) AS n FROM rag_chunks")
+            removed_chunks = int(row["n"]) if row is not None else 0
+            removed_vec = await asyncio.to_thread(self._clear_index_sync)
+            await self._clear_setting("rag_last_rebuild")
+            await self._clear_setting("rag_last_error")
+            return {"chunks": removed_chunks, "vec": removed_vec}
+
+    def _clear_index_sync(self) -> int:
+        """Vec-connection delete of every index row (chunks + vectors +
+        staging); falls back to the plain db handle without sqlite-vec."""
+        removed_vec = 0
+        if self._ensure_vec_table():
+            connection = self._vec_connection()
+            try:
+                connection.execute("BEGIN")
+                vec_row = connection.execute(
+                    "SELECT COUNT(*) AS n FROM rag_vec"
+                ).fetchone()
+                removed_vec = int(vec_row["n"]) if vec_row is not None else 0
+                connection.execute("DELETE FROM rag_vec")
+                connection.execute("DELETE FROM rag_chunks")
+                exists = connection.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'rag_rebuild_stage'",
+                ).fetchone()
+                if exists is not None:
+                    connection.execute("DELETE FROM rag_rebuild_stage")
+                connection.commit()
+                return removed_vec
+            except BaseException:
+                connection.rollback()
+                raise
+        # sqlite-vec 不可用的部署：分块元数据仍须可清（诚实降级）。
+        def _fallback(connection):
+            cursor = connection.execute("DELETE FROM rag_chunks")
+            return max(cursor.rowcount or 0, 0)
+
+        transaction(self._db, _fallback)
+        return 0
+
+    async def index_paused(self) -> bool:
+        """本账号增量索引是否被暂停（用户级 settings 键）。"""
+        return (await self._setting(SETTING_INDEX_PAUSED)) == "1"
+
+    async def set_index_paused(self, paused: bool) -> bool:
+        """暂停/恢复本账号的增量收敛（不影响手动 rebuild/search）。"""
+        if paused:
+            await self._set_setting(SETTING_INDEX_PAUSED, "1")
+        else:
+            await self._clear_setting(SETTING_INDEX_PAUSED)
+        return paused
+
     # -- retrieval ----------------------------------------------------------
 
     async def search(
@@ -1660,6 +1725,9 @@ async def rag_index_pass(service: "RagService") -> dict[str, Any]:
     await service._db.migrate()
     if (await service._setting("rag_enabled")) != "1":
         return {"indexed": 0, "swept": 0, "skipped": "disabled"}
+    # R24：本账号增量索引被暂停（索引页开关）→ 本轮诚实跳过。
+    if (await service._setting(SETTING_INDEX_PAUSED)) == "1":
+        return {"indexed": 0, "swept": 0, "skipped": "paused"}
     live_model_id, _live_dim = await service.live_model()
     orphan_rows = await service._db.fetch_all("SELECT DISTINCT c.ref FROM rag_chunks c WHERE c.ref NOT IN (SELECT entry_ref FROM search_entries) AND c.ref NOT IN (SELECT ref FROM search_library) LIMIT ?", (_MAX_INDEX_REFS,))
     orphans = [str(row["ref"]) for row in orphan_rows]
@@ -1702,6 +1770,14 @@ async def rag_incremental_loop(app_state: Any, interval: float) -> None:
 
     while True:
         await asyncio.sleep(interval)
+        # NEW-371：实例级任务日历的 rag_index 暂停在 tick 前检查（真实
+        # 消费点在本循环——R24 起 enforcedBy=loop；control_db 缺省时按
+        # 未暂停处理，绝不因治理面缺席而停摆）。
+        from lumirss.new371_task_calendar import paused_task_kinds
+
+        control_db = getattr(app_state, "control_db", None)
+        if control_db is not None and "rag_index" in await paused_task_kinds(control_db):
+            continue
         await for_each_active_user(app_state, index_user)
 
 

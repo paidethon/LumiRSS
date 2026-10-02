@@ -5646,6 +5646,134 @@ class RagCoverage(BaseModel):
     )
 
 
+class RagIndexOverviewSource(BaseModel):
+    """R24 总览的一类可索引来源（语料数 + 该 kind 已索引/分块数）。"""
+
+    kind: str
+    corpusDocs: int = 0
+    indexedDocs: int = 0
+    chunks: int = 0
+
+
+class RagIndexOverviewStorage(BaseModel):
+    """R24 索引磁盘占用（vec 表 + 分块元数据的实际字节数）。
+
+    basis=dbstat：SQLite dbstat 页级真实占用；basis=payload：无 dbstat
+    编译项时的载荷字节兜底（诚实标注口径，绝不估算页开销）。"""
+
+    basis: Literal["dbstat", "payload"]
+    vecBytes: int = 0
+    chunkBytes: int = 0
+    totalBytes: int = 0
+
+
+class RagIndexOverviewQueue(BaseModel):
+    """R24 队列进度（口径同 coverage：全部来自真实行与作业证据）。
+
+    pending = 可索引但当前模型下还没有任何分块；done = 已索引；
+    failed = 最近作业 skipped 的 ref（去重）；stale = 已索引但正文
+    hash 已过期。「处理完任务 ≠ 全部成功」由 failed 直接承载。"""
+
+    pending: int = 0
+    done: int = 0
+    failed: int = 0
+    stale: int = 0
+
+
+class RagIndexOverviewFailure(BaseModel):
+    """R24 失败项明细（脱敏：原因截断，绝不携带堆栈或上游内容）。"""
+
+    ref: str | None = None
+    reason: str
+    at: str | None = None
+
+
+class RagIndexOverviewJob(BaseModel):
+    """R24 最近作业段（F093 口径；running 时前端可提供取消 = 暂停）。"""
+
+    jobId: str | None = None
+    status: str | None = None
+    stage: str | None = None
+    done: int = 0
+    remaining: int | None = None
+    updatedAt: str | None = None
+
+
+class RagIndexOverview(BaseModel):
+    """GET /api/v1/rag/index/overview —— RAG 索引页总览。
+
+    当前账号索引集合的真实盘点：来源 × 语料/索引数、模型/维度、最近
+    更新、磁盘占用、队列进度与失败明细。全部数值来自真实行/作业；
+    跨用户天然隔离（每用户自己的库）。"""
+
+    enabled: bool
+    modelId: str
+    dim: int
+    configuredModel: str | None = None
+    documents: int = 0
+    chunks: int = 0
+    sources: list[RagIndexOverviewSource] = []
+    excludedFeeds: int = 0
+    aiDisabledFeeds: int = 0
+    lastUpdatedAt: str | None = None
+    lastRebuildAt: str | None = None
+    lastError: str | None = None
+    storage: RagIndexOverviewStorage = Field(
+        default_factory=lambda: RagIndexOverviewStorage(basis="payload")
+    )
+    queue: RagIndexOverviewQueue = Field(
+        default_factory=RagIndexOverviewQueue
+    )
+    failures: list[RagIndexOverviewFailure] = []
+    incrementalPaused: bool = False
+    calendarPaused: bool = False
+    vecTable: bool = False
+    fastembedAvailable: bool = False
+    job: RagIndexOverviewJob | None = None
+
+
+class RagIndexDeleteResult(BaseModel):
+    """DELETE /api/v1/rag/index —— 清空本账号索引（绝不删原文）。"""
+
+    removedChunks: int = 0
+    removedVecRows: int = 0
+
+
+class RagIndexRetryFailedRequest(BaseModel):
+    """POST /api/v1/rag/index/retry-failed body。
+
+    refs 缺省 = 重试全部失败项（≤limit）；显式 refs = 单项重试
+    （失败项列表的「单独重试」按钮）。只动失败项，绝不全量重建。"""
+
+    model_config = {"extra": "forbid"}
+
+    refs: list[str] | None = Field(default=None, max_length=50)
+    limit: int = Field(default=50, ge=1, le=50)
+
+
+class RagIndexRetryFailedResult(BaseModel):
+    """retry-failed 结果：missing = 来源已不存在的失败项（诚实汇报）。"""
+
+    requested: int = 0
+    updated: int = 0
+    chunks: int = 0
+    missing: list[str] = []
+
+
+class RagIndexPauseResult(BaseModel):
+    """POST /api/v1/rag/index/pause|resume —— 本账号增量索引暂停开关。"""
+
+    paused: bool
+
+
+class RagIndexConvergeResult(BaseModel):
+    """POST /api/v1/rag/index/converge —— 手动触发一次增量收敛。"""
+
+    indexed: int = 0
+    swept: int = 0
+    skipped: str | None = None
+
+
 class RagChunkPreviewRequest(BaseModel):
     """POST /api/v1/rag/chunk-preview body（N153）。"""
 
