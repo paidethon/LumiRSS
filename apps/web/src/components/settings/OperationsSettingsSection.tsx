@@ -296,8 +296,7 @@ export function OperationsSettingsSection() {
         {rows}
       </div>
       <p className="text-[11px] leading-relaxed text-[var(--lumi-text-tertiary)]">
-        状态来自服务端真实探测，本页按账户隔离，成员只见自己可见的连接。
-        进程内存、调度任务等系统级运维信息在管理台，仅管理员可见。
+        状态来自服务端真实探测，按账户隔离；运维详情在管理台，仅管理员可见。
         RSSHub 不可用不影响已抓取内容的阅读。
       </p>
       <DiagnosticsExport />

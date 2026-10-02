@@ -71,7 +71,7 @@ import { SourceRegistrySection } from './SourceRegistrySection'
 // phase2 G6：API 来源（JSON API → JMESPath → Atom）+ 邮件简报（收信地址/每日摘要）
 import { ApiSourcesSection } from './ApiSourcesSection'
 import { MailSection } from './MailSection'
-// M4：GPT 日报（生成 + Atom 订阅）
+// M4：AI 日报（生成 + Atom 订阅；代码标识 gpt-digest 保持兼容）
 import { GptDigestSection } from './GptDigestSection'
 // 会话认证（LUMIRSS_AUTH_MODE=session）：改密 + 登出（basic 模式自隐藏）
 import { AccountSecuritySection } from './AccountSecuritySection'
@@ -211,7 +211,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         {
           type: 'select',
           label: '主题模式',
-          description: '浅色 / 深色 / 跟随系统。',
+          description: '选择浅色、深色，或跟随系统自动切换。',
           value: settings.themeMode,
           options: [
             { value: 'system', label: '跟随系统' },
@@ -226,7 +226,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           // 0010a F1（AC11）：全局界面字号（root rem 缩放，Folo 同方案）
           type: 'select',
           label: '界面字号',
-          description: '全局 UI 缩放（正文另有独立设置）。',
+          description: '整体缩放界面文字；正文字号单独设置。',
           value: settings.uiFontSize,
           options: [
             { value: 15, label: '小（15px）' },
@@ -240,6 +240,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           // 0010a F1（AC12）：UI 字体四档
           type: 'select',
           label: '界面字体',
+          description: '界面使用的字体；正文字体在「阅读」设置。',
           value: settings.uiFontStack,
           options: [
             { value: 'default', label: '默认（Lumi Mist）' },
@@ -253,6 +254,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           // P1.2（2026-09 移动端专项）：玻璃效果（Liquid Glass 风格浮层）
           type: 'select',
           label: '玻璃效果',
+          description: '浮层的玻璃质感；自动按设备能力启用。',
           value: settings.glassEffect,
           options: [
             { value: 'auto', label: '自动（支持时启用）' },
@@ -273,7 +275,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           // 0010a F1（AC13）：减少动效（与系统偏好取或）
           type: 'toggle',
           label: '减少动效',
-          description: '禁用过渡动画（与系统「减少动态效果」偏好叠加生效）。',
+          description: '关闭界面过渡动画；与系统减少动效偏好叠加。',
           checked: settings.reduceMotion,
           onCheckedChange: (v) => update({ reduceMotion: v }),
         },
@@ -287,6 +289,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         {
           type: 'select',
           label: '正文字体',
+          description: '正文阅读使用的字体；更多字体在下方管理。',
           value: settings.readerFontFamily,
           options: [
             { value: 'system', label: '默认（跟随界面）' },
@@ -300,7 +303,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           // 0010a F6（AC18）：两端对齐（中文 inter-ideograph）
           type: 'toggle',
           label: '两端对齐',
-          description: '正文左右对齐（中文标点悬挂优化）。',
+          description: '正文两端对齐，中文标点悬挂更整齐。',
           checked: settings.readerJustify,
           onCheckedChange: (v) => update({ readerJustify: v }),
         },
@@ -308,6 +311,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           // 0010a F6（AC19）：图片三模式（Reeder 报纸模式 inspired）
           type: 'select',
           label: '图片显示',
+          description: '正文图片显示全部、转灰度或直接隐藏。',
           value: settings.readerImageMode,
           options: [
             { value: 'all', label: '显示全部' },
@@ -337,9 +341,9 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         {
           // P0-2（2026-09 移动端专项）：正文读到底自动已读
           type: 'toggle',
-          label: '正文读到底自动已读',
+          label: '读到底自动已读',
           description:
-            '在阅读页读到正文末尾并停留约 1 秒后自动标记为已读。只有主动滚动才算阅读进度（恢复上次位置、图片加载、自动滚屏不算）；短文提供「读完了」按钮；手动设为未读的文章本次访问不再自动标记。',
+            '在正文末尾停留约 1 秒自动标记已读；仅主动滚动计入。',
           checked: settings.readerAutoMarkRead,
           onCheckedChange: (v) => update({ readerAutoMarkRead: v }),
         },
@@ -348,7 +352,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           type: 'toggle',
           label: '滚动时标记已读',
           description:
-            '文章完全滚出列表上方后才自动标记为已读（离开后短暂停顿确认，手动设为未读的文章不会在同一轮滚动中被再次标记）。',
+            '文章完全滚出列表上方后自动标记已读；手动设回未读的不再重复标记。',
           checked: settings.scrollMarkUnread,
           onCheckedChange: (v) => update({ scrollMarkUnread: v }),
         },
@@ -374,7 +378,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           // normalizeSettings 迁移为分页；便携键保留仅为同步契约兼容。
           type: 'select',
           label: '阅读模式',
-          description: '正文滚动阅读，或分页阅读（整页翻页 + 点按翻页区）。',
+          description: '正文滚动阅读，或整页翻页加点按翻页。',
           value: settings.readerReadingMode,
           options: [
             { value: 'scroll', label: '滚动' },
@@ -399,7 +403,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           type: 'select',
           label: '点按翻页区大小',
           description:
-            '命中区占屏宽（或屏高）的比例：小 = 22%，大 = 40%；关闭后仅按钮与方向键翻页。点按链接、选择文字或横向滚动表格/代码时不会翻页。',
+            '命中区占屏比例：小 22%，大 40%；点按链接或选择文字时不翻页。',
           value: settings.readerTapZoneSize,
           options: [
             { value: 'off', label: '关闭' },
@@ -413,7 +417,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           type: 'toggle',
           label: '纯键盘阅读定位',
           description:
-            '在正文中用 Alt+↑/↓ 在标题/链接/代码块/批注间跳转，Alt+Shift+↑/↓ 切换类别（顺序按会话记忆）。只定位，不改动已读状态。',
+            '用 Alt 加方向键在标题、链接、代码块间跳转；只定位，不改已读状态。',
           checked: settings.readerKeyNav,
           onCheckedChange: (v) => update({ readerKeyNav: v }),
         },
@@ -425,7 +429,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
       ]
     case 'general':
       return [
-        { type: 'title', value: '应用程序' },
+        { type: 'title', value: '应用' },
         // N200：功能组合场景向导（diff 预览 + 可整体撤销的批量应用）
         { type: 'custom', node: <ScenarioWizardSection /> },
         {
@@ -437,7 +441,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
                   界面语言
                 </label>
                 <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-                  应用界面当前使用的语言。
+                  界面文字显示语言，当前版本仅简体中文。
                 </p>
               </div>
               <span className="shrink-0 text-sm text-[var(--lumi-text-secondary)]">简体中文</span>
@@ -449,6 +453,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           // F01：列表密度（紧凑/标准/舒适；不缩小触控目标）
           type: 'select',
           label: '列表密度',
+          description: '列表行高与留白的紧凑程度。',
           value: settings.listDensity,
           options: [
             { value: 'compact', label: '紧凑' },
@@ -461,6 +466,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           // F04：时间显示（相对/绝对）
           type: 'select',
           label: '时间显示',
+          description: '文章时间以相对或绝对格式显示。',
           value: settings.listTimeFormat,
           options: [
             { value: 'relative', label: '相对时间（3 小时前）' },
@@ -492,21 +498,21 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           // F03：列表封面
           type: 'toggle',
           label: '显示封面',
-          description: '在文章卡片显示正文首个图片作为封面（关闭时不请求任何封面图片）。',
+          description: '文章卡片用正文首图作封面；关闭时不请求封面图。',
           checked: settings.listShowCover,
           onCheckedChange: (v) => update({ listShowCover: v }),
         },
         {
           type: 'toggle',
           label: '已读条目变暗',
-          description: '已读条目整体降低不透明度（保留字重差异，不只靠颜色）。',
+          description: '已读条目降低不透明度，并保留字重差异。',
           checked: settings.dimRead,
           onCheckedChange: (v) => update({ dimRead: v }),
         },
         {
           type: 'toggle',
           label: '按日期分组',
-          description: '在文章列表中插入日期小节标题（今天 / 昨天 / 更早）。',
+          description: '列表按今天、昨天、更早插入日期小标题。',
           checked: settings.groupByDate,
           onCheckedChange: (v) => update({ groupByDate: v }),
         },
@@ -540,7 +546,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         {
           type: 'toggle',
           label: '启动时仅看未读',
-          description: '打开应用时默认进入未读视图（不影响会话内手动切换）。',
+          description: '启动时默认进入未读视图，会话内仍可切换。',
           checked: settings.unreadOnly,
           onCheckedChange: (v) => update({ unreadOnly: v }),
         },
@@ -610,11 +616,11 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         { type: 'custom', node: <ApiSourcesSection /> },
       ]
     case 'mail':
-      // phase2 G6：邮件简报（收信地址 + 每日摘要）；M4：GPT 日报
+      // phase2 G6：邮件简报（收信地址 + 每日摘要）；M4：AI 日报
       return [
         { type: 'title', value: '邮件简报' },
         { type: 'custom', node: <MailSection /> },
-        { type: 'title', value: 'GPT 日报' },
+        { type: 'title', value: 'AI 日报' },
         { type: 'custom', node: <GptDigestSection /> },
       ]
     case 'ai':
@@ -633,7 +639,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         {
           type: 'action',
           label: '清除本地缓存',
-          description: '清空文章列表与详情的本地缓存，下次访问重新拉取（不影响阅读状态）。',
+          description: '清空文章列表与详情的本地缓存，不影响阅读状态。',
           buttonText: '清除',
           action: () => {
             queryClient.clear()
@@ -648,7 +654,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         {
           type: 'action',
           label: '恢复默认设置',
-          description: '把外观、阅读等设置重置为默认值（portable 设置会同步重置到服务端，跨设备一致）。',
+          description: '外观、阅读等设置恢复默认值，并同步到服务端各设备。',
           buttonText: '重置',
           danger: true,
           action: () => reset(),
@@ -663,7 +669,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           type: 'action',
           label: '导出 Lumi 数据',
           description:
-            '导出工作区、标签、书签笔记与日报配置为版本化 JSON（与完整备份用途分开；不含密钥与 FreshRSS 订阅）。',
+            '导出工作区、标签、笔记与日报配置为版本化 JSON；不含密钥。',
           buttonText: '导出',
           action: () => {
             void exportLumiData()
@@ -709,7 +715,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         {
           type: 'action',
           label: '导出我的数据',
-          description: '导出工作区、标签、书签笔记与日报配置为版本化 JSON（不含密钥）。',
+          description: '导出工作区、标签、笔记与日报配置为版本化 JSON；不含密钥。',
           buttonText: '导出',
           action: () => {
             void exportLumiData()
@@ -730,8 +736,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           type: 'custom',
           node: (
             <p className="text-[11px] leading-relaxed text-[var(--lumi-text-tertiary)]">
-              日常工作区入口在侧栏「工作区」；Agent 工作台（AI 会话 / 工具审批 /
-              RAG 状态）在侧栏「Agent 工作台」。
+              日常工作区入口在侧栏「工作区」；AI 会话与工具审批在「Agent 工作台」。
             </p>
           ),
         },
@@ -785,7 +790,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
               </dl>
               <AboutVersion />
               <p className="mt-4 text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
-                界面交互参考 Folo 与 OrigRead（inspired，独立实现）；来源映射见
+                界面交互参考 Folo 与 OrigRead，独立实现；来源映射见
                 docs/reference/SOURCE_MAP.md。
               </p>
             </div>

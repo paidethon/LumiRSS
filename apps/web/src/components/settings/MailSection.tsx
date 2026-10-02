@@ -129,11 +129,10 @@ function BridgeListsBlock() {
     <section aria-label="HTTP 转发入口" className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3.5">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-sm font-medium text-[var(--lumi-text-primary)]">HTTP 转发入口（webhook）</h3>
+          <h3 className="text-sm font-medium text-[var(--lumi-text-primary)]">HTTP 转发入口</h3>
           <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-            这是 HTTP POST 转发入口，不是电子邮箱地址：简报出版商无法向它发送电子邮件。
-            投递方（自动化脚本 / 机器）用 ingest 绝对 URL 携带 Bearer 密钥 POST
-            内容，经 Lumi 落库转投。密钥只在创建时显示一次。
+            这是 HTTP 推送入口，不是电子邮箱：投递方携带密钥推送内容，经 Lumi 转投订阅。
+            密钥只在创建时显示一次。
           </p>
         </div>
         <Button
@@ -278,9 +277,9 @@ function BridgeListsBlock() {
             </p>
             <div className="flex flex-col gap-2.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-3">
               <SecretField
-                label="Ingest 地址（绝对 URL，POST 目标）"
+                label="推送地址（POST 目标）"
                 value={ingestAbsoluteUrl(created.uuid)}
-                copyLabel="复制 ingest 地址"
+                copyLabel="复制推送地址"
                 mono
               />
               <SecretField label="Bearer 密钥" value={created.secret} copyLabel="复制密钥" mono />
@@ -596,7 +595,7 @@ function DigestForm({ settings }: { settings: DigestSettings }) {
           disabled={sendMutation.isPending}
         >
           <Send aria-hidden className="size-3.5" />
-          {sendMutation.isPending ? '发送中…' : '发送测试摘要'}
+          {sendMutation.isPending ? '发送中…' : '立即发送摘要'}
         </Button>
         {saveMutation.isSuccess && !saveMutation.isPending && (
           <span role="status" className="flex items-center gap-1 text-xs text-[var(--lumi-text-secondary)]">
@@ -637,7 +636,7 @@ function DigestBlock() {
         <h3 className="text-sm font-medium text-[var(--lumi-text-primary)]">每日摘要</h3>
       </div>
       <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-        每天定时把稍后读或收藏汇总成一封邮件。SMTP 密码只写不读：已配置时输入新密码才会更新。
+        每天定时把稍后读或收藏汇总成一封邮件。SMTP 密码不回显，输入新密码才会更新。
       </p>
 
       {settings.isPending && (
@@ -782,12 +781,12 @@ function ImapForm({ server }: { server: MailImapSettings }) {
         </span>
       </div>
       <p className="mt-1 text-xs text-[var(--lumi-text-tertiary)]">
-        从任意 IMAP 邮箱拉取新闻邮件，进入下方选定的转发入口列表（与 webhook 同一落库与去重管线）。
+        从任意 IMAP 邮箱拉取新闻邮件，存入下方选定的转发入口。
       </p>
 
       <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-xs text-[var(--lumi-text-secondary)]">
-          服务器（host）
+          服务器
           <input className={inputCls} value={host} onChange={(e) => setHost(e.target.value)} placeholder="imap.example.com" autoComplete="off" />
         </label>
         <label className="flex flex-col gap-1 text-xs text-[var(--lumi-text-secondary)]">
@@ -799,7 +798,7 @@ function ImapForm({ server }: { server: MailImapSettings }) {
           <input className={inputCls} value={user} onChange={(e) => setUser(e.target.value)} autoComplete="off" />
         </label>
         <label className="flex flex-col gap-1 text-xs text-[var(--lumi-text-secondary)]">
-          密码（write-only：留空 = 不改动）
+          密码（留空 = 不改动）
           <input className={inputCls} type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" placeholder={server.passwordConfigured ? '已配置' : '未设置'} />
         </label>
         <label className="flex flex-col gap-1 text-xs text-[var(--lumi-text-secondary)]">

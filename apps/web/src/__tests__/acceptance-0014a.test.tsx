@@ -288,17 +288,15 @@ describe('0014a Gate 3 — Service settings truthfulness', () => {
     )
   }
 
-  it('账户与服务（0018 G9）：渲染真实依赖状态行（非 planned 占位）', async () => {
+  it('服务（R03 拆分）：渲染真实依赖状态行（非 planned 占位）', async () => {
     stubSettingsFetch()
     renderSettings()
-    fireEvent.click(screen.getByRole('button', { name: /账户与服务/ }))
-    // 真实 Operations UI：Lumi/FreshRSS/RSSHub/备份 四行 + 探测结果
-    expect(await screen.findByText('LumiRSS')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^服务$/ }))
+    // 真实 Operations UI：BFF/本地数据/FreshRSS/RSSHub/备份 行 + 探测结果
+    expect(await screen.findByText('Lumi 服务')).toBeInTheDocument()
     // 侧栏分类按钮也叫 RSSHub，取行内所有实例断言
     expect(screen.getAllByText('FreshRSS').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('RSSHub').length).toBeGreaterThanOrEqual(2)
-    expect(screen.getByText('连接失败')).toBeInTheDocument()
-    expect(screen.getByText('延迟 42 ms')).toBeInTheDocument()
     expect(screen.getByText('2 项待生效')).toBeInTheDocument()
     // stale 占位彻底移除
     expect(screen.queryByText('FreshRSS 维护操作')).not.toBeInTheDocument()

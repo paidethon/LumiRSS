@@ -115,22 +115,19 @@ export function TranslationSettingsSection() {
         <div className="mt-3 flex flex-col gap-4">
           <div>
             <p className="text-sm font-medium text-[var(--lumi-text-primary)]">翻译方式</p>
-            <p className="mt-0.5 text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
-              按执行位置如实标注：云端 / 自托管 AI，或此浏览器本地执行。
-            </p>
             <div className="mt-1.5">
               <Select
                 aria-label="翻译方式"
                 value={engine}
                 disabled={update.isPending}
                 options={[
-                  { value: 'ai', label: 'AI 翻译 — AI 提供者执行' },
+                  { value: 'ai', label: 'AI 翻译' },
                   {
                     // 运行时探测可用才可选：此浏览器无 Translator API 时禁用。
                     value: 'browser',
                     label: browserReady
-                      ? '浏览器翻译 — 此设备执行（正文不出设备）'
-                      : '浏览器翻译 — 此浏览器不支持（Chrome 138+ 桌面版可用）',
+                      ? '浏览器翻译'
+                      : '浏览器翻译（此浏览器不支持）',
                     disabled: !browserReady,
                   },
                 ]}
@@ -139,9 +136,15 @@ export function TranslationSettingsSection() {
                 }}
               />
             </div>
+            {/* 位置说明放选项下方：当前所选方式在哪里执行。 */}
+            <p className="mt-1.5 text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
+              {engine === 'ai'
+                ? '由 AI 提供者执行（云端或自托管）；在下方选择翻译 Profile 与目标语言。'
+                : '由本浏览器内置翻译执行，正文不出设备、不经服务端。'}
+            </p>
             {engine === 'browser' && !browserReady && (
               <p className="mt-1.5 text-xs leading-relaxed text-[var(--lumi-danger)]">
-                此浏览器未提供 Translator API：选择也不会生效，请改用 AI 翻译。
+                此浏览器不支持浏览器翻译，选择不会生效；请改用 AI 翻译。
               </p>
             )}
           </div>
@@ -150,7 +153,7 @@ export function TranslationSettingsSection() {
             <div>
               <p className="text-sm font-medium text-[var(--lumi-text-primary)]">翻译 Profile</p>
               <p className="mt-0.5 text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
-                选择后立即生效；Profile 管理在「设置 → AI」，与摘要共享同一份存储。
+                选择后立即生效；Profile 在「设置 → AI」管理。
               </p>
               <div className="mt-1.5 flex items-center gap-2">
                 <Select
@@ -189,7 +192,7 @@ export function TranslationSettingsSection() {
           <div>
             <p className="text-sm font-medium text-[var(--lumi-text-primary)]">目标语言</p>
             <p className="mt-0.5 text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
-              译文的目标语言；语言参与翻译缓存身份。
+              译文语言；语言不同缓存相互独立。
             </p>
             <div className="mt-1.5">
               <Select
@@ -231,8 +234,7 @@ export function TranslationSettingsSection() {
             </Button>
           </div>
           <p className="text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
-            按需翻译：打开文章绝不自动翻译；在阅读工具栏选择「双语 / 仅译文」即是一次显式请求。
-            自动批量翻译恒关，不会在无指示时调用付费引擎。
+            打开文章绝不自动翻译；阅读工具栏选「双语 / 仅译文」才调用付费引擎，且不批量翻译。
           </p>
         </div>
       </section>
@@ -241,9 +243,9 @@ export function TranslationSettingsSection() {
         <section className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3.5">
           <h3 className="text-sm font-medium text-[var(--lumi-text-primary)]">隐私与语言边界</h3>
           <p className="mt-2 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-            使用浏览器内置 Translator API：正文不出设备、不经过 BFF、不消耗任何 API 额度。
-            仅支持浏览器提供的语言对（现实目标为中英互译）；源语言由浏览器自动探测，
-            探测失败时按英语处理。首次使用某语言对时浏览器可能下载语言包。
+            正文在本浏览器内翻译，不出设备、不消耗 API 额度。
+            仅支持浏览器提供的语言对；源语言自动探测，失败按英语处理。
+            首次使用某语言对可能下载语言包。
           </p>
         </section>
       )}

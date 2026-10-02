@@ -240,8 +240,7 @@ export function WorkspaceSettingsSection() {
         </p>
       )}
       <p className="text-[11px] leading-relaxed text-[var(--lumi-text-tertiary)]">
-        图标 / 颜色、逐工作区默认筛选与排序暂无服务端字段，提供后会在此出现；
-        这里不做假开关。
+        图标与颜色、逐工作区默认筛选和排序暂未支持，提供后会在此出现。
       </p>
     </div>
   )

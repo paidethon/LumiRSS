@@ -175,8 +175,7 @@ export function AccountSecuritySection() {
         <h3 className="text-sm font-medium text-[var(--lumi-text-primary)]">账户与安全</h3>
       </div>
       <p className="mt-2 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-        修改密码后所有设备需要重新登录（本设备除外）。密码只以加密传输发送，
-        不会保存在浏览器中。
+        修改密码后其他设备全部退出，本设备保持登录；密码不保存在浏览器。
       </p>
 
       {/* R25：偏好云端同步断网补传提示（仅在有未落库变更时出现）。 */}
@@ -274,7 +273,7 @@ export function AccountSecuritySection() {
             disabled={pendingLogout !== 'none'}
           >
             <MonitorSmartphone aria-hidden className="size-4" />
-            所有设备退出
+            退出所有设备
           </Button>
         </div>
       </div>
@@ -303,7 +302,7 @@ function SessionsPanel() {
   if (items.length === 0) return null
   return (
     <div className="mt-3 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-2.5" data-lumi-sessions-panel="">
-      <p className="text-xs font-medium text-[var(--lumi-text-primary)]">登录会话（{items.length}）</p>
+      <p className="text-xs font-medium text-[var(--lumi-text-primary)]">活跃会话（{items.length}）</p>
       <ul className="mt-1.5 flex flex-col gap-1.5">
         {items.map((session) => (
           <li key={session.id} className="flex items-center gap-2 text-xs" data-lumi-session-row="">

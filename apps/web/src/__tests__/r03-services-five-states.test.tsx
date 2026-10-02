@@ -155,7 +155,7 @@ describe('服务页五态（R03）', () => {
       return jsonResponse({ error: { type: 'not_found', message: url } }, 404)
     })
 
-    expect(await screen.findByText(/成员只见自己可见的连接/)).toBeInTheDocument()
+    expect(await screen.findByText(/按账户隔离/)).toBeInTheDocument()
     expect(screen.getByText(/仅管理员可见/)).toBeInTheDocument()
     // 绝不硬编码绿色：状态点只允许语义 token（danger / tertiary / accent）
     const html = document.body.innerHTML

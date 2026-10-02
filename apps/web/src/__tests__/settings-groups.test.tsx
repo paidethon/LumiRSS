@@ -129,7 +129,7 @@ describe('阅读分类 · 阅读行为组（新接入 UI）', () => {
   it('既有开关未被移动/删除（正文读到底自动已读 + 滚动时标记已读）', async () => {
     render(withProviders(<SettingsModal open onClose={() => {}} />))
     await openCategory('阅读')
-    expect(screen.getByRole('switch', { name: '正文读到底自动已读' })).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: '读到底自动已读' })).toBeInTheDocument()
     expect(screen.getByRole('switch', { name: '滚动时标记已读' })).toBeInTheDocument()
   })
 })

@@ -229,7 +229,7 @@ function GenerationPanel({
         role="status"
       >
         <p className="text-xs text-[var(--lumi-text-secondary)]">
-          已停止生成（阶段边界生效）；本次未写入新期刊，已完成的期号保留。
+          已停止生成；本次未写入新期刊，已完成的期号保留。
         </p>
         <div>
           <Button variant="secondary" size="sm" onClick={onRetry}>
@@ -490,7 +490,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
           onCheckedChange={(checked) => update.mutate({ configId: config.id, patch: { enabled: checked } })}
         />
       </Row>
-      <Row label="材料来源" hint="窗口 = 订阅时间窗；稍后读/收藏 = 生成时从对应队列取材（只读，不改状态）">
+      <Row label="材料来源" hint="窗口 = 订阅时间窗；稍后读/收藏从对应队列取材，不改状态">
         <select
           aria-label="材料来源"
           className="min-h-9 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2.5 text-sm text-[var(--lumi-text-primary)]"
@@ -502,7 +502,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
           <option value="starred">收藏</option>
         </select>
       </Row>
-      <Row label="来源白名单" hint="feed 地址包含任一子串才入选（换行/逗号分隔）；留空 = 全部订阅">
+      <Row label="来源白名单" hint="feed 地址包含任一子串才入选；留空 = 全部订阅">
         <textarea
           aria-label="来源白名单"
           className={`${textInputCls} min-h-16`}
@@ -533,7 +533,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
           onChange={(e) => setLimitCount(Number(e.target.value))}
         />
       </Row>
-      <Row label="长度（目标阅读时长，分钟）" hint="0–600：超预算条目移入素材篮（不删除）；0 = 不限；估算按每分钟 400 字">
+      <Row label="长度（目标阅读时长，分钟）" hint="超预算条目移入素材篮不删除；0 = 不限；按每分钟 400 字估算">
         <input
           aria-label="目标阅读时长分钟"
           type="number"
@@ -565,7 +565,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
           onChange={(e) => setTimezone(e.target.value)}
         />
       </Row>
-      <Row label="模型" hint="由「设置 → AI」的摘要用途映射决定；分阶段模型路由在高级设置">
+      <Row label="模型" hint="由「设置 → AI」摘要用途决定；分阶段路由在高级设置">
         <span className="text-xs text-[var(--lumi-text-tertiary)]" data-lumi-digest-model-hint="">
           跟随 AI 设置（摘要用途）
         </span>
@@ -746,7 +746,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
               onChange={(e) => setPerSourceCap(Number(e.target.value))}
             />
           </Row>
-          <Row label="近期已刊用去重" hint="回看天数（0–90）：窗口内已发布期刊引用过的材料不再入选；0 = 关闭；草稿不计入">
+          <Row label="近期已刊用去重" hint="回看天数（0–90）：已发布期刊引用过的材料不再入选；0 = 关闭">
             <input
               aria-label="回看去重天数"
               type="number"
@@ -757,7 +757,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
               onChange={(e) => setLookbackDays(Number(e.target.value))}
             />
           </Row>
-          <Row label="发布时点（早晚刊）" hint="逗号分隔的多个小时（如 8,20）：窗口按相邻时点切分；留空 = 单时点（用发布时间），期号退化为日期">
+          <Row label="发布时点（早晚刊）" hint="多个小时逗号分隔（如 8,20）；留空 = 用发布时间">
             <input
               aria-label="发布时点列表"
               type="text"
@@ -767,7 +767,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
               onChange={(e) => setSlotsText(e.target.value)}
             />
           </Row>
-          <Row label="发布日" hint="点击切换；全部不选 = 每天发布；周末（六/日）可单独配置发布时点">
+          <Row label="发布日" hint="全部不选 = 每天发布；周末可单独配置时点">
             <div className="flex flex-wrap items-center gap-1">
               {DAY_LABELS.map((label, day) => {
                 const active = days.includes(day)
@@ -797,7 +797,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
               })}
             </div>
           </Row>
-          <Row label="周末发布时点" hint="周六/周日改用这套小时（逗号分隔，如 10,16）；留空 = 沿用平日计划">
+          <Row label="周末发布时点" hint="周六/日专用时点（如 10,16）；留空 = 沿用平日">
             <input
               aria-label="周末发布时点"
               type="text"
@@ -827,7 +827,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
               onChange={(e) => setSummarizeModel(e.target.value)}
             />
           </Row>
-          <Row label="润色模型" hint="仅润色阶段使用的模型名；留空 = 用基础模型。同一 provider 配置内路由">
+          <Row label="润色模型" hint="仅润色阶段使用的模型名；留空 = 用基础模型">
             <input
               aria-label="润色模型"
               type="text"
@@ -839,7 +839,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
           </Row>
           <Row
             label="固定栏目"
-            hint="每行「名称|数量|hide 或 placeholder」，如：人工智能|5|placeholder；≤8 栏；留空 = 不启用"
+            hint="每行「名称|数量|hide 或 placeholder」，≤8 栏；留空 = 不启用"
           >
             <textarea
               aria-label="固定栏目结构"
@@ -849,7 +849,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
               onChange={(e) => setColumnsText(e.target.value)}
             />
           </Row>
-          <Row label="同事件聚合" hint="开启后：标题高度相似且 48 小时内发布的条目聚合为一条多来源条目；数字不一致时如实标注分歧">
+          <Row label="同事件聚合" hint="标题相似且 48 小时内的条目聚合为一条；数字有分歧会如实标注">
             <Switch
               id={`gpt-digest-cluster-${config.id}`}
               label={`同事件聚合 ${config.name}`}
@@ -857,7 +857,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
               onCheckedChange={(checked) => setClusterEnabled(checked)}
             />
           </Row>
-          <Row label="缺刊处理" hint="错过发布时点且超出补刊窗口的期号：补刊（默认，原期号补生成）/ 并入下一期（窗口材料经素材池并入）/ 跳过并记录">
+          <Row label="缺刊处理" hint="错过发布时点的期号如何处理；默认按原期号补生成">
             <Select
               aria-label={`缺刊处理策略 ${config.name}`}
               className="min-h-10"
@@ -923,7 +923,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
             <Skeleton className="h-9 w-full" />
           ) : feedHidden ? (
             <p className="text-xs text-[var(--lumi-text-tertiary)]" data-lumi-feed-hidden="">
-              订阅地址已隐藏（token 只存哈希，无法再次查看）；点下方「轮换 token」获取一次新地址。
+              地址已隐藏，无法再次查看；点下方「轮换 token」获取新地址。
             </p>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
@@ -936,7 +936,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
             </div>
           )}
           <p className="text-xs text-[var(--lumi-text-tertiary)]">
-            订阅地址含私密 token（持有即访问）；所有配置共享同一 token，轮换后旧地址立即失效。
+            订阅地址含私密 token，持有即访问；轮换后旧地址立即失效。
           </p>
           {/* F103：轮换两步——先拉影响报告（零变更），确认后才执行 */}
           <div data-lumi-digest-rotate="">
@@ -1597,8 +1597,7 @@ function MaterialPoolPanel({
         </Button>
       </div>
       <p className="mt-0.5 text-xs text-[var(--lumi-text-tertiary)]">
-        池内条目按顺序优先并入每期选材（source=manual）；生成消耗后移入「已刊用」。条目须来自本站订阅
-        （rss: 前缀）；来源禁用 AI 时服务端会拒绝。
+        条目按顺序优先并入选材，用后移入「已刊用」；须来自本站订阅（rss: 前缀）。
       </p>
 
       <div className="mt-2 flex flex-wrap items-center gap-2">

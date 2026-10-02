@@ -447,10 +447,10 @@ export function PrivacySharingCenter() {
       </button>
       {open && (
         <div className="mt-2 flex flex-col gap-2 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-3">
-          <SubSection id="n344-share-links" label="共享链接：使用范围（NEW-344）">
+          <SubSection id="n344-share-links" label="共享链接：使用范围">
             <ShareLinksSection />
           </SubSection>
-          <SubSection id="n345-limits" label="共享链接：次数上限与访问记录（NEW-345）">
+          <SubSection id="n345-limits" label="共享链接：次数上限与访问记录">
             <ShareLinkLimitsSection />
           </SubSection>
           <SubSection id="n349-review" label="隐私检查向导（逐项保留或撤回）">

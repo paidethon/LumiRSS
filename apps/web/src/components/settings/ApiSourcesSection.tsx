@@ -50,9 +50,9 @@ function EmptyStateHelp(): ReactElement {
       </button>
       {open && (
         <div className="mt-1 max-w-md rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3 text-xs leading-relaxed text-[var(--lumi-text-secondary)]" data-empty-help-panel="">
-          <p>任意返回 JSON 列表的 HTTP API 都可以接入：用 JMESPath 描述列表位置与字段，Lumi 生成 Atom 地址供 FreshRSS 订阅。</p>
-          <p className="mt-1.5">支持页码与游标两种分页；可为每个来源设置每日条目上限；上游数据结构变化时会预警并暂停写入，确认后再恢复。</p>
-          <p className="mt-1.5">抓取由服务端定时完成，指向内网或本机地址的来源会被拒绝；凭据只保存在服务端，界面不回显。</p>
+          <p>任何返回 JSON 列表的 HTTP API 都能接入：描述列表位置与字段，生成 Atom 订阅地址。</p>
+          <p className="mt-1.5">支持页码与游标分页和每日条目上限；上游结构变化会预警并暂停写入。</p>
+          <p className="mt-1.5">抓取由服务端定时执行；内网地址会被拒绝，凭据只存服务端、界面不回显。</p>
         </div>
       )}
     </div>

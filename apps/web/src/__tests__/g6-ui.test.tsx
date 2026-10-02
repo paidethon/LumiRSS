@@ -328,12 +328,12 @@ describe('MailSection', () => {
     )
   })
 
-  it('发送测试摘要（空选择）：BFF 错误 message 原样透出', async () => {
+  it('立即发送摘要（空选择）：BFF 错误 message 原样透出', async () => {
     mocks.sendDigestNow.mockRejectedValue(
       new ApiError(503, 'smtp_not_configured', 'SMTP 未配置，无法发送'),
     )
     render(withProviders(<MailSection />))
-    fireEvent.click(await screen.findByRole('button', { name: '发送测试摘要' }))
+    fireEvent.click(await screen.findByRole('button', { name: '立即发送摘要' }))
     expect(await screen.findByText('SMTP 未配置，无法发送')).toBeInTheDocument()
     expect(mocks.sendDigestNow).toHaveBeenCalledWith([])
   })
@@ -343,7 +343,7 @@ describe('MailSection', () => {
       new ApiError(422, 'no_digest_items', '没有可发送的摘要条目（bridge 列表为空或引用无效）。'),
     )
     render(withProviders(<MailSection />))
-    fireEvent.click(await screen.findByRole('button', { name: '发送测试摘要' }))
+    fireEvent.click(await screen.findByRole('button', { name: '立即发送摘要' }))
     expect(
       await screen.findByText('没有可发送的摘要条目（bridge 列表为空或引用无效）。'),
     ).toBeInTheDocument()
@@ -351,10 +351,8 @@ describe('MailSection', () => {
 
   it('webhook 诚实化：区块不再叫「收信地址」，行内展示绝对 ingest URL', async () => {
     render(withProviders(<MailSection />))
-    expect(await screen.findByText('HTTP 转发入口（webhook）')).toBeInTheDocument()
-    expect(
-      screen.getByText(/简报出版商无法向它发送电子邮件/),
-    ).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'HTTP 转发入口' })).toBeInTheDocument()
+    expect(screen.getByText(/不是电子邮箱/)).toBeInTheDocument()
     // 绝对 URL（location.origin 前缀），不再是相对路径（列表异步到达）
     expect(
       await screen.findByText(new RegExp(`${window.location.origin}/api/mail/ingest/list-1`)),

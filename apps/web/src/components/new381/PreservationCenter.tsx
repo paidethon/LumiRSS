@@ -575,28 +575,28 @@ export function ReconciliationSection() {
 export function PreservationCenter() {
   return (
     <div className="flex flex-col gap-3" data-n381-center="">
-      <SubSection id="bib-import" label="NEW-381/382 书目导入（Zotero RDF / RIS）">
+      <SubSection id="bib-import" label="书目导入（Zotero RDF / RIS）">
         <BibImportSection />
       </SubSection>
-      <SubSection id="offline-site" label="NEW-383 离线 HTML 资料集">
+      <SubSection id="offline-site" label="离线 HTML 资料集">
         <OfflineSiteSection />
       </SubSection>
-      <SubSection id="json-feed" label="NEW-384 JSON Feed 个人导出">
+      <SubSection id="json-feed" label="JSON Feed 个人导出">
         <JsonFeedSection />
       </SubSection>
-      <SubSection id="format-compare" label="NEW-386 保存格式对照预览">
+      <SubSection id="format-compare" label="保存格式对照预览">
         <FormatCompareSection />
       </SubSection>
-      <SubSection id="encrypted" label="NEW-387 个人资料包加密导出">
+      <SubSection id="encrypted" label="个人资料包加密导出">
         <EncryptedExportSection />
       </SubSection>
-      <SubSection id="index-export" label="NEW-388 个人索引导出">
+      <SubSection id="index-export" label="个人索引导出">
         <IndexExportSection />
       </SubSection>
-      <SubSection id="volumes" label="NEW-389 分卷导出">
+      <SubSection id="volumes" label="分卷导出">
         <VolumeSection />
       </SubSection>
-      <SubSection id="reconciliations" label="NEW-390 迁移结果逐项对账">
+      <SubSection id="reconciliations" label="迁移结果逐项对账">
         <ReconciliationSection />
       </SubSection>
     </div>

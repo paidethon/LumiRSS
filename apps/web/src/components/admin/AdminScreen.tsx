@@ -1951,7 +1951,7 @@ const TASK_LABELS: Record<string, string> = {
   obsidian_scan: 'Obsidian 扫描',
   digest_scheduler: '邮件日报调度',
   mail_imap: 'IMAP 轮询',
-  gpt_digest_scheduler: 'GPT 日报调度',
+  gpt_digest_scheduler: 'AI 日报调度',
   rag_idle: 'RAG 闲置卸载',
   rag_index: 'RAG 增量索引',
 }
