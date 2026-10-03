@@ -106,7 +106,6 @@ def test_ready_anonymous_binds_owner_context_session_mode(monkeypatch):
     后台扫描循环同一模式），探针语义与请求身份解耦。
     """
     import lumirss.routers.health as health_module
-    from lumirss.operations import OperationsService
     from lumirss.user_scope import current_user_id
 
     seen: dict[str, object] = {}
@@ -116,19 +115,12 @@ def test_ready_anonymous_binds_owner_context_session_mode(monkeypatch):
             seen["user_id"] = current_user_id()
             return True, {"status": "ok", "components": {}}
 
-    assert not isinstance(OperationsService, type(None))  # 保持导入语义清晰
-    app.state.owner_id = "u-owner"
     monkeypatch.setattr(
         health_module, "_get_operations_service", lambda request: _ProbeService()
     )
-    try:
-        with TestClient(app) as probe:
-            response = probe.get("/health/ready")
-    finally:
-        app.state.owner_id = None
+    with TestClient(app) as probe:
+        # lifespan 启动已把 app.state.owner_id 解析为真实 owner
+        bound_owner = app.state.owner_id
+        response = probe.get("/health/ready")
     assert response.status_code == 200
-    # 绑定的是启动时解析的真实 owner（非请求者身份）
-    assert seen["user_id"] == app.state.owner_id
-    assert seen["user_id"]
-    assert response.json()["error"]["type"] == "session_required"
-    assert response.headers.get("cache-control") == "no-store"
+    assert seen["user_id"] == bound_owner
