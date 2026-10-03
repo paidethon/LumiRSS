@@ -56,11 +56,16 @@ class OpmlTooManyFeeds(AdapterError):
 
 @dataclass
 class OpmlEntry:
-    """One feed outline (title may be empty; category None = uncategorized)."""
+    """One feed outline (title may be empty; category None = uncategorized).
+
+    R18: ``html_url`` carries the outline's optional htmlUrl (the site
+    page) — used only by the RSSHub import matching; older callers keep
+    working unchanged (default None)."""
 
     title: str
     feed_url: str
     category_label: str | None = None
+    html_url: str | None = None
 
 
 @dataclass
@@ -129,8 +134,14 @@ def parse_opml(data: bytes) -> ParsedOpml:
                     )
                     continue
                 title = (outline.get("text") or outline.get("title") or "").strip()
+                html_url = (outline.get("htmlUrl") or "").strip() or None
                 parsed.entries.append(
-                    OpmlEntry(title=title, feed_url=xml_url, category_label=category)
+                    OpmlEntry(
+                        title=title,
+                        feed_url=xml_url,
+                        category_label=category,
+                        html_url=html_url,
+                    )
                 )
             else:
                 label = (outline.get("text") or outline.get("title") or "").strip()

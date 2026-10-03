@@ -151,7 +151,9 @@ describe('FIX-160 — 视图/范围切换后批量选择不残留', () => {
     renderList()
     await screen.findAllByText('文章 e1.a')
 
-    fireEvent.click(screen.getByTestId('enter-select-mode'))
+    // R11 顶栏迁移：「选择」入口在「视图」选单内
+    fireEvent.click(screen.getByRole('button', { name: '视图' }))
+    fireEvent.click(await screen.findByTestId('enter-select-mode'))
     fireEvent.click(screen.getAllByRole('checkbox', { name: '选择「文章 e1.a」' })[0]!)
     fireEvent.click(screen.getAllByRole('checkbox', { name: '选择「文章 e1.b」' })[0]!)
     expect(screen.getByTestId('selected-count')).toHaveTextContent('已选 2 条')
@@ -177,7 +179,9 @@ describe('FIX-160 — 视图/范围切换后批量选择不残留', () => {
     renderList()
     await screen.findAllByText('文章 e1.a')
 
-    fireEvent.click(screen.getByTestId('enter-select-mode'))
+    // R11 顶栏迁移：「选择」入口在「视图」选单内
+    fireEvent.click(screen.getByRole('button', { name: '视图' }))
+    fireEvent.click(await screen.findByTestId('enter-select-mode'))
     fireEvent.click(screen.getAllByRole('checkbox', { name: '选择「文章 e1.a」' })[0]!)
     expect(screen.getByTestId('selected-count')).toHaveTextContent('已选 1 条')
 

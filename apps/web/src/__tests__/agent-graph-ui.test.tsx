@@ -211,7 +211,7 @@ describe('Agent 引用可点击（wave 2）', () => {
       ],
     })
     render(withProviders(<AgentWorkbenchPage />))
-    fireEvent.click(await screen.findByRole('button', { name: /测试会话/ }, { timeout: 3000 }))
+    fireEvent.click(await screen.findByRole('button', { name: /^测试会话/ }, { timeout: 3000 }))
     expect(await screen.findByText('回答')).toBeInTheDocument()
 
     // 批量解析一次
@@ -245,7 +245,7 @@ describe('AgentWorkbenchPage', () => {
     render(withProviders(<AgentWorkbenchPage />))
 
     // 选中已有会话（行 = 标题 + 相对时间）
-    fireEvent.click(await screen.findByRole('button', { name: /测试会话/ }, { timeout: 3000 }))
+    fireEvent.click(await screen.findByRole('button', { name: /^测试会话/ }, { timeout: 3000 }))
     fireEvent.change(screen.getByLabelText('输入消息'), { target: { value: '你好' } })
     fireEvent.click(screen.getByRole('button', { name: '发送' }))
 
@@ -284,7 +284,7 @@ describe('AgentWorkbenchPage', () => {
     })
 
     render(withProviders(<AgentWorkbenchPage />))
-    fireEvent.click(await screen.findByRole('button', { name: /测试会话/ }, { timeout: 3000 }))
+    fireEvent.click(await screen.findByRole('button', { name: /^测试会话/ }, { timeout: 3000 }))
 
     expect(await screen.findByText(/需要批准的写入操作 · save_bookmark/)).toBeInTheDocument()
     // args pretty JSON 可见
@@ -327,15 +327,15 @@ describe('GraphPage', () => {
 })
 
 describe('Sidebar / 折叠 Rail 导航激活', () => {
-  it('Sidebar：Agent 工作台 → section=agent；标签 / 图谱 → section=graph；API 来源/邮件简报为真实入口（设置深链）', () => {
+  it('Sidebar：Agent 工作台 → section=agent；标签 / 图谱 → section=graph；API 来源为设置深链、邮件简报为内容 section（R19）', () => {
     render(withProviders(<Sidebar />))
     fireEvent.click(screen.getByRole('button', { name: 'Agent 工作台' }))
     expect(useReaderUi.getState().section).toBe('agent')
     fireEvent.click(screen.getByRole('button', { name: '标签 / 图谱' }))
     expect(useReaderUi.getState().section).toBe('graph')
 
-    // P0-12：API 来源 / 邮件简报不再是 PlannedItem——真实按钮，点击
-    // 请求打开设置壳并直达对应分类（窗口事件桥）。
+    // P0-12：API 来源是真实按钮，点击请求打开设置壳并直达对应分类
+    // （窗口事件桥）；R19 后邮件简报改为内容 section（newsletter 页）。
     const openEvents: Array<{ category?: string }> = []
     const onOpen = (event: Event) => {
       openEvents.push((event as CustomEvent<{ category?: string }>).detail ?? {})
@@ -343,11 +343,12 @@ describe('Sidebar / 折叠 Rail 导航激活', () => {
     window.addEventListener('lumi:open-settings', onOpen)
     try {
       fireEvent.click(screen.getByRole('button', { name: /API 来源/ }))
-      fireEvent.click(screen.getByRole('button', { name: /邮件简报/ }))
     } finally {
       window.removeEventListener('lumi:open-settings', onOpen)
     }
-    expect(openEvents.map((e) => e.category)).toEqual(['api-sources', 'mail'])
+    expect(openEvents.map((e) => e.category)).toEqual(['api-sources'])
+    fireEvent.click(screen.getByRole('button', { name: '邮件简报' }))
+    expect(useReaderUi.getState().section).toBe('newsletter')
   })
 
   it('折叠 Rail：Agent 工作台 / 标签 / 图谱 可点击激活对应 section', () => {
@@ -358,7 +359,7 @@ describe('Sidebar / 折叠 Rail 导航激活', () => {
     expect(useReaderUi.getState().section).toBe('graph')
   })
 
-  it('折叠 Rail：API 来源 / 邮件简报点击 → 设置深链事件（P0-12）', () => {
+  it('折叠 Rail：API 来源 → 设置深链事件；邮件简报 → newsletter section（R19）', () => {
     render(withProviders(<SidebarCollapsedRail />))
     const openEvents: Array<{ category?: string }> = []
     const onOpen = (event: Event) => {
@@ -367,10 +368,11 @@ describe('Sidebar / 折叠 Rail 导航激活', () => {
     window.addEventListener('lumi:open-settings', onOpen)
     try {
       fireEvent.click(screen.getByRole('button', { name: 'API 来源' }))
-      fireEvent.click(screen.getByRole('button', { name: '邮件简报' }))
     } finally {
       window.removeEventListener('lumi:open-settings', onOpen)
     }
-    expect(openEvents.map((e) => e.category)).toEqual(['api-sources', 'mail'])
+    expect(openEvents.map((e) => e.category)).toEqual(['api-sources'])
+    fireEvent.click(screen.getByRole('button', { name: '邮件简报' }))
+    expect(useReaderUi.getState().section).toBe('newsletter')
   })
 })

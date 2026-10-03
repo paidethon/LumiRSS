@@ -1,0 +1,42 @@
+#!/command/with-contenv sh
+# caddy (longrun) — renders /etc/caddy/Caddyfile from
+# /etc/caddy/Caddyfile.aio.template then runs Caddy in the foreground.
+# Ported semantics from apps/web/docker-entrypoint.sh (reduced to the
+# all-in-one's single supported shape):
+#   - site address is ALWAYS ":80": compose publishes only
+#     127.0.0.1:$LUMIRSS_UPSTREAM_PORT -> 80 and the host reverse proxy
+#     terminates TLS (external-caddy mode is the only published shape);
+#   - LUMIRSS_AUTH_MODE session/empty = supported; proxy basic-auth config
+#     (LUMIRSS_AUTH_USER/HASH, LUMIRSS_AUTH_MODE=basic) is WARNED about and
+#     ignored — app-level session auth is the only access control here;
+#   - LUMIRSS_INTERNAL_TOKEN (non-empty) -> every /api/* + /feeds/* forward
+#     to the BFF carries X-Lumi-Token; the BFF rejects in-container callers
+#     that bypass Caddy. Same URL-safe charset check as the web image.
+set -eu
+
+case "${LUMIRSS_AUTH_MODE:-}" in
+    ""|session) ;;
+    *)
+        echo "WARNING: LUMIRSS_AUTH_MODE='${LUMIRSS_AUTH_MODE}' is not supported by the all-in-one image (only app-level session auth) — ignoring." >&2
+        ;;
+esac
+if [ -n "${LUMIRSS_AUTH_USER:-}" ] || [ -n "${LUMIRSS_AUTH_HASH:-}" ]; then
+    echo "WARNING: LUMIRSS_AUTH_USER/LUMIRSS_AUTH_HASH (proxy basic-auth) are ignored by the all-in-one image — use app session auth ('./lumirss set-password')." >&2
+fi
+
+TOKEN_DIRECTIVE=""
+if [ -n "${LUMIRSS_INTERNAL_TOKEN:-}" ]; then
+    case "${LUMIRSS_INTERNAL_TOKEN}" in
+        *[!A-Za-z0-9._~+/=-]*)
+            echo "FATAL: LUMIRSS_INTERNAL_TOKEN must be URL-safe (letters, digits, ._~+/=-)." >&2
+            exit 1
+            ;;
+    esac
+    TOKEN_DIRECTIVE="header_up X-Lumi-Token ${LUMIRSS_INTERNAL_TOKEN}"
+fi
+
+sed "s|__SITE_ADDR__|:80|g; \
+     s|__INTERNAL_TOKEN_DIRECTIVE__|${TOKEN_DIRECTIVE}|g" \
+    /etc/caddy/Caddyfile.aio.template > /etc/caddy/Caddyfile
+
+exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile

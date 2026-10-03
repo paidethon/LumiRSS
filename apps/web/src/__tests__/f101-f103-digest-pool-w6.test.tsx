@@ -70,6 +70,12 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+/** R13：配置面分两层——高级字段（去重/素材池/轮换等）收进折叠区，
+ * 断言前先展开。 */
+async function openAdvanced() {
+  fireEvent.click(await screen.findByRole('button', { name: '高级设置' }))
+}
+
 function qs(attr: string): HTMLElement {
   const el = document.querySelector(`[${attr}]`)
   if (el === null) throw new Error(`missing ${attr}`)
@@ -158,9 +164,10 @@ describe('F101 选材预览：近期已刊用标记与放回', () => {
       return baseHandler(url, init)
     })
     await screen.findByLabelText('选择日报配置')
+    await openAdvanced()
     const input = await screen.findByLabelText('回看去重天数')
     fireEvent.change(input, { target: { value: '0' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
+    fireEvent.click(screen.getAllByRole('button', { name: '保存设置' })[0])
     await waitFor(() => {
       const put = fetchMock.mock.calls.find(
         ([url, init]) => String(url).endsWith('/configs/1') && init?.method === 'PUT',
@@ -198,6 +205,7 @@ describe('F102 素材池面板', () => {
     })
 
     await screen.findByLabelText('选择日报配置')
+    await openAdvanced()
     const input = await screen.findByLabelText('按条目引用加入素材池')
     fireEvent.change(input, { target: { value: 'rss:abc' } })
     fireEvent.click(screen.getByRole('button', { name: '加入日报待编' }))
@@ -242,6 +250,7 @@ describe('F102 素材池面板', () => {
       return baseHandler(url, init)
     })
     await screen.findByLabelText('选择日报配置')
+    await openAdvanced()
     expect((await screen.findByText('素材池（手工候选）'))).toBeInTheDocument()
     await waitFor(() => expect(poolList().textContent).toContain('rss:a'))
     expect(poolUsed().textContent).toContain('期号 2026-09-18')
@@ -271,6 +280,7 @@ describe('F103 订阅 token 轮换两步', () => {
     })
 
     await screen.findByLabelText('选择日报配置')
+    await openAdvanced()
     fireEvent.click(await screen.findByRole('button', { name: '轮换 token' }))
 
     // 第一步：影响确认（dry-run，未执行轮换）
@@ -307,6 +317,7 @@ describe('F103 订阅 token 轮换两步', () => {
       return baseHandler(url, init)
     })
     await screen.findByLabelText('选择日报配置')
+    await openAdvanced()
     fireEvent.click(await screen.findByRole('button', { name: '轮换 token' }))
     await rotateConfirm()
     // 无记录 → 诚实显示「时间未知」，不编造

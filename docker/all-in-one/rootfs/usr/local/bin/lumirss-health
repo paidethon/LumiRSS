@@ -1,0 +1,75 @@
+#!/bin/sh
+# lumirss-health — per-service status JSON for the all-in-one container.
+# Consumption: ops/diagnostics today; R03 services page later. Emits, for
+# each s6 service: process state (from s6-svstat) and, where the service
+# speaks HTTP, a loopback reachability probe (process up != interface ok —
+# the five-state model stays the consumer's job; this reports raw facts).
+#
+#   docker exec lumirss-app lumirss-health
+#
+# Extra facts: freshrss last actualize timestamp (written by the cron
+# service) and container memory budget.
+set -u
+
+SVC_BASE=/run/s6-rc/servicedirs
+SERVICES="freshrss-init freshrss-php freshrss-cron bff caddy rsshub"
+
+json_escape() {
+    printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+}
+
+probe() { # probe <url> -> "true"/"false"
+    if curl -fsS -o /dev/null -m 3 "$1" 2>/dev/null; then
+        printf 'true'
+    else
+        printf 'false'
+    fi
+}
+
+out="{"
+sep=""
+for svc in $SERVICES; do
+    dir="$SVC_BASE/$svc"
+    if [ "$svc" = freshrss-init ]; then
+        # oneshot: supervised while running; s6-rc REMOVES the servicedir
+        # once it completes. Anything-but-supervised means completed (a
+        # failure would have killed the container via
+        # S6_BEHAVIOUR_IF_STAGE2_FAILS=2 before anyone could poll).
+        if [ -d "$dir" ] && /command/s6-svstat "$dir" >/dev/null 2>&1; then
+            state='"running"'
+        else
+            state='"done"'
+        fi
+        pid='null'
+    elif [ ! -d "$dir" ]; then
+        state='"unknown"'; pid='null'
+    else
+        line="$(/command/s6-svstat "$dir" 2>/dev/null || true)"
+        case "$line" in
+            up\ *) state='"up"' ;;
+            down\ *) state='"down"' ;;
+            *) state='"unknown"' ;;
+        esac
+        pid="$(/command/s6-svstat -o pid "$dir" 2>/dev/null || printf "null")"
+        case "$pid" in ''|*[!0-9]*) pid='null' ;; esac
+    fi
+    case "$svc" in
+        caddy)  http_state='null' ;;
+        bff)    http_state="$(probe http://127.0.0.1:8000/health/live)" ;;
+        rsshub) http_state="$(probe http://127.0.0.1:12001/healthz)" ;;
+        freshrss-php) http_state="$(probe http://127.0.0.1:8081/)" ;;
+        freshrss-cron|freshrss-init) http_state='null' ;;
+    esac
+    last_run='null'
+    if [ -s /tmp/freshrss-cron.last-run ]; then
+        last_run="$(cat /tmp/freshrss-cron.last-run)"
+        case "$last_run" in ''|*[!0-9]*) last_run='null' ;; *) last_run="\"$last_run\"" ;; esac
+    fi
+    out="$out${sep}\"${svc}\":{\"state\":${state},\"pid\":${pid},\"http_ok\":${http_state:-null},\"last_actualize_epoch\":${last_run}}"
+    sep=","
+done
+
+mem_limit="$(cat /sys/fs/cgroup/memory.max 2>/dev/null || cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null || printf 'unknown')"
+mem_used="$(cat /sys/fs/cgroup/memory.current 2>/dev/null || cat /sys/fs/cgroup/memory/memory.usage_in_bytes 2>/dev/null || printf 'unknown')"
+out="$out,\"memory\":{\"limit\":\"$(json_escape "$mem_limit")\",\"used\":\"$(json_escape "$mem_used")\"}}"
+printf '%s\n' "$out"

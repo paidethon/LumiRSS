@@ -138,7 +138,7 @@ class LumiSettings(BaseSettings):
     LUMIRSS_DB_PATH: str = str(_DEFAULT_LUMI_DATA_DIR / "lumi.sqlite")
     LUMIRSS_DATA_DIR: str = ""
     FRESHRSS_DATA_DIR: str = ""
-    LUMIRSS_VERSION: str = "2.8.0"
+    LUMIRSS_VERSION: str = "3.0.0"
     LUMIRSS_COMMIT: str = ""
     # F36: storage usage budget in MB (0 = off); >80% usage raises a warning
     # in /api/v1/storage/usage — reporting only, never auto-deletion.
@@ -241,6 +241,13 @@ class LumiSettings(BaseSettings):
     # UI shows the mount instead of asking for host paths. Empty = dev
     # mode with a DB-configured path.
     LUMIRSS_OBSIDIAN_VAULT_DIR: str = ""
+    # R07 服务端受限写入导出：CONTAINER path of the WRITABLE export root
+    # (production overlay bind-mounts LUMIRSS_OBSIDIAN_EXPORT_HOST_DIR at
+    # /vault-export). Writes only ever land in <root>/<subdir>/<user_id>/
+    # as new files (never overwrite — see obsidian_export.py). The
+    # read-only projection mount above is untouched. Empty = export
+    # unavailable (endpoints report export_unconfigured honestly).
+    LUMIRSS_OBSIDIAN_EXPORT_DIR: str = ""
     # Background incremental scan cadence in seconds; 0 disables the
     # poll loop (tests, explicit-rescan-only deployments).
     LUMIRSS_OBSIDIAN_SCAN_INTERVAL: float = 0.0

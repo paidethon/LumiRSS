@@ -102,19 +102,33 @@ export type ReaderLineHeight = number
 export type ReaderContentWidth = number
 /** 0010a F6：背景扩展（+paper/mint/custom，OrigRead 双主题色板原值） */
 export type ReaderBackground = 'follow' | 'sepia' | 'warm' | 'paper' | 'mint' | 'custom'
-/** 字体族四档（OrigRead reader-font 栈原值，inspired） */
-export type ReaderFontFamily = 'system' | 'sans' | 'serif' | 'mono'
+/** 字体族四档（OrigRead reader-font 栈原值，inspired）+ R08 内置字体
+ * （6 中 2 英，OFL 分发；值域与 BFF _READER_FONT_FAMILY_VALUES /
+ * generated SETTING_ENUMS.readerFontFamily 同源，经 settings:generate 对齐）。 */
+export type ReaderFontFamily =
+  | 'system'
+  | 'sans'
+  | 'serif'
+  | 'mono'
+  | 'source-han-sans'
+  | 'source-han-serif'
+  | 'lxgw-wenkai'
+  | 'zhuque-fangsong'
+  | 'zcool-xiaowei'
+  | 'ma-shan-zheng'
+  | 'source-sans-3'
+  | 'source-serif-4'
 export type ReaderParagraphSpacing = number
 export type ReaderImageMode = 'all' | 'grayscale' | 'hidden'
-// ---- R5 阅读器域批1：排版扩展（全部设备本，不进 PORTABLE_KEYS） ----
+// ---- R5 阅读器域批1：排版扩展（R25 起排版偏好进 PORTABLE_KEYS 同步） ----
 
-/** F068：正文字重离散档（300 细 – 700 粗；CSS var 注入，设备本排版偏好）。 */
+/** F068：正文字重离散档（300 细 – 700 粗；CSS var 注入；R25 起同步）。 */
 export type ReaderFontWeight = 300 | 400 | 500 | 600 | 700
-/** F069：正文图片最大宽度档位（约束文章内容 img；设备本）。 */
+/** F069：正文图片最大宽度档位（约束文章内容 img；R25 起同步）。 */
 export type ReaderImageMaxWidth = '100%' | '75%' | '60%'
 /** F071：figure caption（figcaption）显示模式：显示 / 悬停显示 / 隐藏。 */
 export type ReaderCaptionMode = 'show' | 'hidden' | 'hover'
-/** F072：代码块等宽字号档位（S/M/L，相对正文 em；设备本）。 */
+/** F072：代码块等宽字号档位（S/M/L，相对正文 em；R25 起同步）。 */
 export type ReaderCodeFontSize = 's' | 'm' | 'l'
 /** F065：正文宽度模式：固定 px（0017 连续档）/ 跟随窗口百分比。 */
 export type ReaderContentWidthMode = 'fixed' | 'viewport'
@@ -134,10 +148,10 @@ export type ReaderCodeHighlight = 'auto' | 'off'
 
 // ---- 2026-09 移动端专项（P0-2 / P1 / F01–F17 新增 portable 键） ----
 
-/** N052：阅读模式（设备本地）：连续滚动 / 分页（CSS 多栏横向翻页）。
- * 不进 PORTABLE_KEYS——与便携键 readerPagedMode（F17 按屏平滑翻页，
- * 服务端契约保持不动）并存；normalizeSettings 做一次性迁移：
- * 旧 readerPagedMode=true 且未显式设置本键 → 'paged'。 */
+/** N052：阅读模式（R25 起随 portable 同步）：连续滚动 / 分页（CSS
+ * 多栏横向翻页）。与便携键 readerPagedMode（F17 按屏平滑翻页）并存；
+ * normalizeSettings 做一次性迁移：旧 readerPagedMode=true 且未显式
+ * 设置本键 → 'paged'。 */
 export type ReaderReadingMode = 'scroll' | 'paged'
 /** N053：分页点按翻页区轴向（左右 / 上下）与区域大小。 */
 export type ReaderTapZoneAxis = 'horizontal' | 'vertical'
@@ -215,7 +229,7 @@ export interface AppSettings {
   readLaterSort: ReadLaterSort
   /** F045：临时显示被屏蔽条目（include_hidden 查询参数，设备本地偏好）。 */
   includeHiddenEntries: boolean
-  /** F056：暂停阅读进度记录（设备本地偏好）。 */
+  /** F056：暂停阅读进度记录（用户偏好；R25 起同步）。 */
   pauseReadingProgress: boolean
   /** F053：双语关联滚动（默认关；记忆偏好）。 */
   translationLinkedScroll: boolean
@@ -237,21 +251,21 @@ export interface AppSettings {
   readerParagraphSpacing: ReaderParagraphSpacing
   readerJustify: boolean
   readerImageMode: ReaderImageMode
-  /** F068：正文字重档位（设备本；CSS var --lumi-reader-font-weight）。 */
+  /** F068：正文字重档位（CSS var --lumi-reader-font-weight；R25 起同步）。 */
   readerFontWeight: ReaderFontWeight
-  /** F069：图片最大宽度档位（设备本；CSS var --lumi-reader-image-max-width）。 */
+  /** F069：图片最大宽度档位（CSS var --lumi-reader-image-max-width；R25 起同步）。 */
   readerImageMaxWidth: ReaderImageMaxWidth
-  /** F070：首图破格满宽（设备本；管线给首图打 data 标记 + CSS 消费）。 */
+  /** F070：首图破格满宽（管线给首图打 data 标记 + CSS 消费；R25 起同步）。 */
   readerFirstImageFullBleed: boolean
-  /** F071：figure caption 显示模式（设备本；show/hidden/hover）。 */
+  /** F071：figure caption 显示模式（show/hidden/hover；R25 起同步）。 */
   readerCaptionMode: ReaderCaptionMode
-  /** F064：纸张质感纹理（设备本；纯 CSS 噪点叠在 paper 背景档上）。 */
+  /** F064：纸张质感纹理（纯 CSS 噪点叠在 paper 背景档上；R25 起同步）。 */
   readerPaperTexture: boolean
-  /** F072：代码块等宽字号档位（设备本；s/m/l）。 */
+  /** F072：代码块等宽字号档位（s/m/l；R25 起同步）。 */
   readerCodeFontSize: ReaderCodeFontSize
-  /** F073：代码块行号（设备本；管线按行包 span + CSS counter）。 */
+  /** F073：代码块行号（管线按行包 span + CSS counter；R25 起同步）。 */
   readerCodeLineNumbers: boolean
-  /** F063：连续阅读护眼提醒间隔（分钟；0 = 关；设备本计时，不上传）。 */
+  /** F063：连续阅读护眼提醒间隔（分钟；0 = 关；计时在设备侧进行，值随 R25 同步）。 */
   readerBreakReminderMinutes: number
   /** F065：正文宽度模式（fixed = 连续 px 档；viewport = 跟随窗口百分比）。 */
   readerContentWidthMode: ReaderContentWidthMode
@@ -311,63 +325,71 @@ export interface AppSettings {
   readerShowReadingProgress: boolean
   readerCodeWrap: boolean
   readerPagedMode: boolean
-  /** N052：阅读模式（设备本地；'paged' = 分页阅读，优先于 readerPagedMode）。 */
+  /** N052：阅读模式（'paged' = 分页阅读，优先于 readerPagedMode；R25 起同步）。 */
   readerReadingMode: ReaderReadingMode
-  /** N053：分页点按翻页区（设备本地；仅阅读模式 = 分页时生效）。 */
+  /** N053：分页点按翻页区（仅阅读模式 = 分页时生效；R25 起同步）。 */
   readerTapZoneAxis: ReaderTapZoneAxis
   readerTapZoneSize: ReaderTapZoneSize
   searchHighlightMatches: boolean
-  /** 布局（<1024 忽略；Gate C 接线） */
+  /** 布局（<1024 忽略；Gate C 接线；R25 起三栏宽度偏好随 portable 同步——
+   * 同步的是用户拖拽记忆，不是视口测量）。 */
   sidebarWidth: number // clamp 220–300
   sidebarCollapsed: boolean
   timelineWidth: number // clamp 360–460
   timelineCollapsed: boolean
-  /** P07 阅读器工具栏自定义（设备本地，两断点各自记忆）：
+  /** P07 阅读器工具栏自定义（两断点各自记忆；R25 起随 portable 同步）：
    * 元素为动作 id 或隐藏占位 '-id'，格式与归一化见 lib/reader-toolbar.ts。
-   * 不进 PORTABLE_KEYS——工具栏排布是设备本地偏好，不参与服务端同步。 */
+   * 服务端只做 ^[a-z0-9-]+$ 透传校验，语义归一化在客户端注册表。 */
   readerToolbarDesktopOrder: string[]
   readerToolbarMobileOrder: string[]
-  /** P18 朗读引擎（设备本地；档位/归一化来源 lib/reader-speech）：
-   * 首选声音 voiceURI（'' = 自动，pickVoice 中文优先）、语速档位、
+  /** P18 朗读引擎（档位/归一化来源 lib/reader-speech；R25 起全套随
+   * portable 同步）：首选声音 voiceURI（'' = 自动，pickVoice 中文优先；
+   * 声音库设备各异，URI 缺失时由 pickVoice 回退）、语速档位、
    * 睡眠定时分钟数（0 = 关）。 */
   speechVoiceURI: string
   speechRate: SpeechRate
   speechSleepTimerMinutes: number
-  /** NF1 N094：听读内容排除（设备本地；只影响朗读收集，文章展示不动）：
+  /** NF1 N094：听读内容排除（只影响朗读收集，文章展示不动；R25 起同步）：
    * 代码块 / 表格 / 脚注 / 图片说明 / 纯链接段落。 */
   speechSkipCode: boolean
   speechSkipTables: boolean
   speechSkipFootnotes: boolean
   speechSkipCaptions: boolean
   speechSkipLinkOnly: boolean
-  /** NF1 N095：发音词典（设备本地；{match, replace} 子串替换，大小写
-   * 不敏感；只作用于出声/试听文本，永不改展示 DOM；cap 50）。 */
+  /** NF1 N095：发音词典（{match, replace} 子串替换，大小写不敏感；
+   * 只作用于出声/试听文本，永不改展示 DOM；cap 50；R25 起同步）。 */
   speechLexicon: SpeechLexiconEntry[]
-  /** NF1 N097：原文译文交替听读（设备本地；译文来自既有 overlay DOM，
-   * 缺译文块诚实跳过）+ 原文/译文间隔档位（无/短/长 → 0/500/1200ms）。 */
+  /** NF1 N097：原文译文交替听读（译文来自既有 overlay DOM，缺译文块
+   * 诚实跳过）+ 原文/译文间隔档位（无/短/长 → 0/500/1200ms；R25 起同步）。 */
   speechBilingualAlternate: boolean
   speechBilingualGap: SpeechBilingualGap
-  /** NF1 N093：按语言自动选声（设备本地）。块级 CJK/拉丁判定为中文的
+  /** NF1 N093：按语言自动选声（R25 起同步）。块级 CJK/拉丁判定为中文的
    * 块用 speechVoiceURIZh、拉丁块用 speechVoiceURIEn（'' = 该语言走
    * pickVoice 自动链）；手动 speechVoiceURI 非空时整体手动覆盖恒赢。 */
   speechVoiceURIZh: string
   speechVoiceURIEn: string
   /** NF1 N096：朗读结束模式——'article' 本篇读完即止；'queue' 阅读队列
-   * 流驱动时读完整队列（无队列流时诚实退化为本篇结束）。 */
+   * 流驱动时读完整队列（无队列流时诚实退化为本篇结束；R25 起同步）。 */
   speechStopMode: SpeechStopMode
-  /** N069：选词词典卡（设备本地）：词典 API 地址模板（含 {word} 占位符，
-   * 归一化见 lib/dict-lookup）。'' = 未配置（卡片诚实提示，零请求）。
-   * 查询只外发所选单词本身，绝不携带上下文。 */
+  /** N069：选词词典卡：词典 API 地址模板（含 {word} 占位符，归一化见
+   * lib/dict-lookup）。'' = 未配置（卡片诚实提示，零请求）。查询只外发
+   * 所选单词本身，绝不携带上下文。R25 起随 portable 同步。 */
   dictApiUrl: string
-  /** N070：纯键盘阅读定位（固定键 Alt+↑/↓/Shift 组合；设备本地开关，
-   * 默认关——不改变既有键盘行为）。 */
+  /** N070：纯键盘阅读定位（固定键 Alt+↑/↓/Shift 组合；用户偏好，
+   * 随 R25 扩展同步上云，默认关——不改变既有键盘行为）。 */
   readerKeyNav: boolean
+  /** R21：LibreTranslate 翻译引擎移除的一次性迁移标记（服务端迁移时
+   * 置 true；前端据此给一次提示后可 ack 清零）。键在 PORTABLE_KEYS
+   * 白名单内随同步往返，但不是用户可改偏好。 */
+  translationMigratedFromLibre: boolean
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
-  // 服务器可持久化字段：默认值 = BFF PortableSettings（生成，勿手改）
+  // 服务器可持久化字段：默认值 = BFF PortableSettings（生成，勿手改）。
+  // R25 扩展后本对象里的显式覆盖行只剩两类：BFF 默认无法表达的
+  // （工具栏 order 由注册表派生）与历史显式默认（值与 BFF 一致，纯冗余）。
   ...PORTABLE_DEFAULTS,
-  // 以下为设备本地（UI-only）字段
+  // 以下为设备本地（UI-only）字段（R25 盘点后仅存：资产/临时态/缓存/常量）
   language: 'zh-CN',
   dimRead: false,
   groupByDate: false,
@@ -388,26 +410,26 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   readerFontUrlName: '',
   readerBionic: false,
   readerBlockRemoteImages: false,
-  // N055/N056：中文排版细化（默认关——维持既有排版，不悄悄改变观感）
+  // N055/N056：中文排版细化（默认关——维持既有排版；R25 起随 portable 同步）
   readerIndentLists: false,
   readerIndentQuotes: false,
   readerLineBreakStrict: false,
-  // R5 批1：排版扩展（设备本；默认值全部维持既有观感）
+  // R5 批1：排版扩展（默认值全部维持既有观感；R25 起随 portable 同步）
   readerFontWeight: 400,
   readerImageMaxWidth: '100%',
   readerFirstImageFullBleed: false,
   readerCaptionMode: 'show',
   readerPaperTexture: false,
-  // R5 批2：代码块排版（设备本；默认与既有观感一致：中档字号、无行号）
+  // R5 批2：代码块排版（默认与既有观感一致：中档字号、无行号；R25 起同步）
   readerCodeFontSize: 'm',
   readerCodeLineNumbers: false,
-  // R5 批3：连续阅读护眼提醒（设备本；默认 45 分钟，0 = 关）
+  // R5 批3：连续阅读护眼提醒（默认 45 分钟，0 = 关；R25 起同步）
   readerBreakReminderMinutes: 45,
-  // R5 批4：宽度模式（默认固定 px = 既有观感）；fixed 媒体清理默认开
+  // R5 批4：宽度模式（默认固定 px = 既有观感）；fixed 媒体清理默认开；R25 起同步
   readerContentWidthMode: 'fixed',
   readerContentWidthViewport: 92,
   readerStripFixedMedia: true,
-  // N052/N053：阅读模式与点按翻页区（设备本地交互偏好）
+  // N052/N053：阅读模式与点按翻页区（交互偏好；R25 起随 portable 同步）
   readerReadingMode: 'scroll',
   readerTapZoneAxis: 'horizontal',
   readerTapZoneSize: 'small',
@@ -418,11 +440,11 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   // P07：默认序 = 既有视觉序的忠实快照（registry 派生，见 lib/reader-toolbar.ts）
   readerToolbarDesktopOrder: defaultReaderToolbarOrder('desktop'),
   readerToolbarMobileOrder: defaultReaderToolbarOrder('mobile'),
-  // P18 朗读引擎（设备本地）
+  // P18 朗读引擎（R25 起随 portable 同步）
   speechVoiceURI: '',
   speechRate: 1,
   speechSleepTimerMinutes: 0,
-  // NF1 听读增强（设备本地；默认全部关闭/为空——既有朗读行为不变）
+  // NF1 听读增强（默认全部关闭/为空——既有朗读行为不变；R25 起同步）
   speechSkipCode: false,
   speechSkipTables: false,
   speechSkipFootnotes: false,
@@ -436,9 +458,9 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   speechVoiceURIZh: '',
   speechVoiceURIEn: '',
   speechStopMode: 'article',
-  // N069：选词词典（设备本地；默认未配置——零外发）
+  // N069：选词词典（默认未配置——零外发；R25 起随 portable 同步）
   dictApiUrl: '',
-  // N070：纯键盘阅读定位（设备本地；默认关）
+  // N070：纯键盘阅读定位（默认关；R25 起随 portable 同步）
   readerKeyNav: false,
 }
 
@@ -463,19 +485,23 @@ const LIST_DENSITIES = SETTING_ENUMS.listDensity
 const LIST_TIME_FORMATS = SETTING_ENUMS.listTimeFormat
 const TIMELINE_ORDERS = SETTING_ENUMS.timelineOrder
 const CARD_SWIPE_ACTIONS = SETTING_ENUMS.cardSwipeAction
-// N052/N053：阅读模式与点按翻页区（设备本地，值域本地定义）
-const READER_TAP_ZONE_AXES: readonly ReaderTapZoneAxis[] = ['horizontal', 'vertical']
-const READER_TAP_ZONE_SIZES: readonly ReaderTapZoneSize[] = ['off', 'small', 'large']
-// R5 批1：排版扩展枚举（设备本，值域本地定义）
-const READER_FONT_WEIGHTS: readonly ReaderFontWeight[] = [300, 400, 500, 600, 700]
-const READER_IMAGE_MAX_WIDTHS: readonly ReaderImageMaxWidth[] = ['100%', '75%', '60%']
-const READER_CAPTION_MODES: readonly ReaderCaptionMode[] = ['show', 'hidden', 'hover']
-// R5 批2：代码块排版枚举（设备本）
-const READER_CODE_FONT_SIZES: readonly ReaderCodeFontSize[] = ['s', 'm', 'l']
-/** F063：护眼提醒间隔档位（0 = 关；设备本计时用）。 */
-const READER_BREAK_REMINDER_MINUTES: readonly number[] = [0, 20, 30, 45, 60, 90]
-// R5 批4：宽度模式枚举（设备本）
-const READER_CONTENT_WIDTH_MODES: readonly ReaderContentWidthMode[] = ['fixed', 'viewport']
+// N052/N053：阅读模式与点按翻页区（R25 起进 portable 同步，值域派生自
+// BFF PortableSettings 生成的 settings-meta）
+const READER_TAP_ZONE_AXES: readonly ReaderTapZoneAxis[] = SETTING_ENUMS.readerTapZoneAxis
+const READER_TAP_ZONE_SIZES: readonly ReaderTapZoneSize[] = SETTING_ENUMS.readerTapZoneSize
+// R5 批1：排版扩展枚举（R25 起进 portable 同步，值域派生自生成元数据）
+const READER_FONT_WEIGHTS: readonly ReaderFontWeight[] = SETTING_ENUMS.readerFontWeight
+const READER_IMAGE_MAX_WIDTHS: readonly ReaderImageMaxWidth[] =
+  SETTING_ENUMS.readerImageMaxWidth
+const READER_CAPTION_MODES: readonly ReaderCaptionMode[] = SETTING_ENUMS.readerCaptionMode
+// R5 批2：代码块排版枚举（R25 起进 portable 同步）
+const READER_CODE_FONT_SIZES: readonly ReaderCodeFontSize[] = SETTING_ENUMS.readerCodeFontSize
+/** F063：护眼提醒间隔档位（0 = 关；R25 起进 portable 同步）。 */
+const READER_BREAK_REMINDER_MINUTES: readonly number[] =
+  SETTING_ENUMS.readerBreakReminderMinutes
+// R5 批4：宽度模式枚举（R25 起进 portable 同步）
+const READER_CONTENT_WIDTH_MODES: readonly ReaderContentWidthMode[] =
+  SETTING_ENUMS.readerContentWidthMode
 
 const HEX_COLOR_RE = new RegExp(HEX_COLOR_PATTERN, 'i')
 
@@ -619,11 +645,13 @@ function pickBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback
 }
 
-/** N052：阅读模式归一化 + 一次性迁移。显式合法值优先；未显式设置本键
- * 且旧 readerPagedMode（F17 按屏翻页）= true → 迁移为 'paged'（分页）；
- * 其余回退默认 'scroll'。 */
+/** N052：阅读模式归一化 + 一次性迁移。显式合法值优先（值域派生自
+ * 生成元数据 SETTING_ENUMS）；未显式设置本键且旧 readerPagedMode
+ * （F17 按屏翻页）= true → 迁移为 'paged'（分页）；其余回退默认 'scroll'。 */
 function pickReadingMode(value: unknown, legacyPagedMode: unknown): ReaderReadingMode {
-  if (value === 'scroll' || value === 'paged') return value
+  if ((SETTING_ENUMS.readerReadingMode as readonly string[]).includes(value as string)) {
+    return value as ReaderReadingMode
+  }
   if (value === undefined && legacyPagedMode === true) return 'paged'
   return DEFAULT_APP_SETTINGS.readerReadingMode
 }
@@ -940,6 +968,13 @@ export function normalizeSettings(raw: unknown): AppSettings {
     dictApiUrl: normalizeDictApiUrl(source.dictApiUrl),
     // N070：纯键盘阅读定位开关（布尔归一化，非法回退默认关）
     readerKeyNav: pickBoolean(source.readerKeyNav, DEFAULT_APP_SETTINGS.readerKeyNav),
+    // R21：LibreTranslate 迁移标记（服务端管理；归一化覆盖此前漂移——
+    // DEFAULT_APP_SETTINGS 经 PORTABLE_DEFAULTS 展开持有本键而 normalize
+    // 曾丢弃，导致 normalizeSettings(null) ≠ DEFAULT_APP_SETTINGS）。
+    translationMigratedFromLibre: pickBoolean(
+      source.translationMigratedFromLibre,
+      DEFAULT_APP_SETTINGS.translationMigratedFromLibre,
+    ),
   }
 }
 
@@ -1186,7 +1221,9 @@ export const PORTABLE_KEYS = Object.keys(
 
 export type PortableKey = (typeof PORTABLE_KEYS)[number]
 
-export type PortableValues = Record<PortableKey, string | number | boolean>
+/** R25：portable 值包含数组键（工具栏 order / 发音词典 / 过滤规则 /
+ * 阅读预设）——负载类型相应放宽。 */
+export type PortableValues = Record<PortableKey, string | number | boolean | object[]>
 
 /** 从完整设置中提取 server 同步子集（数值去浮点噪声，AD-0017-2）。 */
 export function portableSettings(settings: AppSettings): PortableValues {
@@ -1205,9 +1242,10 @@ export function portableSettings(settings: AppSettings): PortableValues {
       }))
       continue
     }
-    out[key] = typeof value === 'number'
-      ? Number(value.toFixed(3))
-      : (value as string | number | boolean)
+    out[key] =
+      typeof value === 'number'
+        ? Number(value.toFixed(3))
+        : (value as string | boolean | object[])
   }
   return out
 }

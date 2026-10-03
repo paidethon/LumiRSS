@@ -1,29 +1,22 @@
 """Per-block (bilingual) translation tests: cache identity, batching,
-honest failure rows, LibreTranslate adapter, and the money rules.
+honest failure rows, and the money rules.
 
-Providers and HTTP are always faked — these tests never touch a real
-translation service, and API keys never enter any cache key.
+Providers are always faked — these tests never touch a real translation
+service, and API keys never enter any cache key.
 """
 
 import asyncio
-import json
 
-import httpx
 import pytest
 
 from lumirss.ai_provider import AiTimeout
-from lumirss.ai_settings import (
-    LIBRETRANSLATE_KEY_NAME,
-    AiSettingsUpdate,
-)
+from lumirss.ai_settings import AiSettingsUpdate
 from lumirss.ai_translation_segments import (
     MAX_BLOCKS,
     SEGMENTS_PROMPT_VERSION,
     SegmentInput,
     SegmentTranslationService,
     SegmentTranslationUnavailable,
-    block_hash,
-    normalize_block_text,
     parse_segment_batch,
 )
 from lumirss.secrets_store import SecretsStore
@@ -47,24 +40,17 @@ def _marker(index: int) -> str:
     return f"<<<BLOCK {index}>>>"
 
 
-def _make_service(tmp_path, provider_factory=None, transport=None):
+def _make_service(tmp_path, provider_factory=None):
     db = Database(tmp_path / "lumi.sqlite")
     run(db.migrate())
     from lumirss.ai_settings import AiSettingsStore
 
     settings = AiSettingsStore(db)
     secrets = SecretsStore(tmp_path / "secrets.json")
-    httpx_factory = (
-        (lambda: httpx.AsyncClient(transport=transport))
-        if transport is not None
-        else None
-    )
     service = SegmentTranslationService(
         db=db,
         settings_store=settings,
         provider_factory=provider_factory or _never_provider,
-        secrets=secrets,
-        httpx_client_factory=httpx_factory,
     )
     return service, settings, secrets
 
@@ -245,83 +231,8 @@ def test_block_limit_enforced(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# LibreTranslate engine
+# prompt version pin
 # ---------------------------------------------------------------------------
-
-
-def _libre_transport(responder):
-    return httpx.MockTransport(responder)
-
-
-def test_libretranslate_success(tmp_path):
-    service, settings, _ = _make_service(
-        tmp_path,
-        transport=_libre_transport(
-            lambda request: httpx.Response(
-                200,
-                json={"translatedText": ["第一段。", "第二段。"]},
-            )
-        ),
-    )
-    run(settings.save(AiSettingsUpdate(translationEngine="libretranslate")))
-    run(settings.save(AiSettingsUpdate(libretranslateUrl="http://127.0.0.1:5000")))
-
-    states = run(
-        service.generate(
-            "e1.itest",
-            [SegmentInput(index=0, text="First."), SegmentInput(index=1, text="Second.")],
-        )
-    )
-    assert [s.status for s in states] == ["success", "success"]
-    assert [s.translated_text for s in states] == ["第一段。", "第二段。"]
-    cached = run(
-        service.lookup(
-            "e1.itest",
-            [SegmentInput(index=0, text="First."), SegmentInput(index=1, text="Second.")],
-        )
-    )
-    assert [s.cached for s in cached] == [True, True]
-
-
-def test_libretranslate_http_error_marks_upstream_failed(tmp_path):
-    service, settings, _ = _make_service(
-        tmp_path,
-        transport=_libre_transport(
-            lambda request: httpx.Response(500, json={"error": "boom"})
-        ),
-    )
-    run(settings.save(AiSettingsUpdate(translationEngine="libretranslate")))
-    run(settings.save(AiSettingsUpdate(libretranslateUrl="http://127.0.0.1:5000")))
-    states = run(service.generate("e1.itest", [SegmentInput(index=0, text="First.")]))
-    assert states[0].status == "failed"
-    assert states[0].failure_type == "upstream_error"
-
-
-def test_libretranslate_requires_url(tmp_path):
-    service, settings, _ = _make_service(tmp_path)
-    run(settings.save(AiSettingsUpdate(translationEngine="libretranslate")))
-    with pytest.raises(SegmentTranslationUnavailable):
-        run(service.generate("e1.itest", [SegmentInput(index=0, text="First.")]))
-
-
-def test_libretranslate_sends_optional_api_key(tmp_path):
-    seen = {}
-
-    def responder(request: httpx.Request) -> httpx.Response:
-        seen["body"] = json.loads(request.content.decode())
-        return httpx.Response(200, json={"translatedText": ["你好。"]})
-
-    service, settings, secrets = _make_service(
-        tmp_path, transport=_libre_transport(responder)
-    )
-    run(settings.save(AiSettingsUpdate(translationEngine="libretranslate")))
-    run(settings.save(AiSettingsUpdate(libretranslateUrl="http://127.0.0.1:5000")))
-    secrets.set(LIBRETRANSLATE_KEY_NAME, "itest-key-12345")
-    run(service.generate("e1.itest", [SegmentInput(index=0, text="Hello.")]))
-    assert seen["body"]["api_key"] == "itest-key-12345"
-    # the key never appears in cache identity inputs
-    row_hash = block_hash(normalize_block_text("Hello."))
-    assert "itest-key-12345" not in row_hash
 
 
 def test_prompt_version_scopes_cache(tmp_path):
@@ -582,7 +493,6 @@ def test_segment_generate_resolves_translation_profile_single_source(tmp_path):
         db=db,
         settings_store=PurposeAiSettings(settings, profiles, "translation"),
         provider_factory=factory,
-        secrets=secrets,
     )
     blocks = [SegmentInput(index=7, text="List item text.")]
     states = run(service.generate("e1.fix141", blocks))
@@ -633,7 +543,6 @@ def test_block_structure_round_trip_list_table_quote(tmp_path):
         db=db,
         settings_store=settings,
         provider_factory=None,  # replaced below
-        secrets=SecretsStore(tmp_path / "secrets.json"),
     )
 
     async def factory(base_url, model):

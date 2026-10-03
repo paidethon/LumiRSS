@@ -1,106 +1,74 @@
-/** NEW-301..310 组合入口 — API 来源、Webhook 与自动接入工具台。
-
-- 两级情境展开（MASTER §6）：折叠态只渲染开关、零查询；展开后才
-  挂载对应子面板（子面板自己的 useEffect 才发请求）；
-- 来源选择器为全组共享（选择器本身不产生请求）；
-- 挂载点：设置 → API 来源（ApiSourcesSection 底部）。 */
+/** 接入中心聚合入口 — Webhook 收件、外发事件订阅、投递回执与死信重试。
+ *
+ - 只在存在 ≥1 个 API 来源时由设置页挂出（聚合入口，默认折叠）；
+ - 折叠态零请求：本组件仅在展开后挂载，各面板的请求在其自身
+   useEffect 里发起；
+ - 死信重试只在存在失败记录时显示（挂载时探测一次，空则整节隐藏）；
+ - 来源级工具（字段映射 / 分页试抓 / 变更预警 / 配额）已移入
+   ApiSourceDetailDrawer 的字段 / 抓取 tab；
+ - new301 内部文件命名保留；用户可见文案一律自然语言。 */
 
 import { useCallback, useEffect, useState, type ReactElement } from 'react'
-import {
-  listSourceRefs,
-  type ApiSourceRef,
-} from '../../api/new301'
+import { new305Api, type DeadLetterRow } from '../../api/new301'
 import { errorText, StatusLine } from '../new271/panel'
 import { SubSection } from '../new271/panel'
 import {
-  IntakeQuotaPanel,
-  MappingSamplePanel,
-  PaginationProbePanel,
-  SchemaPausePanel,
-  type SourceScope,
-  SourcePicker,
-} from './parts-a'
-import {
   DeadLetterPanel,
-  SigningKeyAdminPanel,
   WebhookInboxPanel,
 } from './parts-b'
 import {
   DeliveryReceiptPanel,
   OutSubscriptionPanel,
-  TransferBundlePanel,
 } from './parts-c'
 
-export function New301IntakeTools(): ReactElement {
-  const [sources, setSources] = useState<ApiSourceRef[]>([])
-  const [selected, setSelected] = useState('')
+/** 死信重试：只有存在失败记录才显示整节（先探测，空则不渲染）。 */
+function DeadLetterSection(): ReactElement | null {
+  const [letters, setLetters] = useState<DeadLetterRow[] | null>(null)
   const [error, setError] = useState('')
 
-  const refresh = useCallback(async () => {
+  const probe = useCallback(async () => {
+    setError('')
     try {
-      const listed = await listSourceRefs()
-      setSources(listed.items)
-      setSelected((current) =>
-        current !== '' ? current : first_uuid_of(listed) ?? '',
-      )
+      const listed = await new305Api.list()
+      setLetters(listed.items)
     } catch (err) {
       setError(errorText(err))
+      setLetters([])
     }
   }, [])
 
   useEffect(() => {
-    void refresh()
-  }, [refresh])
+    void probe()
+  }, [probe])
 
-  const chosen: SourceScope = {
-    source: sources.find((one) => one.uuid === selected),
-    sources: sources,
-    onPick: setSelected,
-    idPrefix: 'new301-shared',
+  if (error !== '') {
+    return <StatusLine tone="error">死信探测失败：{error}</StatusLine>
   }
-
+  if (letters === null || letters.length === 0) return null
   return (
-    <div data-new301-tools="" className="mt-2 flex flex-col gap-2 border-t border-[var(--lumi-border)] pt-3">
-      <p className="text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-        接入工具台：字段映射样本、分页试抓、写暂停确认、每日配额、
-        Webhook 收发与配置转移（子区折叠时不发任何请求）。
-      </p>
-      {error !== '' && <StatusLine tone="error">{error}</StatusLine>}
-      <SourcePicker {...chosen} />
-      <SubSection id="new301-mapping" label="NEW-301 字段映射编辑器（JSON 样本试映射）">
-        <MappingSamplePanel sourceUuid={selected || undefined} />
-      </SubSection>
-      <SubSection id="new302-probe" label="NEW-302 分页试抓台（受限页数验证契约）">
-        <PaginationProbePanel sourceUuid={selected || undefined} />
-      </SubSection>
-      <SubSection id="new306-pause" label="NEW-306 抓取变更预警（写暂停确认）">
-        <SchemaPausePanel sourceUuid={selected || undefined} />
-      </SubSection>
-      <SubSection id="new307-quota" label="NEW-307 自动接入来源配额（每日条目数）">
-        <IntakeQuotaPanel sourceUuid={selected || undefined} />
-      </SubSection>
-      <SubSection id="new303-inbox" label="NEW-303 Webhook 接收收件箱（先审阅再入库）">
-        <WebhookInboxPanel />
-      </SubSection>
-      <SubSection id="new305-dead" label="NEW-305 接入死信处理页（脱敏重放）">
-        <DeadLetterPanel />
-      </SubSection>
-      <SubSection id="new304-keys" label="NEW-304 签名钥轮换（管理员）">
-        <SigningKeyAdminPanel />
-      </SubSection>
-      <SubSection id="new308-out" label="NEW-308 外发 Webhook 事件订阅">
-        <OutSubscriptionPanel />
-      </SubSection>
-      <SubSection id="new309-receipts" label="NEW-309 Webhook 投递回执">
-        <DeliveryReceiptPanel />
-      </SubSection>
-      <SubSection id="new310-transfer" label="NEW-310 接入配置转移包（无秘密）">
-        <TransferBundlePanel />
-      </SubSection>
-    </div>
+    <SubSection id="intake-dead-letter" label="死信重试（脱敏重放）">
+      <DeadLetterPanel />
+    </SubSection>
   )
 }
 
-function first_uuid_of(listed: { items: ApiSourceRef[] }): string | undefined {
-  return listed.items.length > 0 ? listed.items[0].uuid : undefined
+export function IntakeCenter(): ReactElement {
+  return (
+    <div data-intake-center="" className="mt-2 flex flex-col gap-2">
+      <p className="text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+        接入中心：Webhook 收件与外发投递的审阅、订阅与回执；
+        来源级设置在各来源的详情里。
+      </p>
+      <SubSection id="intake-webhook-inbox" label="Webhook 收件箱（先审阅再入库）">
+        <WebhookInboxPanel />
+      </SubSection>
+      <SubSection id="intake-out-subscription" label="外发事件订阅">
+        <OutSubscriptionPanel />
+      </SubSection>
+      <SubSection id="intake-delivery-receipt" label="投递回执">
+        <DeliveryReceiptPanel />
+      </SubSection>
+      <DeadLetterSection />
+    </div>
+  )
 }

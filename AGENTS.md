@@ -26,7 +26,10 @@ Feature status lives in one place: [docs/ROADMAP.md](docs/ROADMAP.md)
 agent prompts or docs — link instead.
 
 NOT implemented — do not describe these as existing: web clipping browser
-extension, Obsidian write-back (the vault stays read-only), MCP surface,
+extension, free-form Obsidian write-back (the read-side vault projection
+stays read-only; the only thing Lumi ever writes is the separately
+mounted, hard-bounded server-side export directory — see docs/decisions/
+0007-obsidian-server-side-export.md), MCP surface,
 PWA push / background sync, multi-tenant tenancy.
 LumiRSS is small-scale by design (the operator's own deployment, members
 they personally invited); public-internet hardening and multi-tenancy

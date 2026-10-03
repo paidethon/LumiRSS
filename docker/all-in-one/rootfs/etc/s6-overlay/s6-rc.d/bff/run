@@ -1,0 +1,12 @@
+#!/command/with-contenv sh
+# bff (longrun) — FastAPI BFF. uid model parity with the lumirss-bff
+# container: uid 10001 with group 33 (www-data) attached, so it can traverse
+# FreshRSS data/users/<user>/ (0770 root:www-data) read-only for backup.
+# --no-access-log (Gate A P2): the default access log would write tokened
+# /feeds/* URLs to stdout — same reason as the standalone image.
+# Loopback bind: only Caddy (this container) and FreshRSS (this container)
+# talk to the BFF; nothing on any docker network needs 0.0.0.0 here.
+set -eu
+cd /app
+exec s6-setuidgid lumirss uvicorn lumirss.main:app \
+    --host 127.0.0.1 --port 8000 --no-access-log

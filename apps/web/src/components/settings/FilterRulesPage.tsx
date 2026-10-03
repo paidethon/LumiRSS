@@ -110,9 +110,8 @@ export function FilterRulesSection() {
           )}
         </p>
         <p className="mt-1 text-[11px] leading-relaxed text-[var(--lumi-text-tertiary)]">
-          当前为显示层过滤（列表渲染时隐藏匹配项，不改动 FreshRSS 数据）；
-          BFF 读取层过滤将在 0013 订阅中心提供。设置页仅添加全局规则，
-          来源级规则从订阅管理侧入口添加（0013）。
+          当前为显示层过滤：列表渲染时隐藏匹配项，不改动 FreshRSS 数据。
+          这里仅添加全局规则，来源级规则在订阅管理中添加。
         </p>
       </div>
 

@@ -101,8 +101,13 @@ API 不提供搜索）；RSS 腿（`search_entries`）与库腿（`search_librar
   （webhook/IMAP → 清洗 → FreshRSS 订阅 + 摘要）、收件箱推送来源
   （bearer webhook，(source, guid) 幂等）；`GET /api/v1/sources` 是
   只读统一注册表。
-- **Obsidian 投影**：只读挂载 vault → SQLite 投影 → 渲染；路径不出
-  vault 根，绝不写回。
+- **Obsidian 投影与受限导出**：读面是只读挂载 vault → SQLite 投影 →
+  渲染；读面路径不出 vault 根，代码里不存在针对 `/vault` 的写调用。
+  服务端导出（R07，独立 opt-in overlay）是唯一的写面：只写独立挂载的
+  导出根（容器内 `/vault-export`，通常指向 vault 内一个 Lumi 专用子树）
+  下 `<子目录>/<账户id>/` 的新文件——原子创建绝不覆盖、content-id 幂等、
+  每日写入配额、每次写入前重做路径防御。见
+  [ADR 0007](../decisions/0007-obsidian-server-side-export.md)。
 - **RAG**：sqlite-vec + fastembed 低内存语义索引，显式启用、空闲卸载。
 - **Agent 工作台**：只读工具真实执行；写工具一律 row-bound 审批记录
   （10 分钟过期），批准才执行。
@@ -134,7 +139,7 @@ Shiki 高亮）→ DOMPurify.sanitize（最终安全边界）→ ArticleContent
 - 凭据：上游凭据只在服务端 env；AI/WebDAV/RSSHub 机密只在 `secrets.json`（0600）；所有机密接口 write-only，不回显、不入日志/Git/备份；成员账号互不可见对方数据（每用户库 + 服务端身份路由，见 [ADR 0005](../decisions/0005-invite-multi-account.md)）。
 - 控制面：BFF 无 Docker socket；恢复需 preview + 显式输入 `RESTORE`，执行前自动安全备份；备份归档有成员数/总量/单文件上限。
 - 网络：WebDAV http 仅允许回环/私网、重定向限同源；来源发现/预览有 scheme/host 校验、有界 body/超时；OPML 导入上限 2 MiB。
-- 边缘：Caddy 安全响应头（nosniff / DENY / no-referrer / HSTS / Permissions-Policy / CSP，内联脚本 sha256 pin）；可选 basic auth（两个 auth 变量同设或同不设）；可选 BFF internal token（`X-Lumi-Token`）；BFF 全局请求体 4 MiB 上限与控制面路由限流（429 + `Retry-After`）。
+- 边缘：Caddy 安全响应头（nosniff / DENY / no-referrer / HSTS / Permissions-Policy / CSP，内联脚本 sha256 pin）；认证以应用会话为主（session 模式：BFF 登录 + 长效 Cookie，Caddy 不再加代理层 basic auth），basic auth 为兼容可选项（两个 auth 变量同设或同不设）；可选 BFF internal token（`X-Lumi-Token`）；BFF 全局请求体 4 MiB 上限与控制面路由限流（429 + `Retry-After`）。
 - 多设备设置冲突：PATCH 可带 `baseRevision`，不一致返回 409 `app_settings_conflict`（Web 自动 re-hydrate 重试一次）。
 
 ## Deployment topology
@@ -153,6 +158,9 @@ Internet / private access
 镜像 tag、端口隔离、构建溯源（`LUMIRSS_BUILD_COMMIT`）见
 [../reference/configuration.md](../reference/configuration.md)；操作手册
 （deploy/update/rollback）见 [../how-to/deploy.md](../how-to/deploy.md)。
+可选的单容器拓扑（Caddy + BFF + FreshRSS + RSSHub 同一容器，s6-overlay
+监管、同名卷、uid 模型不变）见 [ADR 0008](../decisions/0008-single-container-topology.md)
+与 deploy.md「单容器拓扑」。
 
 ## Failure isolation and observability
 
@@ -163,7 +171,7 @@ Internet / private access
 
 ## Deferred（不得描述为已存在）
 
-- Web clipping 浏览器扩展；Obsidian 写回（vault 永远只读）；MCP surface；
+- Web clipping 浏览器扩展；Obsidian 自由写回（写面仅限 [ADR 0007](../decisions/0007-obsidian-server-side-export.md) 的受限导出目录，vault 读面投影永远只读）；MCP surface；
 - 多租户形态 / 公共互联网硬化（邀请制小规模多账户与可选公开注册——
   默认关闭——已实现，见 [ADR 0006](../decisions/0006-public-registration.md)
   与 [how-to/invite-members.md](../how-to/invite-members.md)；打开注册
@@ -174,5 +182,5 @@ Internet / private access
 
 ## Related
 
-- ADR：[0001 FreshRSS owns RSS state](../decisions/0001-freshrss-owns-rss-state.md) / Web 只与 BFF 通信 / 不建 RSS 影子库 / [0005 邀请制多账户与控制库·每用户库](../decisions/0005-invite-multi-account.md) / [0006 可选公开注册](../decisions/0006-public-registration.md)（均 Accepted，0005 部分被 0006 取代）；Build vs Reuse 边界：[reuse-policy.md](reuse-policy.md)。
+- ADR：[0001 FreshRSS owns RSS state](../decisions/0001-freshrss-owns-rss-state.md) / Web 只与 BFF 通信 / 不建 RSS 影子库 / [0005 邀请制多账户与控制库·每用户库](../decisions/0005-invite-multi-account.md) / [0006 可选公开注册](../decisions/0006-public-registration.md)（均 Accepted，0005 部分被 0006 取代）/ [0007 Obsidian 服务端受限导出](../decisions/0007-obsidian-server-side-export.md) / [0008 单容器拓扑](../decisions/0008-single-container-topology.md)；Build vs Reuse 边界：[reuse-policy.md](reuse-policy.md)。
 - API 家族清单以生成的 OpenAPI schema 为准（`cd services/bff && uv run python scripts/export_openapi.py`，Web 侧 `pnpm api:check` 有 drift 门禁）。

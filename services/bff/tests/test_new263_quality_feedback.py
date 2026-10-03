@@ -25,7 +25,6 @@ from lumirss.new263_quality_feedback import (
     queue,
     resolve_feedback,
 )
-from lumirss.secrets_store import SecretsStore
 from lumirss.storage import Database
 from new2xx_ab import ab_env, seed_entry  # noqa: F401,F811
 
@@ -64,7 +63,6 @@ def _make(tmp_path, calls):
         db=db,
         settings_store=settings,
         provider_factory=_echo_provider(calls),
-        secrets=SecretsStore(tmp_path / "secrets.json"),
     )
     return service, db
 
@@ -150,7 +148,6 @@ def _seed_api(client, tmp_path, entry_key: str, calls: dict | None = None):
             settings_store=settings,
             provider_factory=_echo_provider(calls if calls is not None else {"n": 0}),
             # FIX-386：密钥文件随 per-test tmp_path，禁止固定 /tmp 路径。
-            secrets=SecretsStore(tmp_path / f"n263-{entry_key}-secrets.json"),
         )
         blocks = [
             SegmentInput(index=0, text="Source zero."),
@@ -229,7 +226,6 @@ def test_ab_feedback_queue_isolated(ab_env):  # noqa: F811
                     db=db,
                     settings_store=settings,
                     provider_factory=_echo_provider({"n": 0}),
-                    secrets=lumi_app.state.secrets_store,
                 )
                 await service.generate(
                     encode_entry_ref("e1.new263ab"),

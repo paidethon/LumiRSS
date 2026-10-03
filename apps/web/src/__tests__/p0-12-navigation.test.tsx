@@ -4,7 +4,7 @@
  *   requestOpenSettings(category) → 设置壳打开并直达对应分类
  *   （桌面 Modal 与移动全屏页共用同一深链契约）；
  * - 未知分类 id 安全降级为通用分类；
- * - Settings「工作区」分类不再自称占位（Agent 工作台/工作区已上线）；
+ * - 设置「工作区」分类直达真实设置面（R17；失败如实报错）；
  * - PlannedItem（RAG 索引）以真 disabled button 呈现并诚实说明。
  */
 
@@ -89,16 +89,16 @@ describe('设置深链（P0-12）', () => {
   })
 })
 
-describe('设置「工作区」分类文案诚实性（P0-12）', () => {
-  it('不再自称占位/规划中；如实指向 Agent 工作台与工作区入口', () => {
+describe('设置「工作区」分类（P0-12 → R17 真实设置面）', () => {
+  it('分类页直达工作区设置；API 失败时诚实报错（不再是指路卡）', async () => {
     stubFetchErrorEnvelope()
     const openCategory: SettingsOpenDetail = { category: 'workspace', seq: 1 }
     render(withQueryClient(<MobileSettingsScreen open onClose={vi.fn()} openCategory={openCategory} />))
-    expect(screen.getByText('知识工作台')).toBeInTheDocument()
-    expect(screen.getByText('已上线')).toBeInTheDocument()
-    expect(screen.getByText(/Agent 工作台/)).toBeInTheDocument()
-    expect(screen.queryByText(/本页为占位/)).toBeNull()
-    expect(screen.queryByText('规划中')).toBeNull()
+    expect(screen.getByRole('heading', { level: 2, name: '工作区' })).toBeInTheDocument()
+    // R17：真实设置面（获取失败如实显示，绝不渲染假开关或旧指路卡）
+    await screen.findByText(/获取工作区失败/)
+    expect(screen.queryByText('知识工作台')).toBeNull()
+    expect(screen.queryByText('已上线')).toBeNull()
     vi.unstubAllGlobals()
   })
 })

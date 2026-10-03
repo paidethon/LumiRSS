@@ -9,6 +9,7 @@
 - apps/web/package.json ``version``
 - docker-compose.prod.yml 镜像默认 tag（FIX-184：正式安装钉发布版本，
   绝不默认可变 latest）
+- docker-compose.allinone.yml 单容器栈镜像默认 tag（同规则）
 
 任何不一致 → 非零退出。CI 与 ``pnpm api:check`` 同类门禁；升级版本时
 只改 VERSION 与各处（脚本保证不漂移）。
@@ -70,13 +71,27 @@ def main() -> int:
             "(both services must default to the VERSION release tag, never 'latest')"
         )
 
+    # All-in-one single-container stack follows the same rule: its only
+    # service must default to the VERSION release tag.
+    aio_compose = (ROOT / "docker-compose.allinone.yml").read_text(encoding="utf-8")
+    aio_defaults = re.findall(
+        r"lumirss-allinone:\$\{LUMIRSS_IMAGE_TAG:-([^}]+)\}", aio_compose
+    )
+    if aio_defaults != [expected]:
+        failures.append(
+            "docker-compose.allinone.yml image default "
+            f"{aio_defaults!r} != ['{expected}'] "
+            "(the single-container stack must default to the VERSION release "
+            "tag, never 'latest')"
+        )
+
     if failures:
         for failure in failures:
             print(f"FAIL {failure}")
         return 1
     print(
         f"version ok: {expected} (VERSION, bff pyproject, bff config, "
-        "web package.json, compose image default)"
+        "web package.json, prod + allinone compose image defaults)"
     )
     return 0
 

@@ -28,6 +28,7 @@ import {
   type ReaderReadingMode,
 } from '../store/app-settings'
 import {
+  READER_FONT_OPTIONS,
   READER_SIZE_PRESETS,
   matchReaderSizePreset,
 } from '../lib/reader-style'
@@ -234,12 +235,7 @@ function AaControls({
                 readerFontUrl: null,
               })
             }
-            options={[
-              { value: 'system', label: '默认' },
-              { value: 'sans', label: '无衬线' },
-              { value: 'serif', label: '衬线' },
-              { value: 'mono', label: '等宽' },
-            ]}
+            options={[...READER_FONT_OPTIONS]}
           />
         </div>
         <div className={ROW}>

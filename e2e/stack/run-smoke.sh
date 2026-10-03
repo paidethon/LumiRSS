@@ -147,8 +147,11 @@ smoke_snapshot_offline() { # 5. snapshot 生产镜像创建 + 离线内容
   created=$(api POST /api/v1/library/snapshots -H 'content-type: application/json' \
     -d '{"url": "http://fixtures/malicious.html"}')
   echo "$created" | grep -q '"uuid"' || { fail "05 snapshot creation in prod image"; return; }
-  $COMPOSE exec -T bff grep -rq '受控剪藏正文' /data/library/assets
-  check "05 snapshot artifact exists in the production image data dir" $?
+  # 0067 多账户：快照资产在每用户库 <data>/users/<uid>/library/assets
+  # （本检查沿用 /data/library 共享路径，自迁移起恒 FAIL 却被总结线
+  # 吞掉——见文件尾退出码修复）。
+  $COMPOSE exec -T bff sh -c "grep -rq '受控剪藏正文' /data/users/*/library/assets"
+  check "05 snapshot artifact exists in the owner's per-user data dir" $?
 }
 
 smoke_feeds_via_caddy() { # 6. 浏览器经 Caddy 访问 /feeds/*

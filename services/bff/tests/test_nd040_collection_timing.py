@@ -23,7 +23,7 @@ def _install_adapter(feed_urls: list[str]):
     async def _list():
         return subs
 
-    app.state.freshrss_adapter = types.SimpleNamespace(list_subscriptions=_list)
+    app.state.freshrss_control_adapter = types.SimpleNamespace(list_subscriptions=_list)
 
 
 def test_three_timestamps_with_distinct_times(client):

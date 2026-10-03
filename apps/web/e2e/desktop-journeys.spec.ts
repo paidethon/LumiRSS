@@ -213,15 +213,26 @@ test('J4 — AI：mock provider 设置 / key 不回显 / 摘要生成与失败�
   const mockReply = page.getByText(/MOCK-AI-REPLY/).first()
   const generateButton = reader.getByRole('button', { name: 'AI 摘要' })
   const retryButton = reader.getByRole('button', { name: '重试' })
-  await expect(generateButton.or(retryButton).or(mockReply).first()).toBeVisible({
-    timeout: 15_000,
-  })
+  // R23：AI 未运行时摘要只占一行紧凑入口，点击=展开（含输入预览/范围
+  // 选择），真正的生成按钮在展开后的卡内——journey 按两层语义适配。
+  const compactEntry = reader.locator('[data-lumi-summary-compact]')
+  await expect(
+    mockReply.or(compactEntry).or(generateButton).or(retryButton).first(),
+  ).toBeVisible({ timeout: 15_000 })
   if (await mockReply.isVisible().catch(() => false)) {
     // 已缓存命中，不再触发 provider
-  } else if (await generateButton.isVisible().catch(() => false)) {
-    await generateButton.click()
   } else {
-    await retryButton.click()
+    if (await compactEntry.isVisible().catch(() => false)) {
+      await compactEntry.click()
+      await expect(generateButton.or(retryButton).first()).toBeVisible({
+        timeout: 15_000,
+      })
+    }
+    if (await generateButton.isVisible().catch(() => false)) {
+      await generateButton.click()
+    } else {
+      await retryButton.click()
+    }
   }
   await expect(mockReply).toBeVisible({ timeout: 30_000 })
 })
@@ -249,44 +260,27 @@ test('J7 — 本地翻译：headless 下 unsupported 诚实提示（不假装可
   await page.goto('/')
   await openSettingsCategory(page, '翻译')
   const dialog = visibleDialog(page)
-  await dialog.getByLabel('翻译引擎').selectOption('browser')
-  await dialog.getByRole('button', { name: /保存/ }).click()
-  // 该分区保存为静默式（无成功文案）：轮询服务端状态翻转后再重载，
-  // 不猜 PATCH 完成时刻（固定 sleep 在慢机上会与保存竞速）。
-  await expect
-    .poll(
-      async () =>
-        (await (
-          await page.request.get('/api/v1/settings/ai')
-        ).json()).translationEngine,
-      { timeout: 5_000 },
-    )
-    .toBe('browser')
-  await page.reload()
-  await openSettingsCategory(page, '翻译')
-  await expect(visibleDialog(page).getByLabel('翻译引擎')).toHaveValue('browser')
-  await page.keyboard.press('Escape')
-
-  // headless 环境探测器：window.Translator 必须真的不存在，否则断言无意义
+  // R21 重写：浏览器翻译只在运行时真支持才可选——headless Chromium 无
+  // Translator API，选项禁用且如实标注；不再提供「选了再诚实失败」的
+  // 路径（选择不会生效的说明就位）。
+  // headless 环境探测器先行：新 Chromium 可能真的暴露 Translator API，
+  // 此时浏览器翻译诚实可选——断言随能力分支，不假装环境。
   const hasTranslator = await page.evaluate(
     () => typeof (window as { Translator?: unknown }).Translator !== 'undefined',
   )
-  test.skip(hasTranslator, '环境暴露了 Translator API，不在本测试覆盖范围')
-
-  // 打开文章 → 切双语 = 显式翻译请求 → 诚实 unsupported 文案
-  const entryTitle = page.getByRole('button', { name: /文章 beta/ }).first()
-  await entryTitle.click()
-  const reader = page.locator('article').first()
-  await reader.getByRole('radiogroup', { name: '语言视图' }).waitFor()
-  await reader.getByRole('radio', { name: /双语/ }).click()
-  await expect(page.getByText(/此浏览器不支持本地翻译/)).toBeVisible({
-    timeout: 15_000,
-  })
-
-  // 还原引擎为 ai（串行 journey 的卫生）
-  await openSettingsCategory(page, '翻译')
-  await visibleDialog(page).getByLabel('翻译引擎').selectOption('ai')
-  await visibleDialog(page).getByRole('button', { name: /保存/ }).click()
+  const browserOption = dialog
+    .getByLabel('翻译方式')
+    .locator('option[value="browser"]')
+  if (!hasTranslator) {
+    await expect(browserOption).toBeDisabled()
+    expect((await browserOption.textContent()) ?? '').toContain('此浏览器不支持')
+    await expect(dialog.getByText(/请改用 AI 翻译|由 AI 提供者执行/)).toBeVisible()
+    await expect(dialog.getByLabel('翻译方式')).toHaveValue('ai')
+  } else {
+    test.skip(true, '环境暴露了 Translator API，不在本测试覆盖范围')
+  }
+  // 恢复确认：引擎停留在 ai（串行 journey 的卫生，本用例未改动设置）
+  await expect(dialog.getByLabel('翻译方式')).toHaveValue('ai')
   await page.keyboard.press('Escape')
 })
 

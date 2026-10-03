@@ -8,9 +8,7 @@
 """
 
 import asyncio
-import json
 
-import httpx
 import pytest
 
 from lumirss.ai_settings import AiSettingsStore, AiSettingsUpdate
@@ -23,7 +21,6 @@ from lumirss.glossary_hits import (
     apply_term_protection,
     term_protection_report,
 )
-from lumirss.secrets_store import SecretsStore
 from lumirss.storage import Database
 
 run = asyncio.run
@@ -37,24 +34,16 @@ def _allow_fixture_endpoints(monkeypatch: pytest.MonkeyPatch):
 def _marker(index: int) -> str:
     return f"<<<BLOCK {index}>>>"
 
-def _make_service(tmp_path, provider_factory=None, transport=None):
+def _make_service(tmp_path, provider_factory=None):
     db = Database(tmp_path / "lumi.sqlite")
     run(db.migrate())
     settings = AiSettingsStore(db)
-    secrets = SecretsStore(tmp_path / "secrets.json")
-    httpx_factory = (
-        (lambda: httpx.AsyncClient(transport=transport))
-        if transport is not None
-        else None
-    )
     service = SegmentTranslationService(
         db=db,
         settings_store=settings,
         provider_factory=provider_factory or _never_provider,
-        secrets=secrets,
-        httpx_client_factory=httpx_factory,
     )
-    return service, settings, secrets, db
+    return service, settings, db
 
 
 async def _never_provider(base_url, model):
@@ -125,7 +114,7 @@ def test_generate_restores_protected_term_and_reports(tmp_path):
 
         return FakeProvider()
 
-    service, settings, _secrets, db = _make_service(tmp_path, factory)
+    service, settings, db = _make_service(tmp_path, factory)
     run(_configure_ai(settings))
     run(GlossaryStore(db).create("GraphQL", "一种查询语言", None, True))
 
@@ -158,7 +147,7 @@ def test_generate_reports_unprotected_when_term_translated_away(tmp_path):
 
         return FakeProvider()
 
-    service, settings, _secrets, db = _make_service(tmp_path, factory)
+    service, settings, db = _make_service(tmp_path, factory)
     run(_configure_ai(settings))
     run(GlossaryStore(db).create("GraphQL", "一种查询语言", None, True))
 
@@ -182,7 +171,7 @@ def test_lookup_recomputes_protection_report_for_cached_rows(tmp_path):
 
         return FakeProvider()
 
-    service, settings, _secrets, db = _make_service(tmp_path, factory)
+    service, settings, db = _make_service(tmp_path, factory)
     run(_configure_ai(settings))
     run(GlossaryStore(db).create("GraphQL", "一种查询语言", None, True))
     blocks = [SegmentInput(index=0, text="GraphQL rocks.")]
@@ -205,7 +194,7 @@ def test_unprotected_terms_never_enter_report(tmp_path):
 
         return FakeProvider()
 
-    service, settings, _secrets, db = _make_service(tmp_path, factory)
+    service, settings, db = _make_service(tmp_path, factory)
     run(_configure_ai(settings))
     run(GlossaryStore(db).create("GraphQL", "一种查询语言", None, False))
 
@@ -231,7 +220,7 @@ def test_protect_flip_invalidates_segment_cache(tmp_path):
 
         return FakeProvider()
 
-    service, settings, _secrets, db = _make_service(tmp_path, factory)
+    service, settings, db = _make_service(tmp_path, factory)
     run(_configure_ai(settings))
     store = GlossaryStore(db)
     term = run(store.create("GraphQL", "一种查询语言", None, False))
@@ -263,30 +252,3 @@ def test_protect_flip_invalidates_segment_cache(tmp_path):
         {"term": "GraphQL", "protected": True, "count": 1, "restored": True},
     )
 
-
-# ---------------------------------------------------------------------------
-# LibreTranslate 引擎同样做保留后处理
-# ---------------------------------------------------------------------------
-
-
-def test_libretranslate_protect_restore(tmp_path):
-    def responder(request):
-        payload = json.loads(request.read())
-        sources = payload["q"]
-        translated = [text.replace("GraphQL", "graphql") for text in sources]
-        return httpx.Response(200, json={"translatedText": translated})
-
-    service, settings, _secrets, db = _make_service(
-        tmp_path, transport=httpx.MockTransport(responder)
-    )
-    run(settings.save(AiSettingsUpdate(translationEngine="libretranslate")))
-    run(settings.save(AiSettingsUpdate(libretranslateUrl="http://127.0.0.1:5000")))
-    run(GlossaryStore(db).create("GraphQL", "一种查询语言", None, True))
-
-    blocks = [SegmentInput(index=0, text="GraphQL is a query language.")]
-    states = run(service.generate("e1.n083f", blocks))
-    assert states[0].status == "success"
-    assert states[0].translated_text == "GraphQL is a query language."
-    assert states[0].protected_terms == (
-        {"term": "GraphQL", "protected": True, "count": 1, "restored": True},
-    )

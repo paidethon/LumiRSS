@@ -39,7 +39,9 @@ TASK_KIND_LABELS: dict[str, str] = {
 }
 
 # 本组自有消费点（main.py 循环在 tick 前检查 paused_task_kinds）。
-LOOP_ENFORCED_KINDS = frozenset({"search_sync", "obsidian_scan"})
+# R24：rag_index 的 tick 检查落在 rag_incremental_loop（rag.py——main.py
+# 只负责一行 lifespan 挂载），语义同为 loop 实时生效。
+LOOP_ENFORCED_KINDS = frozenset({"search_sync", "obsidian_scan", "rag_index"})
 
 MAX_REASON = 200
 MAX_IMPACT = 500

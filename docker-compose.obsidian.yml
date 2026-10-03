@@ -16,6 +16,13 @@
 # The mount is READ-ONLY by contract: Lumi never writes back to the
 # vault (ADR 0004 — the vault is the source of truth, Lumi keeps only a
 # rebuildable projection).
+#
+# R07 导出（服务端受限写入）是独立的 OPT-IN overlay：它需要一个可写
+# 挂载（LUMIRSS_OBSIDIAN_EXPORT_HOST_DIR → /vault-export，rw），见
+# docker-compose.obsidian-export.yml。两个挂载可以指向同一个 host
+# vault 的不同子树（例如 …/MyVault 与 …/MyVault/LumiRSS），投影扫描
+# 永远只读 /vault，导出永远只写 /vault-export 下的
+# <subdir>/<user_id>/ 新文件——互不越界。
 
 services:
   bff:

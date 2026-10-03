@@ -36,10 +36,11 @@ describe('Sidebar 信息架构（AC12/V8）', () => {
     render(withProviders(<Sidebar />))
   }
 
-  it('两组结构：信息来源 + 工作区', () => {
+  it('分组结构：阅读 + 内容来源 + 工具（R3 导航注册表组序）', () => {
     renderSidebar()
-    expect(screen.getByRole('group', { name: '信息来源' })).toBeInTheDocument()
-    expect(screen.getByRole('group', { name: '工作区' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: '阅读' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: '内容来源' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: '工具' })).toBeInTheDocument()
   })
 
   it('可用项：全部信息源+未读 / RSS 订阅（主区域=scope，chevron=tree）/ 稍后读 / 收藏 / 设置（品牌区）', () => {

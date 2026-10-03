@@ -109,6 +109,8 @@ beforeEach(() => {
 describe('F025 AI 输入预览与范围控制', () => {
   it('F025: 预览显示标题/正文字符数与诚实口径；范围选择进入请求', async () => {
     renderCard()
+    // R23 紧凑化迁移：未生成时先展开一行紧凑入口，输入预览在完整卡片内
+    fireEvent.click(await screen.findByRole('button', { name: 'AI 摘要' }))
     expect(await screen.findByText(/标题 4 字符 · 正文 \d+ 字符/)).toBeInTheDocument()
     expect(screen.getByText(/token 计数以 Provider 为准/)).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('输入范围'), { target: { value: '4000' } })
@@ -120,6 +122,8 @@ describe('F025 AI 输入预览与范围控制', () => {
 
   it('F025: 默认不点生成 → 零请求发出', async () => {
     renderCard()
+    // R23 紧凑化迁移：展开后才见输入预览；不点生成仍零 POST
+    fireEvent.click(await screen.findByRole('button', { name: 'AI 摘要' }))
     await screen.findByText(/token 计数以 Provider 为准/)
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0)
   })

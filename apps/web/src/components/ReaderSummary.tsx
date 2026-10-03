@@ -327,6 +327,63 @@ export default function ReaderSummary({
   const generate = useGenerateSummaryScopedMutation(entryRef)
   const generating = generate.isPending
   const [scope, setScope] = useState<number | undefined>(undefined)
+  // R23 紧凑化：AI 未运行（未生成/未配置/失败/生成中/状态加载中）时
+  // 只占一行紧凑入口，正文优先不被 AI 卡片占据；已生成（success 含
+  // 缓存命中）直接展开正文摘要。入口点击 = 展开（按用户操作展开，
+  // 绝不自动撑开）；key=entryRef 重挂载后回到紧凑行。
+  const [expanded, setExpanded] = useState(false)
+  const summaryState = summary.isPending || summary.isError ? undefined : summary.data
+  /** AI 未运行（含生成中/失败/未配置/状态不可得）→ 允许紧凑行；
+   * 已生成（success）恒渲染完整卡片，不折叠。 */
+  const aiNotRun =
+    summary.isPending ||
+    summary.isError ||
+    (summaryState !== undefined && summaryState.status !== 'success')
+
+  // 紧凑行的状态副语（一句话；成功态不进这里——直接渲染完整卡片）。
+  let compactHint: string
+  if (summary.isPending) {
+    compactHint = '状态加载中'
+  } else if (summary.isError) {
+    const type = (summary.error as ApiError | null)?.type
+    compactHint = type === 'ai_not_configured' ? '未配置' : type === 'ai_content_unavailable' ? '无法摘要' : '状态不可用'
+  } else {
+    const state = summaryState
+    compactHint =
+      state === undefined
+        ? '状态加载中'
+        : state.status === 'not_generated'
+          ? '未生成'
+          : state.status === 'generating'
+            ? '生成中…'
+            : '上次未完成'
+  }
+
+  if (!expanded && aiNotRun) {
+    return (
+      <div className="mt-5">
+        <button
+          type="button"
+          data-lumi-summary-compact=""
+          aria-expanded={expanded}
+          aria-label="AI 摘要"
+          onClick={() => setExpanded(true)}
+          className={cx(
+            'flex min-h-8 max-lg:min-h-11 w-full items-center gap-1.5 rounded-[var(--lumi-radius-md)] px-1 py-1 text-left text-sm',
+            'text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)]',
+            'hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)]',
+            'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+          )}
+        >
+          <Sparkles aria-hidden className="size-3.5 shrink-0 text-[var(--lumi-accent-text)]" />
+          <span className="font-medium text-[var(--lumi-text-primary)]">摘要</span>
+          <span className="text-xs text-[var(--lumi-text-tertiary)]">{compactHint}</span>
+          <span className="flex-1" />
+          <ChevronDown aria-hidden className="size-4 shrink-0 text-[var(--lumi-text-tertiary)]" />
+        </button>
+      </div>
+    )
+  }
 
   if (summary.isPending) {
     return (

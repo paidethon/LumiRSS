@@ -32,8 +32,12 @@ from lumirss.gpt_digest import (
     DigestMaterialEmpty,
     DigestOutputInvalid,
     DigestPolishFailed,
+    DigestRunCancelled,
     build_preview,
     consume_pool_for_issue,
+    digest_run,
+    digest_run_cancel,
+    digest_run_status,
     generate_issue,
 )
 from lumirss.gpt_digest_configs import GptDigestConfigStore
@@ -53,6 +57,7 @@ from lumirss.models import (
     GptDigestIssueRevise,
     GptDigestLeftoverItem,
     GptDigestPreview,
+    GptDigestRunStatus,
     GptDigestSettings,
     GptDigestSettingsUpdate,
     GptDigestTrimPreview,
@@ -245,6 +250,31 @@ async def generate_config_digest(
     )
 
 
+@router.get(
+    "/api/v1/gpt-digest/configs/{config_id}/run-status",
+    response_model=GptDigestRunStatus,
+)
+async def get_gpt_digest_run_status(
+    config_id: StrictId, request: Request
+) -> GptDigestRunStatus:
+    """生成运行状态（手动与调度共用同一注册表）。``stage`` 是服务端
+    真实阶段（select/summarize/polish/generate），绝不虚构进度。"""
+    handle = digest_run_status(config_id)
+    if handle is None:
+        return GptDigestRunStatus(running=False)
+    return GptDigestRunStatus(
+        running=True, stage=handle.stage, startedAt=handle.started_at
+    )
+
+
+@router.post("/api/v1/gpt-digest/configs/{config_id}/cancel")
+async def cancel_gpt_digest_run(config_id: StrictId, request: Request) -> Response:
+    """请求取消进行中的生成（协作式：在阶段边界生效——绝不半写期号；
+    已花费的模型调用不退回）。无进行中运行 → 200 cancelled=false（幂等）。"""
+    cancelled = digest_run_cancel(config_id)
+    return JSONResponse(status_code=200, content={"cancelled": cancelled})
+
+
 async def _generate_for_missing_date(
     request: Request,
     config_id: StrictId,
@@ -291,6 +321,16 @@ async def _generate_for_missing_date(
             status_code=422,
             content={"error": {"type": "invalid_request", "message": "不能补刊未来日期。"}},
         )
+    if digest_run_status(config_id) is not None:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": {
+                    "type": "already_running",
+                    "message": "该配置已有一轮生成在进行；请等待完成或先取消。",
+                }
+            },
+        )
     adapter = request.app.state.freshrss_adapter
     if adapter is None:
         return JSONResponse(
@@ -303,17 +343,29 @@ async def _generate_for_missing_date(
 
     ai_settings, provider_factory = _build_ai_deps(request.app.state)
     try:
-        row = await generate_issue(
-            _config_store(request),
-            _issues(request),
-            config=config,
-            adapter=adapter,
-            ai_settings=ai_settings,
-            provider_factory=provider_factory,
-            db=request.app.state.db,
-            now=target_end,
-            draft=True,
-            put_back=put_back,
+        with digest_run(config_id) as run:
+            row = await generate_issue(
+                _config_store(request),
+                _issues(request),
+                config=config,
+                adapter=adapter,
+                ai_settings=ai_settings,
+                provider_factory=provider_factory,
+                db=request.app.state.db,
+                now=target_end,
+                draft=True,
+                put_back=put_back,
+                run=run,
+            )
+    except DigestRunCancelled:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": {
+                    "type": "cancelled",
+                    "message": "已停止本次生成；未写入任何期号。",
+                }
+            },
         )
     except DigestMaterialEmpty as exc:
         return JSONResponse(
@@ -1112,6 +1164,19 @@ async def _generate_for_config(
             status_code=404,
             content={"error": {"type": "not_found", "message": "配置不存在。"}},
         )
+    config_id = int(config["id"])
+    # 并发守卫先于依赖检查：同配置双跑只会双花模型调用，且让取消语义
+    # 变得含混——一轮配置只允许一个进行中的生成。
+    if digest_run_status(config_id) is not None:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": {
+                    "type": "already_running",
+                    "message": "该配置已有一轮生成在进行；请等待完成或先取消。",
+                }
+            },
+        )
     adapter = request.app.state.freshrss_adapter
     if adapter is None:
         return JSONResponse(
@@ -1130,17 +1195,29 @@ async def _generate_for_config(
     # generate_issue 走历史语义。
     plan = plan_run(config, datetime.now().astimezone(), catchup_minutes=None)
     try:
-        row = await generate_issue(
-            _config_store(request),
-            _issues(request),
-            config=config,
-            adapter=adapter,
-            ai_settings=ai_settings,
-            provider_factory=provider_factory,
-            db=request.app.state.db,
-            plan=plan,
-            draft=True,
-            put_back=put_back,
+        with digest_run(config_id) as run:
+            row = await generate_issue(
+                _config_store(request),
+                _issues(request),
+                config=config,
+                adapter=adapter,
+                ai_settings=ai_settings,
+                provider_factory=provider_factory,
+                db=request.app.state.db,
+                plan=plan,
+                draft=True,
+                put_back=put_back,
+                run=run,
+            )
+    except DigestRunCancelled:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": {
+                    "type": "cancelled",
+                    "message": "已停止本次生成；未写入任何期号。",
+                }
+            },
         )
     except DigestMaterialEmpty as exc:
         return JSONResponse(
@@ -1242,7 +1319,8 @@ async def serve_gpt_digest_atom(spec: str, request: Request) -> Response:
     updated = max((str(row["updated_at"]) for row in rows), default=config["createdAt"])
     atom = render_feed(
         feed_id=f"urn:lumirss:gptdigest:{config_id}",
-        title=f"LumiRSS GPT 日报 · {config['name']}",
+        # 用户可见文案：AI 日报（历史名 GPT 日报；路由/token 保持兼容）。
+        title=f"LumiRSS AI 日报 · {config['name']}",
         updated=updated,
         self_href=atom_base() + f"/feeds/gpt-digest/{spec}.atom",
         entries=entries,

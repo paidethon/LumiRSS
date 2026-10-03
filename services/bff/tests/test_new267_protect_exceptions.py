@@ -30,7 +30,6 @@ from lumirss.new267_protect_exceptions import (
     register,
     remove,
 )
-from lumirss.secrets_store import SecretsStore
 from lumirss.storage import Database
 from new2xx_ab import ab_env, seed_entry  # noqa: F401
 
@@ -75,7 +74,6 @@ def _make(tmp_path, calls):
         db=db,
         settings_store=settings,
         provider_factory=_provider_translating_literals(calls),
-        secrets=SecretsStore(tmp_path / "secrets.json"),
     )
     return service, db
 

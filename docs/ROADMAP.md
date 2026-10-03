@@ -10,7 +10,22 @@ MVP（0000–0020）、Phase 2 knowledge workbench、Phase 2 recovery 返工、
 2.0.0 邀请制多账户（[ADR 0005](decisions/0005-invite-multi-account.md)，
 运营者操作见 [how-to/invite-members.md](how-to/invite-members.md)）与
 默认关闭的可选公开注册（[ADR 0006](decisions/0006-public-registration.md)）
-均已合入 main 并部署生产。本文不再维护分批功能清单——版本化的用户视角
+均已合入 main 并部署生产。
+
+3.0.0 重建批次在此之上小步补齐（用户视角明细见仓库根 `CHANGELOG.md`）：
+来源中心九类汇总（`GET /api/v1/sources/summary`）、Obsidian 服务端受限
+导出（[ADR 0007](decisions/0007-obsidian-server-side-export.md)）、AI 日报
+（原 GPT 日报）、邮件简报内容页（逐次发送账本 + 重试只补未送达）、RAG
+索引内容页、OPML 导入 RSSHub 自动匹配、内置 8 款开源阅读字体（R08）、
+49 项用户偏好上云（R25）、单容器拓扑
+（[ADR 0008](decisions/0008-single-container-topology.md)，`./lumirss
+deploy --single` / `migrate-single` / `rollback-single`）；认证以应用
+会话为主，basic auth 转为兼容可选项（生产实例切换执行中）。机读功能
+清单见 [feature-manifest.json](feature-manifest.json)；FreshRSS/RSSHub
+上游全功能对照见
+[public/reference/upstream-feature-matrix.html](public/reference/upstream-feature-matrix.html)。
+
+本文不再维护分批功能清单——版本化的用户视角
 变化见仓库根 `CHANGELOG.md`（2.0.1 各批次按其发布节奏逐条补入），逐项
 任务状态以机读台账
 [implementation-status.json](implementation-status.json) 为准（`pnpm

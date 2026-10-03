@@ -25,7 +25,6 @@ from lumirss.new268_quote_exports import (
     export_quote,
     list_exports,
 )
-from lumirss.secrets_store import SecretsStore
 from lumirss.storage import Database
 from new2xx_ab import ab_env, seed_entry  # noqa: F401
 
@@ -75,7 +74,6 @@ def _make(tmp_path, calls):
         db=db,
         settings_store=settings,
         provider_factory=_echo_provider(calls),
-        secrets=SecretsStore(tmp_path / "secrets.json"),
     )
     return service, db
 
@@ -169,7 +167,6 @@ def _seed_api(client, tmp_path, entry_key: str, calls: dict):
             db=db,
             settings_store=settings,
             provider_factory=_echo_provider(calls),
-            secrets=SecretsStore(str(tmp_path / f"{entry_key}-secrets.json")),
         )
         await service.generate(ref, [SegmentInput(index=0, text="Source zero.")])
         lumi_app.state.segment_translation_service = service

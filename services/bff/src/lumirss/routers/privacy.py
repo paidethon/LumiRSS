@@ -1,11 +1,11 @@
 """N181 逐来源数据外发清单 — 从「当前真实配置」推导的数据外发说明。
 
 只读聚合，每个能力一条：configured 取自当前用户库 / 秘密库的真实配置
-（AI 摘要/翻译/对话 → ai.base_url；LibreTranslate → translation 引擎与
-URL；WebDAV → backup.webdav；IMAP → secrets 里的 mail_imap；远程图片 →
-便携设置 readerImageMode；TTS → purpose=tts provider 解析，FIX-148：
-已配置 → 朗读文本外发该主机（服务端合成，N098/N099 导出链路）；
-未配置 → 浏览器本机语音合成，文本不出设备）。
+（AI 摘要/翻译/对话 → ai.base_url；WebDAV → backup.webdav；IMAP →
+secrets 里的 mail_imap；远程图片 → 便携设置 readerImageMode；TTS →
+purpose=tts provider 解析，FIX-148：已配置 → 朗读文本外发该主机
+（服务端合成，N098/N099 导出链路）；未配置 → 浏览器本机语音合成，
+文本不出设备；自托管 LibreTranslate 能力已随 R21 移除）。
 
 - providerHost 只含主机名：绝不返回路径、用户名、端口语义之外的任何
   信息，更不含密钥值（负向测试覆盖）；
@@ -90,7 +90,6 @@ def build_data_flows(
     ai_host = _hostname_of(ai.get("ai.base_url", ""))
     ai_ready = bool(ai_host) and bool(ai.get("ai.model", "").strip())
     engine = ai.get("translation.engine", "ai")
-    libretranslate_host = _hostname_of(ai.get("translation.libretranslate_url", ""))
 
     reader_image_mode = portable.get("readerImageMode", "all")
     webdav_host = _hostname_of(str(webdav_doc.get("serverUrl", "")))
@@ -107,10 +106,6 @@ def build_data_flows(
         _configured_flow("ai-chat", ai_host, ["对话消息", "引用的条目内容"])
         if ai_ready
         else _unconfigured_flow("ai-chat"),
-        # LibreTranslate（自建 MT，经 BFF 调用）
-        _configured_flow("libretranslate", libretranslate_host, ["待翻译文本"])
-        if engine == "libretranslate" and libretranslate_host
-        else _unconfigured_flow("libretranslate"),
         # TTS（FIX-148 能力区分，诚实口径）：
         # - purpose=tts provider 已配置 → 服务端合成（N098/N099 导出链路
         #   机械），朗读文本外发给该 provider（仅披露主机名）；

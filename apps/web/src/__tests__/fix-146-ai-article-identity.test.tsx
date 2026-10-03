@@ -77,7 +77,8 @@ describe('FIX-146 AI 摘要按文章身份隔离', () => {
         />
       </QueryClientProvider>,
     )
-    // A 就绪后点「AI 摘要」→ 生成挂起
+    // A 就绪后展开紧凑入口（R23），点「AI 摘要」→ 生成挂起
+    fireEvent.click(await screen.findByRole('button', { name: 'AI 摘要' }))
     fireEvent.click(await screen.findByRole('button', { name: 'AI 摘要' }))
     expect(await screen.findByText('正在生成…')).toBeInTheDocument()
 

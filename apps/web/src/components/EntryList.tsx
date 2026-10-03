@@ -1,20 +1,14 @@
-import { Inbox, Clock, Loader2, PanelLeft, PanelLeftClose, Unplug, CheckSquare, ChevronDown, X, RotateCw } from 'lucide-react'
+import { ArrowDownUp, Check, Inbox, Clock, Link2, Loader2, PanelLeft, PanelLeftClose, Unplug, CheckSquare, ChevronDown, Wrench, X, RotateCw } from 'lucide-react'
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 // Bundle guard：对话框/工具面板非列表首屏必需——懒加载分包。
 const AskBatchDialog = lazy(() => import('./AskBatchDialog').then((m) => ({ default: m.AskBatchDialog })))
-const ReadingBudgetPanel = lazy(() => import('./ReadingBudgetPanel').then((m) => ({ default: m.ReadingBudgetPanel })))
-const ReadingQueuePanel = lazy(() => import('./ReadingQueuePanel').then((m) => ({ default: m.ReadingQueuePanel })))
-const BacklogPanel = lazy(() => import('./BacklogPanel').then((m) => ({ default: m.BacklogPanel })))
+// R11 方案 B：六个阅读工具（预算/今日必读/路径/决策/积压/共读）统一收进
+// 唯一工具抽屉；抽屉自身也按需分包（顶栏「工具」首次点击才拉 chunk）。
+const ToolsDrawer = lazy(() => import('./ToolsDrawer'))
 // E1: N037 断更恢复横幅 + N047 收录撞车提示 toast
 const RecoveryBanner = lazy(() => import('./RecoveryBanner').then((m) => ({ default: m.RecoveryBanner })))
 const DuplicateWarningToast = lazy(() => import('./DuplicateWarningToast').then((m) => ({ default: m.DuplicateWarningToast })))
-// E1: N050 阅读路径面板（设备本地；tools 行入口）
-const ReadingPathPanel = lazy(() => import('./ReadingPathPanel').then((m) => ({ default: m.ReadingPathPanel })))
-// NEW-221..230 阅读决策面板（队列/计划的用户决策工具区）
-const ReadingDecisionsPanel = lazy(() => import('./new2xx/ReadingDecisionsPanel').then((m) => ({ default: m.ReadingDecisionsPanel })))
-// NEW-331..340 共读空间协作工具（显式共享面；空间/成员/会议/审批/分歧等）
-const SpaceGovernanceTools = lazy(() => import('./new331/SpaceGovernanceTools').then((m) => ({ default: m.SpaceGovernanceTools })))
 const CompareRead = lazy(() => import('./CompareRead'))
 import {
   useEntries,
@@ -38,6 +32,7 @@ import EntryRow from './EntryRow'
 import { Button } from './ui/Button'
 import { EmptyState } from './ui/EmptyState'
 import { IconButton } from './ui/IconButton'
+import { Menu } from './ui/Menu'
 import { UnifiedContentCard } from './UnifiedContentCard'
 import { Skeleton } from './ui/Skeleton'
 import { cx } from './ui/cx'
@@ -499,17 +494,13 @@ function EntriesList() {
   const scope = useReaderUi((s) => s.scope)
   const section = useReaderUi((s) => s.section)
   const selectedEntryRef = useReaderUi((s) => s.selectedEntryRef)
-  // F014：阅读预算（会话内临时清单）
+  // 顶栏未读 segmented：全部/未读复用既有 view 语义（同 MobileHeader）。
+  const selectView = useReaderUi((s) => s.selectView)
+  // F014：阅读预算（会话内临时清单）候选仍由列表计算，装填进工具抽屉。
   const selectEntry = useReaderUi((s) => s.selectEntry)
-  const [budgetOpen, setBudgetOpen] = useState(false)
-  // N041：今日必读面板开关（服务端持久化队列）
-  const [queueOpen, setQueueOpen] = useState(false)
-  // F024：积压整理面板开关
-  const [backlogOpen, setBacklogOpen] = useState(false)
-  // NEW-221..230：阅读决策面板开关（分时段/依赖/工作量/预约/向导/容量/章节/便签/约定/主题）
-  const [decisionsOpen, setDecisionsOpen] = useState(false)
-  // NEW-331..340：共读空间协作工具开关（空间/成员/会议/审批/通知/讨论/分歧/摘要/附件/模板/归档）
-  const [spaceToolsOpen, setSpaceToolsOpen] = useState(false)
+  // R11 方案 B：六工具统一收进唯一抽屉（阅读预算/今日必读/阅读路径/
+  // 阅读决策/积压整理/共读空间）；顶栏「工具」按钮打开。
+  const [toolsOpen, setToolsOpen] = useState(false)
   const openEntry = (entryRef: string) => selectEntry(entryRef)
   // F016：对照阅读（恰好选中 2 条时可用；关闭恢复原列表）
   const [compareRefs, setCompareRefs] = useState<[string, string] | null>(null)
@@ -555,8 +546,7 @@ function EntriesList() {
   }, [data, filterEnabled, filterRules, timelineOrder])
 
   // E1: N050 设备本地阅读路径记录（打开条目即记；仅 localStorage，
-  // 不发任何请求——服务端没有任何承载端点）。
-  const [readingPathOpen, setReadingPathOpen] = useState(false)
+  // 不发任何请求——服务端没有任何承载端点）。查看面板在工具抽屉（阅读组）。
   const selectedEntry = useMemo(
     () => entries.find((item) => item.entryRef === selectedEntryRef) ?? null,
     [entries, selectedEntryRef],
@@ -964,64 +954,10 @@ function EntriesList() {
     <div className="flex h-full min-h-0 flex-col">
       <ListHeader view={view} loadedCount={entries.length} />
 
-      {/* F014：阅读预算面板（列表工具区；会话内临时清单） */}
-      {budgetOpen && (
-        <Suspense fallback={null}>
-          <ReadingBudgetPanel
-          candidates={budgetCandidates}
-          onOpenEntry={(entryRef) => {
-            openEntry(entryRef)
-          }}
-            onClose={() => setBudgetOpen(false)}
-          />
-        </Suspense>
-      )}
-      {/* N041：今日必读面板（服务端持久化队列 + 分段/冻结/间隔） */}
-      {queueOpen && (
-        <Suspense fallback={null}>
-          <ReadingQueuePanel
-            currentItemRef={selectedEntryRef}
-            onOpenEntry={(entryRef) => {
-              openEntry(entryRef)
-            }}
-            onClose={() => setQueueOpen(false)}
-          />
-        </Suspense>
-      )}
-      {/* F024：积压整理面板（预览→确认→执行；保护项服务端强制） */}
-      {backlogOpen && (
-        <Suspense fallback={null}>
-          <BacklogPanel onClose={() => setBacklogOpen(false)} />
-        </Suspense>
-      )}
       {/* N037：断更恢复横幅（有待处理窗口才渲染） */}
       <Suspense fallback={null}>
         <RecoveryBanner />
       </Suspense>
-      {/* NEW-221..230：阅读决策面板（队列/计划的用户决策工具区） */}
-      {decisionsOpen && (
-        <Suspense fallback={null}>
-          <ReadingDecisionsPanel onClose={() => setDecisionsOpen(false)} />
-        </Suspense>
-      )}
-      {/* NEW-331..340：共读空间协作工具（情境展开组合面板；折叠零请求） */}
-      {spaceToolsOpen && (
-        <Suspense fallback={null}>
-          <SpaceGovernanceTools />
-        </Suspense>
-      )}
-      {/* N050：阅读路径面板（设备本地；恢复/停用/清空） */}
-      {readingPathOpen && (
-        <Suspense fallback={null}>
-          <ReadingPathPanel
-            onOpenEntry={(entryRef) => {
-              openEntry(entryRef)
-            }}
-            onClose={() => setReadingPathOpen(false)}
-          />
-        </Suspense>
-      )}
-      {/* N047：收录撞车提示（定位/仍要加入；非阻断） */}
       <Suspense fallback={null}>
         <DuplicateWarningToast
           onLocate={(entryRef) => {
@@ -1029,104 +965,58 @@ function EntriesList() {
           }}
         />
       </Suspense>
-      {/* F06 排序切换 + F07 多选入口（列表工具行；移动端也有——列表头
-          仅桌面显示，这里是其唯一工具入口） */}
-      <div className="flex flex-wrap items-center justify-end gap-1.5 border-b border-[var(--lumi-separator)] px-4 py-1">
-        {/* F014：阅读预算入口 */}
-        <button
-          type="button"
-          aria-pressed={budgetOpen}
-          onClick={() => setBudgetOpen((v) => !v)}
-          className={cx(
-            'mr-auto flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] px-2.5 py-1 text-xs transition-colors duration-[var(--lumi-motion-fast)]',
-            'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
-            budgetOpen
-              ? 'bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
-              : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-secondary)]',
-          )}
+      {/* R11 方案 B 顶栏：未读 segmented（全部/未读，复用 view 语义）+
+          视图紧凑选单（时间线排序/聚合同链/选择）+ 工具按钮（唯一抽屉）。
+          图2 九入口归属：阅读预算/今日必读/阅读路径/阅读决策→抽屉阅读组；
+          积压整理→抽屉整理组；共读空间→抽屉共读组；最新优先/聚合同链/
+          选择→视图选单（九个入口一个不删）。 */}
+      <div
+        data-testid="list-toolbar"
+        className="flex flex-wrap items-center gap-1.5 border-b border-[var(--lumi-separator)] px-4 py-1"
+      >
+        <div
+          role="group"
+          aria-label="视图过滤"
+          className="flex items-center gap-0.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-0.5"
         >
-          阅读预算
-        </button>
-        {/* N041：今日必读入口 */}
-        <button
-          type="button"
-          aria-pressed={queueOpen}
-          onClick={() => setQueueOpen((v) => !v)}
-          className={cx(
-            'mr-auto flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] px-2.5 py-1 text-xs transition-colors duration-[var(--lumi-motion-fast)]',
-            'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
-            queueOpen
-              ? 'bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
-              : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-secondary)]',
-          )}
-        >
-          今日必读
-        </button>
-        {/* N050：阅读路径入口（设备本地） */}
-        <button
-          type="button"
-          aria-pressed={readingPathOpen}
-          onClick={() => setReadingPathOpen((v) => !v)}
-          className={cx(
-            'mr-auto flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] px-2.5 py-1 text-xs transition-colors duration-[var(--lumi-motion-fast)]',
-            'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
-            readingPathOpen
-              ? 'bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
-              : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-secondary)]',
-          )}
-        >
-          阅读路径
-        </button>
-        {/* F024：积压整理入口 */}
-        <button
-          type="button"
-          aria-pressed={backlogOpen}
-          onClick={() => setBacklogOpen((v) => !v)}
-          className={cx(
-            'mr-auto flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] px-2.5 py-1 text-xs transition-colors duration-[var(--lumi-motion-fast)]',
-            'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
-            backlogOpen
-              ? 'bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
-              : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-secondary)]',
-          )}
-        >
-          积压整理
-        </button>
-        {/* NEW-221..230：阅读决策入口（队列/计划的用户决策工具区） */}
-        <button
-          type="button"
-          aria-pressed={decisionsOpen}
-          onClick={() => setDecisionsOpen((v) => !v)}
-          className={cx(
-            'mr-auto flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] px-2.5 py-1 text-xs transition-colors duration-[var(--lumi-motion-fast)]',
-            'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
-            decisionsOpen
-              ? 'bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
-              : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-secondary)]',
-          )}
-        >
-          阅读决策
-        </button>
-        {/* NEW-331..340：共读空间协作入口（显式共享面；私人阅读状态不进入空间视图） */}
-        <button
-          type="button"
-          aria-pressed={spaceToolsOpen}
-          onClick={() => setSpaceToolsOpen((v) => !v)}
-          className={cx(
-            'mr-auto flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] px-2.5 py-1 text-xs transition-colors duration-[var(--lumi-motion-fast)]',
-            'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
-            spaceToolsOpen
-              ? 'bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
-              : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-secondary)]',
-          )}
-        >
-          共读空间
-        </button>
+          <button
+            type="button"
+            aria-pressed={view === 'all'}
+            onClick={() => {
+              if (view !== 'all') selectView('all')
+            }}
+            className={cx(
+              'flex min-h-8 max-lg:min-h-11 items-center rounded-[var(--lumi-radius-sm)] px-2.5 text-xs transition-colors duration-[var(--lumi-motion-fast)]',
+              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+              view === 'all'
+                ? 'bg-[var(--lumi-surface-selected)] font-medium text-[var(--lumi-text-primary)]'
+                : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-secondary)]',
+            )}
+          >
+            全部
+          </button>
+          <button
+            type="button"
+            aria-pressed={view === 'unread'}
+            onClick={() => {
+              if (view !== 'unread') selectView('unread')
+            }}
+            className={cx(
+              'flex min-h-8 max-lg:min-h-11 items-center rounded-[var(--lumi-radius-sm)] px-2.5 text-xs transition-colors duration-[var(--lumi-motion-fast)]',
+              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+              view === 'unread'
+                ? 'bg-[var(--lumi-surface-selected)] font-medium text-[var(--lumi-text-primary)]'
+                : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-secondary)]',
+            )}
+          >
+            未读
+          </button>
+        </div>
         {timelineOrder === 'oldest' && (
           <p
             role="note"
             data-testid="timeline-order-note"
-            className="mr-auto text-xs text-[var(--lumi-text-tertiary)]"
+            className="min-w-0 truncate text-xs text-[var(--lumi-text-tertiary)]"
           >
             最早优先（当前已加载范围内排序，服务端分页仍为最新优先）
           </p>
@@ -1135,49 +1025,12 @@ function EntriesList() {
           <p
             role="note"
             data-testid="timeline-order-received-note"
-            className="mr-auto text-xs text-[var(--lumi-text-tertiary)]"
+            className="min-w-0 truncate text-xs text-[var(--lumi-text-tertiary)]"
           >
             按接收时间（服务端排序；页边界仍由上游分页决定）
           </p>
         )}
-        <button
-          type="button"
-          data-testid="timeline-order-toggle"
-          aria-pressed={timelineOrder !== 'newest'}
-          title="切换时间线排序（最新优先 / 最早优先 / 按接收时间）"
-          onClick={cycleTimelineOrder}
-          className={cx(
-            'rounded-[var(--lumi-radius-full)] px-2.5 py-1 text-xs transition-colors duration-[var(--lumi-motion-fast)]',
-            'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
-            timelineOrder === 'oldest'
-              ? 'bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
-              : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-secondary)]',
-          )}
-        >
-          {timelineOrder === 'newest'
-            ? '最新优先'
-            : timelineOrder === 'oldest'
-              ? '最早优先'
-              : '按接收时间'}
-        </button>
-        {/* F018：同链聚合开关 */}
-        <button
-          type="button"
-          aria-pressed={aggregateOn}
-          onClick={() => {
-            setAggregateOn((v) => !v)
-            setExpandedGroups(new Set())
-          }}
-          className={cx(
-            'flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] px-2.5 py-1 text-xs transition-colors duration-[var(--lumi-motion-fast)]',
-            'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
-            aggregateOn
-              ? 'bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
-              : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-secondary)]',
-          )}
-        >
-          聚合同链
-        </button>
+        <span className="flex-1" />
         {selectMode && selectedRefs.size === 2 && (
           <button
             type="button"
@@ -1186,7 +1039,7 @@ function EntriesList() {
               const [a, b] = [...selectedRefs]
               if (a !== undefined && b !== undefined) setCompareRefs([a, b])
             }}
-            className="flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] px-2.5 py-0.5 text-xs text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+            className="flex min-h-8 max-lg:min-h-11 items-center gap-1 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] px-2.5 py-0.5 text-xs text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
           >
             对照阅读
           </button>
@@ -1196,24 +1049,107 @@ function EntriesList() {
             type="button"
             onClick={exitSelectMode}
             aria-label="退出多选"
-            className="flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] px-2.5 py-0.5 text-xs text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+            className="flex min-h-8 max-lg:min-h-11 items-center gap-1 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] px-2.5 py-0.5 text-xs text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
           >
             <X aria-hidden className="size-3.5" />
             退出选择
           </button>
-        ) : (
-          <button
-            type="button"
-            data-testid="enter-select-mode"
-            aria-label="选择文章（进入多选）"
-            onClick={() => setSelectMode(true)}
-            className="flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] px-2.5 py-0.5 text-xs text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
-          >
-            <CheckSquare aria-hidden className="size-3.5" />
-            选择
-          </button>
-        )}
+        ) : null}
+        <Menu
+          trigger={({ triggerProps }) => (
+            <button
+              {...triggerProps}
+              type="button"
+              className={cx(
+                'flex min-h-8 max-lg:min-h-11 items-center gap-1 rounded-[var(--lumi-radius-md)] px-2 text-xs transition-colors duration-[var(--lumi-motion-fast)]',
+                'text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)]',
+                'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+              )}
+            >
+              视图
+              <ChevronDown aria-hidden className="size-3.5" />
+            </button>
+          )}
+          items={[
+            {
+              key: 'timeline-order',
+              content: (
+                <span className="flex items-center gap-2" data-testid="timeline-order-toggle">
+                  <ArrowDownUp aria-hidden className="size-4" />
+                  时间线排序：
+                  {timelineOrder === 'newest'
+                    ? '最新优先'
+                    : timelineOrder === 'oldest'
+                      ? '最早优先'
+                      : '按接收时间'}
+                </span>
+              ),
+            },
+            {
+              key: 'aggregate',
+              content: (
+                <span className="flex items-center gap-2">
+                  <Link2 aria-hidden className="size-4" />
+                  聚合同链
+                  {aggregateOn && <Check aria-hidden className="size-3.5 text-[var(--lumi-accent-text)]" />}
+                </span>
+              ),
+            },
+            {
+              key: 'select',
+              content: (
+                <span className="flex items-center gap-2" data-testid="enter-select-mode">
+                  <CheckSquare aria-hidden className="size-4" />
+                  选择文章
+                </span>
+              ),
+            },
+          ]}
+          onSelect={(key) => {
+            if (key === 'timeline-order') {
+              cycleTimelineOrder()
+              return
+            }
+            if (key === 'aggregate') {
+              setAggregateOn((v) => !v)
+              setExpandedGroups(new Set())
+              return
+            }
+            if (key === 'select') {
+              setSelectMode(true)
+            }
+          }}
+        />
+        <button
+          type="button"
+          data-testid="tools-drawer-open"
+          aria-haspopup="dialog"
+          aria-expanded={toolsOpen}
+          onClick={() => setToolsOpen(true)}
+          className={cx(
+            'flex min-h-8 max-lg:min-h-11 items-center gap-1 rounded-[var(--lumi-radius-md)] px-2 text-xs transition-colors duration-[var(--lumi-motion-fast)]',
+            'text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)]',
+            'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+          )}
+        >
+          <Wrench aria-hidden className="size-3.5" />
+          工具
+        </button>
       </div>
+
+      {/* R11 方案 B：唯一工具抽屉（DetailDrawer；内部 阅读/整理/共读 分组
+          tab + 面板内二级视图）。仅打开时挂载——六面板 chunk 随首开拉取。 */}
+      {toolsOpen && (
+        <Suspense fallback={null}>
+          <ToolsDrawer
+            open
+            onClose={() => setToolsOpen(false)}
+            budgetCandidates={budgetCandidates}
+            currentItemRef={selectedEntryRef}
+            onOpenEntry={openEntry}
+          />
+        </Suspense>
+      )}
 
       {/* 0011 修正补充：折叠态隐藏列表内容（窄栏仅 header） */}
       <div

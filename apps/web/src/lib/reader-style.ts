@@ -87,13 +87,25 @@ export function readerTextPalette(bgHex: string): ReaderTextPalette {
       }
 }
 
-// ---- 字体族四档（OrigRead reader-font 栈原值） ----
+// ---- 字体族四档（OrigRead reader-font 栈原值）+ R08 内置字体 ----
 
 export const READER_FONT_STACKS: Record<ReaderFontFamily, string> = {
   system: 'inherit',
   sans: 'ui-sans-serif, system-ui, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif',
   serif: 'ui-serif, Georgia, "Times New Roman", "Songti SC", SimSun, serif',
   mono: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "LXGW WenKai Mono", monospace',
+  // R08 内置字体：自托管 WOFF2 分片在前，系统同族字体兜底（分片未
+  // 加载或字形未覆盖时回退，不空屏）。样式表见 styles/fonts.css。
+  'source-han-sans':
+    '"Source Han Sans SC", "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif',
+  'source-han-serif':
+    '"Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", SimSun, serif',
+  'lxgw-wenkai': '"LXGW WenKai", "Kaiti SC", STKaiti, KaiTi, serif',
+  'zhuque-fangsong': '"Zhuque Fangsong", FangSong, "STFangsong", serif',
+  'zcool-xiaowei': '"ZCOOL XiaoWei", "Songti SC", SimSun, serif',
+  'ma-shan-zheng': '"Ma Shan Zheng", "Kaiti SC", STKaiti, KaiTi, cursive',
+  'source-sans-3': '"Source Sans 3", ui-sans-serif, system-ui, sans-serif',
+  'source-serif-4': '"Source Serif 4", ui-serif, Georgia, "Times New Roman", serif',
 }
 
 export const READER_FONT_LABELS: Record<ReaderFontFamily, string> = {
@@ -101,7 +113,104 @@ export const READER_FONT_LABELS: Record<ReaderFontFamily, string> = {
   sans: '无衬线',
   serif: '衬线',
   mono: '等宽',
+  'source-han-sans': '思源黑体',
+  'source-han-serif': '思源宋体',
+  'lxgw-wenkai': '霞鹜文楷',
+  'zhuque-fangsong': '朱雀仿宋',
+  'zcool-xiaowei': '站酷小薇',
+  'ma-shan-zheng': '马善政楷',
+  'source-sans-3': 'Source Sans',
+  'source-serif-4': 'Source Serif',
 }
+
+/** 系统四档 + 内置字体的完整选项（Select 消费；与 LABELS 同序同源）。 */
+export const READER_FONT_OPTIONS: readonly { value: ReaderFontFamily; label: string }[] = (
+  Object.keys(READER_FONT_LABELS) as ReaderFontFamily[]
+).map((value) => ({ value, label: READER_FONT_LABELS[value] }))
+
+/** R08 内置字体（不含系统四档）：选择器/预览消费。
+ * sample 须全部命中常用分片（GB2312 第一区），预览只拉一个 CJK 分片。 */
+export interface BuiltinReaderFont {
+  id: Exclude<
+    ReaderFontFamily,
+    'system' | 'sans' | 'serif' | 'mono'
+  >
+  /** @font-face family（styles/fonts.css 注册名） */
+  cssFamily: string
+  label: string
+  /** 一句话定位（设置项描述） */
+  hint: string
+  /** 样张（用自身字体渲染） */
+  sample: string
+  kind: 'body' | 'display'
+}
+
+export const BUILTIN_READER_FONTS: readonly BuiltinReaderFont[] = [
+  {
+    id: 'source-han-sans',
+    cssFamily: 'Source Han Sans SC',
+    label: '思源黑体',
+    hint: '现代黑体，屏幕默认之选',
+    sample: '春眠不觉晓处处闻啼鸟',
+    kind: 'body',
+  },
+  {
+    id: 'source-han-serif',
+    cssFamily: 'Source Han Serif SC',
+    label: '思源宋体',
+    hint: '衬线宋体，长文纸感',
+    sample: '春眠不觉晓处处闻啼鸟',
+    kind: 'body',
+  },
+  {
+    id: 'lxgw-wenkai',
+    cssFamily: 'LXGW WenKai',
+    label: '霞鹜文楷',
+    hint: '楷体书写感，温和易读',
+    sample: '春眠不觉晓处处闻啼鸟',
+    kind: 'body',
+  },
+  {
+    id: 'zhuque-fangsong',
+    cssFamily: 'Zhuque Fangsong',
+    label: '朱雀仿宋',
+    hint: '仿宋排印，古典清瘦',
+    sample: '春眠不觉晓处处闻啼鸟',
+    kind: 'body',
+  },
+  {
+    id: 'zcool-xiaowei',
+    cssFamily: 'ZCOOL XiaoWei',
+    label: '站酷小薇',
+    hint: '标题展示体，点缀使用',
+    sample: '春眠不觉晓处处闻啼鸟',
+    kind: 'display',
+  },
+  {
+    id: 'ma-shan-zheng',
+    cssFamily: 'Ma Shan Zheng',
+    label: '马善政楷',
+    hint: '手写楷体，非默认推荐',
+    sample: '春眠不觉晓处处闻啼鸟',
+    kind: 'display',
+  },
+  {
+    id: 'source-sans-3',
+    cssFamily: 'Source Sans 3',
+    label: 'Source Sans',
+    hint: '英文无衬线',
+    sample: 'Aa Bb 123 — Reading',
+    kind: 'body',
+  },
+  {
+    id: 'source-serif-4',
+    cssFamily: 'Source Serif 4',
+    label: 'Source Serif',
+    hint: '英文衬线，长文阅读',
+    sample: 'Aa Bb 123 — Reading',
+    kind: 'body',
+  },
+]
 
 /** UI 字体四档（同源栈）。 */
 export const UI_FONT_STACKS: Record<UiFontStack, string> = {

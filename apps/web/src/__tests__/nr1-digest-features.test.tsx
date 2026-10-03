@@ -112,6 +112,12 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+/** R13：配置面分两层——发布日/阶段模型/栏目/聚合等收进折叠的高级区，
+ * 断言前先展开。 */
+async function openAdvanced() {
+  fireEvent.click(await screen.findByRole('button', { name: '高级设置' }))
+}
+
 describe('N171 发布日与周末时点', () => {
   it('发布日可切换并进入保存载荷（含周末独立时点）', async () => {
     const fetchMock = renderSection((url, init) => {
@@ -120,10 +126,11 @@ describe('N171 发布日与周末时点', () => {
       }
       return baseHandler(url, init)
     })
+    await openAdvanced()
     const saturday = await screen.findByLabelText('发布日 周六')
     fireEvent.click(saturday)
     fireEvent.change(screen.getByLabelText('周末发布时点'), { target: { value: '10,16' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
+    fireEvent.click(screen.getAllByRole('button', { name: '保存设置' })[0])
     await waitFor(() => {
       const put = fetchMock.mock.calls.find(
         ([url, init]) => String(url).endsWith('/configs/1') && init?.method === 'PUT',
@@ -144,8 +151,9 @@ describe('N172 分阶段模型与重试润色', () => {
       }
       return baseHandler(url, init)
     })
+    await openAdvanced()
     fireEvent.change(await screen.findByLabelText('润色模型'), { target: { value: 'm-polish' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
+    fireEvent.click(screen.getAllByRole('button', { name: '保存设置' })[0])
     await waitFor(() => {
       const put = fetchMock.mock.calls.find(
         ([url, init]) => String(url).endsWith('/configs/1') && init?.method === 'PUT',
@@ -219,10 +227,11 @@ describe('N174/N175/N176 栏目、阅读时长与聚合', () => {
       }
       return baseHandler(url, init)
     })
+    await openAdvanced()
     fireEvent.change(await screen.findByLabelText('固定栏目结构'), {
       target: { value: '人工智能|5|placeholder\n开源|3|hide' },
     })
-    fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
+    fireEvent.click(screen.getAllByRole('button', { name: '保存设置' })[0])
     await waitFor(() => {
       const put = fetchMock.mock.calls.find(
         ([url, init]) => String(url).endsWith('/configs/1') && init?.method === 'PUT',
@@ -242,9 +251,10 @@ describe('N174/N175/N176 栏目、阅读时长与聚合', () => {
       }
       return baseHandler(url, init)
     })
+    await openAdvanced()
     fireEvent.change(await screen.findByLabelText('目标阅读时长分钟'), { target: { value: '30' } })
     fireEvent.click(screen.getByRole('switch', { name: /同事件聚合 默认日报/ }))
-    fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
+    fireEvent.click(screen.getAllByRole('button', { name: '保存设置' })[0])
     await waitFor(() => {
       const put = fetchMock.mock.calls.find(
         ([url, init]) => String(url).endsWith('/configs/1') && init?.method === 'PUT',

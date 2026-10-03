@@ -133,7 +133,6 @@ def test_new342_inventory_pure_function():
         freshrss_host=None,
         rsshub_host="rsshub.example",
         ai_host="api.ai.example",
-        libretranslate_host=None,
         tts_host=None,
         webdav_host=None,
         imap_host=None,

@@ -28,9 +28,11 @@ N086: blocks the user marked「不翻译」(entry_no_translate_blocks) are
 excluded from generation entirely — an existing cached translation stays
 displayed; otherwise the block honestly shows the original text.
 
-Engines: "ai" (OpenAI-compatible provider, cloud or self-hosted) and
-"libretranslate" (self-hosted MT reached through the BFF). The browser
-engine runs entirely in the browser — this service refuses it honestly.
+Engines: "ai" (OpenAI-compatible provider, cloud or self-hosted) is the
+only server-side engine. The browser engine runs entirely in the browser
+— this service refuses it honestly. The former "libretranslate"
+self-hosted engine was removed (R21); stored engine values are migrated
+on read (translation_engine_migration).
 
 All SQL in this module is an inline literal with fully parameterized
 placeholders (no runtime value or identifier is ever interpolated).
@@ -40,25 +42,19 @@ import asyncio
 import re
 from dataclasses import dataclass, field
 
-import httpx
-
 from lumirss.ai_artifacts import (
     FAILURE_INVALID_RESPONSE,
-    FAILURE_UPSTREAM,
     GenerationLockPool,
     normalize_ai_content,
 )
 from lumirss.ai_provider import AiNotConfigured, AiProviderError
 from lumirss.ai_settings import (
     KEY_BASE_URL,
-    KEY_LIBRETRANSLATE_URL,
     KEY_MODEL,
     KEY_TRANSLATION_ENGINE,
     KEY_TRANSLATION_LANGUAGE,
-    LIBRETRANSLATE_KEY_NAME,
     TRANSLATION_ENGINE_AI,
     TRANSLATION_ENGINE_BROWSER,
-    TRANSLATION_ENGINE_LIBRETRANSLATE,
 )
 from lumirss.ai_translation_revisions import (
     SegmentRevision,
@@ -79,11 +75,6 @@ MAX_BLOCK_CHARS = 4000
 MAX_TOTAL_BATCH_CHARS = 12000
 MAX_CONCURRENT_BATCHES = 4
 
-LIBRETRANSLATE_TIMEOUT_SECONDS = 20.0
-
-# LibreTranslate language codes differ from BCP-47 for Chinese.
-_LIBRETRANSLATE_TARGETS = {"zh-CN": "zh", "en": "en"}
-
 _FETCH_ROW_SQL = """SELECT * FROM ai_translation_segments
 WHERE entry_ref = ? AND block_index = ? AND block_hash = ?
 AND provider = ? AND model = ? AND prompt_version = ?
@@ -103,8 +94,7 @@ updated_at = excluded.updated_at"""
 
 class SegmentTranslationUnavailable(Exception):
     """Browser-safe refusal: configuration or bounds make the request
-    impossible (engine is browser-side, LibreTranslate not configured,
-    blocks out of bounds…)."""
+    impossible (engine is browser-side, blocks out of bounds…)."""
 
 
 @dataclass(frozen=True)
@@ -143,9 +133,11 @@ def block_hash(normalized_text: str) -> str:
 
 
 def engine_identity(engine: str, settings: dict[str, str]) -> tuple[str, str]:
-    """缓存身份里的 (provider, model)；LibreTranslate 无模型维度。"""
-    if engine == TRANSLATION_ENGINE_LIBRETRANSLATE:
-        return (TRANSLATION_ENGINE_LIBRETRANSLATE, "")
+    """缓存身份里的 (provider, model)。
+
+    The only server-side engine is "ai" (the browser engine never
+    reaches this module — generate refuses it first), so cache rows are
+    always keyed by the AI provider and the effective model."""
     return (TRANSLATION_ENGINE_AI, settings[KEY_MODEL])
 
 
@@ -187,15 +179,10 @@ def parse_segment_batch(raw: str, indexes: list[int]) -> dict[int, str]:
 class SegmentTranslationService:
     """Block-aligned translation with exact per-block caching."""
 
-    def __init__(self, db, settings_store, provider_factory, secrets,
-                 httpx_client_factory=None):
+    def __init__(self, db, settings_store, provider_factory):
         self._db = db
-        self._settings = settings_store  # AiSettingsStore (engine + libretranslate)
+        self._settings = settings_store  # AiSettingsStore (engine + model)
         self._provider_factory = provider_factory  # purpose-aware AI factory
-        self._secrets = secrets
-        self._httpx_factory = httpx_client_factory or (
-            lambda: httpx.AsyncClient(timeout=LIBRETRANSLATE_TIMEOUT_SECONDS)
-        )
         # 0021 hardening: bounded lock pool (same semantics as summary
         # generation) — keys derive from unbounded entry refs, so the old
         # per-instance dict could grow without limit. The service-level
@@ -206,7 +193,7 @@ class SegmentTranslationService:
         self._batch_semaphore = asyncio.Semaphore(MAX_CONCURRENT_BATCHES)
 
     async def _resolve_settings(self) -> dict[str, str]:
-        """Engine/URL settings come from the plain AI settings store."""
+        """Engine/model settings come from the plain AI settings store."""
         await self._db.migrate()
         return await self._settings.load()
 
@@ -452,11 +439,6 @@ class SegmentTranslationService:
                         entry_ref, missing, settings, language, protected_map,
                         protection_reports,
                     )
-                elif engine == TRANSLATION_ENGINE_LIBRETRANSLATE:
-                    await self._generate_libretranslate(
-                        entry_ref, missing, settings, language, protected_map,
-                        protection_reports,
-                    )
             else:
                 protection_reports = {}
 
@@ -633,82 +615,6 @@ class SegmentTranslationService:
                 failure=None if value else FAILURE_INVALID_RESPONSE,
             )
 
-    # -- LibreTranslate engine ----------------------------------------------
-
-    async def _generate_libretranslate(self, entry_ref, missing, settings, language,
-                                       protected_map=None, protection_reports=None):
-        protected_map = protected_map or {}
-        protection_reports = (
-            protection_reports if protection_reports is not None else {}
-        )
-        base = settings[KEY_LIBRETRANSLATE_URL]
-        if not base:
-            raise SegmentTranslationUnavailable(
-                "LibreTranslate is not configured. Set its URL in "
-                "Translation settings."
-            )
-        target = _LIBRETRANSLATE_TARGETS.get(language)
-        if target is None:
-            raise SegmentTranslationUnavailable(
-                "Language '" + language + "' is not supported by LibreTranslate."
-            )
-        # NEW-269：识别更正只影响这一批的 source 参数；无更正 → auto。
-        override = await self._resolved_source_language(entry_ref)
-        source = override.split("-")[0] if override else "auto"
-        api_key = self._secrets.get(LIBRETRANSLATE_KEY_NAME) or ""
-        for batch in self._batch(missing):
-            normalized = [(b, normalize_block_text(b.text)) for b in batch]
-            payload = {
-                "q": [text for _, text in normalized],
-                "source": source,
-                "target": target,
-                "format": "text",
-            }
-            if api_key:
-                payload["api_key"] = api_key
-            url = base + "/translate"
-            try:
-                async with self._httpx_factory() as client:
-                    response = await client.post(url, json=payload)
-                    response.raise_for_status()
-                    data = response.json()
-            except (httpx.HTTPError, ValueError):
-                for block, text in normalized:
-                    await self._upsert_row(
-                        entry_ref, block, text, settings,
-                        failure=FAILURE_UPSTREAM,
-                    )
-                continue
-            texts = data.get("translatedText") if isinstance(data, dict) else None
-            valid = (
-                isinstance(texts, list)
-                and len(texts) == len(normalized)
-                and all(isinstance(t, str) for t in texts)
-            )
-            if not valid:
-                for block, text in normalized:
-                    await self._upsert_row(
-                        entry_ref, block, text, settings,
-                        failure=FAILURE_INVALID_RESPONSE,
-                    )
-                continue
-            for (block, text), value in zip(normalized, texts, strict=True):
-                value = value.strip() or None
-                if value:
-                    terms = protected_map.get(block.index, [])
-                    if terms:
-                        protection_reports[block.index] = tuple(
-                            term_protection_report(value, terms)
-                        )
-                        # N083：与 AI 引擎同一保留后处理（无 prompt 通道，
-                        # 仅后处理）。
-                        value = apply_term_protection(value, terms)
-                await self._upsert_row(
-                    entry_ref, block, text, settings,
-                    translated_text=value,
-                    failure=None if value else FAILURE_INVALID_RESPONSE,
-                )
-
     # -- persistence (literal, fully parameterized) --------------------------
 
     async def _fetch_row(self, entry_ref, index, b_hash, provider, model, settings,
@@ -729,20 +635,13 @@ class SegmentTranslationService:
                           translated_text=None, failure=None):
         from lumirss.util import utc_now
 
-        engine_is_libre = (
-            settings[KEY_TRANSLATION_ENGINE] == TRANSLATION_ENGINE_LIBRETRANSLATE
-        )
-        provider_name = (
-            TRANSLATION_ENGINE_LIBRETRANSLATE if engine_is_libre
-            else TRANSLATION_ENGINE_AI
-        )
-        model_name = "" if engine_is_libre else settings[KEY_MODEL]
         b_hash = block_hash(text)
         status = "failed" if failure else "success"
         await self._db.execute(
             _UPSERT_ROW_SQL,
             (
-                entry_ref, block.index, b_hash, provider_name, model_name,
+                entry_ref, block.index, b_hash, TRANSLATION_ENGINE_AI,
+                settings[KEY_MODEL],
                 SEGMENTS_PROMPT_VERSION, settings[KEY_TRANSLATION_LANGUAGE],
                 await self._cache_version(), status, translated_text,
                 # N082：源段文本随行存储（供数字校验；hash 同键即同源文本）。

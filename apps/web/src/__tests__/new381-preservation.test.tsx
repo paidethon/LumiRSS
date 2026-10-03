@@ -69,7 +69,7 @@ afterEach(() => {
   cleanup()
 })
 
-describe('NEW-381/382 书目导入（Zotero RDF / RIS）', () => {
+describe('书目导入（Zotero RDF / RIS）', () => {
   it('预览展示字段映射、重复与不支持字段，确认后导入计数', async () => {
     mockRoute(
       (url) => url.endsWith('/preservation/zotero/preview'),
@@ -404,7 +404,7 @@ describe('NEW-388/389 索引导出与分卷', () => {
   })
 })
 
-describe('NEW-390 迁移结果逐项对账', () => {
+describe('迁移结果逐项对账', () => {
   it('四态逐条展示，确认一条少一条，无一键全收', async () => {
     let confirmDone = false
     mockRoute(
@@ -473,14 +473,14 @@ describe('NEW-381..390 组合入口', () => {
   it('八个二级子区全部渲染且默认折叠（零查询）', () => {
     renderWithQuery(<PreservationCenter />)
     for (const label of [
-      'NEW-381/382 书目导入（Zotero RDF / RIS）',
-      'NEW-383 离线 HTML 资料集',
-      'NEW-384 JSON Feed 个人导出',
-      'NEW-386 保存格式对照预览',
-      'NEW-387 个人资料包加密导出',
-      'NEW-388 个人索引导出',
-      'NEW-389 分卷导出',
-      'NEW-390 迁移结果逐项对账',
+      '书目导入（Zotero RDF / RIS）',
+      '离线 HTML 资料集',
+      'JSON Feed 个人导出',
+      '保存格式对照预览',
+      '个人资料包加密导出',
+      '个人索引导出',
+      '分卷导出',
+      '迁移结果逐项对账',
     ]) {
       const toggle = screen.getByRole('button', { name: label })
       expect(toggle.getAttribute('aria-expanded')).toBe('false')

@@ -1,12 +1,20 @@
 """FIX-158 — Obsidian 集成只读边界：vault 不可被 BFF 写入/后台修改。
 
 裁决：BASELINE_OK（现有实现已满足边界——本批次为边界加廉价守卫）。
+R07 更新：引入服务端受限写入导出（obsidian_export.py）后，边界从
+「绝不写」细化为——
+
+- 只读投影面（obsidian*.py 的其余全部模块）依旧一个写调用都不存在；
+- 唯一被许可的写面是 obsidian_export.py：只写部署上独立挂载的导出
+  根（LUMIRSS_OBSIDIAN_EXPORT_DIR，生产 /vault-export），原子且绝不
+  覆盖已存在文件；破坏性全树变更形态（rmtree/rename/os.remove…）
+  在该模块内同样被静态禁止。
 
 两层守卫：
-1. 静态：obsidian* 模块源代码不得出现任何 vault 变更调用
-   （write/rename/mkdir/unlink/rmtree/shutil/os.remove…）——模块契约
-   （"read-only: no write/rename/mkdir/unlink call exists"）从此有测试
-   钉住，后续改动引入写路径会直接红。
+1. 静态：只读模块清单不得出现任何 vault 变更调用（write/rename/
+   mkdir/unlink/rmtree/shutil/os.remove…）；obsidian_export.py 单独
+   禁止破坏性形态——模块清单变化必须显式归类，不允许新模块静默
+   绕过任一清单。
 2. 行为：对真实临时 vault 连续 rescan（含 rename 采纳路径）后，vault
    文件字节与目录结构逐字节不变——扫描只更新投影库，绝不动原库。
 """
@@ -20,14 +28,18 @@ import pytest
 from lumirss.obsidian import ObsidianService
 from lumirss.storage import Database
 
-# 覆盖全部 Obsidian 集成模块（含 routers 的 obsidian 路由与 web 导出面
-# 的服务端部分）；模板/URI/handoff 只生成 obsidian:// 链接，不落盘。
-_OBSIDIAN_MODULES = [
-    path
-    for path in (Path(__file__).resolve().parent.parent / "src" / "lumirss").glob(
-        "obsidian*.py"
-    )
-]
+_LUMIRSS_DIR = Path(__file__).resolve().parent.parent / "src" / "lumirss"
+
+# R07：服务端受限写入导出——唯一被许可的写面（只写导出根）。
+_EXPORT_MODULE = "obsidian_export.py"
+
+# 其余 obsidian*.py 全部是只读投影面：模板/URI/handoff 只生成
+# obsidian:// 链接，不落盘；backlinks/devices/handoff-log 只碰投影库。
+_READONLY_MODULES = sorted(
+    path.name
+    for path in _LUMIRSS_DIR.glob("obsidian*.py")
+    if path.name != _EXPORT_MODULE
+)
 
 # vault 变更调用形态（调用点级匹配，不是子串误报）。
 _WRITE_PATTERNS = re.compile(
@@ -37,17 +49,43 @@ _WRITE_PATTERNS = re.compile(
     r"|os\.mknod\(",
 )
 
+# 写面模块仍被禁止的破坏性形态：导出只允许「新建文件」，绝不删除、
+# 改名、移动任何既有文件（用户手写保护）。
+_DESTRUCTIVE_PATTERNS = re.compile(
+    r"shutil\.|os\.(remove|removedirs|rmdir|truncate)\("
+    r"|\.rename\(|\.rmdir\(|\.replace\(.*Path|os\.mknod\(",
+)
+
 
 def test_obsidian_modules_contain_no_vault_mutation_calls():
-    assert len(_OBSIDIAN_MODULES) >= 6, "obsidian 模块清单不应缩水"
+    # 模块清单必须被显式归类：新 obsidian*.py 出现时，要么进只读清单
+    # （默认），要么作为新写面显式加入本测试——不允许静默绕过。
+    all_modules = sorted(p.name for p in _LUMIRSS_DIR.glob("obsidian*.py"))
+    assert all_modules == sorted([*_READONLY_MODULES, _EXPORT_MODULE]), (
+        "出现未归类的 obsidian 模块：请确认其读写边界后更新本测试清单。"
+    )
+    assert len(_READONLY_MODULES) >= 6, "只读模块清单不应缩水"
     offenders = []
-    for path in sorted(_OBSIDIAN_MODULES):
-        source = path.read_text(encoding="utf-8")
+    for name in _READONLY_MODULES:
+        source = (_LUMIRSS_DIR / name).read_text(encoding="utf-8")
         for match in _WRITE_PATTERNS.finditer(source):
             line = source.count("\n", 0, match.start()) + 1
-            offenders.append(f"{path.name}:{line}: {match.group(0)}")
+            offenders.append(f"{name}:{line}: {match.group(0)}")
     assert offenders == [], (
-        "Obsidian 集成模块出现 vault 变更调用（只读边界被削弱）：\n"
+        "Obsidian 只读投影模块出现 vault 变更调用（只读边界被削弱）：\n"
+        + "\n".join(offenders)
+    )
+
+
+def test_export_module_has_no_destructive_vault_forms():
+    """R07 写面守卫：导出模块只能新建文件，禁止一切破坏性形态。"""
+    source = (_LUMIRSS_DIR / _EXPORT_MODULE).read_text(encoding="utf-8")
+    offenders = [
+        f"{_EXPORT_MODULE}:{source.count(chr(10), 0, match.start()) + 1}: {match.group(0)}"
+        for match in _DESTRUCTIVE_PATTERNS.finditer(source)
+    ]
+    assert offenders == [], (
+        "导出写面出现破坏性调用（新建之外的动作必须不存在）：\n"
         + "\n".join(offenders)
     )
 

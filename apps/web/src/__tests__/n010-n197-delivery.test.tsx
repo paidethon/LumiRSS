@@ -97,9 +97,11 @@ function renderDigest(issue = UNREVISED_ISSUE) {
 describe('N179 缺刊处理策略（设置面）', () => {
   it('策略下拉可选，选择进入保存载荷；skip 记录在 UI 展示', async () => {
     const fetchMock = renderDigest()
+    // R13 两层配置：缺刊策略在折叠的高级区，断言前先展开。
+    fireEvent.click(await screen.findByRole('button', { name: '高级设置' }))
     const select = await screen.findByLabelText('缺刊处理策略 默认日报')
     fireEvent.change(select, { target: { value: 'skip' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
+    fireEvent.click(screen.getAllByRole('button', { name: '保存设置' })[0])
     await waitFor(() => {
       const put = fetchMock.mock.calls.find(
         ([url, init]) => String(url).endsWith('/configs/1') && init?.method === 'PUT',

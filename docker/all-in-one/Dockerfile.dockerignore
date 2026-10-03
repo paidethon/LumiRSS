@@ -1,0 +1,25 @@
+# Build-context filter for docker/all-in-one/Dockerfile (BuildKit reads
+# <dockerfile-name>.dockerignore). The context is the repo root, but only
+# the web + bff sources are needed; everything else (databases, backups,
+# node_modules, .env files, git history) stays out of the build context —
+# smaller, faster, and no secrets can leak into image layers.
+*
+
+# web SPA sources (stage web-build)
+!apps/web/
+apps/web/node_modules
+apps/web/dist
+apps/web/.dockerignore
+apps/web/Dockerfile
+
+# BFF sources (stage bff-deps)
+!services/bff/
+services/bff/.venv
+services/bff/data
+services/bff/tests
+services/bff/.pytest_cache
+services/bff/Dockerfile
+
+# this image's own sources (s6 tree, Caddyfile template, Dockerfile)
+!docker/all-in-one/
+docker/all-in-one/README.md

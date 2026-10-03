@@ -51,6 +51,8 @@ export default function MobileHeader() {
     snapshots: '网页快照',
     inbox: '收件箱',
     obsidian: 'Obsidian 库',
+    newsletter: '邮件简报',
+    rag: 'RAG 索引',
     agent: 'Agent 工作台',
     graph: '图谱',
   }

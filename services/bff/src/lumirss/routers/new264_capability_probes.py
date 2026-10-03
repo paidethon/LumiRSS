@@ -50,7 +50,6 @@ async def post_capability_probe(
             settings,
             payload.samples,
             _provider_factory_for(request, "translation"),
-            secrets=request.app.state.secrets_store,
         )
     except ProbeInvalid as exc:
         return _invalid(exc)

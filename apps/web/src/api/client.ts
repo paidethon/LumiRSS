@@ -714,6 +714,21 @@ export async function updateRegistrationPolicy(
   return normalizeRegistrationPolicy(body)
 }
 
+/** 注册策略公开探测（R01 登录页注册入口两态）：GET /auth/registration-policy。
+ * 匿名可读，响应只含布尔策略位——绝不含 updatedAt/updatedBy 等管理字段，
+ * 也不泄露账号信息。端点尚未部署（404）、被拒（401/403）或网络失败时
+ * 抛 ApiError，调用方必须回退诚实路径（进 /register，由服务端在提交时
+ * 以 403 registration_disabled 定案）——前端从不依据本地猜测放行注册。 */
+export async function getPublicRegistrationPolicy(
+  signal?: AbortSignal,
+): Promise<{ allowPublicRegistration: boolean }> {
+  const body = await request<Record<string, unknown>>(
+    `${API_BASE}/auth/registration-policy`,
+    signal,
+  )
+  return { allowPublicRegistration: body.allowPublicRegistration === true }
+}
+
 // ---- 管理台（role=owner|admin；403 = 后端判定的越界，UI 不自行放行） ----
 
 // N009：敏感管理操作自动附带一次性提权令牌（lib/step-up.ts 持有；
@@ -1725,6 +1740,158 @@ export async function listOpmlImportLog(): Promise<{ items: OpmlImportLogEntry[]
   return request<{ items: OpmlImportLogEntry[] }>(`${API_BASE}/opml/import/log`)
 }
 
+// ---- R18 RSSHub 优化导入（plan → apply → 映射台账） -------------------------
+// 注意：以下类型为手写本地形状（BFF 以稳定 dict 返回），待主 Agent 集成
+// 时统一 `pnpm api:generate` 替换为 OpenAPI 生成类型（与 G6Schemas 同源）。
+
+export interface RsshubMatchCandidate {
+  routePath: string
+  namespace: string
+  title: string
+  params: Record<string, string>
+  missingParams: string[]
+  confidence: 'high' | 'medium'
+  basis: string
+  ambiguous: boolean
+  requires: Record<string, boolean | null> | null
+  needsCredentials: boolean
+}
+
+export interface RsshubImportPlanItem {
+  index: number
+  title: string
+  xmlUrl: string
+  htmlUrl: string | null
+  category: string | null
+  decision:
+    | 'autoReplace'
+    | 'manualChoice'
+    | 'needsCredentials'
+    | 'needsParams'
+    | 'alreadyRsshub'
+    | 'keepNative'
+    | 'unsupported'
+  chosenRoutePath: string | null
+  note: string | null
+  match: {
+    kind: 'self_rsshub' | 'external_rsshub' | 'native' | 'unknown'
+    candidates: RsshubMatchCandidate[]
+    autoRoutePath: string | null
+    note: string | null
+  }
+}
+
+export interface RsshubImportPlan {
+  rsshubConfigured: boolean
+  totalFeeds: number
+  fileDuplicates: number
+  invalidEntries: number
+  counts: Record<string, number>
+  items: RsshubImportPlanItem[]
+}
+
+export interface RsshubImportApplyResult {
+  strategy: 'prefer_rsshub' | 'prefer_native' | 'manual'
+  replaced: {
+    originalUrl: string
+    title: string
+    keptOldSource: boolean
+    rsshubUrl: string
+    validated: boolean
+    mapping?: RsshubSourceMapping
+  }[]
+  addedNative: {
+    originalUrl: string
+    title: string
+    reason?: string
+    categoryLabel?: string | null
+    categoryApplied?: boolean
+  }[]
+  keptOldSource: { originalUrl: string; rsshubUrl: string }[]
+  skipped: { feedUrl: string; title: string; reason: string }[]
+  failed: { feedUrl: string; title: string; error: string }[]
+  mappings: RsshubSourceMapping[]
+  counts: {
+    replaced: number
+    addedNative: number
+    keptOldSource: number
+    skipped: number
+    failed: number
+  }
+  entryStateNote: string
+}
+
+export interface RsshubSourceMapping {
+  id: string
+  originalUrl: string
+  rsshubUrl: string
+  namespace: string | null
+  routePath: string | null
+  strategy: string
+  keptOldSource: boolean
+  status: 'active' | 'reverted'
+  createdAt: string
+  revertedAt: string | null
+}
+
+export type RsshubImportStrategy = 'prefer_rsshub' | 'prefer_native' | 'manual'
+
+/** R18：OPML → RSSHub 匹配计划（严格只读，零网络零写入）。 */
+export async function planRsshubImport(file: File): Promise<RsshubImportPlan> {
+  const response = await rawRequest(`${API_BASE}/opml/import/rsshub-plan`, {
+    method: 'POST',
+    body: file,
+    contentType: file.type || 'application/xml',
+  })
+  return (await response.json()) as RsshubImportPlan
+}
+
+/** R18：应用 RSSHub 优化导入（先实际验证再经 FreshRSS 订阅；
+ * manual 策略 approved/chosen 逐项显式选择）。 */
+export async function applyRsshubImport(
+  file: File,
+  options?: {
+    strategy?: RsshubImportStrategy
+    approved?: number[]
+    chosen?: { index: number; routePath: string }[]
+  },
+): Promise<RsshubImportApplyResult> {
+  const params = new URLSearchParams()
+  const strategy = options?.strategy ?? 'prefer_rsshub'
+  if (strategy !== 'prefer_rsshub') params.set('strategy', strategy)
+  if (options?.approved?.length) params.set('approved', options.approved.join(','))
+  for (const item of options?.chosen ?? []) {
+    params.append('chosen', `${item.index}|${item.routePath}`)
+  }
+  const encoded = params.toString()
+  const qs = encoded.length > 0 ? `?${encoded}` : ''
+  const response = await rawRequest(`${API_BASE}/opml/import/rsshub-apply` + qs, {
+    method: 'POST',
+    body: file,
+    contentType: file.type || 'application/xml',
+  })
+  return (await response.json()) as RsshubImportApplyResult
+}
+
+/** R18：原生 ↔ RSSHub 来源映射台账（来源运维工作台）。 */
+export async function listRsshubMappings(): Promise<{ items: RsshubSourceMapping[] }> {
+  return request<{ items: RsshubSourceMapping[] }>(`${API_BASE}/opml/rsshub-mappings`)
+}
+
+/** R18：撤销一条映射（恢复订阅原始地址；RSSHub 源不自动退订）。 */
+export async function revertRsshubMapping(mappingId: string): Promise<{
+  mapping: RsshubSourceMapping
+  originalSubscribed: boolean
+  rsshubSourceRemoved: boolean
+  note: string
+}> {
+  const response = await rawRequest(
+    `${API_BASE}/opml/rsshub-mappings/${encodeURIComponent(mappingId)}/revert`,
+    { method: 'POST' },
+  )
+  return await response.json()
+}
+
 /** 0013 Gate 4：FreshRSS 高级逃生入口（未配置 → null；BFF 永不暴露
  * 内部 base URL）。 */
 export async function getFreshRssUiUrl(signal?: AbortSignal): Promise<FreshRssUiInfo> {
@@ -2346,27 +2513,6 @@ export async function getTranslationVerification(
   const response = await rawRequest(url, { method: 'GET' })
   if (!response.ok) throw await toApiError(response)
   return (await response.json()) as TranslationVerificationView
-}
-
-export async function saveLibreTranslateKey(value: string): Promise<void> {
-  await rawRequest(`${API_BASE}/settings/translation/libretranslate-key`, {
-    method: 'PUT',
-    body: JSON.stringify({ value }),
-    contentType: 'application/json',
-  })
-}
-
-export async function clearLibreTranslateKey(): Promise<void> {
-  await rawRequest(`${API_BASE}/settings/translation/libretranslate-key`, {
-    method: 'DELETE',
-  })
-}
-
-export async function testLibreTranslate(): Promise<{ status: 'ok' | 'failed'; message: string | null }> {
-  const response = await rawRequest(`${API_BASE}/settings/translation/libretranslate-test`, {
-    method: 'POST',
-  })
-  return (await response.json()) as { status: 'ok' | 'failed'; message: string | null }
 }
 
 export interface RssHubCredentialEntry {
@@ -3228,14 +3374,16 @@ export async function deleteApiSource(uuid: string): Promise<void> {
 
 /** 无副作用预览：按 endpoint + itemsExpr + fieldMap 实抓 ≤5 条映射结果。
  * 400 invalid_expression / invalid_api_source、502 fetch_failed 的
- * error.message 由 UI 原样透出。 */
+ * error.message 由 UI 原样透出。signal：分步向导中允许用户中止预览。 */
 export async function previewApiSource(
   input: ApiSourcePreviewInput,
+  signal?: AbortSignal,
 ): Promise<ApiSourcePreviewResult> {
   const response = await rawRequest(`${API_BASE}/api-sources/preview`, {
     method: 'POST',
     body: JSON.stringify(input),
     contentType: 'application/json',
+    signal,
   })
   return (await response.json()) as ApiSourcePreviewResult
 }
@@ -3249,14 +3397,17 @@ export interface ApiSourceSamplePreviewInput {
 }
 
 /** N128 离线样例预览：对粘贴样例跑同一条映射 + Atom 预览管线。
- * 零网络、零存储、无任何请求头；sampleMode=true 诚实标注。 */
+ * 零网络、零存储、无任何请求头；sampleMode=true 诚实标注。
+ * signal：分步向导中允许用户中止。 */
 export async function previewApiSourceSample(
   input: ApiSourceSamplePreviewInput,
+  signal?: AbortSignal,
 ): Promise<ApiSourcePreviewResult> {
   const response = await rawRequest(`${API_BASE}/api-sources/preview-sample`, {
     method: 'POST',
     body: JSON.stringify(input),
     contentType: 'application/json',
+    signal,
   })
   return (await response.json()) as ApiSourcePreviewResult
 }
@@ -3597,6 +3748,29 @@ export async function generateConfigDigest(
     contentType: putBack !== undefined && putBack.length > 0 ? 'application/json' : undefined,
   })
   return (await response.json()) as { issue: GptDigestIssue; promptVersion: string }
+}
+
+/** 生成运行状态（手动与调度共用；stage = select/summarize/polish/generate）。 */
+export interface GptDigestRunStatus {
+  running: boolean
+  stage: string | null
+  startedAt: string | null
+}
+
+/** 查询某配置的生成运行状态（阶段进度与取消语义的状态源）。 */
+export async function getDigestRunStatus(configId: number): Promise<GptDigestRunStatus> {
+  const response = await rawRequest(`${API_BASE}/gpt-digest/configs/${configId}/run-status`, {
+    method: 'GET',
+  })
+  return (await response.json()) as GptDigestRunStatus
+}
+
+/** 请求取消进行中的生成（协作式：在阶段边界生效，绝不半写期号）。 */
+export async function cancelDigestRun(configId: number): Promise<{ cancelled: boolean }> {
+  const response = await rawRequest(`${API_BASE}/gpt-digest/configs/${configId}/cancel`, {
+    method: 'POST',
+  })
+  return (await response.json()) as { cancelled: boolean }
 }
 
 /** 指定配置的最近期刊。 */
@@ -4502,9 +4676,17 @@ export interface AgentMessageListResponse {
  * BFF 侧是裸 str，OpenAPI 抓不到枚举，故在此手写联合）。 */
 export type AgentApprovalDecision = 'approve' | 'reject'
 
-/** 会话列表（GET 语义）。 */
-export async function listAgentThreads(signal?: AbortSignal): Promise<AgentThreadListResponse> {
-  return request<AgentThreadListResponse>(`${API_BASE}/agent/threads`, signal)
+/** 会话列表（GET 语义）。R20：archived=false（默认）= 未归档工作集；
+ * true = 已归档视图。 */
+export async function listAgentThreads(
+  signal?: AbortSignal,
+  archived = false,
+): Promise<AgentThreadListResponse> {
+  // 契约测试按字面量抽取 /api/v1 路径——模板插值会留下 'threads{}'
+  // 形态误报 stale-BFF，故按分支写全两条字面量路径。
+  return archived
+    ? request<AgentThreadListResponse>(`${API_BASE}/agent/threads?archived=true`, signal)
+    : request<AgentThreadListResponse>(`${API_BASE}/agent/threads`, signal)
 }
 
 /** 新建会话（POST 201，返回服务端确认的新线程）。 */
@@ -4934,6 +5116,31 @@ export async function deleteInboxItem(itemRef: string): Promise<void> {
 /** GET /api/v1/sources —— 统一来源注册表（只读综合，不含任何 secret）。 */
 export async function listSources(signal?: AbortSignal): Promise<SourceRegistryResponse> {
   return request<SourceRegistryResponse>(`${API_BASE}/sources`, signal)
+}
+
+// ---- R02 来源中心按类型汇总（GET /api/v1/sources/summary） ----
+// 类型按 BFF models.py 的 SourceTypeSummary/SourcesSummaryResponse 逐字段
+// 手写镜像（该端点尚未进 OpenAPI 生成集——诚实注释，不假装 generated；
+// 集成跑 pnpm api:generate 后可切到 generated 契约类型）。
+
+/** 来源类型汇总行：count=null = 不可数（连接状态型），绝不冒充 0；
+ * status 严格区分「服务未配置」与「集合为空」。 */
+export interface SourceTypeSummary {
+  type: string
+  count: number | null
+  status: 'ok' | 'empty' | 'not_configured' | 'error'
+  lastActivityAt: string | null
+  detail: string | null
+}
+
+export interface SourcesSummaryResponse {
+  items: SourceTypeSummary[]
+  generatedAt: string
+}
+
+/** GET /api/v1/sources/summary —— 当前账号全部来源类型的计数/状态/最近活动。 */
+export async function listSourcesSummary(signal?: AbortSignal): Promise<SourcesSummaryResponse> {
+  return request<SourcesSummaryResponse>(`${API_BASE}/sources/summary`, signal)
 }
 
 // ---- Q-P1-07：IMAP 收信通路（后端 4 端点早已存在，此前无任何 UI） ----
@@ -7677,6 +7884,8 @@ export interface AgentThreadSettingsPatch {
   /** N165：线程级任务预算（键皆可缺省；null + clearBudget = 清除）。 */
   budget?: { maxToolCalls?: number; maxTurns?: number } | null
   clearBudget?: boolean
+  /** R20：归档/恢复（键缺省 = 不改归档状态；true/false = 归档/恢复）。 */
+  archived?: boolean
 }
 
 /** N163：一键研究模式预设（readonly + read-tool 白名单 + 回合上限，
@@ -7693,7 +7902,7 @@ export async function applyAgentResearchPreset(threadId: string): Promise<void> 
 export async function updateAgentThreadSettings(
   threadId: string,
   patch: AgentThreadSettingsPatch,
-): Promise<{ id: string; title: string; scope: unknown; toolPolicy: unknown; branchOf: string | null }> {
+): Promise<{ id: string; title: string; scope: unknown; toolPolicy: unknown; branchOf: string | null; archivedAt: string | null }> {
   const response = await rawRequest(
     `${API_BASE}/agent/threads/${encodeURIComponent(threadId)}`,
     {
@@ -7709,6 +7918,7 @@ export async function updateAgentThreadSettings(
     scope: unknown
     toolPolicy: unknown
     branchOf: string | null
+    archivedAt: string | null
   }
 }
 
@@ -8649,6 +8859,49 @@ export async function undoAgentStep(
     result: unknown
     conflictReason: string | null
   }
+}
+
+// ---- R20 工作台补缺（停止生成 / 会话导出到 Obsidian）--------------------------
+
+/** R20：停止生成——服务端取消运行中的回合（部分输出以 cancelled 终态
+ * 落库；无活动回合 → 稳定 409 no_active_run 信封）。 */
+export async function cancelAgentTurn(threadId: string): Promise<{ cancelled: boolean; status: string }> {
+  const response = await rawRequest(
+    `${API_BASE}/agent/threads/${encodeURIComponent(threadId)}/cancel`,
+    { method: 'POST' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { cancelled: boolean; status: string }
+}
+
+/** R20：会话导出到 Obsidian（服务端复用 F096 markdown 渲染 + R07 受限
+ * 写入面：containment / content-id 幂等 / per-user 隔离 / 每日配额）。
+ * written = 新写入；exists = 已存在（幂等，绝不覆盖）；failed = 诚实失败
+ * （如 export_unconfigured / quota_exceeded，原因见 reason）。 */
+export interface AgentThreadObsidianExportResult {
+  ref: string
+  status: 'written' | 'exists' | 'failed'
+  path: string | null
+  reason: string | null
+  contentId: string | null
+  bytes: number
+  message: string | null
+}
+
+export async function exportAgentThreadToObsidian(
+  threadId: string,
+  rounds: number,
+): Promise<AgentThreadObsidianExportResult> {
+  const response = await rawRequest(
+    `${API_BASE}/agent/threads/${encodeURIComponent(threadId)}/obsidian-export`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ rounds }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as AgentThreadObsidianExportResult
 }
 
 // ---- N170 任务配方 ------------------------------------------------------------

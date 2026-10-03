@@ -1,0 +1,86 @@
+# LumiRSS all-in-one Caddyfile template — rendered at container start by the
+# caddy service run script (etc/s6-overlay/s6-rc.d/caddy/run) from
+# LUMIRSS_INTERNAL_TOKEN. Placeholders (same contract as
+# apps/web/Caddyfile.noauth + docker-entrypoint.sh):
+#   __SITE_ADDR__                    always ":80" here (see below)
+#   __INTERNAL_TOKEN_DIRECTIVE__     `header_up X-Lumi-Token <token>` or empty
+#
+# All-in-one serves FOUR sites in one Caddy process:
+#   :80    published (loopback-mapped by compose) — SPA + /api + /feeds
+#   127.0.0.1:8081  FreshRSS internal UI + greader API (php_fastcgi) — NEVER
+#                   published; replaces the old `freshrss` container :80
+#   127.0.0.1:12001 RSSHub (served by node itself, not Caddy)
+#   :9137  container-internal healthcheck site (E06 parity: no TLS/auth/
+#          redirect; /healthz + same /srv root as the public site)
+#
+# Auth semantics: the all-in-one topology supports ONLY app-level session
+# auth (LUMIRSS_AUTH_MODE=session / empty) — proxy basic-auth variables are
+# warned about and ignored by the run script. TLS is terminated by the host
+# reverse proxy (external-caddy mode is the only published shape), hence the
+# fixed ":80" site address and no ACME/redirects here.
+
+__SITE_ADDR__ {
+	encode gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		X-XSS-Protection "0"
+		Referrer-Policy no-referrer
+		Strict-Transport-Security "max-age=31536000"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'sha256-aYPnowo+pCHklZyinTQjBAXVsi+QpQ7CfuGVjPnioBo='; style-src 'self' 'unsafe-inline'; img-src * data: blob:; media-src * data: blob:; font-src 'self' data:; connect-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+	}
+
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8000 {
+__INTERNAL_TOKEN_DIRECTIVE__
+		}
+	}
+
+	# Generated feeds (API sources, mail bridge): FreshRSS subscribes over
+	# loopback directly (it lives in this container); browsers can verify
+	# the feed through Caddy too (secret-in-URL still applies).
+	handle /feeds/* {
+		reverse_proxy 127.0.0.1:8000 {
+__INTERNAL_TOKEN_DIRECTIVE__
+		}
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+# FreshRSS internal site — loopback only, never published. DocumentRoot
+# parity with the official FreshRSS Apache vhost: ONLY p/ is served
+# (app/, data/, cli/ … are unreachable); php_fastcgi resolves index.php and
+# PATH_INFO-style URLs (api/greader.php/<…>) like Apache did.
+http://127.0.0.1:8081 {
+	root * /var/www/FreshRSS/p
+	encode gzip
+
+	php_fastcgi unix//run/php/php8.4-fpm.sock
+
+	file_server
+}
+
+# Container-internal healthcheck site (apps/web E06 parity): plain HTTP, no
+# auth, no TLS, no redirect. /healthz proves Caddy's HTTP stack; /index.html
+# serves the SAME /srv root as the public site so probing it proves the
+# static build artifact is present and servable (the Dockerfile HEALTHCHECK
+# greps the body for the hashed /assets/ bundle references).
+:9137 {
+	root * /srv
+
+	handle /healthz {
+		respond "ok" 200
+	}
+
+	handle {
+		try_files {path} /index.html
+		file_server
+	}
+}

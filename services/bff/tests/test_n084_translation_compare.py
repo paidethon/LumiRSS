@@ -50,7 +50,6 @@ def _make_service(tmp_path, providers):
         profile_store=profiles,
         translation_provider_factory=factory_for("translation"),
         chat_provider_factory=factory_for("chat"),
-        secrets=secrets,
     )
     return service, db, settings, profiles, calls
 
@@ -133,7 +132,6 @@ def test_n084_unconfigured_provider_is_honest(tmp_path):
         profile_store=profiles,
         translation_provider_factory=(lambda b, m: None),
         chat_provider_factory=(lambda b, m: None),
-        secrets=secrets,
     )
     outcome = run(service.compare(TEXT))
     assert outcome.available is False
@@ -222,7 +220,6 @@ def test_n084_compare_api_roundtrip(client, monkeypatch):
             db=app.state.db,
             settings_store=AiSettingsStore(app.state.db),
             provider_factory=_echo_marker_provider,
-            secrets=app.state.secrets_store,
         )
         return await service.generate(
             ref,

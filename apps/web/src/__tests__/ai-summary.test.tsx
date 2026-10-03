@@ -4,6 +4,9 @@
  * - not_generated → 「AI 摘要」按钮；点击是唯一触发 POST 的动作；
  * - 成功后渲染纯文本摘要 + model · 时间；缓存命中显示「缓存」徽标且无 POST；
  * - not_configured / failed / content 不可用 / generating 各自诚实呈现。
+ * R23 紧凑化迁移：AI 未运行（未生成/未配置/失败/生成中/状态加载中）
+ * 默认只占一行紧凑入口，点击展开后才出现完整卡片；已生成（含缓存）
+ * 直接展示完整卡片。
  */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -45,6 +48,11 @@ const summaryGet = (body: unknown, status = 200): Handler =>
     }
     throw new Error(`unexpected fetch: ${url} ${init?.method ?? 'GET'}`)
   }
+
+/** R23 紧凑入口：AI 未运行时先展开一行入口，才谈得上完整卡片交互。 */
+async function expandCompactEntry(): Promise<void> {
+  fireEvent.click(await screen.findByRole('button', { name: 'AI 摘要' }))
+}
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -89,7 +97,17 @@ describe('ReaderSummary', () => {
 
     renderSummary()
 
-    const button = await screen.findByRole('button', { name: /AI 摘要/ })
+    // R23：未生成时默认只占一行紧凑入口（摘要 · 未生成），完整卡片不出现
+    const compact = await screen.findByRole('button', { name: 'AI 摘要' })
+    expect(compact).toHaveAttribute('aria-expanded', 'false')
+    await waitFor(() => {
+      expect(compact).toHaveTextContent('未生成')
+    })
+    expect(screen.queryByText(/按需生成，不会自动调用 AI/)).toBeNull()
+
+    // 用户点击展开 → 完整卡片；卡片内「AI 摘要」按钮是唯一触发 POST 的动作
+    fireEvent.click(compact)
+    const button = await screen.findByRole('button', { name: 'AI 摘要' })
     expect(screen.getByText(/按需生成，不会自动调用 AI/)).toBeInTheDocument()
     fireEvent.click(button)
 
@@ -140,6 +158,7 @@ describe('ReaderSummary', () => {
 
     renderSummary()
 
+    await expandCompactEntry()
     await waitFor(() => {
       expect(screen.getByText(/AI 摘要未配置/)).toBeInTheDocument()
     })
@@ -185,6 +204,7 @@ describe('ReaderSummary', () => {
 
     renderSummary()
 
+    await expandCompactEntry()
     await waitFor(() => {
       expect(screen.getByText(/AI 服务响应超时/)).toBeInTheDocument()
     })
@@ -207,6 +227,7 @@ describe('ReaderSummary', () => {
 
     renderSummary()
 
+    await expandCompactEntry()
     await waitFor(() => {
       expect(screen.getByText(/没有可摘要的正文内容/)).toBeInTheDocument()
     })
@@ -233,6 +254,7 @@ describe('ReaderSummary', () => {
 
     renderSummary()
 
+    await expandCompactEntry()
     await waitFor(() => {
       expect(screen.getByText('正在生成摘要…')).toBeInTheDocument()
     })

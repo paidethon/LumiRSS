@@ -1157,14 +1157,7 @@ class AiSettingsView(BaseModel):
     model: str
     summaryLanguage: Literal["zh-CN", "en"]
     translationLanguage: Literal["zh-CN", "en"]
-    translationEngine: Literal["ai", "libretranslate", "browser"]
-    libretranslateUrl: str
-    libretranslateKeyConfigured: bool
-    # FIX-142：本地翻译的实际能力状态（最近一次有界探测的结果）。
-    # untested = 从未探测；checkedAt 让 stale 状态如实可见。
-    libretranslateStatus: Literal["untested", "ok", "failed"] = "untested"
-    libretranslateCheckedAt: str | None = None
-    libretranslateDiagnostic: str | None = None
+    translationEngine: Literal["ai", "browser"]
     configured: bool
     envKeyConfigured: bool
     defaultKeyConfigured: bool
@@ -1202,11 +1195,15 @@ class AppSettingsView(PortableSettings):
     server-durable values. ``revision`` (0021) is a content-hash of the
     stored document for optimistic concurrency: a PATCH may carry
     ``baseRevision`` and is refused with a stable 409 when it no longer
-    matches.
+    matches. ``storedKeys`` (R25) lists the keys explicitly saved by the
+    client — keys absent from it are model defaults the user never wrote
+    (e.g. fields a newer release introduced), so an upgrading client keeps
+    its local value for those instead of adopting the padded default.
     """
 
     stored: bool
     revision: int
+    storedKeys: list[str] = []
 
 
 # ---------------------------------------------------------------------------
@@ -2994,6 +2991,19 @@ class GptDigestConfigUpdate(BaseModel):
     missedIssuePolicy: str | None = None
 
 
+class GptDigestRunStatus(BaseModel):
+    """GET /api/v1/gpt-digest/configs/{id}/run-status — 手动/调度生成
+    的运行状态（阶段进度 + 取消语义的状态源）。
+
+    ``stage`` 为服务端真实阶段：``select``（选材）/``summarize``（总结）/
+    ``polish``（润色）/``generate``（单阶段路径一次完成）。取消在阶段
+    边界生效——绝不半写期号。"""
+
+    running: bool
+    stage: str | None = None
+    startedAt: str | None = None
+
+
 class StorageUsage(BaseModel):
     """GET /api/v1/storage/usage — F36 用量口径（未知为 null，不冒充零）。"""
 
@@ -3928,6 +3938,7 @@ class AgentThread(BaseModel):
     id: str
     title: str
     createdAt: str
+    archivedAt: str | None = None
 
 
 class AgentThreadListResponse(BaseModel):
@@ -4600,6 +4611,30 @@ class SourceRegistryEntry(BaseModel):
 
 class SourceRegistryResponse(BaseModel):
     sources: list[SourceRegistryEntry]
+    generatedAt: str
+
+
+class SourceTypeSummary(BaseModel):
+    """One content-source-type row of GET /api/v1/sources/summary.
+
+    口径（诚实标注，绝不冒充）：
+    - count：该类型的真实数量；None = 不可数（连接状态型，如邮件桥
+      列表、Obsidian vault 配置存在性之外的维度），绝不写 0 冒充；
+    - status：ok（已连接/正常）/ empty（集合为空）/ not_configured
+      （服务未配置——与「集合为空」严格区分）/ error（最近错误）；
+    - lastActivityAt：owning store 维护的最近活动时间，未知为 None；
+    - detail：error 时的诚实错误摘录（owning store 已有字段，不新造）。
+    """
+
+    type: str
+    count: int | None = None
+    status: Literal["ok", "empty", "not_configured", "error"]
+    lastActivityAt: str | None = None
+    detail: str | None = None
+
+
+class SourcesSummaryResponse(BaseModel):
+    items: list[SourceTypeSummary]
     generatedAt: str
 
 
@@ -5625,6 +5660,134 @@ class RagCoverage(BaseModel):
     )
 
 
+class RagIndexOverviewSource(BaseModel):
+    """R24 总览的一类可索引来源（语料数 + 该 kind 已索引/分块数）。"""
+
+    kind: str
+    corpusDocs: int = 0
+    indexedDocs: int = 0
+    chunks: int = 0
+
+
+class RagIndexOverviewStorage(BaseModel):
+    """R24 索引磁盘占用（vec 表 + 分块元数据的实际字节数）。
+
+    basis=dbstat：SQLite dbstat 页级真实占用；basis=payload：无 dbstat
+    编译项时的载荷字节兜底（诚实标注口径，绝不估算页开销）。"""
+
+    basis: Literal["dbstat", "payload"]
+    vecBytes: int = 0
+    chunkBytes: int = 0
+    totalBytes: int = 0
+
+
+class RagIndexOverviewQueue(BaseModel):
+    """R24 队列进度（口径同 coverage：全部来自真实行与作业证据）。
+
+    pending = 可索引但当前模型下还没有任何分块；done = 已索引；
+    failed = 最近作业 skipped 的 ref（去重）；stale = 已索引但正文
+    hash 已过期。「处理完任务 ≠ 全部成功」由 failed 直接承载。"""
+
+    pending: int = 0
+    done: int = 0
+    failed: int = 0
+    stale: int = 0
+
+
+class RagIndexOverviewFailure(BaseModel):
+    """R24 失败项明细（脱敏：原因截断，绝不携带堆栈或上游内容）。"""
+
+    ref: str | None = None
+    reason: str
+    at: str | None = None
+
+
+class RagIndexOverviewJob(BaseModel):
+    """R24 最近作业段（F093 口径；running 时前端可提供取消 = 暂停）。"""
+
+    jobId: str | None = None
+    status: str | None = None
+    stage: str | None = None
+    done: int = 0
+    remaining: int | None = None
+    updatedAt: str | None = None
+
+
+class RagIndexOverview(BaseModel):
+    """GET /api/v1/rag/index/overview —— RAG 索引页总览。
+
+    当前账号索引集合的真实盘点：来源 × 语料/索引数、模型/维度、最近
+    更新、磁盘占用、队列进度与失败明细。全部数值来自真实行/作业；
+    跨用户天然隔离（每用户自己的库）。"""
+
+    enabled: bool
+    modelId: str
+    dim: int
+    configuredModel: str | None = None
+    documents: int = 0
+    chunks: int = 0
+    sources: list[RagIndexOverviewSource] = []
+    excludedFeeds: int = 0
+    aiDisabledFeeds: int = 0
+    lastUpdatedAt: str | None = None
+    lastRebuildAt: str | None = None
+    lastError: str | None = None
+    storage: RagIndexOverviewStorage = Field(
+        default_factory=lambda: RagIndexOverviewStorage(basis="payload")
+    )
+    queue: RagIndexOverviewQueue = Field(
+        default_factory=RagIndexOverviewQueue
+    )
+    failures: list[RagIndexOverviewFailure] = []
+    incrementalPaused: bool = False
+    calendarPaused: bool = False
+    vecTable: bool = False
+    fastembedAvailable: bool = False
+    job: RagIndexOverviewJob | None = None
+
+
+class RagIndexDeleteResult(BaseModel):
+    """DELETE /api/v1/rag/index —— 清空本账号索引（绝不删原文）。"""
+
+    removedChunks: int = 0
+    removedVecRows: int = 0
+
+
+class RagIndexRetryFailedRequest(BaseModel):
+    """POST /api/v1/rag/index/retry-failed body。
+
+    refs 缺省 = 重试全部失败项（≤limit）；显式 refs = 单项重试
+    （失败项列表的「单独重试」按钮）。只动失败项，绝不全量重建。"""
+
+    model_config = {"extra": "forbid"}
+
+    refs: list[str] | None = Field(default=None, max_length=50)
+    limit: int = Field(default=50, ge=1, le=50)
+
+
+class RagIndexRetryFailedResult(BaseModel):
+    """retry-failed 结果：missing = 来源已不存在的失败项（诚实汇报）。"""
+
+    requested: int = 0
+    updated: int = 0
+    chunks: int = 0
+    missing: list[str] = []
+
+
+class RagIndexPauseResult(BaseModel):
+    """POST /api/v1/rag/index/pause|resume —— 本账号增量索引暂停开关。"""
+
+    paused: bool
+
+
+class RagIndexConvergeResult(BaseModel):
+    """POST /api/v1/rag/index/converge —— 手动触发一次增量收敛。"""
+
+    indexed: int = 0
+    swept: int = 0
+    skipped: str | None = None
+
+
 class RagChunkPreviewRequest(BaseModel):
     """POST /api/v1/rag/chunk-preview body（N153）。"""
 
@@ -5718,7 +5881,8 @@ class RagAskResponse(BaseModel):
 
 class AgentThreadUpdate(BaseModel):
     """F094/F098 会话设置（scope / toolPolicy / N165 budget；None =
-    清除/不修改按键）。scope=None 显式清除范围锁定；键缺省 = 不修改。"""
+    清除/不修改按键）。scope=None 显式清除范围锁定；键缺省 = 不修改。
+    R20：title 重命名、archived 归档/恢复（None = 不改状态）。"""
 
     model_config = {"extra": "forbid"}
 
@@ -5729,6 +5893,7 @@ class AgentThreadUpdate(BaseModel):
     clearToolPolicy: bool = False
     budget: dict | None = None
     clearBudget: bool = False
+    archived: bool | None = None
 
 
 class AgentBranchRequest(BaseModel):
@@ -5792,6 +5957,27 @@ class AgentThreadSettings(BaseModel):
     toolPolicy: AgentToolPolicy | None = None
     budget: AgentThreadBudget | None = None
     branchOf: str | None = None
+    archivedAt: str | None = None
+
+
+class AgentThreadObsidianExportRequest(BaseModel):
+    """R20 POST /api/v1/agent/threads/{id}/obsidian-export body。"""
+
+    model_config = {"extra": "forbid"}
+
+    rounds: int = Field(default=20, ge=1, le=20)
+
+
+class AgentThreadObsidianExportResult(BaseModel):
+    """R20 单条导出结果（written | exists | failed + 原因；同 R07 口径）。"""
+
+    ref: str
+    status: Literal["written", "exists", "failed"]
+    path: str | None = None
+    reason: str | None = None
+    contentId: str | None = None
+    bytes: int = 0
+    message: str | None = None
 
 
 class AgentScopePreviewRequest(BaseModel):

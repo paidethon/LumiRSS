@@ -60,8 +60,6 @@ export const BACK_TO_TOP_THRESHOLD_PX = 600
 
 // ---- F16 表格展开 ----
 
-import { maskPlainTextIfActive } from './privacy-mask'
-
 /** scrollWidth 超出 clientWidth 该值才视为「过宽表格」（防抖动误判）。 */
 export const TABLE_WIDE_EXTRA_PX = 24
 
@@ -78,22 +76,19 @@ export interface QuoteInput {
   quote?: string
 }
 
-/** 纯文本引用格式：标题 / 来源 / 链接（有选区时附引文）。
- * N182：遮罩开启时标题/引文先遮罩（原文绝不进剪贴板）。 */
+/** 纯文本引用格式：标题 / 来源 / 链接（有选区时附引文）。 */
 export function buildQuotePlainText(input: QuoteInput): string {
-  const title = maskPlainTextIfActive(input.title)
-  const quote = maskPlainTextIfActive((input.quote ?? '').trim())
-  const lines = [title, input.source]
+  const quote = (input.quote ?? '').trim()
+  const lines = [input.title, input.source]
   if (input.url !== null && input.url !== '') lines.push(input.url)
   if (quote !== '') lines.push('', quote)
   return lines.join('\n')
 }
 
-/** Markdown 引用格式：标题 / 来源 / 链接 / > 引文。（N182 同上遮罩。） */
+/** Markdown 引用格式：标题 / 来源 / 链接 / > 引文。 */
 export function buildQuoteMarkdownText(input: QuoteInput): string {
-  const title = maskPlainTextIfActive(input.title)
-  const quote = maskPlainTextIfActive((input.quote ?? '').trim())
-  const lines = [title, input.source]
+  const quote = (input.quote ?? '').trim()
+  const lines = [input.title, input.source]
   if (input.url !== null && input.url !== '') lines.push(input.url)
   if (quote !== '') lines.push('', `> ${quote}`)
   return lines.join('\n')

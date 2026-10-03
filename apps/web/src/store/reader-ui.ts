@@ -19,7 +19,9 @@ import { pushNavHistory } from '../lib/nav-history'
  * phase2 G6：+ obsidian（Obsidian 库，只读投影）。
  * phase2 G7/G8：+ agent（工作台）/ graph（图谱，含标签列表等价路径）。
  * 0021：+ inbox（收件箱——推送式来源的工作台入口）。
- * P04：+ sources（统一来源管理页——GET /api/v1/sources 的注册表总览）。 */
+ * P04：+ sources（统一来源管理页——GET /api/v1/sources 的注册表总览）。
+ * R19：+ newsletter（邮件简报内容页——已发送/草稿/计划/失败）。
+ * R24：+ rag（RAG 索引内容页——索引集合/进度/检索试验）。 */
 export type AppSection =
   | 'home'
   | 'sources'
@@ -32,6 +34,8 @@ export type AppSection =
   | 'snapshots'
   | 'inbox'
   | 'obsidian'
+  | 'newsletter'
+  | 'rag'
   | 'agent'
   | 'graph'
 

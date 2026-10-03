@@ -25,7 +25,6 @@ from lumirss.entry_no_translate import (
     unmark_block,
 )
 from lumirss.entryref import encode_entry_ref
-from lumirss.secrets_store import SecretsStore
 from lumirss.storage import Database
 
 run = asyncio.run
@@ -70,7 +69,6 @@ def _make_service(tmp_path):
         db=db,
         settings_store=settings,
         provider_factory=factory,
-        secrets=SecretsStore(tmp_path / "secrets.json"),
     )
     run(settings.save(
         AiSettingsUpdate(baseUrl="http://127.0.0.1:9999/v1", model="m1")
@@ -183,7 +181,6 @@ def test_api_mark_unmark_and_view_flags(client):
         db=db,
         settings_store=AiSettingsStore(db),
         provider_factory=_never_factory,
-        secrets=_app.state.secrets_store,
     )
 
     base = f"/api/v1/entries/{REF}/translation/segments"

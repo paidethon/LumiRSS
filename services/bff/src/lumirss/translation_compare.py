@@ -2,11 +2,12 @@
 
 语义（诚实优先）：
 
-- 两个对照侧：当前翻译引擎（AI 提供者或 LibreTranslate）与「chat」
-  用途解析出的 AI Profile。只配置了一个提供方 → ``available=false``
-  + 原因，绝不拿同一配置跑两遍假装对照；
+- 两个对照侧：「翻译」用途解析出的 AI Profile（当前翻译引擎）与
+  「chat」用途解析出的 AI Profile。只配置了一个提供方 →
+  ``available=false`` + 原因，绝不拿同一配置跑两遍假装对照；
 - 翻译引擎是 browser（此浏览器执行）→ 服务端拒绝（browser_engine）：
-  本地引擎的正文不出设备，服务端无从对照；
+  本地引擎的正文不出设备，服务端无从对照（自托管 LibreTranslate
+  引擎已随 R21 移除——对照的两侧都是 AI provider）；
 - 两侧解析到同一 (kind, base_url, model) → providers_identical（对照
   无信息量，诚实拒绝）；
 - 对照是 EPHEMERAL：绝不写 ai_translation_segments 缓存；成本口径
@@ -21,28 +22,20 @@ All SQL in this module: none — compare never touches the cache.
 import asyncio
 from dataclasses import dataclass
 
-import httpx
-
 from lumirss.ai_artifacts import provider_failure_type
 from lumirss.ai_profiles import PurposeAiSettings
 from lumirss.ai_provider import AiNotConfigured, AiProviderError
 from lumirss.ai_settings import (
     KEY_BASE_URL,
-    KEY_LIBRETRANSLATE_URL,
     KEY_MODEL,
     KEY_TRANSLATION_ENGINE,
     KEY_TRANSLATION_LANGUAGE,
-    LIBRETRANSLATE_KEY_NAME,
     TRANSLATION_ENGINE_AI,
     TRANSLATION_ENGINE_BROWSER,
-    TRANSLATION_ENGINE_LIBRETRANSLATE,
 )
 from lumirss.ai_translation_segments import (
-    _LIBRETRANSLATE_TARGETS,
     normalize_block_text,
 )
-
-LIBRETRANSLATE_TIMEOUT_SECONDS = 20.0
 
 _COMPARISON_SYSTEM_PROMPT = (
     "You are a translation engine inside a personal RSS reader. "
@@ -77,16 +70,12 @@ class CompareOutcome:
 class TranslationCompareService:
     """Per-block provider comparison (ephemeral; no cache writes)."""
 
-    def __init__(self, settings_store, profile_store, translation_provider_factory,
-                 chat_provider_factory, secrets, httpx_client_factory=None):
+    def __init__(self, settings_store, profile_store,
+                 translation_provider_factory, chat_provider_factory):
         self._settings = settings_store
         self._profiles = profile_store
         self._translation_factory = translation_provider_factory
         self._chat_factory = chat_provider_factory
-        self._secrets = secrets
-        self._httpx_factory = httpx_client_factory or (
-            lambda: httpx.AsyncClient(timeout=LIBRETRANSLATE_TIMEOUT_SECONDS)
-        )
 
     async def compare(self, text: str) -> CompareOutcome:
         base = await self._settings.load()
@@ -112,18 +101,11 @@ class TranslationCompareService:
         resolved: list[tuple[str, dict[str, str], str, str, str, object]] = []
         # (label, view, kind, base_url, model, factory)
         for label, view, factory in side_specs:
-            engine_view = view[KEY_TRANSLATION_ENGINE]
-            if engine_view == TRANSLATION_ENGINE_LIBRETRANSLATE:
-                url = view[KEY_LIBRETRANSLATE_URL]
-                if not url:
-                    continue
-                resolved.append((label, view, TRANSLATION_ENGINE_LIBRETRANSLATE, url, "", factory))
-            else:
-                url = view[KEY_BASE_URL]
-                model = view[KEY_MODEL]
-                if not url or not model:
-                    continue
-                resolved.append((label, view, TRANSLATION_ENGINE_AI, url, model, factory))
+            url = view[KEY_BASE_URL]
+            model = view[KEY_MODEL]
+            if not url or not model:
+                continue
+            resolved.append((label, view, TRANSLATION_ENGINE_AI, url, model, factory))
 
         if len(resolved) < 2:
             return CompareOutcome(
@@ -155,9 +137,6 @@ class TranslationCompareService:
 
     async def _run_side(self, label: str, view: dict[str, str], factory,
                         text: str, language: str) -> CompareSide:
-        engine_kind = view[KEY_TRANSLATION_ENGINE]
-        if engine_kind == TRANSLATION_ENGINE_LIBRETRANSLATE:
-            return await self._run_libretranslate_side(label, view, text, language)
         return await self._run_ai_side(label, view, factory, text, language)
 
     async def _run_ai_side(self, label: str, view: dict[str, str], factory,
@@ -198,54 +177,4 @@ class TranslationCompareService:
             model=view[KEY_MODEL],
             text=value or None,
             failure_type=None if value else "invalid_response",
-        )
-
-    async def _run_libretranslate_side(self, label: str, view: dict[str, str],
-                                       text: str, language: str) -> CompareSide:
-        base = view[KEY_LIBRETRANSLATE_URL]
-        target = _LIBRETRANSLATE_TARGETS.get(language)
-        if target is None:
-            return CompareSide(
-                label=label,
-                provider=TRANSLATION_ENGINE_LIBRETRANSLATE,
-                model="",
-                text=None,
-                failure_type="unsupported_language",
-            )
-        payload = {
-            "q": text,
-            "source": "auto",
-            "target": target,
-            "format": "text",
-        }
-        api_key = self._secrets.get(LIBRETRANSLATE_KEY_NAME) or ""
-        if api_key:
-            payload["api_key"] = api_key
-        try:
-            async with self._httpx_factory() as client:
-                response = await client.post(base + "/translate", json=payload)
-                response.raise_for_status()
-                data = response.json()
-        except (httpx.HTTPError, ValueError):
-            return CompareSide(
-                label=label,
-                provider=TRANSLATION_ENGINE_LIBRETRANSLATE,
-                model="",
-                text=None,
-                failure_type="upstream",
-            )
-        value = data.get("translatedText") if isinstance(data, dict) else None
-        if not isinstance(value, str) or not value.strip():
-            return CompareSide(
-                label=label,
-                provider=TRANSLATION_ENGINE_LIBRETRANSLATE,
-                model="",
-                text=None,
-                failure_type="invalid_response",
-            )
-        return CompareSide(
-            label=label,
-            provider=TRANSLATION_ENGINE_LIBRETRANSLATE,
-            model="",
-            text=value.strip(),
         )

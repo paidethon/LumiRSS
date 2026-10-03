@@ -71,7 +71,7 @@ export function CapabilitiesSection() {
     },
     {
       key: 'ai',
-      label: '云端 AI（GPT/翻译/对话）',
+      label: '云端 AI（翻译/对话）',
       level: aiConfigured ? 'ok' : 'unconfigured',
       basis: 'configured',
       detail: aiConfigured

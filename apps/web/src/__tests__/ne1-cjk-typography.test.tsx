@@ -33,7 +33,7 @@ afterEach(() => {
 })
 
 describe('N055 首行缩进按块类型', () => {
-  it('新设置不在 PORTABLE_KEYS（设备本地，不参与服务端同步）', () => {
+  it('排版偏好全部在 PORTABLE_KEYS（R25：用户偏好一律上云跨设备）', () => {
     for (const key of [
       'readerIndentLists',
       'readerIndentQuotes',
@@ -42,7 +42,7 @@ describe('N055 首行缩进按块类型', () => {
       'readerTapZoneAxis',
       'readerTapZoneSize',
     ]) {
-      expect(PORTABLE_KEYS).not.toContain(key)
+      expect(PORTABLE_KEYS).toContain(key)
     }
   })
 

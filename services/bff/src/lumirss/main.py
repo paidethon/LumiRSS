@@ -251,7 +251,9 @@ from lumirss.routers import (
     new398_runbooks,
     new399_doc_feedback,
     new400_cleanup,
+    newsletter,
     obsidian,
+    obsidian_export,
     operations,
     opml,
     passkeys,
@@ -640,7 +642,9 @@ app.include_router(clips.router)
 app.include_router(snapshots.router)
 app.include_router(api_sources.router)
 app.include_router(mail.router)
+app.include_router(newsletter.router)
 app.include_router(obsidian.router)
+app.include_router(obsidian_export.router)  # R07 服务端受限导出（r3）
 app.include_router(inbox.router)
 app.include_router(sources.router)
 # N011/N016/N017: bundle / staging pool / cleanup suggestions

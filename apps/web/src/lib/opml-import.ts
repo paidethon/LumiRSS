@@ -7,8 +7,18 @@
  * optimistic updates；结果全部来自 server-confirmed 响应。 */
 
 import { useState } from 'react'
-import { exportOpml } from '../api/client'
-import { useOpmlImportMutation, useOpmlPreviewMutation } from '../api/queries'
+import {
+  applyRsshubImport,
+  exportOpml,
+  type RsshubImportPlan,
+  type RsshubImportStrategy,
+} from '../api/client'
+import {
+  useOpmlImportMutation,
+  useOpmlPreviewMutation,
+  useRsshubApplyMutation,
+  useRsshubPlanMutation,
+} from '../api/queries'
 import type { OpmlImportPreview, OpmlImportResult } from '../api/types'
 import { managementErrorText } from './management-errors'
 /** 与 BFF MAX_OPML_BYTES 一致（前端第一道，非安全边界）。 */
@@ -130,6 +140,111 @@ export function useOpmlImportFlow() {
     toggleItem,
     toggleAll,
     invertSelection,
+    selectFile,
+    confirmImport,
+    reset,
+  }
+}
+
+/** R18：RSSHub 优化导入流程状态机：file → plan（只读）→ confirm → result。
+ *
+ * 与 flat 导入同一 preview-before-mutation 纪律：plan 零网络零写入，
+ * confirm 才发生验证（实例拉取）与订阅。manual 策略下用户逐项勾选
+ * 人工候选（每项默认首选候选路由，依据可见）。 */
+export function useRsshubImportFlow() {
+  const [file, setFile] = useState<File | null>(null)
+  const [strategy, setStrategy] = useState<RsshubImportStrategy>('prefer_rsshub')
+  const [localError, setLocalError] = useState<string | null>(null)
+  const [result, setResult] = useState<Awaited<ReturnType<typeof applyRsshubImport>> | null>(null)
+  // manual 策略：勾选「允许替换」的 manualChoice index（自动项不在此列，
+  // prefer_rsshub 才会执行；manual 只做用户显式勾选的项）。
+  const [manualSelected, setManualSelected] = useState<Set<number>>(new Set())
+  const planMutation = useRsshubPlanMutation()
+  const applyMutation = useRsshubApplyMutation()
+
+  const plan: RsshubImportPlan | null = planMutation.data ?? null
+  const busy = planMutation.isPending || applyMutation.isPending || result !== null
+
+  function reset() {
+    setFile(null)
+    setStrategy('prefer_rsshub')
+    setLocalError(null)
+    setResult(null)
+    setManualSelected(new Set())
+    planMutation.reset()
+    applyMutation.reset()
+  }
+
+  function selectFile(selectedFile: File) {
+    setLocalError(null)
+    setResult(null)
+    setManualSelected(new Set())
+    if (selectedFile.size > OPML_MAX_BYTES) {
+      setFile(null)
+      planMutation.reset()
+      setLocalError('OPML 文件超过 2 MiB 上限。')
+      return
+    }
+    setFile(selectedFile)
+    planMutation.mutate(selectedFile)
+  }
+
+  function toggleManual(index: number) {
+    setManualSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(index)) next.delete(index)
+      else next.add(index)
+      return next
+    })
+  }
+
+  function confirmImport() {
+    if (file === null || busy || plan === null) return
+    const options =
+      strategy === 'manual'
+        ? {
+            strategy,
+            approved: [...manualSelected],
+            chosen: plan.items
+              .filter((item) => manualSelected.has(item.index))
+              .map((item) => ({
+                index: item.index,
+                routePath:
+                  item.match.candidates[0]?.routePath ?? item.chosenRoutePath ?? '',
+              }))
+              .filter((item) => item.routePath !== ''),
+          }
+        : { strategy }
+    applyMutation.mutate(
+      { file, options },
+      { onSuccess: (r) => setResult(r) },
+    )
+  }
+
+  const error =
+    localError !== null
+      ? { title: localError, detail: null }
+      : planMutation.isError || applyMutation.isError
+        ? managementErrorText(planMutation.error ?? applyMutation.error)
+        : null
+
+  return {
+    file,
+    plan,
+    result,
+    strategy,
+    setStrategy,
+    manualSelected,
+    toggleManual,
+    busy,
+    error,
+    errorVisible:
+      error !== null && !planMutation.isPending && !applyMutation.isPending,
+    planPending: planMutation.isPending,
+    applyPending: applyMutation.isPending,
+    canConfirm:
+      file !== null && plan !== null && !busy &&
+      (strategy !== 'manual' || manualSelected.size > 0),
     selectFile,
     confirmImport,
     reset,

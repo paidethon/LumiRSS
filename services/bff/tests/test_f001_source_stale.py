@@ -37,7 +37,7 @@ def _install_adapter(feeds: list[str]) -> None:
     async def _list_subs():
         return subs
 
-    app.state.freshrss_adapter = SimpleNamespace(list_subscriptions=_list_subs)
+    app.state.freshrss_control_adapter = SimpleNamespace(list_subscriptions=_list_subs)
 
 
 def _seed_projection(feed_url: str, published_iso: str) -> None:

@@ -34,7 +34,6 @@ import {
   applyRssHubConfig,
   clearAiProfileSecret,
   clearDefaultAiSecret,
-  clearLibreTranslateKey,
   clearRssHubSecret,
   createAiProfile,
   createBackup,
@@ -150,6 +149,7 @@ import {
   listClips,
   listInboxItems,
   listSources,
+  listSourcesSummary,
   getMailImapSettings,
   testMailImap,
   pollMailImap,
@@ -179,6 +179,10 @@ import {
   patchRssHubConfig,
   previewFeed,
   previewOpmlImport,
+  planRsshubImport,
+  applyRsshubImport,
+  listRsshubMappings,
+  revertRsshubMapping,
   previewRestore,
   previewRssHub,
   putRssHubFavorite,
@@ -190,7 +194,6 @@ import {
   renameWorkspace,
   reorderWorkspaceItems,
   resolveItems,
-  saveLibreTranslateKey,
   searchEntries,
   createSavedSearchView,
   deleteRssHubFavorite,
@@ -203,7 +206,6 @@ import {
   setEntryState,
   setRssHubSecret,
   subscribeFeed,
-  testLibreTranslate,
   testWebDav,
   unsubscribeFeed,
   updateAiProfile,
@@ -831,6 +833,44 @@ export function useFreshRssUiUrl() {
   })
 }
 
+/** R18：OPML → RSSHub 匹配计划（无副作用 mutation，同 preview 语义）。 */
+export function useRsshubPlanMutation() {
+  return useMutation({
+    mutationFn: (file: File) => planRsshubImport(file),
+  })
+}
+
+/** R18：应用 RSSHub 优化导入（server-confirmed 后失效订阅状态）。 */
+export function useRsshubApplyMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { file: File; options?: Parameters<typeof applyRsshubImport>[1] }) =>
+      applyRsshubImport(vars.file, vars.options),
+    onSuccess: () => invalidateSubscriptionState(queryClient),
+  })
+}
+
+/** R18：来源映射台账（来源运维工作台列表）。 */
+export function useRsshubMappings(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: ['rsshub-mappings'],
+    queryFn: () => listRsshubMappings(),
+    enabled: options?.enabled ?? true,
+  })
+}
+
+/** R18：撤销一条映射（恢复原地址订阅；台账与新源列表失效）。 */
+export function useRsshubRevertMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (mappingId: string) => revertRsshubMapping(mappingId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['rsshub-mappings'] })
+      await queryClient.invalidateQueries({ queryKey: ['subscriptions'] })
+    },
+  })
+}
+
 /** P09 委托入口：FreshRSS 原生界面坐标（{origin, username}）。绑定待定
  * → 409（isError），UI 显示诚实待定文案、绝不渲染假链接。409 是「正常
  * 的待定数据状态」而非故障，不做自动重试。 */
@@ -993,8 +1033,9 @@ export function useUpdateAiSettingsMutation() {
       model?: string
       summaryLanguage?: 'zh-CN' | 'en'
       translationLanguage?: 'zh-CN' | 'en'
-      translationEngine?: 'ai' | 'libretranslate' | 'browser'
-      libretranslateUrl?: string
+      // R21：引擎域收敛为 ai | browser（libretranslate 已随 BFF 移除，
+      // libretranslateUrl 字段同步删除——PUT 该键会 422）。
+      translationEngine?: 'ai' | 'browser'
     }) => updateAiSettings(update),
     onSuccess: async () => {
       await Promise.all([
@@ -1430,32 +1471,6 @@ export function useDeleteRssHubCredentialMutation() {
   })
 }
 
-export function useSaveLibreTranslateKeyMutation() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (value: string) => saveLibreTranslateKey(value),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['ai-settings'] })
-    },
-  })
-}
-
-export function useClearLibreTranslateKeyMutation() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: () => clearLibreTranslateKey(),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['ai-settings'] })
-    },
-  })
-}
-
-export function useTestLibreTranslateMutation() {
-  return useMutation({
-    mutationFn: () => testLibreTranslate(),
-  })
-}
-
 export function useBackupCapabilities() {
   return useQuery({
     queryKey: ['backup-capabilities'],
@@ -1545,7 +1560,7 @@ export function useBookmarks(q: string) {
 export function useBookmarkRssRefs() {
   return useQuery({
     queryKey: ['library', 'bookmarks', 'rss-refs'],
-    queryFn: ({ signal }) => listBookmarks({ limit: 500 }, signal),
+    queryFn: ({ signal }) => listBookmarks({ limit: 200 }, signal), // 端点上限 200（library.py _MAX_LIMIT）
     staleTime: 30_000,
   })
 }
@@ -2099,6 +2114,8 @@ import {
   getDigestSettings,
   generateGptDigest,
   generateConfigDigest,
+  getDigestRunStatus,
+  cancelDigestRun,
   getConfigFeed,
   getGptDigestFeed,
   compareFactsGptDigestIssue,
@@ -2208,10 +2225,14 @@ export function useDeleteApiSourceMutation() {
   })
 }
 
-/** 无副作用预览（不 invalidate 任何 query，结果由调用方存本地 state）。 */
+/** 无副作用预览（不 invalidate 任何 query，结果由调用方存本地 state）。
+ * vars.signal：分步向导中允许用户中止预览请求。 */
 export function useApiSourcePreviewMutation() {
   return useMutation({
-    mutationFn: (input: ApiSourcePreviewInput) => previewApiSource(input),
+    mutationFn: (vars: ApiSourcePreviewInput & { signal?: AbortSignal }) => {
+      const { signal, ...input } = vars
+      return previewApiSource(input, signal)
+    },
   })
 }
 
@@ -2219,7 +2240,12 @@ export function useApiSourcePreviewMutation() {
 
 export function useApiSourceSamplePreviewMutation() {
   return useMutation({
-    mutationFn: (input: ApiSourceSamplePreviewInput) => previewApiSourceSample(input),
+    mutationFn: (
+      vars: ApiSourceSamplePreviewInput & { signal?: AbortSignal },
+    ) => {
+      const { signal, ...input } = vars
+      return previewApiSourceSample(input, signal)
+    },
   })
 }
 
@@ -2475,6 +2501,23 @@ export function useGenerateConfigMutation() {
     mutationFn: (input: { configId: number; putBack?: string[] }) =>
       generateConfigDigest(input.configId, input.putBack),
     onSuccess: invalidate,
+  })
+}
+
+/** 生成运行状态（生成请求进行中才轮询；stage 供进度展示与取消）。 */
+export function useDigestRunStatusQuery(configId: number, enabled: boolean) {
+  return useQuery({
+    queryKey: ['gpt-digest', 'run-status', configId],
+    queryFn: () => getDigestRunStatus(configId),
+    enabled,
+    refetchInterval: 800,
+  })
+}
+
+/** 请求取消进行中的生成（阶段边界生效；幂等）。 */
+export function useCancelDigestRunMutation() {
+  return useMutation({
+    mutationFn: (configId: number) => cancelDigestRun(configId),
   })
 }
 
@@ -2964,6 +3007,7 @@ export function useLibraryFavoriteToggle(ref: string) {
 
 import {
   assignTag,
+  cancelAgentTurn,
   createAgentRecipe,
   createAgentThread,
   decideAgentApproval,
@@ -2982,6 +3026,8 @@ import {
   sendAgentMessage,
   undoAgentStep,
   unassignTag,
+  updateAgentThreadSettings,
+  type AgentThreadSettingsPatch,
 } from './client'
 
 /** 会话列表。 */
@@ -3011,6 +3057,39 @@ export function useDeleteAgentThreadMutation() {
     onSuccess: async (_data, threadId) => {
       queryClient.removeQueries({ queryKey: ['agent', 'messages', threadId] })
       await queryClient.invalidateQueries({ queryKey: ['agent', 'threads'] })
+    },
+  })
+}
+
+/** R20：已归档会话视图（软归档：行不删除，可恢复）。 */
+export function useAgentArchivedThreads() {
+  return useQuery({
+    queryKey: ['agent', 'threads', 'archived'],
+    queryFn: ({ signal }) => listAgentThreads(signal, true),
+  })
+}
+
+/** R20：会话设置 PATCH（重命名 / 归档 / 恢复共用）。['agent','threads']
+ * 前缀失效同时命中工作集与已归档两个视图。 */
+export function useAgentThreadSettingsMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { threadId: string; patch: AgentThreadSettingsPatch }) =>
+      updateAgentThreadSettings(vars.threadId, vars.patch),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['agent', 'threads'] })
+    },
+  })
+}
+
+/** R20：停止生成——服务端取消当前回合；成功后失效消息（cancelled
+ * 终态消息随轮询落回，processing 自动收敛）。 */
+export function useCancelAgentTurnMutation(threadId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => cancelAgentTurn(threadId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['agent', 'messages', threadId] })
     },
   })
 }
@@ -3338,6 +3417,17 @@ export function useSources() {
   return useQuery({
     queryKey: ['sources'],
     queryFn: ({ signal }) => listSources(signal),
+    staleTime: 30_000,
+  })
+}
+
+/** R02 来源中心按类型汇总：九类 {count, status, lastActivityAt}（零上游
+ * 调用，owning store 本地读取）。键与 ['sources'] 同族——来源增删的
+ * 失效路径一并命中。 */
+export function useSourcesSummary() {
+  return useQuery({
+    queryKey: ['sources', 'summary'],
+    queryFn: ({ signal }) => listSourcesSummary(signal),
     staleTime: 30_000,
   })
 }

@@ -234,18 +234,30 @@ class AgentStore:
         )
         return {"id": thread_id, "title": title[:100], "createdAt": utc_now()}
 
-    async def list_threads(self, limit: int = 100) -> list[dict[str, Any]]:
+    async def list_threads(
+        self, limit: int = 100, *, archived: bool = False
+    ) -> list[dict[str, Any]]:
+        """R20：会话列表。archived=False（默认）= 未归档工作集；
+        archived=True = 已归档视图。归档是软状态（archived_at 时间戳），
+        行不删除、可恢复。"""
         await self._db.migrate()
         await self.ensure_swept()
-        rows = await self._db.fetch_all(
-            "SELECT id, title, created_at FROM agent_threads ORDER BY created_at DESC LIMIT ?",
-            (max(1, min(limit, 200)),),
-        )
+        if archived:
+            rows = await self._db.fetch_all(
+                "SELECT id, title, created_at, archived_at FROM agent_threads WHERE archived_at IS NOT NULL ORDER BY created_at DESC LIMIT ?",
+                (max(1, min(limit, 200)),),
+            )
+        else:
+            rows = await self._db.fetch_all(
+                "SELECT id, title, created_at, archived_at FROM agent_threads WHERE archived_at IS NULL ORDER BY created_at DESC LIMIT ?",
+                (max(1, min(limit, 200)),),
+            )
         return [
             {
                 "id": str(r["id"]),
                 "title": str(r["title"]),
                 "createdAt": str(r["created_at"]),
+                "archivedAt": r["archived_at"],
             }
             for r in rows
         ]
@@ -253,7 +265,7 @@ class AgentStore:
     async def get_thread(self, thread_id: str) -> dict[str, Any] | None:
         await self._db.migrate()
         row = await self._db.fetch_one(
-            "SELECT id, title, created_at FROM agent_threads WHERE id = ?",
+            "SELECT id, title, created_at, archived_at FROM agent_threads WHERE id = ?",
             (thread_id,),
         )
         if row is None:
@@ -262,6 +274,7 @@ class AgentStore:
             "id": str(row["id"]),
             "title": str(row["title"]),
             "createdAt": str(row["created_at"]),
+            "archivedAt": row["archived_at"],
         }
 
     async def delete_thread(self, thread_id: str) -> bool:

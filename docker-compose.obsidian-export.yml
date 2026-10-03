@@ -1,0 +1,41 @@
+# R07 Obsidian server-side export mount — OPTIONAL overlay (separate from
+# the read-only projection overlay above on purpose).
+#
+# Compose cannot express a CONDITIONAL bind mount, so the writable export
+# root lives in its own overlay: stacking it turns the feature on, not
+# stacking it keeps every existing deployment byte-identical (the
+# read-only projection overlay keeps working unchanged).
+#
+#   # .env.prod:
+#   LUMIRSS_OBSIDIAN_EXPORT_HOST_DIR=/srv/obsidian/MyVault/LumiRSS  # host
+#   LUMIRSS_OBSIDIAN_EXPORT_DIR=/vault-export                       # container
+#
+#   # manual equivalent:
+#   docker compose -f docker-compose.prod.yml -f docker-compose.obsidian.yml \
+#     -f docker-compose.obsidian-export.yml up -d
+#
+# Relationship between the two mounts (both may point into the SAME host
+# vault): /vault stays the READ-ONLY projection root (the scanner never
+# writes); /vault-export is the only place Lumi ever writes. Inside it,
+# notes land in <subdir>/<user_id>/ (subdir is a per-user setting,
+# default "LumiRSS"; user_id is the server-derived account id), always
+# as NEW files — an existing file is never overwritten (atomic
+# tmp+link/O_EXCL write; content-id idempotency returns "exists"
+# instead; name conflicts get -2..-99 suffixes). Pointing
+# LUMIRSS_OBSIDIAN_EXPORT_HOST_DIR at a subfolder of your vault (e.g.
+# …/MyVault/LumiRSS) makes exports show up in Obsidian under that
+# folder; the read-only /vault mount can then be the parent vault —
+# the exported notes are re-indexed by the scanner like any other note.
+# The container path is fixed at /vault-export and must match
+# LUMIRSS_OBSIDIAN_EXPORT_DIR; the app never sees host paths.
+
+services:
+  bff:
+    volumes: !override
+      - lumi-data:/data
+      - freshrss-data:/freshrss-data:ro
+      - "${LUMIRSS_OBSIDIAN_VAULT_HOST_DIR:?set LUMIRSS_OBSIDIAN_VAULT_HOST_DIR in .env.prod}:/vault:ro"
+      - "${LUMIRSS_OBSIDIAN_EXPORT_HOST_DIR:?set LUMIRSS_OBSIDIAN_EXPORT_HOST_DIR in .env.prod}:/vault-export"
+    environment:
+      LUMIRSS_OBSIDIAN_VAULT_DIR: /vault
+      LUMIRSS_OBSIDIAN_EXPORT_DIR: /vault-export

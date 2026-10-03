@@ -97,8 +97,7 @@ export function RagSettingsSection() {
         )}
       </div>
       <p className="text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-        启用后 Agent 回答会融合语义检索（fastembed 本地嵌入模型；首次启用需要
-        下载模型）。索引只在本机 SQLite，重建为有界全量任务。
+        启用后 Agent 回答结合语义检索；首次启用需下载本地嵌入模型，索引只存本机。
       </p>
 
       <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs max-sm:grid-cols-1">
@@ -130,7 +129,7 @@ export function RagSettingsSection() {
             title={
               data.fastembedAvailable
                 ? undefined
-                : 'fastembed 未安装（服务端缺少 rag extra），无法启用语义索引。'
+                : 'fastembed 未安装，无法启用语义索引。'
             }
           >
             {enable.isPending && <Loader2 aria-hidden className="size-3.5 animate-spin" />}
@@ -218,7 +217,7 @@ export function RagSettingsSection() {
 
       {!data.fastembedAvailable && (
         <p role="status" className="text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-          当前服务端未安装 fastembed（部署需含 rag extra）：启用不可用，关键词检索不受影响。
+          当前服务端未安装 fastembed，无法启用语义索引；关键词检索不受影响。
         </p>
       )}
 

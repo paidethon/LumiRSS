@@ -8,6 +8,10 @@
  * （不删除、不覆盖现有订阅）。 */
 
 import { AlertCircle, CheckCircle2 } from 'lucide-react'
+import type {
+  RsshubImportApplyResult,
+  RsshubImportPlan,
+} from '../api/client'
 import type { OpmlImportPreview, OpmlImportResult } from '../api/types'
 import { opmlFailureLabel } from '../lib/opml-import'
 import { Button } from './ui/Button'
@@ -213,6 +217,186 @@ export function OpmlErrorCard({ title, detail }: { title: string; detail: string
           <span className="mt-0.5 block text-xs opacity-80">{detail}</span>
         )}
       </span>
+    </div>
+  )
+}
+
+// ---- R18 RSSHub 优化导入（计划 / 结果卡片，与 flat 卡片同风格） ----------------
+
+const RSSHUB_DECISION_LABEL: Record<string, string> = {
+  autoReplace: '自动替换',
+  manualChoice: '请选择',
+  needsCredentials: '需授权',
+  needsParams: '缺参数',
+  alreadyRsshub: '已在本站',
+  keepNative: '保持原生',
+  unsupported: '不支持',
+}
+
+const RSSHUB_SKIP_REASON_LABEL: Record<string, string> = {
+  duplicate: '已订阅',
+  invalid: '无效',
+  not_selected: '未勾选',
+  no_candidate: '无可替换候选',
+  route_not_constructable: '路由参数不足',
+  route_not_in_plan: '候选不在计划内',
+  rsshub_already_subscribed: 'RSSHub 地址已订阅',
+  validation_budget_exhausted: '验证次数用尽',
+  rsshub_not_found: 'RSSHub 路由不可用',
+  rsshub_not_a_feed: 'RSSHub 未返回有效 feed',
+  rsshub_rsshub_unreachable: 'RSSHub 实例不可达',
+  rsshub_auth_failure: 'RSSHub 访问被拒（鉴权）',
+  rsshub_rate_limited: 'RSSHub 限流',
+  rsshub_upstream_reject: 'RSSHub 上游拒绝',
+}
+
+function rsshubReasonLabel(reason: string): string {
+  return RSSHUB_SKIP_REASON_LABEL[reason] ?? reason
+}
+
+/** R18：匹配计划卡（严格只读结果；决策与候选依据逐项可见）。 */
+export function RsshubPlanCard({
+  plan,
+  manualSelected,
+  onToggleManual,
+  strategy,
+}: {
+  plan: RsshubImportPlan
+  manualSelected: Set<number>
+  onToggleManual: (index: number) => void
+  strategy: 'prefer_rsshub' | 'prefer_native' | 'manual'
+}) {
+  const counts = plan.counts
+  const summary = [
+    `自动替换 ${counts['autoReplace'] ?? 0}`,
+    `请选择 ${counts['manualChoice'] ?? 0}`,
+    `需授权 ${counts['needsCredentials'] ?? 0}`,
+    `缺参数 ${counts['needsParams'] ?? 0}`,
+    `已在本站 ${counts['alreadyRsshub'] ?? 0}`,
+    `保持原生 ${counts['keepNative'] ?? 0}`,
+  ].join(' · ')
+  return (
+    <div className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)]">
+      <div className="border-b border-[var(--lumi-separator)] px-3 py-2">
+        <p className="text-sm font-medium text-[var(--lumi-text-primary)]" data-testid="rsshub-plan-summary">
+          RSSHub 匹配计划（{plan.totalFeeds} 项）
+        </p>
+        <p className="mt-0.5 text-xs text-[var(--lumi-text-secondary)]">{summary}</p>
+        {!plan.rsshubConfigured && (
+          <p role="alert" className="mt-1 text-xs text-[var(--lumi-warning)]">
+            RSSHub 未配置：只能按原生导入（服务端设置 RSSHUB_BASE_URL 后可用替换）。
+          </p>
+        )}
+      </div>
+      <ul className="max-h-64 divide-y divide-[var(--lumi-separator)] overflow-y-auto">
+        {plan.items.map((item) => {
+          const selectable = strategy === 'manual' && item.decision === 'manualChoice'
+          const checked = manualSelected.has(item.index)
+          return (
+            <li key={item.index}>
+              <div className="flex min-h-11 items-start gap-2.5 px-3 py-1.5">
+                {selectable && (
+                  <input
+                    id={`rsshub-item-${item.index}`}
+                    type="checkbox"
+                    aria-label={`替换 ${item.title || item.xmlUrl}`}
+                    checked={checked}
+                    onChange={() => onToggleManual(item.index)}
+                    className="mt-0.5 size-4 shrink-0 accent-[var(--lumi-accent)]"
+                  />
+                )}
+                <label
+                  htmlFor={selectable ? `rsshub-item-${item.index}` : undefined}
+                  className="min-w-0 flex-1 cursor-pointer"
+                >
+                  <span className="block truncate text-sm text-[var(--lumi-text-primary)]">
+                    {item.title || item.xmlUrl}
+                    <span
+                      className={cx(
+                        'ml-2 inline-block rounded-full px-1.5 py-0.5 text-[10px] leading-tight',
+                        item.decision === 'autoReplace' &&
+                          'bg-[var(--lumi-accent)]/15 text-[var(--lumi-accent-text)]',
+                        (item.decision === 'manualChoice' || item.decision === 'needsParams') &&
+                          'bg-[var(--lumi-warning)]/20 text-[var(--lumi-text-primary)]',
+                        item.decision === 'needsCredentials' &&
+                          'bg-[var(--lumi-warning)]/20 text-[var(--lumi-text-primary)]',
+                        (item.decision === 'keepNative' || item.decision === 'unsupported') &&
+                          'bg-[var(--lumi-text-tertiary)]/15 text-[var(--lumi-text-tertiary)]',
+                        item.decision === 'alreadyRsshub' &&
+                          'bg-[var(--lumi-text-tertiary)]/15 text-[var(--lumi-text-tertiary)]',
+                      )}
+                    >
+                      {RSSHUB_DECISION_LABEL[item.decision] ?? item.decision}
+                    </span>
+                  </span>
+                  <span className="block truncate text-xs text-[var(--lumi-text-tertiary)]" title={item.xmlUrl}>
+                    {item.xmlUrl}
+                  </span>
+                  {item.match.candidates.length > 0 && (
+                    <span className="block truncate text-xs text-[var(--lumi-text-tertiary)]">
+                      候选：{item.match.candidates[0].routePath}（{item.match.candidates[0].basis}）
+                    </span>
+                  )}
+                  {item.note !== null && (
+                    <span className="block truncate text-xs text-[var(--lumi-text-tertiary)]">{item.note}</span>
+                  )}
+                </label>
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
+/** R18：应用结果卡（全部来自 server-confirmed 响应；跳过原因逐条可读）。 */
+export function RsshubResultCard({ result }: { result: RsshubImportApplyResult }) {
+  const counts = result.counts
+  return (
+    <div
+      role="status"
+      className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-accent)]/30 bg-[var(--lumi-accent)]/10 p-3.5"
+      data-testid="rsshub-result"
+    >
+      <p className="flex items-center gap-2 text-sm font-medium text-[var(--lumi-text-primary)]">
+        <CheckCircle2 aria-hidden className="size-4 shrink-0 text-[var(--lumi-accent-text)]" />
+        替换 {counts.replaced} · 原生导入 {counts.addedNative} · 跳过 {counts.skipped} · 失败{' '}
+        {counts.failed}
+      </p>
+      <p className="mt-1.5 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+        {result.entryStateNote}
+      </p>
+      {result.replaced.some((r) => r.keptOldSource) && (
+        <p className="mt-1.5 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+          其中 {result.keptOldSource.length} 个原地址本就已在订阅中：旧源保留、新源并存（绝不自动退订）。
+        </p>
+      )}
+      {result.skipped.length > 0 && (
+        <p className="mt-1.5 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+          跳过：
+          {result.skipped
+            .map((s) => `${s.title || s.feedUrl}（${rsshubReasonLabel(s.reason)}）`)
+            .join('、')}
+        </p>
+      )}
+      {result.failed.length > 0 && (
+        <ul className="mt-2 divide-y divide-[var(--lumi-separator)] border-t border-[var(--lumi-separator)]">
+          {result.failed.map((f) => (
+            <li key={f.feedUrl} className="flex items-start gap-2 py-1.5 text-xs">
+              <AlertCircle aria-hidden className="mt-0.5 size-3.5 shrink-0 text-[var(--lumi-danger)]" />
+              <span className="min-w-0">
+                <span className="block truncate text-[var(--lumi-text-primary)]" title={f.feedUrl}>
+                  {f.title}
+                </span>
+                <span className="block text-[var(--lumi-text-tertiary)]">
+                  {rsshubReasonLabel(f.error)}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }

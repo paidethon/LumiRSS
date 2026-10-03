@@ -20,7 +20,7 @@
  * - 同语言短路：探测源 === 目标语言(base) → 不调用任何 translate()；
  * - 配对依据稳定内容块 ID（annotateBlocks 的文档顺序编号），不是换行
  *   猜测；失败只标失败块，重试只重试失败内容；
- * - 执行位置如实标注：ai=AI 提供者（云端/自托管）、libretranslate=
+ * - 执行位置如实标注：ai=AI 提供者（云端）、browser=
  *   自托管服务器、browser=此浏览器（本地 Translator API，BFF 零参与）。
  *
  * 状态呈现（非 original 模式下的附注行，诚实不遮挡正文）：
@@ -79,7 +79,6 @@ import {
 
 const ENGINE_LABELS: Record<string, string> = {
   ai: 'AI 翻译（AI 提供者执行）',
-  libretranslate: '机器翻译（自托管服务器执行）',
   browser: '本地翻译（此浏览器执行）',
 }
 

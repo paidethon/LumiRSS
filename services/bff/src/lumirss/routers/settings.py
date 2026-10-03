@@ -62,13 +62,24 @@ def _parse_settings_patch(raw: bytes) -> tuple[PortableSettingsPatch, int | None
 
 
 def _app_settings_json(
-    document, stored: bool, revision: int | None = None
+    document,
+    stored: bool,
+    revision: int | None = None,
+    stored_keys: list[str] | None = None,
 ) -> dict[str, object]:
-    """Browser-safe portable settings view — no secrets exist by design."""
+    """Browser-safe portable settings view — no secrets exist by design.
+
+    R25: ``storedKeys`` lists the keys explicitly saved by the client
+    (sorted). Full-document values are still returned for every field, but
+    an upgrading client can now tell「server never saved this key (a newer
+    release added it)」apart from「server holds this value」and keep its
+    local value for the former instead of adopting freshly padded defaults.
+    """
     payload = document.model_dump()
     view: dict[str, object] = {
         "schemaVersion": payload["schemaVersion"],
         "stored": stored,
+        "storedKeys": stored_keys if stored_keys is not None else [],
         **payload,
     }
     if revision is not None:
@@ -85,8 +96,11 @@ async def get_app_settings(request: Request) -> dict[str, object]:
     treats it as authoritative afterwards. GET never mutates anything.
     """
     store = _get_app_settings_store(request)
-    document, stored = await store.load()
-    return _app_settings_json(document, stored, await store.document_revision())
+    document, stored, raw = await store.load_raw()
+    stored_keys = sorted(raw) if raw else []
+    return _app_settings_json(
+        document, stored, await store.document_revision(), stored_keys
+    )
 
 
 @router.patch("/api/v1/settings", response_model=AppSettingsView)
@@ -115,15 +129,17 @@ async def patch_app_settings(request: Request) -> dict[str, object]:
             )
     before_doc, _ = await store.load()
     try:
-        merged = await store.save(update)
+        saved = await store.save(update)
     except ValueError as exc:
         raise InvalidAppSettings(str(exc)) from exc
     # F33：记录实际变化的键（不含任何密钥——portable 设置无密钥字段）
     from lumirss.settings_history import SettingsHistoryStore, compute_diff
 
-    diff = compute_diff(before_doc.model_dump(), merged.model_dump())
+    diff = compute_diff(before_doc.model_dump(), saved.document.model_dump())
     await SettingsHistoryStore(request.app.state.db).record("update", diff)
-    return _app_settings_json(merged, True, await store.document_revision())
+    return _app_settings_json(
+        saved.document, True, await store.document_revision(), saved.stored_keys
+    )
 
 
 @router.delete("/api/v1/settings", status_code=204)
@@ -198,8 +214,8 @@ async def revert_settings_history(
         raise InvalidAppSettings(
             f"Invalid {first.get('loc', ())}: {first.get('msg', 'value rejected')}"
         ) from exc
-    merged = await store.save(patch)
-    after_doc = merged.model_dump()
+    saved = await store.save(patch)
+    after_doc = saved.document.model_dump()
     diff = compute_diff(current, after_doc)
     await SettingsHistoryStore(request.app.state.db).record("revert", diff)
     return SettingsRevertResult(

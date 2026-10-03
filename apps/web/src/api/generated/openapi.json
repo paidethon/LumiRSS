@@ -1299,6 +1299,17 @@
    "AgentThread": {
     "description": "One conversation thread.",
     "properties": {
+     "archivedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Archivedat"
+     },
      "createdAt": {
       "title": "Createdat",
       "type": "string"
@@ -1367,6 +1378,94 @@
     "title": "AgentThreadListResponse",
     "type": "object"
    },
+   "AgentThreadObsidianExportRequest": {
+    "additionalProperties": false,
+    "description": "R20 POST /api/v1/agent/threads/{id}/obsidian-export body。",
+    "properties": {
+     "rounds": {
+      "default": 20,
+      "maximum": 20.0,
+      "minimum": 1.0,
+      "title": "Rounds",
+      "type": "integer"
+     }
+    },
+    "title": "AgentThreadObsidianExportRequest",
+    "type": "object"
+   },
+   "AgentThreadObsidianExportResult": {
+    "description": "R20 单条导出结果（written | exists | failed + 原因；同 R07 口径）。",
+    "properties": {
+     "bytes": {
+      "default": 0,
+      "title": "Bytes",
+      "type": "integer"
+     },
+     "contentId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Contentid"
+     },
+     "message": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Message"
+     },
+     "path": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Path"
+     },
+     "reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reason"
+     },
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     },
+     "status": {
+      "enum": [
+       "written",
+       "exists",
+       "failed"
+      ],
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "ref",
+     "status"
+    ],
+    "title": "AgentThreadObsidianExportResult",
+    "type": "object"
+   },
    "AgentThreadSearchHit": {
     "description": "F095 一条会话消息搜索命中（snippet 含前后文）。",
     "properties": {
@@ -1426,6 +1525,17 @@
    "AgentThreadSettings": {
     "description": "PATCH /api/v1/agent/threads/{id} response（下轮生效）。",
     "properties": {
+     "archivedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Archivedat"
+     },
      "branchOf": {
       "anyOf": [
        {
@@ -1489,8 +1599,19 @@
    },
    "AgentThreadUpdate": {
     "additionalProperties": false,
-    "description": "F094/F098 会话设置（scope / toolPolicy / N165 budget；None =\n清除/不修改按键）。scope=None 显式清除范围锁定；键缺省 = 不修改。",
+    "description": "F094/F098 会话设置（scope / toolPolicy / N165 budget；None =\n清除/不修改按键）。scope=None 显式清除范围锁定；键缺省 = 不修改。\nR20：title 重命名、archived 归档/恢复（None = 不改状态）。",
     "properties": {
+     "archived": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Archived"
+     },
      "budget": {
       "anyOf": [
        {
@@ -2191,17 +2312,6 @@
       ],
       "title": "Baseurl"
      },
-     "libretranslateUrl": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Libretranslateurl"
-     },
      "model": {
       "anyOf": [
        {
@@ -2274,7 +2384,6 @@
        {
         "enum": [
          "ai",
-         "libretranslate",
          "browser"
         ],
         "type": "string"
@@ -2322,46 +2431,6 @@
      "envKeyConfigured": {
       "title": "Envkeyconfigured",
       "type": "boolean"
-     },
-     "libretranslateCheckedAt": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Libretranslatecheckedat"
-     },
-     "libretranslateDiagnostic": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Libretranslatediagnostic"
-     },
-     "libretranslateKeyConfigured": {
-      "title": "Libretranslatekeyconfigured",
-      "type": "boolean"
-     },
-     "libretranslateStatus": {
-      "default": "untested",
-      "enum": [
-       "untested",
-       "ok",
-       "failed"
-      ],
-      "title": "Libretranslatestatus",
-      "type": "string"
-     },
-     "libretranslateUrl": {
-      "title": "Libretranslateurl",
-      "type": "string"
      },
      "model": {
       "title": "Model",
@@ -2412,7 +2481,6 @@
      "translationEngine": {
       "enum": [
        "ai",
-       "libretranslate",
        "browser"
       ],
       "title": "Translationengine",
@@ -2434,8 +2502,6 @@
      "summaryLanguage",
      "translationLanguage",
      "translationEngine",
-     "libretranslateUrl",
-     "libretranslateKeyConfigured",
      "configured",
      "envKeyConfigured",
      "defaultKeyConfigured",
@@ -3680,7 +3746,7 @@
    },
    "AppSettingsView": {
     "additionalProperties": false,
-    "description": "GET/PATCH /api/v1/settings — the portable document + ``stored`` flag.\n\n``stored=false`` means the server holds no explicit document yet (the\nclient may seed it from local values); otherwise the fields are the\nserver-durable values. ``revision`` (0021) is a content-hash of the\nstored document for optimistic concurrency: a PATCH may carry\n``baseRevision`` and is refused with a stable 409 when it no longer\nmatches.",
+    "description": "GET/PATCH /api/v1/settings — the portable document + ``stored`` flag.\n\n``stored=false`` means the server holds no explicit document yet (the\nclient may seed it from local values); otherwise the fields are the\nserver-durable values. ``revision`` (0021) is a content-hash of the\nstored document for optimistic concurrency: a PATCH may carry\n``baseRevision`` and is refused with a stable 409 when it no longer\nmatches. ``storedKeys`` (R25) lists the keys explicitly saved by the\nclient — keys absent from it are model defaults the user never wrote\n(e.g. fields a newer release introduced), so an upgrading client keeps\nits local value for those instead of adopting the padded default.",
     "properties": {
      "accentColor": {
       "default": "#6d78e8",
@@ -3698,6 +3764,31 @@
       "title": "Cardswipeaction",
       "type": "string"
      },
+     "customCss": {
+      "default": "",
+      "maxLength": 64000,
+      "title": "Customcss",
+      "type": "string"
+     },
+     "dictApiUrl": {
+      "default": "",
+      "maxLength": 512,
+      "title": "Dictapiurl",
+      "type": "string"
+     },
+     "dimRead": {
+      "default": false,
+      "title": "Dimread",
+      "type": "boolean"
+     },
+     "filterRules": {
+      "items": {
+       "$ref": "#/components/schemas/FilterRuleSync"
+      },
+      "maxItems": 256,
+      "title": "Filterrules",
+      "type": "array"
+     },
      "glassEffect": {
       "default": "auto",
       "enum": [
@@ -3707,6 +3798,11 @@
       ],
       "title": "Glasseffect",
       "type": "string"
+     },
+     "groupByDate": {
+      "default": false,
+      "title": "Groupbydate",
+      "type": "boolean"
      },
      "listDensity": {
       "default": "standard",
@@ -3742,6 +3838,11 @@
       "title": "Listtimeformat",
       "type": "string"
      },
+     "pauseReadingProgress": {
+      "default": false,
+      "title": "Pausereadingprogress",
+      "type": "boolean"
+     },
      "readLaterSort": {
       "default": "newest",
       "enum": [
@@ -3774,6 +3875,39 @@
       "title": "Readerbackgroundcustom",
       "type": "string"
      },
+     "readerBionic": {
+      "default": false,
+      "title": "Readerbionic",
+      "type": "boolean"
+     },
+     "readerBlockRemoteImages": {
+      "default": false,
+      "title": "Readerblockremoteimages",
+      "type": "boolean"
+     },
+     "readerBreakReminderMinutes": {
+      "default": 45,
+      "enum": [
+       0,
+       20,
+       30,
+       45,
+       60,
+       90
+      ],
+      "title": "Readerbreakreminderminutes",
+      "type": "integer"
+     },
+     "readerCaptionMode": {
+      "default": "show",
+      "enum": [
+       "show",
+       "hidden",
+       "hover"
+      ],
+      "title": "Readercaptionmode",
+      "type": "string"
+     },
      "readerChineseConversion": {
       "default": "off",
       "enum": [
@@ -3786,6 +3920,16 @@
       "title": "Readerchineseconversion",
       "type": "string"
      },
+     "readerCodeFontSize": {
+      "default": "m",
+      "enum": [
+       "s",
+       "m",
+       "l"
+      ],
+      "title": "Readercodefontsize",
+      "type": "string"
+     },
      "readerCodeHighlight": {
       "default": "auto",
       "enum": [
@@ -3794,6 +3938,11 @@
       ],
       "title": "Readercodehighlight",
       "type": "string"
+     },
+     "readerCodeLineNumbers": {
+      "default": false,
+      "title": "Readercodelinenumbers",
+      "type": "boolean"
      },
      "readerCodeTheme": {
       "default": "auto",
@@ -3817,13 +3966,40 @@
       "title": "Readercontentwidth",
       "type": "number"
      },
+     "readerContentWidthMode": {
+      "default": "fixed",
+      "enum": [
+       "fixed",
+       "viewport"
+      ],
+      "title": "Readercontentwidthmode",
+      "type": "string"
+     },
+     "readerContentWidthViewport": {
+      "default": 92,
+      "title": "Readercontentwidthviewport",
+      "type": "integer"
+     },
+     "readerFirstImageFullBleed": {
+      "default": false,
+      "title": "Readerfirstimagefullbleed",
+      "type": "boolean"
+     },
      "readerFontFamily": {
       "default": "system",
       "enum": [
        "system",
        "sans",
        "serif",
-       "mono"
+       "mono",
+       "source-han-sans",
+       "source-han-serif",
+       "lxgw-wenkai",
+       "zhuque-fangsong",
+       "zcool-xiaowei",
+       "ma-shan-zheng",
+       "source-sans-3",
+       "source-serif-4"
       ],
       "title": "Readerfontfamily",
       "type": "string"
@@ -3833,10 +4009,32 @@
       "title": "Readerfontsize",
       "type": "number"
      },
+     "readerFontWeight": {
+      "default": 400,
+      "enum": [
+       300,
+       400,
+       500,
+       600,
+       700
+      ],
+      "title": "Readerfontweight",
+      "type": "integer"
+     },
      "readerHangingPunctuation": {
       "default": false,
       "title": "Readerhangingpunctuation",
       "type": "boolean"
+     },
+     "readerImageMaxWidth": {
+      "default": "100%",
+      "enum": [
+       "100%",
+       "75%",
+       "60%"
+      ],
+      "title": "Readerimagemaxwidth",
+      "type": "string"
      },
      "readerImageMode": {
       "default": "all",
@@ -3848,9 +4046,29 @@
       "title": "Readerimagemode",
       "type": "string"
      },
+     "readerIndentLists": {
+      "default": false,
+      "title": "Readerindentlists",
+      "type": "boolean"
+     },
+     "readerIndentQuotes": {
+      "default": false,
+      "title": "Readerindentquotes",
+      "type": "boolean"
+     },
      "readerJustify": {
       "default": false,
       "title": "Readerjustify",
+      "type": "boolean"
+     },
+     "readerKeyNav": {
+      "default": false,
+      "title": "Readerkeynav",
+      "type": "boolean"
+     },
+     "readerLineBreakStrict": {
+      "default": false,
+      "title": "Readerlinebreakstrict",
       "type": "boolean"
      },
      "readerLineHeight": {
@@ -3868,10 +4086,22 @@
       "title": "Readerpagedmode",
       "type": "boolean"
      },
+     "readerPaperTexture": {
+      "default": false,
+      "title": "Readerpapertexture",
+      "type": "boolean"
+     },
      "readerParagraphSpacing": {
       "default": 0.85,
       "title": "Readerparagraphspacing",
       "type": "number"
+     },
+     "readerPresetId": {
+      "default": "default",
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Readerpresetid",
+      "type": "string"
      },
      "readerPresets": {
       "default": [],
@@ -3880,6 +4110,15 @@
       },
       "title": "Readerpresets",
       "type": "array"
+     },
+     "readerReadingMode": {
+      "default": "scroll",
+      "enum": [
+       "scroll",
+       "paged"
+      ],
+      "title": "Readerreadingmode",
+      "type": "string"
      },
      "readerShowReadingProgress": {
       "default": true,
@@ -3891,6 +4130,30 @@
       "title": "Readershowreadingtime",
       "type": "boolean"
      },
+     "readerStripFixedMedia": {
+      "default": true,
+      "title": "Readerstripfixedmedia",
+      "type": "boolean"
+     },
+     "readerTapZoneAxis": {
+      "default": "horizontal",
+      "enum": [
+       "horizontal",
+       "vertical"
+      ],
+      "title": "Readertapzoneaxis",
+      "type": "string"
+     },
+     "readerTapZoneSize": {
+      "default": "small",
+      "enum": [
+       "off",
+       "small",
+       "large"
+      ],
+      "title": "Readertapzonesize",
+      "type": "string"
+     },
      "readerTextIndent": {
       "default": "off",
       "enum": [
@@ -3899,6 +4162,20 @@
       ],
       "title": "Readertextindent",
       "type": "string"
+     },
+     "readerToolbarDesktopOrder": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Readertoolbardesktoporder",
+      "type": "array"
+     },
+     "readerToolbarMobileOrder": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Readertoolbarmobileorder",
+      "type": "array"
      },
      "reduceMotion": {
       "default": false,
@@ -3925,9 +4202,119 @@
       "title": "Searchhighlightmatches",
       "type": "boolean"
      },
+     "sidebarCollapsed": {
+      "default": false,
+      "title": "Sidebarcollapsed",
+      "type": "boolean"
+     },
+     "sidebarWidth": {
+      "default": 240,
+      "title": "Sidebarwidth",
+      "type": "integer"
+     },
+     "speechBilingualAlternate": {
+      "default": false,
+      "title": "Speechbilingualalternate",
+      "type": "boolean"
+     },
+     "speechBilingualGap": {
+      "default": "none",
+      "enum": [
+       "none",
+       "short",
+       "long"
+      ],
+      "title": "Speechbilingualgap",
+      "type": "string"
+     },
+     "speechLexicon": {
+      "items": {
+       "$ref": "#/components/schemas/SpeechLexiconEntrySync"
+      },
+      "maxItems": 50,
+      "title": "Speechlexicon",
+      "type": "array"
+     },
+     "speechRate": {
+      "default": 1.0,
+      "title": "Speechrate",
+      "type": "number"
+     },
+     "speechSkipCaptions": {
+      "default": false,
+      "title": "Speechskipcaptions",
+      "type": "boolean"
+     },
+     "speechSkipCode": {
+      "default": false,
+      "title": "Speechskipcode",
+      "type": "boolean"
+     },
+     "speechSkipFootnotes": {
+      "default": false,
+      "title": "Speechskipfootnotes",
+      "type": "boolean"
+     },
+     "speechSkipLinkOnly": {
+      "default": false,
+      "title": "Speechskiplinkonly",
+      "type": "boolean"
+     },
+     "speechSkipTables": {
+      "default": false,
+      "title": "Speechskiptables",
+      "type": "boolean"
+     },
+     "speechSleepTimerMinutes": {
+      "default": 0,
+      "enum": [
+       0,
+       5,
+       10,
+       15,
+       30
+      ],
+      "title": "Speechsleeptimerminutes",
+      "type": "integer"
+     },
+     "speechStopMode": {
+      "default": "article",
+      "enum": [
+       "article",
+       "queue"
+      ],
+      "title": "Speechstopmode",
+      "type": "string"
+     },
+     "speechVoiceURI": {
+      "default": "",
+      "maxLength": 256,
+      "title": "Speechvoiceuri",
+      "type": "string"
+     },
+     "speechVoiceURIEn": {
+      "default": "",
+      "maxLength": 256,
+      "title": "Speechvoiceurien",
+      "type": "string"
+     },
+     "speechVoiceURIZh": {
+      "default": "",
+      "maxLength": 256,
+      "title": "Speechvoiceurizh",
+      "type": "string"
+     },
      "stored": {
       "title": "Stored",
       "type": "boolean"
+     },
+     "storedKeys": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Storedkeys",
+      "type": "array"
      },
      "swipeBackGesture": {
       "default": true,
@@ -3944,6 +4331,11 @@
       "title": "Thememode",
       "type": "string"
      },
+     "timelineCollapsed": {
+      "default": false,
+      "title": "Timelinecollapsed",
+      "type": "boolean"
+     },
      "timelineOrder": {
       "default": "newest",
       "enum": [
@@ -3953,6 +4345,21 @@
       ],
       "title": "Timelineorder",
       "type": "string"
+     },
+     "timelineWidth": {
+      "default": 400,
+      "title": "Timelinewidth",
+      "type": "integer"
+     },
+     "translationLinkedScroll": {
+      "default": false,
+      "title": "Translationlinkedscroll",
+      "type": "boolean"
+     },
+     "translationMigratedFromLibre": {
+      "default": false,
+      "title": "Translationmigratedfromlibre",
+      "type": "boolean"
      },
      "uiFontSize": {
       "default": 16,
@@ -3975,6 +4382,11 @@
       ],
       "title": "Uifontstack",
       "type": "string"
+     },
+     "unreadOnly": {
+      "default": false,
+      "title": "Unreadonly",
+      "type": "boolean"
      }
     },
     "required": [
@@ -11485,6 +11897,29 @@
     "title": "ExportBody",
     "type": "object"
    },
+   "ExportInclude": {
+    "additionalProperties": false,
+    "description": "可选附加分区：AI 摘要 / 译文 / 批注（存在才写，缺失诚实省略）。",
+    "properties": {
+     "annotations": {
+      "default": false,
+      "title": "Annotations",
+      "type": "boolean"
+     },
+     "summary": {
+      "default": false,
+      "title": "Summary",
+      "type": "boolean"
+     },
+     "translation": {
+      "default": false,
+      "title": "Translation",
+      "type": "boolean"
+     }
+    },
+    "title": "ExportInclude",
+    "type": "object"
+   },
    "FavoritesResponse": {
     "description": "Federated favorites: rss star + library favorite, merged for\ndisplay only — each stays owned by its own domain.",
     "properties": {
@@ -11998,6 +12433,57 @@
      "entryRefs"
     ],
     "title": "FieldHitsBody",
+    "type": "object"
+   },
+   "FilterRuleSync": {
+    "additionalProperties": false,
+    "description": "过滤规则单条（与 Web FilterRule 同一口径；feedId=null = 全局）。",
+    "properties": {
+     "enabled": {
+      "default": true,
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "feedId": {
+      "anyOf": [
+       {
+        "maxLength": 256,
+        "minLength": 1,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Feedid"
+     },
+     "id": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Id",
+      "type": "string"
+     },
+     "keyword": {
+      "maxLength": 512,
+      "minLength": 1,
+      "title": "Keyword",
+      "type": "string"
+     },
+     "type": {
+      "default": "keyword",
+      "enum": [
+       "keyword",
+       "regex"
+      ],
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "keyword"
+    ],
+    "title": "FilterRuleSync",
     "type": "object"
    },
    "FollowupCreate": {
@@ -13831,6 +14317,42 @@
     "title": "GptDigestRef",
     "type": "object"
    },
+   "GptDigestRunStatus": {
+    "description": "GET /api/v1/gpt-digest/configs/{id}/run-status — 手动/调度生成\n的运行状态（阶段进度 + 取消语义的状态源）。\n\n``stage`` 为服务端真实阶段：``select``（选材）/``summarize``（总结）/\n``polish``（润色）/``generate``（单阶段路径一次完成）。取消在阶段\n边界生效——绝不半写期号。",
+    "properties": {
+     "running": {
+      "title": "Running",
+      "type": "boolean"
+     },
+     "stage": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Stage"
+     },
+     "startedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Startedat"
+     }
+    },
+    "required": [
+     "running"
+    ],
+    "title": "GptDigestRunStatus",
+    "type": "object"
+   },
    "GptDigestSection": {
     "properties": {
      "heading": {
@@ -15526,46 +16048,6 @@
     "title": "LibrarySearchItem",
     "type": "object"
    },
-   "LibreTranslateTestResult": {
-    "description": "POST /api/v1/settings/translation/libretranslate-test.",
-    "properties": {
-     "checkedAt": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Checkedat"
-     },
-     "message": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Message"
-     },
-     "status": {
-      "enum": [
-       "ok",
-       "failed"
-      ],
-      "title": "Status",
-      "type": "string"
-     }
-    },
-    "required": [
-     "status"
-    ],
-    "title": "LibreTranslateTestResult",
-    "type": "object"
-   },
    "LicenseNoticePreview": {
     "additionalProperties": false,
     "properties": {
@@ -16976,6 +17458,278 @@
     "title": "MoveBody",
     "type": "object"
    },
+   "NewsletterIssueDetail": {
+    "description": "详情：正文快照仅在存在时给出（历史/失败行诚实 bodyAvailable=false）。",
+    "properties": {
+     "bodyAvailable": {
+      "title": "Bodyavailable",
+      "type": "boolean"
+     },
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "dedupeKey": {
+      "title": "Dedupekey",
+      "type": "string"
+     },
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     },
+     "html": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Html"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "itemCount": {
+      "title": "Itemcount",
+      "type": "integer"
+     },
+     "origin": {
+      "title": "Origin",
+      "type": "string"
+     },
+     "providerReceipt": {
+      "title": "Providerreceipt",
+      "type": "string"
+     },
+     "recipientCount": {
+      "title": "Recipientcount",
+      "type": "integer"
+     },
+     "recipients": {
+      "items": {
+       "$ref": "#/components/schemas/NewsletterIssueRecipient"
+      },
+      "title": "Recipients",
+      "type": "array"
+     },
+     "sentAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sentat"
+     },
+     "source": {
+      "title": "Source",
+      "type": "string"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "subject": {
+      "title": "Subject",
+      "type": "string"
+     },
+     "text": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Text"
+     }
+    },
+    "required": [
+     "id",
+     "subject",
+     "status",
+     "source",
+     "origin",
+     "itemCount",
+     "recipientCount",
+     "createdAt",
+     "bodyAvailable",
+     "dedupeKey",
+     "providerReceipt",
+     "recipients"
+    ],
+    "title": "NewsletterIssueDetail",
+    "type": "object"
+   },
+   "NewsletterIssueList": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/NewsletterIssueSummary"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "NewsletterIssueList",
+    "type": "object"
+   },
+   "NewsletterIssueRecipient": {
+    "description": "逐收件人账目（非管理员 address 为脱敏形态）。",
+    "properties": {
+     "address": {
+      "title": "Address",
+      "type": "string"
+     },
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     },
+     "sentAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sentat"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "address",
+     "status"
+    ],
+    "title": "NewsletterIssueRecipient",
+    "type": "object"
+   },
+   "NewsletterIssueSummary": {
+    "description": "列表行：主题 / 时间 / 状态 / 来源 / 收件人数。",
+    "properties": {
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "itemCount": {
+      "title": "Itemcount",
+      "type": "integer"
+     },
+     "origin": {
+      "title": "Origin",
+      "type": "string"
+     },
+     "recipientCount": {
+      "title": "Recipientcount",
+      "type": "integer"
+     },
+     "sentAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sentat"
+     },
+     "source": {
+      "title": "Source",
+      "type": "string"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "subject": {
+      "title": "Subject",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "subject",
+     "status",
+     "source",
+     "origin",
+     "itemCount",
+     "recipientCount",
+     "createdAt"
+    ],
+    "title": "NewsletterIssueSummary",
+    "type": "object"
+   },
+   "NewsletterRetryResult": {
+    "properties": {
+     "issueId": {
+      "title": "Issueid",
+      "type": "integer"
+     },
+     "sentCount": {
+      "title": "Sentcount",
+      "type": "integer"
+     },
+     "skippedCount": {
+      "title": "Skippedcount",
+      "type": "integer"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "issueId",
+     "status",
+     "sentCount",
+     "skippedCount"
+    ],
+    "title": "NewsletterRetryResult",
+    "type": "object"
+   },
    "NoteActiveResponse": {
     "properties": {
      "archivedCount": {
@@ -17820,6 +18574,42 @@
      "suggestion"
     ],
     "title": "ObsidianExportIssue",
+    "type": "object"
+   },
+   "ObsidianExportRequest": {
+    "additionalProperties": false,
+    "properties": {
+     "include": {
+      "$ref": "#/components/schemas/ExportInclude"
+     },
+     "refs": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 50,
+      "minItems": 1,
+      "title": "Refs",
+      "type": "array"
+     }
+    },
+    "required": [
+     "refs"
+    ],
+    "title": "ObsidianExportRequest",
+    "type": "object"
+   },
+   "ObsidianExportSubdirUpdate": {
+    "additionalProperties": false,
+    "properties": {
+     "subdir": {
+      "title": "Subdir",
+      "type": "string"
+     }
+    },
+    "required": [
+     "subdir"
+    ],
+    "title": "ObsidianExportSubdirUpdate",
     "type": "object"
    },
    "ObsidianExportTemplateUpdate": {
@@ -22789,6 +23579,457 @@
     "title": "RagInconsistencyList",
     "type": "object"
    },
+   "RagIndexConvergeResult": {
+    "description": "POST /api/v1/rag/index/converge —— 手动触发一次增量收敛。",
+    "properties": {
+     "indexed": {
+      "default": 0,
+      "title": "Indexed",
+      "type": "integer"
+     },
+     "skipped": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Skipped"
+     },
+     "swept": {
+      "default": 0,
+      "title": "Swept",
+      "type": "integer"
+     }
+    },
+    "title": "RagIndexConvergeResult",
+    "type": "object"
+   },
+   "RagIndexDeleteResult": {
+    "description": "DELETE /api/v1/rag/index —— 清空本账号索引（绝不删原文）。",
+    "properties": {
+     "removedChunks": {
+      "default": 0,
+      "title": "Removedchunks",
+      "type": "integer"
+     },
+     "removedVecRows": {
+      "default": 0,
+      "title": "Removedvecrows",
+      "type": "integer"
+     }
+    },
+    "title": "RagIndexDeleteResult",
+    "type": "object"
+   },
+   "RagIndexOverview": {
+    "description": "GET /api/v1/rag/index/overview —— RAG 索引页总览。\n\n当前账号索引集合的真实盘点：来源 × 语料/索引数、模型/维度、最近\n更新、磁盘占用、队列进度与失败明细。全部数值来自真实行/作业；\n跨用户天然隔离（每用户自己的库）。",
+    "properties": {
+     "aiDisabledFeeds": {
+      "default": 0,
+      "title": "Aidisabledfeeds",
+      "type": "integer"
+     },
+     "calendarPaused": {
+      "default": false,
+      "title": "Calendarpaused",
+      "type": "boolean"
+     },
+     "chunks": {
+      "default": 0,
+      "title": "Chunks",
+      "type": "integer"
+     },
+     "configuredModel": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Configuredmodel"
+     },
+     "dim": {
+      "title": "Dim",
+      "type": "integer"
+     },
+     "documents": {
+      "default": 0,
+      "title": "Documents",
+      "type": "integer"
+     },
+     "enabled": {
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "excludedFeeds": {
+      "default": 0,
+      "title": "Excludedfeeds",
+      "type": "integer"
+     },
+     "failures": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/RagIndexOverviewFailure"
+      },
+      "title": "Failures",
+      "type": "array"
+     },
+     "fastembedAvailable": {
+      "default": false,
+      "title": "Fastembedavailable",
+      "type": "boolean"
+     },
+     "incrementalPaused": {
+      "default": false,
+      "title": "Incrementalpaused",
+      "type": "boolean"
+     },
+     "job": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/RagIndexOverviewJob"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "lastError": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lasterror"
+     },
+     "lastRebuildAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lastrebuildat"
+     },
+     "lastUpdatedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lastupdatedat"
+     },
+     "modelId": {
+      "title": "Modelid",
+      "type": "string"
+     },
+     "queue": {
+      "$ref": "#/components/schemas/RagIndexOverviewQueue"
+     },
+     "sources": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/RagIndexOverviewSource"
+      },
+      "title": "Sources",
+      "type": "array"
+     },
+     "storage": {
+      "$ref": "#/components/schemas/RagIndexOverviewStorage"
+     },
+     "vecTable": {
+      "default": false,
+      "title": "Vectable",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "enabled",
+     "modelId",
+     "dim"
+    ],
+    "title": "RagIndexOverview",
+    "type": "object"
+   },
+   "RagIndexOverviewFailure": {
+    "description": "R24 失败项明细（脱敏：原因截断，绝不携带堆栈或上游内容）。",
+    "properties": {
+     "at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "At"
+     },
+     "reason": {
+      "title": "Reason",
+      "type": "string"
+     },
+     "ref": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Ref"
+     }
+    },
+    "required": [
+     "reason"
+    ],
+    "title": "RagIndexOverviewFailure",
+    "type": "object"
+   },
+   "RagIndexOverviewJob": {
+    "description": "R24 最近作业段（F093 口径；running 时前端可提供取消 = 暂停）。",
+    "properties": {
+     "done": {
+      "default": 0,
+      "title": "Done",
+      "type": "integer"
+     },
+     "jobId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Jobid"
+     },
+     "remaining": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Remaining"
+     },
+     "stage": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Stage"
+     },
+     "status": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Status"
+     },
+     "updatedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Updatedat"
+     }
+    },
+    "title": "RagIndexOverviewJob",
+    "type": "object"
+   },
+   "RagIndexOverviewQueue": {
+    "description": "R24 队列进度（口径同 coverage：全部来自真实行与作业证据）。\n\npending = 可索引但当前模型下还没有任何分块；done = 已索引；\nfailed = 最近作业 skipped 的 ref（去重）；stale = 已索引但正文\nhash 已过期。「处理完任务 ≠ 全部成功」由 failed 直接承载。",
+    "properties": {
+     "done": {
+      "default": 0,
+      "title": "Done",
+      "type": "integer"
+     },
+     "failed": {
+      "default": 0,
+      "title": "Failed",
+      "type": "integer"
+     },
+     "pending": {
+      "default": 0,
+      "title": "Pending",
+      "type": "integer"
+     },
+     "stale": {
+      "default": 0,
+      "title": "Stale",
+      "type": "integer"
+     }
+    },
+    "title": "RagIndexOverviewQueue",
+    "type": "object"
+   },
+   "RagIndexOverviewSource": {
+    "description": "R24 总览的一类可索引来源（语料数 + 该 kind 已索引/分块数）。",
+    "properties": {
+     "chunks": {
+      "default": 0,
+      "title": "Chunks",
+      "type": "integer"
+     },
+     "corpusDocs": {
+      "default": 0,
+      "title": "Corpusdocs",
+      "type": "integer"
+     },
+     "indexedDocs": {
+      "default": 0,
+      "title": "Indexeddocs",
+      "type": "integer"
+     },
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     }
+    },
+    "required": [
+     "kind"
+    ],
+    "title": "RagIndexOverviewSource",
+    "type": "object"
+   },
+   "RagIndexOverviewStorage": {
+    "description": "R24 索引磁盘占用（vec 表 + 分块元数据的实际字节数）。\n\nbasis=dbstat：SQLite dbstat 页级真实占用；basis=payload：无 dbstat\n编译项时的载荷字节兜底（诚实标注口径，绝不估算页开销）。",
+    "properties": {
+     "basis": {
+      "enum": [
+       "dbstat",
+       "payload"
+      ],
+      "title": "Basis",
+      "type": "string"
+     },
+     "chunkBytes": {
+      "default": 0,
+      "title": "Chunkbytes",
+      "type": "integer"
+     },
+     "totalBytes": {
+      "default": 0,
+      "title": "Totalbytes",
+      "type": "integer"
+     },
+     "vecBytes": {
+      "default": 0,
+      "title": "Vecbytes",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "basis"
+    ],
+    "title": "RagIndexOverviewStorage",
+    "type": "object"
+   },
+   "RagIndexPauseResult": {
+    "description": "POST /api/v1/rag/index/pause|resume —— 本账号增量索引暂停开关。",
+    "properties": {
+     "paused": {
+      "title": "Paused",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "paused"
+    ],
+    "title": "RagIndexPauseResult",
+    "type": "object"
+   },
+   "RagIndexRetryFailedRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/rag/index/retry-failed body。\n\nrefs 缺省 = 重试全部失败项（≤limit）；显式 refs = 单项重试\n（失败项列表的「单独重试」按钮）。只动失败项，绝不全量重建。",
+    "properties": {
+     "limit": {
+      "default": 50,
+      "maximum": 50.0,
+      "minimum": 1.0,
+      "title": "Limit",
+      "type": "integer"
+     },
+     "refs": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 50,
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Refs"
+     }
+    },
+    "title": "RagIndexRetryFailedRequest",
+    "type": "object"
+   },
+   "RagIndexRetryFailedResult": {
+    "description": "retry-failed 结果：missing = 来源已不存在的失败项（诚实汇报）。",
+    "properties": {
+     "chunks": {
+      "default": 0,
+      "title": "Chunks",
+      "type": "integer"
+     },
+     "missing": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Missing",
+      "type": "array"
+     },
+     "requested": {
+      "default": 0,
+      "title": "Requested",
+      "type": "integer"
+     },
+     "updated": {
+      "default": 0,
+      "title": "Updated",
+      "type": "integer"
+     }
+    },
+    "title": "RagIndexRetryFailedResult",
+    "type": "object"
+   },
    "RagIndexVersion": {
     "description": "N157：GET /api/v1/rag/index-version — 当前索引版本。\n\nmodelId/dim 为 LIVE 口径（rebuild 期间仍指旧模型）；rowCounts 按\nmodel_id 分列；configuredModel = 下一次 rebuild 将写入的模型。",
     "properties": {
@@ -24234,6 +25475,20 @@
      "password"
     ],
     "title": "RegisterRequest",
+    "type": "object"
+   },
+   "RegistrationPolicy": {
+    "description": "GET /auth/registration-policy (R01)：匿名可探的实例注册策略。",
+    "properties": {
+     "allowPublicRegistration": {
+      "title": "Allowpublicregistration",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "allowPublicRegistration"
+    ],
+    "title": "RegistrationPolicy",
     "type": "object"
    },
    "RegistrationPolicyRequest": {
@@ -30792,6 +32047,64 @@
     "title": "SourceRegistryResponse",
     "type": "object"
    },
+   "SourceTypeSummary": {
+    "description": "One content-source-type row of GET /api/v1/sources/summary.\n\n口径（诚实标注，绝不冒充）：\n- count：该类型的真实数量；None = 不可数（连接状态型，如邮件桥\n  列表、Obsidian vault 配置存在性之外的维度），绝不写 0 冒充；\n- status：ok（已连接/正常）/ empty（集合为空）/ not_configured\n  （服务未配置——与「集合为空」严格区分）/ error（最近错误）；\n- lastActivityAt：owning store 维护的最近活动时间，未知为 None；\n- detail：error 时的诚实错误摘录（owning store 已有字段，不新造）。",
+    "properties": {
+     "count": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Count"
+     },
+     "detail": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Detail"
+     },
+     "lastActivityAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lastactivityat"
+     },
+     "status": {
+      "enum": [
+       "ok",
+       "empty",
+       "not_configured",
+       "error"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "type": {
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "type",
+     "status"
+    ],
+    "title": "SourceTypeSummary",
+    "type": "object"
+   },
    "SourceView": {
     "properties": {
      "createdAt": {
@@ -30828,6 +32141,27 @@
      "createdAt"
     ],
     "title": "SourceView",
+    "type": "object"
+   },
+   "SourcesSummaryResponse": {
+    "properties": {
+     "generatedAt": {
+      "title": "Generatedat",
+      "type": "string"
+     },
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/SourceTypeSummary"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items",
+     "generatedAt"
+    ],
+    "title": "SourcesSummaryResponse",
     "type": "object"
    },
    "SpaceCreate": {
@@ -30891,6 +32225,29 @@
      "name"
     ],
     "title": "SpaceFromTemplate",
+    "type": "object"
+   },
+   "SpeechLexiconEntrySync": {
+    "additionalProperties": false,
+    "description": "N095：发音词典单条（{match, replace} 子串替换；只作用于朗读文本）。",
+    "properties": {
+     "match": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Match",
+      "type": "string"
+     },
+     "replace": {
+      "default": "",
+      "maxLength": 256,
+      "title": "Replace",
+      "type": "string"
+     }
+    },
+    "required": [
+     "match"
+    ],
+    "title": "SpeechLexiconEntrySync",
     "type": "object"
    },
    "SpeedUpdateRequest": {
@@ -40188,7 +41545,20 @@
   },
   "/api/v1/agent/threads": {
    "get": {
+    "description": "R20：archived=False（默认）= 未归档工作集；True = 已归档视图。",
     "operationId": "list_threads_api_v1_agent_threads_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "archived",
+      "required": false,
+      "schema": {
+       "default": false,
+       "title": "Archived",
+       "type": "boolean"
+      }
+     }
+    ],
     "responses": {
      "200": {
       "content": {
@@ -40199,6 +41569,16 @@
        }
       },
       "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
      }
     },
     "summary": "List Threads"
@@ -40292,7 +41672,7 @@
     "summary": "Delete Thread"
    },
    "patch": {
-    "description": "F094/F098/N165：会话设置（scope / toolPolicy / budget / 标题）。下轮生效。",
+    "description": "F094/F098/N165/R20：会话设置（scope / toolPolicy / budget / 标题 /\n归档）。下轮生效（归档/标题即时）。",
     "operationId": "update_thread_settings_api_v1_agent_threads__thread_id__patch",
     "parameters": [
      {
@@ -40793,6 +42173,56 @@
      }
     },
     "summary": "Post Message"
+   }
+  },
+  "/api/v1/agent/threads/{thread_id}/obsidian-export": {
+   "post": {
+    "description": "R20：会话导出到 Obsidian——复用 F096 的 markdown 渲染（角色轮次\n+ 机密剥离 + 结构转义）与 R07 的受限写入面（containment / 幂等 /\nper-user 隔离 / 每日配额全部在 ObsidianExportService，本路由只做\n内容收集）。会话不是 ItemRef：synthetic ref ``agent:<thread_id>``\n走同一 content-id 幂等（重复导出 = exists，绝不覆盖）。",
+    "operationId": "export_thread_to_obsidian_api_v1_agent_threads__thread_id__obsidian_export_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "thread_id",
+      "required": true,
+      "schema": {
+       "title": "Thread Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AgentThreadObsidianExportRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AgentThreadObsidianExportResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Export Thread To Obsidian"
    }
   },
   "/api/v1/agent/threads/{thread_id}/pause": {
@@ -45514,6 +46944,25 @@
      }
     },
     "summary": "Register"
+   }
+  },
+  "/api/v1/auth/registration-policy": {
+   "get": {
+    "description": "匿名公开：登录页据此决定注册入口是表单还是邀请说明。\n\n只暴露这一个布尔位，不泄漏实例其他配置；探测失败由前端诚实\n回退（进 /register 由服务端 403 定案）。",
+    "operationId": "registration_policy_api_v1_auth_registration_policy_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RegistrationPolicy"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Registration Policy"
    }
   },
   "/api/v1/auth/session": {
@@ -53848,6 +55297,44 @@
     "summary": "Update Gpt Digest Config"
    }
   },
+  "/api/v1/gpt-digest/configs/{config_id}/cancel": {
+   "post": {
+    "description": "请求取消进行中的生成（协作式：在阶段边界生效——绝不半写期号；\n已花费的模型调用不退回）。无进行中运行 → 200 cancelled=false（幂等）。",
+    "operationId": "cancel_gpt_digest_run_api_v1_gpt_digest_configs__config_id__cancel_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "config_id",
+      "required": true,
+      "schema": {
+       "title": "Config Id",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Cancel Gpt Digest Run"
+   }
+  },
   "/api/v1/gpt-digest/configs/{config_id}/feed": {
    "get": {
     "operationId": "get_config_feed_api_v1_gpt_digest_configs__config_id__feed_get",
@@ -54619,6 +56106,46 @@
      }
     },
     "summary": "Preview Config Digest"
+   }
+  },
+  "/api/v1/gpt-digest/configs/{config_id}/run-status": {
+   "get": {
+    "description": "生成运行状态（手动与调度共用同一注册表）。``stage`` 是服务端\n真实阶段（select/summarize/polish/generate），绝不虚构进度。",
+    "operationId": "get_gpt_digest_run_status_api_v1_gpt_digest_configs__config_id__run_status_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "config_id",
+      "required": true,
+      "schema": {
+       "title": "Config Id",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GptDigestRunStatus"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Gpt Digest Run Status"
    }
   },
   "/api/v1/gpt-digest/configs/{config_id}/weekly": {
@@ -62653,6 +64180,126 @@
     "summary": "Cancel Pause Plan"
    }
   },
+  "/api/v1/newsletter/issues": {
+   "get": {
+    "description": "按状态过滤的发送账本（新→旧，有界 ≤50）。\n\ndraft / scheduled 当前没有持久化形态（无草稿机制；计划发送是\ndigest 设置而非期号）→ 诚实空列表，不伪造记录。",
+    "operationId": "list_newsletter_issues_api_v1_newsletter_issues_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "status",
+      "required": false,
+      "schema": {
+       "default": "sent",
+       "title": "Status",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NewsletterIssueList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Newsletter Issues"
+   }
+  },
+  "/api/v1/newsletter/issues/{issue_id}": {
+   "get": {
+    "operationId": "get_newsletter_issue_api_v1_newsletter_issues__issue_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "issue_id",
+      "required": true,
+      "schema": {
+       "title": "Issue Id",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NewsletterIssueDetail"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Newsletter Issue"
+   }
+  },
+  "/api/v1/newsletter/issues/{issue_id}/retry": {
+   "post": {
+    "description": "重试一次失败的发送：只投递账目中尚未成功的收件人。\n\n已 sent 的收件人绝不重发（逐收件人账目 + 地址合并，见\nmail_digest.retry_digest_issue）；账目显示全部已送达时不触碰\nSMTP，直接把该行修复为 sent。SMTP 未配置 → 稳定 503。",
+    "operationId": "retry_newsletter_issue_api_v1_newsletter_issues__issue_id__retry_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "issue_id",
+      "required": true,
+      "schema": {
+       "title": "Issue Id",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NewsletterRetryResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Retry Newsletter Issue"
+   }
+  },
   "/api/v1/note-templates": {
    "get": {
     "operationId": "list_templates_api_v1_note_templates_get",
@@ -63730,6 +65377,43 @@
     "summary": "Update Obsidian Device"
    }
   },
+  "/api/v1/obsidian/export": {
+   "post": {
+    "description": "逐条导出到服务端导出根；返回与输入同序的逐项结果。\n\n同一批内的重复 ref 去重（同 content-id 同内容本就幂等，去重只是\n少一次台账行）；收集失败与写入失败都不中断整批。",
+    "operationId": "export_to_obsidian_api_v1_obsidian_export_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ObsidianExportRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Export To Obsidian"
+   }
+  },
   "/api/v1/obsidian/export-handoff": {
    "post": {
     "description": "Compose + render + decide URI vs file fallback for one article.\n\nHonest handoff: ``mode='uri'`` means the obsidian://new link was\nbuilt (the USER's Obsidian does any writing after confirmation);\n``mode='file'`` with reason='tooLong' means the content exceeded the\nURI budget and the client falls back to download + clipboard.\n\nN137：交接组装成功后回标导出水位（mark 幂等，重复导出无害）；\nN135：命名策略体现在 filename（timestamp_suffix 追加 -YYYYMMDD-HHmm）；\nN140：自动落一条 pending 交接记录（confirmed 只能由用户显式确认）。",
@@ -63899,6 +65583,74 @@
      }
     },
     "summary": "Preview Obsidian Export Template"
+   }
+  },
+  "/api/v1/obsidian/export/settings": {
+   "get": {
+    "operationId": "get_obsidian_export_settings_api_v1_obsidian_export_settings_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get Obsidian Export Settings"
+   },
+   "put": {
+    "description": "设置导出子目录（vault 导出根内的相对子路径，默认 LumiRSS）。",
+    "operationId": "set_obsidian_export_settings_api_v1_obsidian_export_settings_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ObsidianExportSubdirUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Set Obsidian Export Settings"
+   }
+  },
+  "/api/v1/obsidian/export/status": {
+   "get": {
+    "description": "导出目标目录、今日用量、每日上限、最近导出台账（per-user）。",
+    "operationId": "obsidian_export_status_api_v1_obsidian_export_status_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Obsidian Export Status"
    }
   },
   "/api/v1/obsidian/handoff-log": {
@@ -65580,6 +67332,111 @@
     "summary": "Opml Import Preview"
    }
   },
+  "/api/v1/opml/import/rsshub-apply": {
+   "post": {
+    "description": "R18：应用 RSSHub 优化导入。\n\nstrategy=prefer_rsshub（默认，只执行唯一高置信且无凭据需求的\n自动建议）/ prefer_native（全部按原生合并导入）/ manual（只替换\napproved 参数勾选的条目；chosen 重复参数可逐项指定计划内的候选\n路由，格式 \"index|routePath\"，缺省用该项首选候选）。\n\n替换 = 先实际验证（从本站实例拉取该路由确认 200 + 可解析 feed，\n有界预算）再经 FreshRSS 实际订阅入库；原地址已订阅的来源**保留\n旧源**并写映射台账（FreshRSS 已读/收藏状态绑定条目地址，无法跨\n源安全迁移——绝不自动退订）；新导入来源的原始地址进台账，可经\nrsshub-mappings 撤销回原生。RSSHub 未配置 → 503 rsshub_not_configured。",
+    "operationId": "opml_rsshub_apply_api_v1_opml_import_rsshub_apply_post",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "strategy",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Strategy"
+      }
+     },
+     {
+      "in": "query",
+      "name": "approved",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Approved"
+      }
+     },
+     {
+      "in": "query",
+      "name": "chosen",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "items": {
+          "type": "string"
+         },
+         "type": "array"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Chosen"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Opml Rsshub Apply Api V1 Opml Import Rsshub Apply Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Opml Rsshub Apply"
+   }
+  },
+  "/api/v1/opml/import/rsshub-plan": {
+   "post": {
+    "description": "R18：OPML → RSSHub 匹配计划（严格只读，零网络零写入）。\n\n逐条给出决策（autoReplace / manualChoice / needsCredentials /\nneedsParams / alreadyRsshub / keepNative / unsupported）与带置信\n度依据的候选列表。规则数据 = vendored pinned-image 快照\n（rsshub_routes.generated.json），结构化匹配，不执行任何上游\n代码。候选的实际可用性在 apply 阶段验证（拉取 200+feed）；\nRSSHub 未配置时 rsshubConfigured=false，apply 会拒绝。",
+    "operationId": "opml_rsshub_plan_api_v1_opml_import_rsshub_plan_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Opml Rsshub Plan Api V1 Opml Import Rsshub Plan Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Opml Rsshub Plan"
+   }
+  },
   "/api/v1/opml/import/tree-apply": {
    "post": {
     "description": "N018：应用树对照计划（订阅新 feed → 建类/移动随行）。\n\n以执行时刻的服务器状态为准（预览是建议，不是陈旧契约）。每次\n执行写一行撤销台账（opml_import_log，cap 5），撤销走\nPOST /api/v1/opml/import/{id}/undo。",
@@ -65656,6 +67513,69 @@
      }
     },
     "summary": "Opml Import Undo"
+   }
+  },
+  "/api/v1/opml/rsshub-mappings": {
+   "get": {
+    "description": "R18：原生 ↔ RSSHub 来源映射台账（per-user，新→旧，有界 200）。\n\n来源运维工作台展示「原始地址 / 当前 RSSHub 地址 / 撤销映射」；\n凭据不落库，本表只存地址与路由结构。",
+    "operationId": "list_rsshub_source_mappings_api_v1_opml_rsshub_mappings_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response List Rsshub Source Mappings Api V1 Opml Rsshub Mappings Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Rsshub Source Mappings"
+   }
+  },
+  "/api/v1/opml/rsshub-mappings/{mapping_uuid}/revert": {
+   "post": {
+    "description": "R18：撤销一条映射——重新订阅原始地址并把台账置 reverted。\n\n诚实边界：RSSHub 源**不自动退订**（避免破坏性动作；可稍后在来源\n管理手动退订）；原始地址订阅失败 → 502（台账保持 active，撤销未\n完成，如实报告）。幂等：已 reverted 的行原样返回。",
+    "operationId": "revert_rsshub_source_mapping_api_v1_opml_rsshub_mappings__mapping_uuid__revert_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "mapping_uuid",
+      "required": true,
+      "schema": {
+       "title": "Mapping Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Revert Rsshub Source Mapping Api V1 Opml Rsshub Mappings  Mapping Uuid  Revert Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Revert Rsshub Source Mapping"
    }
   },
   "/api/v1/preservation/encrypted-exports": {
@@ -69857,6 +71777,25 @@
     "summary": "Rag Inconsistencies"
    }
   },
+  "/api/v1/rag/index": {
+   "delete": {
+    "description": "清空本账号的派生索引（向量 + 分块元数据 + staging）。\n\n原文投影（search_entries / search_library）绝不触碰——索引可随时\n从原文重建，删除零损失；进行中的 rebuild 持有同一把锁，删除会在\n其安全点后排队而不是与 swap 竞争。",
+    "operationId": "rag_index_delete_api_v1_rag_index_delete",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagIndexDeleteResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Rag Index Delete"
+   }
+  },
   "/api/v1/rag/index-version": {
    "get": {
     "description": "N157：当前索引版本——live 模型 + 维度 + 按 model_id 的行数。\n\nmodelId/dim 是 LIVE 口径：rebuild 进行中仍指向旧模型（旧索引全程\n可读可查），swap 完成后自然切到新模型。configuredModel 单独回显\n下一次 rebuild 将写入的模型。",
@@ -69911,6 +71850,121 @@
      }
     },
     "summary": "Rag Index Version Switch"
+   }
+  },
+  "/api/v1/rag/index/converge": {
+   "post": {
+    "description": "手动触发一次增量收敛（与后台增量任务同一管线，一轮有界）。",
+    "operationId": "rag_index_converge_api_v1_rag_index_converge_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagIndexConvergeResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Rag Index Converge"
+   }
+  },
+  "/api/v1/rag/index/overview": {
+   "get": {
+    "description": "当前账号索引集合总览（RAG 索引页的数据源）。\n\n全部数值来自真实行与作业证据：来源 × 语料/索引数（rag_chunks 按\nLIVE 模型）、队列口径同 coverage（pending/done/failed/stale）、\n磁盘占用优先 dbstat 页级真实值（无 dbstat 编译项时诚实降级为\n载荷字节并标注 basis）、失败明细来自最近 rag_jobs 的 skipped 与\n作业错误（脱敏截断，绝不携带堆栈）。绝不返回任何 embedding 数组。",
+    "operationId": "rag_index_overview_api_v1_rag_index_overview_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagIndexOverview"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Rag Index Overview"
+   }
+  },
+  "/api/v1/rag/index/pause": {
+   "post": {
+    "description": "暂停本账号的增量索引收敛（用户级 settings 键）。\n\n不影响手动 rebuild/search；NEW-371 实例级暂停是另一条独立通道\n（admin task-calendar，本循环已实时消费）。",
+    "operationId": "rag_index_pause_api_v1_rag_index_pause_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagIndexPauseResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Rag Index Pause"
+   }
+  },
+  "/api/v1/rag/index/resume": {
+   "post": {
+    "description": "恢复本账号的增量索引收敛（幂等）。",
+    "operationId": "rag_index_resume_api_v1_rag_index_resume_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagIndexPauseResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Rag Index Resume"
+   }
+  },
+  "/api/v1/rag/index/retry-failed": {
+   "post": {
+    "description": "只重试失败项（增量管线，绝不全量重建）。\n\nrefs 缺省 = 最近作业 skipped 的全部失败项（≤limit）；显式 refs =\n单项重试（失败列表的「单独重试」）。已从投影消失的失败项诚实进\n``missing``（它们已无可索引的原文，绝不冒充成功）。",
+    "operationId": "rag_index_retry_failed_api_v1_rag_index_retry_failed_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RagIndexRetryFailedRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagIndexRetryFailedResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rag Index Retry Failed"
    }
   },
   "/api/v1/rag/rebuild": {
@@ -79153,67 +81207,6 @@
     "summary": "Post Close"
    }
   },
-  "/api/v1/settings/translation/libretranslate-key": {
-   "delete": {
-    "description": "Remove the optional LibreTranslate API key.",
-    "operationId": "delete_libretranslate_key_api_v1_settings_translation_libretranslate_key_delete",
-    "responses": {
-     "204": {
-      "description": "Successful Response"
-     }
-    },
-    "summary": "Delete Libretranslate Key"
-   },
-   "put": {
-    "description": "Write-only LibreTranslate API key (optional; empty string clears).",
-    "operationId": "put_libretranslate_key_api_v1_settings_translation_libretranslate_key_put",
-    "requestBody": {
-     "content": {
-      "application/json": {
-       "schema": {
-        "$ref": "#/components/schemas/SecretValuePut"
-       }
-      }
-     },
-     "required": true
-    },
-    "responses": {
-     "204": {
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Put Libretranslate Key"
-   }
-  },
-  "/api/v1/settings/translation/libretranslate-test": {
-   "post": {
-    "description": "Bounded capability probe (GET /languages) — FIX-142.\n\nThe outcome is PERSISTED so the settings view can report an ACTUAL\ncapability state (ok/failed + checkedAt + diagnostic) instead of a\nconfig-exists-only \"enabled\". A stale state stays honest through its\ncheckedAt; a GET never probes (no hidden upstream calls).",
-    "operationId": "test_libretranslate_api_v1_settings_translation_libretranslate_test_post",
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/LibreTranslateTestResult"
-        }
-       }
-      },
-      "description": "Successful Response"
-     }
-    },
-    "summary": "Test Libretranslate"
-   }
-  },
   "/api/v1/source-discovery": {
    "post": {
     "description": "Discover RSS/Atom feed candidates for a website — NON-MUTATING.\n\nSafe-fetches ONE page (never crawls), extracts explicit rel=alternate\ndeclarations, and only when there are none probes a bounded set of\ncommon feed endpoints. Candidates are not subscribed here — preview is\nPOST /api/v1/feed-preview, subscribing is POST /api/v1/subscriptions.",
@@ -80241,6 +82234,25 @@
      }
     },
     "summary": "Stale Sources"
+   }
+  },
+  "/api/v1/sources/summary": {
+   "get": {
+    "description": "来源中心按类型汇总（R02）：一次返回当前账号全部内容来源类型的\n{count, status, lastActivityAt}，全部来自 owning store 的本地读取。\n\n零上游调用（负向契约）：本端点任何代码路径都不触 FreshRSS/RSSHub\n——计数是 per-user 库的派生投影口径（可重建），延迟上界即本地\nSQLite（连接级 busy_timeout=5000ms）。「服务未配置」（not_configured）\n与「集合为空」（empty）是两个严格区分的状态，绝不互相冒充：\n- rss / rsshub / api_source：从来源注册表同源的 owning store 推导\n  （订阅投影 search_feeds / API 来源配置表）；rss 零订阅 =\n  not_configured；RSSHub base 未配置 = not_configured，已配置但无\n  路由订阅 = empty；\n- bookmark / clip / snapshot / inbox：per-user 库真实计数；零行 =\n  empty（集合本身可用，只是没内容）——inbox 例外：无收件连接器时\n  是 not_configured（没有入口就收不到东西）；\n- newsletter / obsidian：连接状态（配置与否），count 只在真实存在\n  时给出（邮件桥不数列表，Obsidian 给真实笔记数），绝不写伪计数。",
+    "operationId": "sources_summary_api_v1_sources_summary_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SourcesSummaryResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Sources Summary"
    }
   },
   "/api/v1/sources/volume": {

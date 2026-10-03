@@ -21,7 +21,9 @@ read/star state, subscriptions & categories with OPML import/export,
 AI summary / translation / article conversation, the Lumi library
 (bookmarks / server-side web clips / offline snapshots), workspaces &
 server-side read-later, inbox push sources, API sources & newsletter
-bridges feeding FreshRSS, a read-only Obsidian vault projection,
+bridges feeding FreshRSS, a read-only Obsidian vault projection (plus an
+optional, hard-bounded server-side export into a dedicated export
+mount),
 unified search with tags / favorites / graph, an optional RAG-indexed
 semantic layer plus an Agent workbench, a unified settings center, and
 local + WebDAV backup with staged restore. See
@@ -66,8 +68,9 @@ Full guide: [docs/getting-started.md](docs/getting-started.md).
 
 ```bash
 sudo ./lumirss deploy                      # interactive
-sudo ./lumirss deploy --auth-mode=session  # persistent session login
+sudo ./lumirss deploy --auth-mode=session  # persistent session login (primary mode; basic-auth stays as a compat option)
 sudo ./lumirss deploy --low-memory         # low-resource preset for small self-hosts
+sudo ./lumirss deploy --single             # optional single-container topology (Caddy + BFF + FreshRSS + RSSHub in one container)
 ```
 
 Caddy serves the Web build and reverse-proxies `/api` to the BFF;

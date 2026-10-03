@@ -156,7 +156,7 @@ class AgentSessionStore:
     async def get_settings(self, thread_id: str) -> dict[str, Any]:
         await self._db.migrate()
         row = await self._db.fetch_one(
-            "SELECT id, title, scope_json, tool_policy_json, budget_json, branch_of FROM agent_threads WHERE id = ?",
+            "SELECT id, title, scope_json, tool_policy_json, budget_json, branch_of, archived_at FROM agent_threads WHERE id = ?",
             (thread_id,),
         )
         if row is None:
@@ -177,6 +177,7 @@ class AgentSessionStore:
             "toolPolicy": _load(row["tool_policy_json"]),
             "budget": _load(row["budget_json"]),
             "branchOf": row["branch_of"],
+            "archivedAt": row["archived_at"],
         }
 
     async def update_settings(
@@ -187,7 +188,10 @@ class AgentSessionStore:
         scope: Any = _UNSET,
         tool_policy: Any = _UNSET,
         budget: Any = _UNSET,
+        archived: bool | None = None,
     ) -> dict[str, Any]:
+        """R20：title/归档也走同一条 PATCH（title=None = 不改标题；
+        archived=None = 不改归档状态，True/False = 归档/恢复）。"""
         current = await self.get_settings(thread_id)
         if not current:
             raise KeyError(thread_id)
@@ -201,13 +205,20 @@ class AgentSessionStore:
         new_title = (
             str(title).strip()[:100] if title is not None else current["title"]
         )
+        if archived is None:
+            new_archived_at = current.get("archivedAt")
+        elif archived:
+            new_archived_at = utc_now()
+        else:
+            new_archived_at = None
         await self._db.execute(
-            "UPDATE agent_threads SET title = ?, scope_json = ?, tool_policy_json = ?, budget_json = ? WHERE id = ?",
+            "UPDATE agent_threads SET title = ?, scope_json = ?, tool_policy_json = ?, budget_json = ?, archived_at = ? WHERE id = ?",
             (
                 new_title,
                 json.dumps(new_scope, ensure_ascii=False) if new_scope else None,
                 json.dumps(new_policy, ensure_ascii=False) if new_policy else None,
                 json.dumps(new_budget, ensure_ascii=False) if new_budget else None,
+                new_archived_at,
                 thread_id,
             ),
         )
@@ -223,8 +234,9 @@ class AgentSessionStore:
             raise SearchInvalid("查询过长（≤200 字符）。")
         await self._db.migrate()
         like = f"%{needle.replace('%', chr(92) + '%').replace('_', chr(92) + '_')}%"
+        # R20：归档会话不出现在搜索结果（工作集语义；归档视图可整表查看）。
         thread_rows = await self._db.fetch_all(
-            "SELECT id, title FROM agent_threads ORDER BY created_at DESC LIMIT 200"
+            "SELECT id, title FROM agent_threads WHERE archived_at IS NULL ORDER BY created_at DESC LIMIT 200"
         )
         results: list[dict[str, Any]] = []
         for thread_row in thread_rows:

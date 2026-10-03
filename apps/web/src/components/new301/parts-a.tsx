@@ -1,14 +1,14 @@
-/** NEW-301/302/306/307 — 来源级工具面板：字段映射样本、分页试抓台、
- * 写暂停确认、每日条目配额。小而平：载入 → 动作 → 状态行；
- * 仅 --lumi-* 语义令牌；输入均有 label（可访问性）。 */
+/** 来源级接入面板：字段映射样本、分页试抓台、抓取变更预警、来源配额。
+ * 挂载点 = 来源详情抽屉（字段 / 抓取 tab）。小而平：载入 → 动作 →
+ * 状态行；仅 --lumi-* 语义令牌；输入均有 label（可访问性）。
+ * new301 等小写标识仅是内部文件命名，用户可见文案使用自然语言。 */
 
-import { useCallback, useEffect, useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import {
   new301Api,
   new302Api,
   new306Api,
   new307Api,
-  type ApiSourceRef,
   type IntakeQuotaSnapshot,
   type MappingSample,
   type ProbeResult,
@@ -22,36 +22,6 @@ import {
   StatusLine,
 } from '../new271/panel'
 
-export interface SourceScope {
-  source: ApiSourceRef | undefined
-  sources: ApiSourceRef[]
-  onPick: (uuid: string) => void
-  idPrefix: string
-}
-
-export function SourcePicker(props: SourceScope): ReactElement {
-  if (props.sources.length === 0) {
-    return <NoteText>还没有 API 来源；请先在上方新增一个 JSON API 来源。</NoteText>
-  }
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="text-sm text-[var(--lumi-text-secondary)]">选择来源</span>
-      <select
-        aria-label="选择来源"
-        className={inputClass}
-        value={props.source?.uuid ?? ''}
-        onChange={(event) => props.onPick(event.target.value)}
-      >
-        {props.sources.map((source) => (
-          <option key={source.uuid} value={source.uuid}>
-            {source.name}
-          </option>
-        ))}
-      </select>
-    </div>
-  )
-}
-
 function Feedback(props: { notice: string; error: string }): ReactElement {
   return (
     <>
@@ -61,7 +31,11 @@ function Feedback(props: { notice: string; error: string }): ReactElement {
   )
 }
 
-// ---- NEW-301 字段映射编辑器 ---------------------------------------------------
+function isAbort(err: unknown): boolean {
+  return err instanceof DOMException && err.name === 'AbortError'
+}
+
+// ---- 字段映射编辑器（样本保存 / 试映射 / 绑定） -----------------------------
 
 export function MappingSamplePanel(props: {
   sourceUuid: string | undefined
@@ -96,11 +70,18 @@ export function MappingSamplePanel(props: {
 
   async function saveSample(): Promise<void> {
     if (props.sourceUuid === undefined) return
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(sampleText)
+    } catch {
+      setError('不是合法 JSON，请检查后重试。')
+      return
+    }
     setBusy(true)
     setError('')
     setNotice('')
     try {
-      await new301Api.save(props.sourceUuid, label, JSON.parse(sampleText))
+      await new301Api.save(props.sourceUuid, label, parsed)
       await refresh()
       setNotice('样本已保存。')
     } catch (err) {
@@ -148,24 +129,24 @@ export function MappingSamplePanel(props: {
   }
 
   return (
-    <div data-new301-mapping-tools="" className="flex flex-col gap-3">
+    <div data-intake-mapping-tools="" className="flex flex-col gap-3">
       <div className="flex flex-col gap-1">
-        <label htmlFor="new301-sample-label" className="text-sm text-[var(--lumi-text-secondary)]">
+        <label htmlFor="intake-sample-label" className="text-sm text-[var(--lumi-text-secondary)]">
           样本名称
         </label>
         <input
-          id="new301-sample-label"
+          id="intake-sample-label"
           className={inputClass}
           value={label}
           onChange={(event) => setLabel(event.target.value)}
         />
       </div>
       <div className="flex flex-col gap-1">
-        <label htmlFor="new301-sample-json" className="text-sm text-[var(--lumi-text-secondary)]">
+        <label htmlFor="intake-sample-json" className="text-sm text-[var(--lumi-text-secondary)]">
           JSON 样本
         </label>
         <textarea
-          id="new301-sample-json"
+          id="intake-sample-json"
           rows={3}
           className={inputClass}
           value={sampleText}
@@ -175,22 +156,22 @@ export function MappingSamplePanel(props: {
       </div>
       <div className="flex items-end gap-2">
         <div className="flex flex-col gap-1">
-          <label htmlFor="new301-field-id" className="text-sm text-[var(--lumi-text-secondary)]">
+          <label htmlFor="intake-field-id" className="text-sm text-[var(--lumi-text-secondary)]">
             标识表达式
           </label>
           <input
-            id="new301-field-id"
+            id="intake-field-id"
             className={inputClass}
             value={idExpr}
             onChange={(event) => setIdExpr(event.target.value)}
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label htmlFor="new301-field-title" className="text-sm text-[var(--lumi-text-secondary)]">
+          <label htmlFor="intake-field-title" className="text-sm text-[var(--lumi-text-secondary)]">
             标题表达式
           </label>
           <input
-            id="new301-field-title"
+            id="intake-field-title"
             className={inputClass}
             value={titleExpr}
             onChange={(event) => setTitleExpr(event.target.value)}
@@ -208,7 +189,7 @@ export function MappingSamplePanel(props: {
       {samples.map((sample) => (
         <div
           key={sample.id}
-          data-new301-sample={sample.id}
+          data-intake-sample={sample.id}
           className="flex flex-wrap items-center gap-2 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-2"
         >
           <span className="text-sm text-[var(--lumi-text-primary)]">{sample.label}</span>
@@ -232,7 +213,7 @@ export function MappingSamplePanel(props: {
       ))}
       {preview !== null && (
         <div
-          data-new301-mapping-preview=""
+          data-intake-mapping-preview=""
           className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-2"
         >
           <StatusLine tone="info">
@@ -253,7 +234,7 @@ export function MappingSamplePanel(props: {
   )
 }
 
-// ---- NEW-302 分页试抓台 -------------------------------------------------------
+// ---- 分页试抓台（有界：1..5 页；进行中可中止） -------------------------------
 
 export function PaginationProbePanel(props: {
   sourceUuid: string | undefined
@@ -262,18 +243,29 @@ export function PaginationProbePanel(props: {
   const [result, setResult] = useState<ProbeResult | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const abortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => () => abortRef.current?.abort(), [])
 
   async function run(): Promise<void> {
     if (props.sourceUuid === undefined) return
+    const bounded = Math.min(5, Math.max(1, Math.trunc(Number(maxPages)) || 1))
+    const controller = new AbortController()
+    abortRef.current = controller
     setBusy(true)
     setError('')
     try {
-      setResult(await new302Api.run(props.sourceUuid, Number(maxPages)))
+      setResult(await new302Api.run(props.sourceUuid, bounded, controller.signal))
     } catch (err) {
-      setError(errorText(err))
+      if (!isAbort(err)) setError(errorText(err))
     } finally {
+      if (abortRef.current === controller) abortRef.current = null
       setBusy(false)
     }
+  }
+
+  function cancel(): void {
+    abortRef.current?.abort()
   }
 
   const contractWarning =
@@ -281,17 +273,17 @@ export function PaginationProbePanel(props: {
     (result.gapPages > 0 || result.duplicatePages > 0)
 
   return (
-    <div data-new302-probe-tools="" className="flex flex-col gap-3">
+    <div data-intake-probe-tools="" className="flex flex-col gap-3">
       <div className="flex items-end gap-2">
         <div className="flex flex-col gap-1">
           <label
-            htmlFor="new302-max-pages"
+            htmlFor="intake-probe-max-pages"
             className="text-sm text-[var(--lumi-text-secondary)]"
           >
             试抓页数上限（1..5）
           </label>
           <input
-            id="new302-max-pages"
+            id="intake-probe-max-pages"
             type="number"
             min={1}
             max={5}
@@ -308,10 +300,20 @@ export function PaginationProbePanel(props: {
         >
           开始受限试抓
         </button>
+        {busy && (
+          <button
+            type="button"
+            className={secondaryButtonClass}
+            onClick={cancel}
+            data-intake-probe-cancel=""
+          >
+            中止
+          </button>
+        )}
       </div>
       {result !== null && (
         <div
-          data-new302-probe-result=""
+          data-intake-probe-result=""
           className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-2"
         >
           <StatusLine tone={contractWarning ? 'error' : 'ok'}>
@@ -341,7 +343,7 @@ export function PaginationProbePanel(props: {
   )
 }
 
-// ---- NEW-306 写暂停确认/恢复 -------------------------------------------------
+// ---- 抓取变更预警（写暂停确认/恢复） -----------------------------------------
 
 export function SchemaPausePanel(props: {
   sourceUuid: string | undefined
@@ -383,9 +385,9 @@ export function SchemaPausePanel(props: {
     try {
       const done = await new306Api.resume(props.sourceUuid)
       if (done.resumed === true) {
-        setNotice("已恢复发布；新结构基线已确认。")
+        setNotice('已恢复发布；新结构基线已确认。')
       } else {
-        setNotice("该来源未处于写暂停。")
+        setNotice('该来源未处于写暂停。')
       }
       await refresh()
     } catch (err) {
@@ -396,7 +398,7 @@ export function SchemaPausePanel(props: {
   }
 
   return (
-    <div data-new306-pause-tools="" className="flex flex-col gap-3">
+    <div data-intake-pause-tools="" className="flex flex-col gap-3">
       {status !== null && (
         <StatusLine tone={status.writePaused ? 'error' : 'info'}>
           {status.writePaused
@@ -421,7 +423,7 @@ export function SchemaPausePanel(props: {
   )
 }
 
-// ---- NEW-307 每日条目配额 ----------------------------------------------------
+// ---- 来源配额（每日条目数） ---------------------------------------------------
 
 export function IntakeQuotaPanel(props: {
   sourceUuid: string | undefined
@@ -480,8 +482,10 @@ export function IntakeQuotaPanel(props: {
     }
   }
 
+  const parsedLimit = Math.trunc(Number(maxItems))
+
   return (
-    <div data-new307-quota-tools="" className="flex flex-col gap-3">
+    <div data-intake-quota-tools="" className="flex flex-col gap-3">
       {snapshot !== null && (
         <StatusLine
           tone={
@@ -498,13 +502,13 @@ export function IntakeQuotaPanel(props: {
       <div className="flex items-end gap-2">
         <div className="flex flex-col gap-1">
           <label
-            htmlFor="new307-max-items"
+            htmlFor="intake-quota-max-items"
             className="text-sm text-[var(--lumi-text-secondary)]"
           >
             每天最大条目数
           </label>
           <input
-            id="new307-max-items"
+            id="intake-quota-max-items"
             type="number"
             min={1}
             className={inputClass}
@@ -518,8 +522,8 @@ export function IntakeQuotaPanel(props: {
           disabled={
             busy ||
             props.sourceUuid === undefined ||
-            Number(maxItems) < 1 ||
-            Number.isNaN(Number(maxItems))
+            Number.isNaN(parsedLimit) ||
+            parsedLimit < 1
           }
           onClick={() => void saveLimit()}
         >

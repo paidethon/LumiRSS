@@ -3,7 +3,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { GlossarySection } from '../components/settings/GlossarySection'
+import { GlossarySection } from '../components/settings/filters/GlossarySection'
 
 const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
   const url = String(input)

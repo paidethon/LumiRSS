@@ -1,6 +1,6 @@
 """NEW-269 语言识别纠正 — 某文/某源识别语言的显式更正。
 
-- 更正只影响其后的新生成（LT source 参数 / AI 源语言指令）；
+- 更正只影响其后的新生成（AI 源语言指令）；
 - 既有缓存行不被悄悄改写或失效（缓存身份不变）；
 - entry 级更正优先于 source 级；
 - A/B 隔离。
@@ -12,7 +12,6 @@ import re
 import pytest
 
 from lumirss.ai_settings import (
-    TRANSLATION_ENGINE_LIBRETRANSLATE,
     AiSettingsStore,
     AiSettingsUpdate,
 )
@@ -29,7 +28,6 @@ from lumirss.new269_language_overrides import (
     resolve_source_language,
     set_override,
 )
-from lumirss.secrets_store import SecretsStore
 from lumirss.storage import Database
 from new2xx_ab import ab_env, seed_entry  # noqa: F401
 
@@ -39,29 +37,6 @@ run = asyncio.run
 @pytest.fixture(autouse=True)
 def _allow_fixture_endpoints(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("LUMIRSS_FETCH_ALLOW_PRIVATE_HOSTS", "127.0.0.1,ai.local")
-
-
-class _CaptureResponse:
-    def raise_for_status(self):
-        return None
-
-    def json(self):
-        return {"translatedText": ["LT译"]}
-
-
-class _CaptureClient:
-    def __init__(self, log):
-        self._log = log
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *exc):
-        return None
-
-    async def post(self, url, json=None):
-        self._log.append(json)
-        return _CaptureResponse()
 
 
 def _make(tmp_path, calls, engine="ai", seed_feed_row=None):
@@ -74,9 +49,6 @@ def _make(tmp_path, calls, engine="ai", seed_feed_row=None):
                 baseUrl="http://127.0.0.1:9/v1",
                 model="m1",
                 translationEngine=engine,
-                libretranslateUrl=(
-                    "http://ai.local/lt" if engine == TRANSLATION_ENGINE_LIBRETRANSLATE else None
-                ),
             )
         )
     )
@@ -111,8 +83,6 @@ def _make(tmp_path, calls, engine="ai", seed_feed_row=None):
         db=db,
         settings_store=settings,
         provider_factory=factory,
-        secrets=SecretsStore(tmp_path / "secrets.json"),
-        httpx_client_factory=lambda: _CaptureClient(calls["payloads"]),
     )
     return service, db, captured_prompts
 
@@ -182,22 +152,6 @@ def test_ai_generation_carries_source_instruction(tmp_path):
     # 已产生结果不悄悄改变：旧缓存行原样返回
     states = run(service.lookup(ref, blocks))
     assert states[0].cached is True and states[0].translated_text == "译0。"
-
-
-def test_libretranslate_source_param_follows_override(tmp_path):
-    calls = {"n": 0, "payloads": []}
-    service, db, _prompts = _make(
-        tmp_path, calls, engine=TRANSLATION_ENGINE_LIBRETRANSLATE
-    )
-    ref = encode_entry_ref("e1.n269lt")
-    blocks = [SegmentInput(index=0, text="Original text.")]
-
-    run(service.generate(ref, blocks))
-    assert calls["payloads"][0]["source"] == "auto"
-
-    run(set_override(db, "entry", ref, "zh-CN"))
-    run(service.generate(ref, [SegmentInput(index=1, text="More.")]))
-    assert calls["payloads"][1]["source"] == "zh"  # LT 源码风格（前缀归一）
 
 
 # ---------------------------------------------------------------------------

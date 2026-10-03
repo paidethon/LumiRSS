@@ -76,8 +76,9 @@ import { readStructureViewOpen, writeStructureViewOpen } from '../lib/article-ou
 import ReaderAaPanel from './ReaderAaPanel'
 import type { ReaderViewMode } from '../lib/translation-blocks'
 import { Button } from './ui/Button'
+import { ActionMenu, type ActionMenuEntry } from './ui/ActionMenu'
 import { IconButton } from './ui/IconButton'
-import { Menu, type MenuItemDef } from './ui/Menu'
+import { Menu } from './ui/Menu'
 import { Popover } from './ui/Popover'
 import { Select } from './ui/Select'
 import { Tooltip } from './ui/Tooltip'
@@ -1389,90 +1390,91 @@ export default function ReaderHeader({
     [detail.entryRef, setBookmarkChipDismissed],
   )
 
-  /** 「更多操作」菜单项：移动端把非 primary 的可见动作按移动端序并入
-      本菜单（O127 语义不变；quote 展开为纯文本/Markdown 两个格式项，
-      朗读追加停止项——可用性门槛与既有条件一致）；两断点尾部固定
-      自动滚屏 / 导出，最后是 P07「自定义工具栏」入口。 */
-  const moreItems: MenuItemDef[] = []
+  /** 「更多操作」菜单（R23：五组小标题，ActionMenu section 承载）：
+   * 阅读（文内查找/文中链接/AI 对话/朗读/位置校准/媒体预算/自动滚屏）·
+   * 整理（保存快照）· 笔记（导出到 Obsidian）· 分享与导出（分享/复制
+   * 引用/导出 Markdown/HTML/打印）· 高级（原文分屏/自定义工具栏）。
+   * 空组不渲染小标题（ActionMenu 折叠空 section——桌面端整理组常空）。
+   * 移动端收纳语义不变（O127）：非 primary 动作按用户自定义的移动端序
+   * 归入所属组（组内保持用户相对序，隐藏动作不出现）。有意迁移：旧
+   * 扁平菜单序是测试锁定的契约，R23 分组后顺序断言已随契约更新。 */
+  type MoreGroup = '阅读' | '整理' | '笔记' | '分享与导出' | '高级'
+  const MORE_GROUP_ORDER: readonly MoreGroup[] = [
+    '阅读',
+    '整理',
+    '笔记',
+    '分享与导出',
+    '高级',
+  ]
+  type MoreItem = Extract<ActionMenuEntry, { type: 'item' }>
+  const moreItemsByGroup = new Map<MoreGroup, MoreItem[]>()
+  const pushMore = (group: MoreGroup, entry: MoreItem) => {
+    const list = moreItemsByGroup.get(group)
+    if (list === undefined) moreItemsByGroup.set(group, [entry])
+    else list.push(entry)
+  }
+
   if (isMobile) {
     for (const id of mobileMenuIds) {
       switch (id) {
         case 'find':
           if (onOpenFind !== undefined) {
-            moreItems.push({
-              key: 'find',
-              content: (
-                <span className="flex items-center gap-2">
-                  <Search aria-hidden className="size-4" />
-                  文内查找
-                </span>
-              ),
+            pushMore('阅读', {
+              type: 'item',
+              label: '文内查找',
+              icon: <Search aria-hidden className="size-4" />,
+              onSelect: onOpenFind,
             })
           }
           break
         case 'links':
           if (onOpenLinks !== undefined) {
-            moreItems.push({
-              key: 'links',
-              content: (
-                <span className="flex items-center gap-2">
-                  <Link2 aria-hidden className="size-4" />
-                  文中链接
-                </span>
-              ),
+            pushMore('阅读', {
+              type: 'item',
+              label: '文中链接',
+              icon: <Link2 aria-hidden className="size-4" />,
+              onSelect: onOpenLinks,
             })
           }
           break
         case 'calibrate':
           if (onOpenCalibrate !== undefined) {
-            moreItems.push({
-              key: 'calibrate',
-              content: (
-                <span className="flex items-center gap-2">
-                  <Crosshair aria-hidden className="size-4" />
-                  位置校准
-                </span>
-              ),
+            pushMore('阅读', {
+              type: 'item',
+              label: '位置校准',
+              icon: <Crosshair aria-hidden className="size-4" />,
+              onSelect: onOpenCalibrate,
             })
           }
           break
         case 'budget':
           if (onOpenBudget !== undefined) {
-            moreItems.push({
-              key: 'budget',
-              content: (
-                <span className="flex items-center gap-2">
-                  <Gauge aria-hidden className="size-4" />
-                  媒体预算
-                </span>
-              ),
+            pushMore('阅读', {
+              type: 'item',
+              label: '媒体预算',
+              icon: <Gauge aria-hidden className="size-4" />,
+              onSelect: onOpenBudget,
             })
           }
           break
         case 'ai':
           if (onOpenAiConversation !== undefined) {
-            moreItems.push({
-              key: 'ai',
-              content: (
-                <span className="flex items-center gap-2">
-                  <MessageSquare aria-hidden className="size-4" />
-                  AI 对话
-                </span>
-              ),
+            pushMore('阅读', {
+              type: 'item',
+              label: 'AI 对话',
+              icon: <MessageSquare aria-hidden className="size-4" />,
+              onSelect: onOpenAiConversation,
             })
           }
           break
         case 'snapshot':
           if (articleUrl !== null) {
-            moreItems.push({
-              key: 'snapshot',
+            pushMore('整理', {
+              type: 'item',
+              label: snapshot.tooltip,
+              icon: <Camera aria-hidden className="size-4" />,
               disabled: snapshot.pending,
-              content: (
-                <span className="flex items-center gap-2">
-                  <Camera aria-hidden className="size-4" />
-                  {snapshot.tooltip}
-                </span>
-              ),
+              onSelect: snapshot.save,
             })
           }
           break
@@ -1480,76 +1482,65 @@ export default function ReaderHeader({
           if (collectSpeechBlocks !== undefined && speech.available) {
             const speechLabel =
               speech.state === 'idle' ? '朗读' : speech.state === 'speaking' ? '暂停朗读' : '继续朗读'
-            moreItems.push({
-              key: 'speech',
-              content: (
-                <span className="flex items-center gap-2">
-                  {speech.state === 'speaking' ? (
-                    <Pause aria-hidden className="size-4" />
-                  ) : speech.state === 'paused' ? (
-                    <Play aria-hidden className="size-4" />
-                  ) : (
-                    <Volume2 aria-hidden className="size-4" />
-                  )}
-                  {speechLabel}
-                </span>
-              ),
+            pushMore('阅读', {
+              type: 'item',
+              label: speechLabel,
+              icon:
+                speech.state === 'speaking' ? (
+                  <Pause aria-hidden className="size-4" />
+                ) : speech.state === 'paused' ? (
+                  <Play aria-hidden className="size-4" />
+                ) : (
+                  <Volume2 aria-hidden className="size-4" />
+                ),
+              onSelect: speech.toggle,
             })
             if (speech.state !== 'idle') {
-              moreItems.push({
-                key: 'speech-stop',
-                content: (
-                  <span className="flex items-center gap-2">
-                    <Square aria-hidden className="size-4" />
-                    停止朗读
-                  </span>
-                ),
+              pushMore('阅读', {
+                type: 'item',
+                label: '停止朗读',
+                icon: <Square aria-hidden className="size-4" />,
+                onSelect: speech.stop,
               })
             }
           }
           break
         case 'share':
-          moreItems.push({
-            key: 'share',
-            content: (
-              <span className="flex items-center gap-2">
-                <Share2 aria-hidden className="size-4" />
-                {share.canShare ? '分享' : '复制链接'}
-              </span>
-            ),
+          pushMore('分享与导出', {
+            type: 'item',
+            label: share.canShare ? '分享' : '复制链接',
+            icon: <Share2 aria-hidden className="size-4" />,
+            onSelect: () => void share.run(),
           })
           break
         case 'quote':
-          moreItems.push(
+          pushMore(
+            '分享与导出',
             {
-              key: 'quote-plain',
-              content: (
-                <span className="flex items-center gap-2">
-                  <Quote aria-hidden className="size-4" />
-                  复制为纯文本
-                </span>
-              ),
+              type: 'item',
+              label: '复制为纯文本',
+              icon: <Quote aria-hidden className="size-4" />,
+              onSelect: () => void quote.copy('plain'),
             },
+          )
+          pushMore(
+            '分享与导出',
             {
-              key: 'quote-markdown',
-              content: (
-                <span className="flex items-center gap-2">
-                  <Quote aria-hidden className="size-4" />
-                  复制为 Markdown
-                </span>
-              ),
+              type: 'item',
+              label: '复制为 Markdown',
+              icon: <Quote aria-hidden className="size-4" />,
+              onSelect: () => void quote.copy('markdown'),
             },
           )
           break
         case 'print':
-          moreItems.push({
-            key: 'print',
-            content: (
-              <span className="flex items-center gap-2">
-                <Printer aria-hidden className="size-4" />
-                打印
-              </span>
-            ),
+          pushMore('分享与导出', {
+            type: 'item',
+            label: '打印',
+            icon: <Printer aria-hidden className="size-4" />,
+            onSelect: () => {
+              if (typeof window.print === 'function') window.print()
+            },
           })
           break
         default:
@@ -1557,155 +1548,71 @@ export default function ReaderHeader({
       }
     }
   }
-  // F18/F22：自动滚屏 / 导出（原「更多操作」三项，两断点共有）。
-  // N068：结构视图入口在工具栏（Aa 面板旁的独立按钮，不进 O127 菜单
-  // ——既有菜单序是测试锁定的契约）。
+  // F18：自动滚屏（两断点共有；归「阅读」组尾）。
+  // N068：结构视图入口在工具栏（Aa 面板旁的独立按钮，不进菜单）。
   if (onAutoScrollToggle !== undefined) {
-    moreItems.push({
-      key: 'autoscroll',
-      content: (
-        <span className="flex items-center gap-2">
-          {autoScrollState === 'off' ? (
-            <Play aria-hidden className="size-4" />
-          ) : (
-            <Pause aria-hidden className="size-4" />
-          )}
-          {autoScrollState === 'off'
-            ? '自动滚屏'
-            : autoScrollState === 'running'
-              ? '暂停自动滚屏'
-              : '继续自动滚屏'}
-        </span>
-      ),
+    pushMore('阅读', {
+      type: 'item',
+      label:
+        autoScrollState === 'off'
+          ? '自动滚屏'
+          : autoScrollState === 'running'
+            ? '暂停自动滚屏'
+            : '继续自动滚屏',
+      icon:
+        autoScrollState === 'off' ? (
+          <Play aria-hidden className="size-4" />
+        ) : (
+          <Pause aria-hidden className="size-4" />
+        ),
+      onSelect: () => onAutoScrollToggle(),
     })
   }
-  moreItems.push(
-    {
-      key: 'export-md',
-      content: (
-        <span className="flex items-center gap-2">
-          <FileText aria-hidden className="size-4" />
-          导出 Markdown
-        </span>
-      ),
-    },
-    {
-      key: 'export-html',
-      content: (
-        <span className="flex items-center gap-2">
-          <FileCode aria-hidden className="size-4" />
-          导出 HTML
-        </span>
-      ),
-    },
-  )
-  // F077：正文/原网页分屏（仅桌面 ≥1024px 提供菜单项；状态由 Reader 持有）。
+  // F22：导出 Markdown/HTML（两断点共有；归「分享与导出」组尾）。
+  pushMore('分享与导出', {
+    type: 'item',
+    label: '导出 Markdown',
+    icon: <FileText aria-hidden className="size-4" />,
+    onSelect: () => exportEntryAsMarkdown(exportInput),
+  })
+  pushMore('分享与导出', {
+    type: 'item',
+    label: '导出 HTML',
+    icon: <FileCode aria-hidden className="size-4" />,
+    onSelect: () => exportEntryAsHtml(exportInput),
+  })
+  // F077：正文/原网页分屏（仅桌面 ≥1024px；归「高级」组首）。
   if (!isMobile && articleUrl !== null && onToggleSplitOriginal !== undefined) {
-    moreItems.push({
-      key: 'split-original',
-      content: (
-        <span className="flex items-center gap-2">
-          <PanelRight aria-hidden className="size-4" />
-          {splitOriginalOpen ? '关闭原文分屏' : '原文分屏'}
-        </span>
-      ),
+    pushMore('高级', {
+      type: 'item',
+      label: splitOriginalOpen ? '关闭原文分屏' : '原文分屏',
+      icon: <PanelRight aria-hidden className="size-4" />,
+      onSelect: () => onToggleSplitOriginal(),
     })
   }
-  // P16：导出到 Obsidian（选设备 → obsidian://new 交接；tooLong → 文件）。
-  moreItems.push({
-    key: 'export-obsidian',
-    content: (
-      <span className="flex items-center gap-2">
-        <BookMarked aria-hidden className="size-4" />
-        导出到 Obsidian
-      </span>
-    ),
+  // P16：导出到 Obsidian（选设备 → obsidian://new 交接；tooLong → 文件；
+  // 归「笔记」组）。
+  pushMore('笔记', {
+    type: 'item',
+    label: '导出到 Obsidian',
+    icon: <BookMarked aria-hidden className="size-4" />,
+    onSelect: () => setObsidianExportOpen(true),
   })
   // P07：工具栏自定义入口（两断点共有；「更多操作」锁定不可移除，
-  // 入口恒可达）。
-  moreItems.push({
-    key: 'customize',
-    content: (
-      <span className="flex items-center gap-2">
-        <Settings2 aria-hidden className="size-4" />
-        自定义工具栏
-      </span>
-    ),
+  // 入口恒可达；归「高级」组尾）。
+  pushMore('高级', {
+    type: 'item',
+    label: '自定义工具栏',
+    icon: <Settings2 aria-hidden className="size-4" />,
+    onSelect: () => setCustomizeOpen(true),
   })
 
-  const handleMoreSelect = (key: string) => {
-    if (key === 'find') {
-      onOpenFind?.()
-      return
-    }
-    if (key === 'links') {
-      onOpenLinks?.()
-      return
-    }
-    if (key === 'calibrate') {
-      onOpenCalibrate?.()
-      return
-    }
-    if (key === 'budget') {
-      onOpenBudget?.()
-      return
-    }
-    if (key === 'ai') {
-      onOpenAiConversation?.()
-      return
-    }
-    if (key === 'snapshot') {
-      snapshot.save()
-      return
-    }
-    if (key === 'speech') {
-      speech.toggle()
-      return
-    }
-    if (key === 'speech-stop') {
-      speech.stop()
-      return
-    }
-    if (key === 'share') {
-      void share.run()
-      return
-    }
-    if (key === 'quote-plain') {
-      void quote.copy('plain')
-      return
-    }
-    if (key === 'quote-markdown') {
-      void quote.copy('markdown')
-      return
-    }
-    if (key === 'print') {
-      if (typeof window.print === 'function') window.print()
-      return
-    }
-    if (key === 'autoscroll') {
-      onAutoScrollToggle?.()
-      return
-    }
-    if (key === 'export-md') {
-      exportEntryAsMarkdown(exportInput)
-      return
-    }
-    if (key === 'export-html') {
-      exportEntryAsHtml(exportInput)
-      return
-    }
-    if (key === 'export-obsidian') {
-      setObsidianExportOpen(true)
-      return
-    }
-    if (key === 'split-original') {
-      onToggleSplitOriginal?.()
-      return
-    }
-    if (key === 'customize') {
-      setCustomizeOpen(true)
-    }
-  }
+  const moreEntries: ActionMenuEntry[] = MORE_GROUP_ORDER.flatMap((group) => {
+    const items = moreItemsByGroup.get(group)
+    return items !== undefined && items.length > 0
+      ? [{ type: 'section' as const, label: group }, ...items]
+      : []
+  })
 
   /** P07 inline 排布：桌面序是共享 DOM 的主干（一个 DOM 只能有一个
    * 顺序；两断点都 inline 的动作跟随桌面序落位）；桌面隐藏而移动端
@@ -1860,7 +1767,7 @@ export default function ReaderHeader({
       case 'more':
         if (!(onAutoScrollToggle !== undefined || isMobile)) return null
         return (
-          <Menu
+          <ActionMenu
             trigger={({ triggerProps }) => (
               <Tooltip content="更多操作">
                 <IconButton
@@ -1871,8 +1778,7 @@ export default function ReaderHeader({
                 />
               </Tooltip>
             )}
-            items={moreItems}
-            onSelect={handleMoreSelect}
+            entries={moreEntries}
           />
         )
     }

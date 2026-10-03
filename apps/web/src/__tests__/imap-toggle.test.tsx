@@ -90,7 +90,7 @@ describe('F007 IMAP 启停', () => {
     mocks.updateMailImapSettings.mockResolvedValue(imapFixture({ enabled: false }))
     render(withProviders(<MailSection />))
 
-    expect((await screen.findByLabelText('服务器（host）')) as HTMLInputElement).toBeDefined()
+    expect((await screen.findByLabelText('服务器')) as HTMLInputElement).toBeDefined()
     const toggle = screen.getByRole('checkbox', { name: '启用 IMAP 抓取' }) as HTMLInputElement
     expect(toggle.checked).toBe(true)
     // 状态徽标显示已配置

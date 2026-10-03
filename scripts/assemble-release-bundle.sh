@@ -4,7 +4,8 @@
 # A release must ship something an operator can install DIRECTLY — not
 # only an Actions-artifact manifest. The bundle is self-contained: the
 # lumirss CLI, the production compose file (+ optional-mode fragments),
-# the .env template, the VERSION single source, INSTALL instructions and
+# the single-container (all-in-one) compose file + its instructions, the
+# .env template, the VERSION single source, INSTALL instructions and
 # the release manifest (digest-pinned images, migration metadata, the
 # FIX-188 min_compat floor), with SHA256SUMS over the whole set.
 #
@@ -44,11 +45,17 @@ mkdir -p "$bundle"
 cp -p "$ROOT/lumirss" "$bundle/"
 cp -p "$ROOT/docker-compose.prod.yml" \
       "$ROOT/docker-compose.external-caddy.yml" \
-      "$ROOT/docker-compose.translate.yml" \
       "$ROOT/docker-compose.obsidian.yml" \
+      "$ROOT/docker-compose.allinone.yml" \
       "$ROOT/.env.prod.example" \
       "$ROOT/VERSION" \
       "$bundle/"
+# Single-container topology doc (docker/all-in-one/README.md): image layout,
+# s6 services, ports, migration from the 4-container stack.
+cp -p "$ROOT/docker/all-in-one/README.md" "$bundle/ALL-IN-ONE.md" 2>/dev/null || {
+  echo "missing docker/all-in-one/README.md (all-in-one instructions are part of the bundle)" >&2
+  exit 1
+}
 if [[ -n "$MANIFEST" ]]; then
   [[ -f "$MANIFEST" ]] || { echo "manifest not found: $MANIFEST" >&2; exit 1; }
   cp -p "$MANIFEST" "$bundle/release-manifest.json"
@@ -63,7 +70,8 @@ fail() { echo "bundle verification FAILED: $*" >&2; exit 1; }
 
 # Every required piece exists and is non-empty.
 for f in lumirss docker-compose.prod.yml docker-compose.external-caddy.yml \
-         docker-compose.translate.yml docker-compose.obsidian.yml \
+         docker-compose.obsidian.yml docker-compose.allinone.yml \
+         ALL-IN-ONE.md \
          .env.prod.example VERSION INSTALL.md; do
   [[ -s "$bundle/$f" ]] || fail "required bundle file missing or empty: $f"
 done
@@ -108,6 +116,8 @@ cp "$bundle/.env.prod.example" "$bundle/.env.prod"
   cd "$bundle"
   docker compose -f docker-compose.prod.yml config > /dev/null 2>&1 \
     || fail "compose config render failed inside the bundle"
+  docker compose -f docker-compose.allinone.yml config > /dev/null 2>&1 \
+    || fail "all-in-one compose config render failed inside the bundle"
   rm -f .env.prod
 )
 

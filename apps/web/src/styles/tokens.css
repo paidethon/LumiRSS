@@ -69,6 +69,12 @@
   --lumi-z-dialog: 50;
   --lumi-z-floating: 60;
 
+  /* 浮层宽度（R3 共享契约 §2：FormDialog 宽度 token 化、DetailDrawer
+   * 桌面右抽屉 400–440px）。--lumi-width-* 与 --lumi-radius-* 同为
+   * 静态语义 token。 */
+  --lumi-width-form-dialog: 28rem; /* 448px 表单对话框 */
+  --lumi-width-detail-drawer: 26rem; /* 416px 桌面详情抽屉（400–440px 区间） */
+
   /* Reader 独立背景钩子（Gate 3 接线；默认跟随 App surface） */
   --lumi-reader-bg: var(--lumi-reader);
 }

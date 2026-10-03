@@ -26,18 +26,38 @@
  *
  * F015 认证前目标：登录前 URL 带 ?next=/path（同源路径，经
  * isSafeAuthRedirectPath 校验：单 / 开头、禁 //、禁 scheme）时，登录
- * 成功后回到该目标；非法或缺失回退应用首页。注册/激活入口在下方
- * 链接（/register、/activate 同属未认证顶层页）。
+ * 成功后回到该目标；非法或缺失回退应用首页。
+ *
+ * R01 登录后落点规则（唯一规则，无角色特判）：
+ * 1. URL 带合法 ?next=（同源路径）→ 回认证前目标；
+ * 2. 否则一律进应用首页 /。
+ * 没有「管理员登录落 /admin」的前端分支——管理台入口是否渲染由服务端
+ * 会话角色决定（GET /auth/session → identity.role，见 AccountMenu），
+ * /admin 路由本身的权限由后端 403 兜底（AdminScreen）。前端绝不用
+ * 用户名字符串推断身份；identity 为 null 时只进首页，绝不猜。
+ *
+ * R01 注册入口两态（服务端权威 + 诚实回退）：点击「注册」先探测
+ * GET /auth/registration-policy（公开布尔策略位）——
+ * - 开放 → 进 /register（P0-02 表单，服务端提交时仍权威校验）；
+ * - 关闭 → 就地展开邀请制说明 + 邀请码/邀请链接粘贴框，提交进
+ *   /activate?token=…（复用 ActivateScreen 的 activation-preview +
+ *   activate 流）；
+ * - 探测失败（端点未部署 404 / 网络）→ 不猜测，进 /register，由服务
+ *   端在提交时以 403 registration_disabled 诚实定案（F019 既有路径）。
+ * 错误显示位置：凭据类错误（invalid_credentials）贴在密码字段旁；
+ * 限流/网络/停用等服务级反馈在表单级区域——都不做页面顶部横幅。
+ * 注册/激活入口常驻登录面下方（/register、/activate 同属未认证顶层页）。
  */
 
 import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Eye, EyeOff, Fingerprint, LogIn, UserPlus } from 'lucide-react'
+import { Eye, EyeOff, Fingerprint, LogIn, Ticket, UserPlus } from 'lucide-react'
 import {
   ApiError,
   beginPasskeyLogin,
   finishPasskeyLogin,
   getAuthSession,
+  getPublicRegistrationPolicy,
   isTotpChallenge,
   loginAccount,
   verifyTotpLogin,
@@ -62,14 +82,10 @@ type LoginFeedback =
   | { kind: 'none' }
   | { kind: 'error'; message: string }
   | { kind: 'offline'; message: string }
+  /** R01：凭据类错误——贴在密码字段旁显示（不拆字段，无账号枚举）。 */
+  | { kind: 'credentials'; message: string }
   /** N190：账户已停用 —— 诚实状态页（计划删除时间 + 恢复/迁出指引）。 */
   | { kind: 'deactivated'; message: string; scheduledDeletionAt: string | null }
-  /** N190：账户已停用 —— 诚实的状态页（含计划删除时间与恢复途径）。 */
-  | {
-      kind: 'deactivated'
-      message: string
-      scheduledDeletionAt: string | null
-    }
 
 /** invalid_credentials 的统一文案——错误身份不透露哪个字段错了。 */
 const INVALID_CREDENTIALS_TEXT = '用户名或密码不正确。'
@@ -82,6 +98,24 @@ function rateLimitedText(retryAfterSeconds: number | null): string {
     return `尝试过于频繁，请约 ${retryAfterSeconds} 秒后再试。`
   }
   return '尝试过于频繁，请稍后再试。'
+}
+
+/** 从粘贴内容提取邀请 token（R01 邀请制面板）：完整邀请链接
+ * （…/activate?token=xxx，含 #/activate?token=xxx 的 hash 形式）取
+ * token 参数并解码；否则整段 trimmed 内容视为 token 本身。提取不到
+ * 非空内容返回 null。 */
+function inviteTokenFromPaste(raw: string): string | null {
+  const value = raw.trim()
+  if (value === '') return null
+  const match = value.match(/[?&]token=([^&\s#]+)/)
+  if (match !== null) {
+    try {
+      return decodeURIComponent(match[1])
+    } catch {
+      return match[1]
+    }
+  }
+  return value
 }
 
 export default function LoginScreen() {
@@ -98,6 +132,12 @@ export default function LoginScreen() {
   const [totpPendingToken, setTotpPendingToken] = useState<string | null>(null)
   const [totpCode, setTotpCode] = useState('')
   const [totpUseRecovery, setTotpUseRecovery] = useState(false)
+  // R01 注册入口两态：策略探测在点击时懒执行（不给每次登录页挂载都
+  // 加一个匿名请求）；invitePanel=true 表示实例关闭公开注册，就地展示
+  // 邀请制说明与粘贴框。
+  const [registerProbePending, setRegisterProbePending] = useState(false)
+  const [invitePanel, setInvitePanel] = useState(false)
+  const [inviteCode, setInviteCode] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const passkeyProbeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -135,7 +175,16 @@ export default function LoginScreen() {
   }, [username, totpPendingToken])
 
   /** 登录成功共同路径：服务端核实身份 → 清上一账号足迹 → 翻门。
-   * F015：带合法 ?next=（同源路径）时回到认证前目标，否则进应用首页。 */
+   *
+   * 落点规则（R01，唯一规则，无角色特判）：
+   * 1. URL 带合法 ?next=（isSafeAuthRedirectPath 同源路径校验）→
+   *    replace 回认证前目标（深链保留）；
+   * 2. 否则一律 replace 进应用首页 /。
+   * 管理台入口由服务端会话角色渲染（GET /auth/session → identity.role
+   * → AccountMenu），/admin 深链登录后经规则 1 直接可达、权限由后端
+   * 403 兜底；前端绝不用用户名字符串推断 admin。identity 探测失败
+   * （网络抖动）时 identity=null：仍按规则落点，AccountMenu 走降级
+   * 菜单（FIX-001），绝不猜测身份。 */
   async function finishLogin() {
     let identity = null
     try {
@@ -192,6 +241,42 @@ export default function LoginScreen() {
     } finally {
       setPending(false)
     }
+  }
+
+  /** R01 注册入口：先探实例策略，再决定去注册表单还是就地展开邀请制
+   * 面板。探测失败绝不猜测——回退 /register 让服务端在提交时定案。 */
+  async function handleRegisterEntry() {
+    if (registerProbePending) return
+    setRegisterProbePending(true)
+    const goRegister = () => {
+      // 去注册页时把合法 ?next= 带上（F020：注册成功后仍回认证前目标）。
+      const next = readAuthRedirectTarget()
+      if (next !== null) navigateToPath(`/register?next=${encodeURIComponent(next)}`)
+      else navigateAppRoute('register')
+    }
+    try {
+      const policy = await getPublicRegistrationPolicy()
+      if (policy.allowPublicRegistration) {
+        goRegister()
+        return
+      }
+      // 实例关闭公开注册：就地展开邀请制说明（邀请码/链接粘贴进激活流）。
+      setInvitePanel(true)
+    } catch {
+      // 端点未部署（404）/ 被拒 / 网络失败：不猜测，交给 /register 的
+      // 服务端权威路径（提交时 403 registration_disabled 诚实定案）。
+      goRegister()
+    } finally {
+      setRegisterProbePending(false)
+    }
+  }
+
+  /** 邀请制面板：粘贴邀请码/邀请链接 → /activate?token=…（复用
+   * ActivateScreen 的 activation-preview + activate 全流程）。 */
+  function activateFromInvitePaste() {
+    const token = inviteTokenFromPaste(inviteCode)
+    if (token === null) return
+    navigateToPath(`/activate?token=${encodeURIComponent(token)}`)
   }
 
   async function handleTotpSubmit(event: React.FormEvent) {
@@ -261,8 +346,9 @@ export default function LoginScreen() {
             error.extra !== null ? (error.extra.scheduledDeletionAt ?? null) : null,
         })
       } else if (error instanceof ApiError && error.type === 'invalid_credentials') {
-        // 统一文案：不区分用户不存在/密码错误（无账号枚举）。
-        setFeedback({ kind: 'error', message: INVALID_CREDENTIALS_TEXT })
+        // 统一文案：不区分用户不存在/密码错误（无账号枚举）；R01：
+        // 凭据类错误贴在密码字段旁（不做页面顶部横幅）。
+        setFeedback({ kind: 'credentials', message: INVALID_CREDENTIALS_TEXT })
       } else if (error instanceof ApiError && error.type === 'rate_limited') {
         setFeedback({
           kind: 'error',
@@ -315,8 +401,6 @@ export default function LoginScreen() {
                 enterKeyHint="next"
                 inputMode="text"
                 disabled={pending}
-                aria-invalid={feedback.kind !== 'none' || undefined}
-                aria-describedby={feedback.kind !== 'none' ? 'login-feedback' : undefined}
                 className="min-h-11 w-full rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 text-base text-[var(--lumi-text-primary)] placeholder:text-[var(--lumi-text-tertiary)] transition-colors duration-[var(--lumi-motion-fast)] hover:border-[var(--lumi-text-tertiary)] focus-visible outline-2 -outline-offset-1 outline-[var(--lumi-focus-ring)] disabled:opacity-50"
                 placeholder="用户名"
               />
@@ -339,8 +423,11 @@ export default function LoginScreen() {
                   enterKeyHint="go"
                   inputMode="text"
                   disabled={pending}
-                  aria-invalid={feedback.kind !== 'none' || undefined}
-                  aria-describedby={feedback.kind !== 'none' ? 'login-feedback' : undefined}
+                  // R01：凭据类错误贴在密码字段旁——aria 语义同位绑定。
+                  aria-invalid={feedback.kind === 'credentials' || undefined}
+                  aria-describedby={
+                    feedback.kind === 'credentials' ? 'login-credential-error' : undefined
+                  }
                   className="min-h-11 w-full rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 pr-11 text-base text-[var(--lumi-text-primary)] placeholder:text-[var(--lumi-text-tertiary)] transition-colors duration-[var(--lumi-motion-fast)] hover:border-[var(--lumi-text-tertiary)] focus-visible outline-2 -outline-offset-2 outline-[var(--lumi-focus-ring)] disabled:opacity-50"
                   placeholder="••••••••"
                 />
@@ -363,7 +450,23 @@ export default function LoginScreen() {
               </div>
             </div>
 
-            {feedback.kind !== 'none' && (
+            {/* R01：凭据类错误贴在密码字段旁（而非表单顶部横幅）；aria
+                语义与密码输入框同位绑定（见上方 aria-describedby）。 */}
+            {feedback.kind === 'credentials' && (
+              <p
+                id="login-credential-error"
+                data-testid="login-credential-error"
+                role="alert"
+                aria-live="polite"
+                className="text-xs leading-relaxed text-[var(--lumi-danger)]"
+              >
+                {feedback.message}
+              </p>
+            )}
+
+            {(feedback.kind === 'error' ||
+              feedback.kind === 'offline' ||
+              feedback.kind === 'deactivated') && (
               <div
                 id="login-feedback"
                 role="alert"
@@ -422,20 +525,72 @@ export default function LoginScreen() {
             </p>
 
             <div className="mt-1 flex flex-col items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => {
-                  // 去注册页时把合法 ?next= 带上（F020：注册成功后仍回认证前目标）。
-                  const next = readAuthRedirectTarget()
-                  if (next !== null) navigateToPath(`/register?next=${encodeURIComponent(next)}`)
-                  else navigateAppRoute('register')
-                }}
-                data-testid="login-register-link"
-                className="flex min-h-11 items-center gap-1.5 text-sm font-medium text-[var(--lumi-accent-text)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
-              >
-                <UserPlus aria-hidden className="size-4" />
-                没有账号？注册新账号
-              </button>
+              {invitePanel ? (
+                <div
+                  data-testid="login-invite-panel"
+                  className="w-full rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-3"
+                >
+                  <p className="text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+                    本站采用邀请制：公开注册未开放。向运营者索取邀请后，在此粘贴邀请码或邀请链接即可激活加入。
+                  </p>
+                  <div className="mt-2 flex gap-2">
+                    <input
+                      type="text"
+                      value={inviteCode}
+                      onChange={(e) => setInviteCode(e.target.value)}
+                      aria-label="邀请码或邀请链接"
+                      data-testid="login-invite-input"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      disabled={pending}
+                      onKeyDown={(e) => {
+                        // FIX-012：提交类 Enter 必须尊重输入法组合态——
+                        // 候选词确认的 Enter 不触发激活。
+                        if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                          e.preventDefault()
+                          activateFromInvitePaste()
+                        }
+                      }}
+                      className="min-h-11 min-w-0 flex-1 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-canvas)] px-3 text-sm text-[var(--lumi-text-primary)] placeholder:text-[var(--lumi-text-tertiary)] transition-colors duration-[var(--lumi-motion-fast)] hover:border-[var(--lumi-text-tertiary)] focus-visible outline-2 -outline-offset-1 outline-[var(--lumi-focus-ring)] disabled:opacity-50"
+                      placeholder="粘贴邀请码或邀请链接"
+                    />
+                    <Button
+                      variant="secondary"
+                      size="md"
+                      onClick={activateFromInvitePaste}
+                      disabled={inviteCode.trim().length === 0}
+                      data-testid="login-invite-activate"
+                      className="min-h-11 shrink-0"
+                    >
+                      <Ticket aria-hidden className="size-4" />
+                      激活
+                    </Button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInvitePanel(false)
+                      setInviteCode('')
+                    }}
+                    className="mt-1 min-h-11 text-xs text-[var(--lumi-text-tertiary)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+                  >
+                    返回
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleRegisterEntry}
+                  disabled={registerProbePending}
+                  aria-busy={registerProbePending || undefined}
+                  data-testid="login-register-link"
+                  className="flex min-h-11 items-center gap-1.5 text-sm font-medium text-[var(--lumi-accent-text)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)] disabled:opacity-60"
+                >
+                  <UserPlus aria-hidden className="size-4" />
+                  {registerProbePending ? '正在检查注册方式…' : '没有账号？注册新账号'}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => navigateAppRoute('activate')}

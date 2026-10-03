@@ -12,7 +12,8 @@ git、curl）：
 
 ```bash
 git clone https://github.com/paidethon/LumiRSS.git && cd LumiRSS
-sudo ./lumirss deploy
+sudo ./lumirss deploy                # 四容器拓扑（默认）
+sudo ./lumirss deploy --single       # 单容器拓扑（见 §4b）
 ```
 
 `deploy` 会：preflight（docker/compose/curl、DNS、80/443 占用、磁盘）→
@@ -37,6 +38,8 @@ bcrypt 哈希）→ 拉取 GHCR 预构建镜像（**prebuilt-only**：拉取失�
 | `./lumirss restore <backup.tar.gz> [--yes]` | 停 bff → 覆盖卷（files.tar）→ 校验并回写一致性快照（`MANIFEST.txt` sha256，不匹配拒绝）→ 启动 → 健康检查（破坏性，需输入 `RESTORE` 或 `--yes`） |
 | `./lumirss doctor` | PASS/WARN/FAIL 诊断（docker、compose、.env.prod、DNS、容器与健康、**OOM/重启计数**、备份就绪 `fullBackupReady`、磁盘、备份目录；external 模式另查公网暴露与 HTTPS；session 模式另查密码已初始化） |
 | `./lumirss rollback` | 回到上一镜像 tag + 恢复上一份 `.env.prod` 快照 |
+| `./lumirss migrate-single` | 四容器 → 单容器拓扑迁移（备份门 → 拉取门 → 停旧栈保卷 → 起单容器 → 健康 + 版本校验 → 持久化 `LUMIRSS_SINGLE=1`；任一门失败旧栈/卷原样保留，见 §4b） |
+| `./lumirss rollback-single` | 单容器 → 迁移前的四容器栈（消费迁移时写的回退点：env 快照 + 上一 tag + pinned 镜像 ID + 迁移前 schema 版本；schema 已前滚时需显式 `--yes` 或恢复备份，见 §4b） |
 | `./lumirss caddy-config` | 打印宿主 Caddy 站点块（`BEGIN/END LUMIRSS` 管理标记；external 模式用） |
 | `./lumirss set-password` | 安装/轮换 owner 登录密码（session 模式）。交互输入或 stdin / `LUMIRSS_NEW_PASSWORD` 运行时秘密；**只把 bcrypt 哈希写进控制库，明文任何地方不落盘**。成员账号的密码重置走 `/admin`（见 [invite-members.md](invite-members.md)） |
 | `./lumirss freshrss-init` | 安装/启用内部 FreshRSS 与 BFF 用户（幂等） |
@@ -143,16 +146,63 @@ docker compose -f docker-compose.prod.yml exec bff \
   python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5).status)"
 ```
 
-可选增强服务（如自托管 LibreTranslate 机器翻译）不在这份默认栈里，
-用独立的按需 compose fragment 管理（`./lumirss translate up|stop|status`），
-见 [optional-services.md](optional-services.md)。
-
 公网入口自检：`curl -fsS -o /dev/null http://127.0.0.1/`（`DOMAIN` 强制
 HTTPS 时用 `https://<DOMAIN>/`；自签本地证书需 `-k`）。
 
+## 4b. 单容器拓扑（all-in-one，可选）
+
+`docker-compose.allinone.yml` 把 **Caddy + FastAPI BFF + FreshRSS
+（php-fpm）+ RSSHub** 放进同一个 s6-overlay 监管的容器
+（`lumirss-allinone` 镜像，GHCR 预构建）。决策背景见
+[../decisions/0008-single-container-topology.md](../decisions/0008-single-container-topology.md)，
+镜像内部结构见仓库文件 `docker/all-in-one/README.md`（docs 树外，VitePress 死链门禁不做站内链接）。
+
+**何时用**：小规格单机（如 1.6 GB 内存 VPS）想少管几个容器时。四容器
+拓扑仍是默认与首选——单容器是**一个 cgroup 装四个负载**：内存隔离变弱
+（单个失控服务可 OOM 整个容器；RSSHub V8 堆上限
+`LUMIRSS_RSSHUB_NODE_OPTIONS` 是主要约束杠杆），且镜像仅 amd64。
+空闲实测（dev box、空卷、1200m limit）：容器 RSS **约 340 MiB**
+（limit 的 28%）。
+
+```bash
+sudo ./lumirss deploy --single        # 全新部署，直接进单容器
+sudo ./lumirss migrate-single         # 已有四容器栈 → 单容器
+sudo ./lumirss rollback-single        # 单容器 → 迁移前的四容器栈
+```
+
+- **不变量**：compose 项目名（`lumirss-prod`）与两个命名卷
+  （`lumi-data`、`freshrss-data`）与四容器栈完全一致，uid 模型不变
+  （BFF `lumirss` 10001 + 补充组 `www-data`(33)，FreshRSS www-data 33）
+  ——两个拓扑可以互迁而数据卷原样通用；`./lumirss backup` /
+  `restore` 照常工作。
+- **形态差异**：单容器镜像天生 external-caddy-only——只发布
+  `127.0.0.1:${LUMIRSS_UPSTREAM_PORT:-18080} -> 80`（纯 HTTP），TLS 由
+  宿主反代终结（`./lumirss caddy-config` 渲染站点块），`--single` 与
+  `--external-caddy` 不能组合也不需要；`LUMIRSS_AUTH_USER/HASH`
+  （代理层 basic auth）被忽略并告警——访问控制即应用会话
+  （`LUMIRSS_AUTH_MODE=session`）；内部上游地址被 compose 固定为容器内
+  loopback。FreshRSS / RSSHub / BFF 端口全部只在容器 loopback，不发布。
+- **迁移安全链**（`migrate-single`，每步失败都如实报告真实栈状态）：
+  回退点快照（`.env.prod.previous` + 上一镜像 tag + 运行中镜像 ID +
+  迁移前 schema 版本，在任何改动**之前**从运行中的四容器栈采集）→
+  备份门（失败即中止，什么都不改）→ 拉取门（先拉单容器镜像，失败即
+  中止，旧栈继续运行）→ `down` 旧栈（**绝不带 `-v`**）→ 起单容器 →
+  健康检查 → 版本/镜像自证 → 持久化 `LUMIRSS_SINGLE=1`。
+- **回滚**（`rollback-single`）：按回退点逆向恢复四容器栈（卷共享，
+  单容器期间写入的数据都保留）；若单容器镜像已把控制库 schema 前滚，
+  旧镜像无法撤销这些迁移——交互需输入 `ROLLBACK`、非交互需 `--yes`
+  才放行，更稳妥的替代是恢复迁移前备份。
+- 拓扑持久化在 `.env.prod`（`LUMIRSS_SINGLE`），后续 `status` /
+  `doctor` / `update`（可再带 `--single`）/ `rollback-single` 自动复用
+  同一形态。
+
 ## 5. 访问控制与边缘安全
 
-两种模式（`LUMIRSS_AUTH_MODE`，`./lumirss deploy --auth-mode=…` 切换）：
+两种模式（`LUMIRSS_AUTH_MODE`，`./lumirss deploy --auth-mode=…` 切换）。
+**应用会话（session）为主模式**：账号级登录、每账号数据隔离，Caddy 不
+再加代理层 basic auth。basic 模式保留为**兼容可选项**（历史行为；
+生产实例的切换正在执行中——未显式设置 `LUMIRSS_AUTH_MODE` 时，env
+缺省仍是 `basic`）。
 
 ### 5a. session 模式（推荐：账号登录，长效会话）
 
@@ -181,13 +231,14 @@ sudo ./lumirss set-password          # 安装/轮换 owner 密码；或 stdin / 
 - 从 basic 模式切换：重新 deploy 时带 `--auth-mode=session` 并执行
   `set-password`；回退同理（`--auth-mode=basic` + 原 USER/HASH 仍在）。
 
-### 5b. basic 模式（默认/兼容）
+### 5b. basic 模式（兼容可选项）
 
 - **Caddy auth / noauth**：`LUMIRSS_AUTH_USER` + `LUMIRSS_AUTH_HASH`
   都设置 → 渲染 `Caddyfile.auth`（basic_auth，bcrypt）；都为空 →
   `Caddyfile.noauth`（受信内网/已有外层认证）。**只设一个容器拒绝启动**
   （防止半配置静默关闭访问控制）。Tailscale / Cloudflare Access 等外层
-  方案可替换内置 basic auth，但不要无意叠加多套认证。
+  方案可替换内置 basic auth，但不要无意叠加多套认证。单容器拓扑下这两个
+  变量被忽略（见 §4b）。
 
 ### 5c. 注册策略（可选公开注册，默认关闭）
 

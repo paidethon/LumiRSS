@@ -61,6 +61,8 @@ from lumirss.models import (
     AgentScopeSummary,
     AgentThread,
     AgentThreadListResponse,
+    AgentThreadObsidianExportRequest,
+    AgentThreadObsidianExportResult,
     AgentThreadSearchHit,
     AgentThreadSearchResponse,
     AgentThreadSettings,
@@ -100,7 +102,10 @@ _N163_PRESET_MAX_TURNS = 3
 
 def _thread_model(thread: dict) -> AgentThread:
     return AgentThread(
-        id=thread["id"], title=thread["title"], createdAt=thread["createdAt"]
+        id=thread["id"],
+        title=thread["title"],
+        createdAt=thread["createdAt"],
+        archivedAt=thread.get("archivedAt"),
     )
 
 
@@ -150,10 +155,14 @@ async def create_thread(request: Request) -> AgentThread:
 
 
 @router.get("/api/v1/agent/threads", response_model=AgentThreadListResponse)
-async def list_threads(request: Request) -> AgentThreadListResponse:
+async def list_threads(request: Request, archived: bool = False) -> AgentThreadListResponse:
+    """R20：archived=False（默认）= 未归档工作集；True = 已归档视图。"""
     store: AgentStore = _get_agent_store(request)
     return AgentThreadListResponse(
-        items=[_thread_model(thread) for thread in await store.list_threads()]
+        items=[
+            _thread_model(thread)
+            for thread in await store.list_threads(archived=archived)
+        ]
     )
 
 
@@ -427,7 +436,8 @@ async def search_threads(request: Request, q: str):
 async def update_thread_settings(
     thread_id: str, payload: AgentThreadUpdate, request: Request
 ):
-    """F094/F098/N165：会话设置（scope / toolPolicy / budget / 标题）。下轮生效。"""
+    """F094/F098/N165/R20：会话设置（scope / toolPolicy / budget / 标题 /
+    归档）。下轮生效（归档/标题即时）。"""
     store = _session_store(request)
     try:
         settings = await store.update_settings(
@@ -438,6 +448,7 @@ async def update_thread_settings(
                 None if payload.clearToolPolicy else payload.toolPolicy
             ),
             budget=None if payload.clearBudget else payload.budget,
+            archived=payload.archived,
         )
     except KeyError as exc:
         raise ThreadNotFound("会话不存在。") from exc
@@ -599,6 +610,74 @@ async def export_thread(
             )
         },
     )
+
+
+@router.post(
+    "/api/v1/agent/threads/{thread_id}/obsidian-export",
+    response_model=AgentThreadObsidianExportResult,
+)
+async def export_thread_to_obsidian(
+    thread_id: str, payload: AgentThreadObsidianExportRequest, request: Request
+):
+    """R20：会话导出到 Obsidian——复用 F096 的 markdown 渲染（角色轮次
+    + 机密剥离 + 结构转义）与 R07 的受限写入面（containment / 幂等 /
+    per-user 隔离 / 每日配额全部在 ObsidianExportService，本路由只做
+    内容收集）。会话不是 ItemRef：synthetic ref ``agent:<thread_id>``
+    走同一 content-id 幂等（重复导出 = exists，绝不覆盖）。"""
+    from fastapi.responses import JSONResponse
+
+    from lumirss.agent_export import ExportInvalid
+    from lumirss.agent_export import export_thread as build_export
+    from lumirss.config import LumiSettings
+    from lumirss.obsidian_export import ObsidianExportService
+    from lumirss.user_scope import NoUserContextError, require_user_id
+
+    try:
+        user_id = require_user_id()
+    except NoUserContextError:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "error": {"type": "unauthorized", "message": "Login required."}
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+    store = _get_agent_store(request)
+    try:
+        thread, markdown = await build_export(
+            store, thread_id, rounds=payload.rounds
+        )
+    except KeyError as exc:
+        raise ThreadNotFound("会话不存在。") from exc
+    except ExportInvalid as exc:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {"type": "invalid_export_request", "message": str(exc)}
+            },
+        )
+    service = ObsidianExportService(
+        request.app.state.db,
+        export_dir=LumiSettings().LUMIRSS_OBSIDIAN_EXPORT_DIR,
+    )
+    from lumirss.obsidian_export import ExportPayload
+
+    result = (
+        await service.export_batch(
+            [
+                ExportPayload(
+                    ref=f"agent:{thread_id}",
+                    source_type="agent_thread",
+                    title=f"Agent 会话：{thread['title'] or '(未命名会话)'}",
+                    source_name="Agent 工作台",
+                    url="",
+                    body_text=markdown,
+                )
+            ],
+            user_id=user_id,
+        )
+    )[0]
+    return AgentThreadObsidianExportResult(**result)
 
 
 @router.post(

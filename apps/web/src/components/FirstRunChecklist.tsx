@@ -73,7 +73,7 @@ export function FirstRunChecklist({ onClose }: { onClose: () => void }) {
           </label>
         </li>
         <li className="pl-6">
-          可选：设置 → 通用 调整阅读外观；设置 → 邮件简报 可选启用 GPT 日报。
+          可选：设置 → 通用 调整阅读外观；设置 → 邮件简报 可选启用 AI 日报。
           RSS 自动更新由 FreshRSS 容器 cron 负责（CRON_MIN）。
         </li>
       </ol>

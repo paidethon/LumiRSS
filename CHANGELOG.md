@@ -4,6 +4,59 @@
 `git log`。版本号遵循 [SemVer 2.0.0](https://semver.org/lang/zh-CN/)，
 唯一权威源是仓库根的 `VERSION`（`scripts/check-version.py` 校验派生）。
 
+## 3.0.0
+
+R3 重建大版本：以「安静、清晰、以长文阅读为中心」重做前端表现层与信息
+架构，同时交付单容器拓扑与多项真实能力闭环。约 27 项产品需求收敛落地。
+
+### 新增
+
+- 单容器拓扑（R05）：`lumirss-allinone` 镜像以 s6-overlay 监管
+  Caddy/BFF/FreshRSS(PHP+cron)/RSSHub 五服务，卷与 uid 模型不变；
+  `./lumirss deploy --single`、`migrate-single`、`rollback-single`
+  带备份门禁与回滚点；本地实测空闲 340MiB、SIGTERM 3.5s 干净退出。
+- 应用登录强化（R01）：正式登录页（字段级错误、注册策略两态探测、
+  邀请码粘贴进激活流），新匿名端点 `GET /api/v1/auth/registration-policy`。
+- 来源中心（R02）：九类内容来源统一管理页（真实计数/连接状态/单一主
+  操作），`GET /api/v1/sources/summary` 按账号汇总。
+- Obsidian 服务端导出（R07）：`POST /api/v1/obsidian/export` 受限写入
+  （原子/绝不覆盖/content-id 幂等/每日配额/路径防御），独立 opt-in 卷。
+- AI 日报（R13，原 GPT 日报）：基础/高级两层配置、阶段进度、协作式
+  取消、预览→审阅发布、期号去重与发布幂等、材料≠指令注入防线。
+- 邮件简报内容页（R19）：逐次发送账本（正文快照+逐收件人记账），失败
+  重试只补未送达地址；无快照历史诚实降级。
+- RAG 索引内容页（R24）：真实计数总览、暂停/继续、删除不删原文、失败
+  单项重试、检索试验。
+- OPML 导入自动采用 RSSHub（R18）：固定版本镜像 131 路由元数据快照、
+  置信度匹配+同域消歧、先实测后替换、原始地址台账可撤销。
+- 内置 8 款开源字体（R08）：6 中 2 英全 OFL，unicode-range 分片按需
+  加载，零 preload 零外部 CDN。
+- 偏好云端同步扩展（R25）：49 项用户偏好上云（工具栏/阅读模式/朗读
+  全套等），overrides-only 存储与 storedKeys 升级迁移，断网补传队列。
+- Agent 工作台补齐（R20）：会话重命名/归档/停止生成/保存到 Obsidian。
+
+### 变更
+
+- 移除自托管 LibreTranslate 翻译路线（R21）：引擎收敛为 AI/浏览器，
+  旧配置幂等迁移并一次性提示；translate compose 与 CLI 子命令删除。
+- 设置中心重组（R03/R16/R17/R14）：账户与服务分离（服务五态真实健康）、
+  个人术语本迁入文章过滤、工作区真实设置面、全部文案三遍精简。
+- 演示隐私遮罩功能移除（R26）；真隐私能力（账号隔离/密钥掩码/远程图片
+  控制等）不受影响。
+- 阅读器与导航（R10/R11/R23）：方案 B 统一工具抽屉（阅读/整理/共读）、
+  ⋯菜单五组、AI 摘要紧凑一行入口、导航注册表唯一真源。
+- 首屏 bundle 上限按本轮实测重校 792→810 kB raw（登录/首屏必经路径
+  语义增长，懒加载契约不变）。
+
+### 升级与回退说明
+
+- 生产默认仍是四容器拓扑；`./lumirss migrate-single` 可选迁入单容器，
+  `rollback-single` 可回退，两拓扑共用同名卷与 .env.prod。
+- 旧 LibreTranslate 配置升级后自动迁移为 AI 翻译；浏览器翻译按运行时
+  能力探测，不可用时选项禁用。
+- 本次发布新增 `lumirss-allinone` 镜像；release-manifest 携带三镜像
+  digest。回退到 2.8.0 请使用旧 tag 与既有四容器 compose。
+
 ## 2.8.0
 
 R2 大版本：400 项新增功能全量交付（简报编排、邮件资料阅读、API/Webhook

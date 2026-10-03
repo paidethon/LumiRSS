@@ -1,93 +1,89 @@
-/** TranslationSettingsSection — 设置 → 翻译（统一入口）。
+/** TranslationSettingsSection — 设置 → 翻译（R21 前端重写）。
  *
- * 翻译专属配置的唯一编辑点（AI 设置页不再重复翻译表单）：
- * - 翻译引擎 + 运行位置如实标注：ai=AI 提供者（云端或自托管）、
- *   libretranslate=自托管服务器（经 BFF 调用）、browser=此浏览器
- *   （本地 Translator API；BFF 零参与，不上传正文）；
- * - 目标语言（参与缓存身份）；
- * - LibreTranslate：地址 + 可选 API Key（服务端 write-only）+ 连接测试；
- * - 按需行为说明：打开文章绝不自动翻译；自动翻译恒关；
- * - AI Profile 管理仍留在「设置 → AI」（同一份 profile 存储），
- *   此处只展示 translation 用途的解析结果，附跳转。
- *
- * 密钥安全：API Key 只写服务端 SecretsStore；UI 只显示已配置状态，
- * 支持替换与清除，不回读明文。 */
+ * 引擎只剩两种，按执行位置如实标注：
+ * - ai：AI 提供者执行（云端或自托管 OpenAI-compatible / Gemini）——
+ *   在此选择 translation 用途的 Profile（与摘要共享同一份 Profile
+ *   存储，管理仍在「设置 → AI」）+ 目标语言；
+ * - browser：此浏览器执行（Translator API）——运行时探测可用才可选；
+ *   正文不出设备、不经 BFF；语言边界：仅浏览器支持的语言对，源语言
+ *   自动探测。
+ * LibreTranslate 自托管引擎已从 BFF 移除（PUT libretranslateUrl /
+ * engine=libretranslate 会 422），相关 UI 全部删除；迁移横幅只在
+ * portable 键 translationMigratedFromLibre=true 时出现一次，用户确认
+ * 后写回 false。
+ * 按需行为不变：打开文章绝不自动翻译；自动批量翻译恒关。 */
 
-import { useEffect, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
-import { Loader2, Save } from 'lucide-react'
+import { useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Info, Loader2, Save } from 'lucide-react'
 import {
+  getServerSettings,
+  patchServerSettings,
+} from '../../api/client'
+import {
+  useAiProfiles,
   useAiSettings,
-  useClearLibreTranslateKeyMutation,
-  useSaveLibreTranslateKeyMutation,
-  useTestLibreTranslateMutation,
+  useUpdateAiPurposesMutation,
   useUpdateAiSettingsMutation,
 } from '../../api/queries'
+import { localTranslatorAvailable } from '../../lib/local-translator'
 import { LocalTranslationCapabilitySection } from './LocalTranslationCapabilitySection'
 import { useSettingsDirtySection } from './settings-dirty'
-import { Select } from '../ui/Select'
 import { Button } from '../ui/Button'
-import { cx } from '../ui/cx'
+import { Select } from '../ui/Select'
 
-const inputClass = cx(
-  'h-9 w-full rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)]',
-  'bg-[var(--lumi-surface)] px-2.5 text-sm text-[var(--lumi-text-primary)]',
-  'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
-)
+type EngineValue = 'ai' | 'browser'
 
-function FieldShell({
-  label,
-  hint,
-  children,
-}: {
-  label: string
-  hint?: string
-  children: React.ReactNode
-}) {
+function MigrationBanner({ onConfirm, busy }: { onConfirm: () => void; busy: boolean }) {
   return (
-    <div>
-      <p className="text-sm font-medium text-[var(--lumi-text-primary)]">{label}</p>
-      {hint !== undefined && (
-        <p className="mt-0.5 text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">{hint}</p>
-      )}
-      <div className="mt-1.5">{children}</div>
+    <div
+      role="status"
+      data-lumi-translation-migration=""
+      className="flex items-start gap-2 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-3"
+    >
+      <Info aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-[var(--lumi-accent-text)]" />
+      <p className="min-w-0 flex-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+        自托管翻译已移除，请选择 AI 或浏览器翻译。
+      </p>
+      <Button size="sm" variant="secondary" className="shrink-0" loading={busy} onClick={onConfirm}>
+        知道了
+      </Button>
     </div>
   )
 }
-
-const ENGINE_OPTIONS = [
-  { value: 'ai', label: 'AI 翻译 — AI 提供者执行（云端或自托管 OpenAI-compatible）' },
-  { value: 'libretranslate', label: '本地机器翻译 — 自托管服务器执行（LibreTranslate，经 BFF）' },
-  { value: 'browser', label: '本地翻译 — 此浏览器执行（Chrome Translator API，正文不出设备）' },
-] as const
-
-type EngineValue = (typeof ENGINE_OPTIONS)[number]['value']
 
 export function TranslationSettingsSection() {
   const queryClient = useQueryClient()
   const settings = useAiSettings()
   const update = useUpdateAiSettingsMutation()
+  const profiles = useAiProfiles()
+  const assignProfile = useUpdateAiPurposesMutation()
 
-  const [engine, setEngine] = useState<EngineValue>('ai')
-  const [language, setLanguage] = useState<'zh-CN' | 'en'>('zh-CN')
-  const [libreUrl, setLibreUrl] = useState('')
-  const [keyInput, setKeyInput] = useState('')
-  const [dirty, setDirty] = useState(false)
+  // portable 键 translationMigratedFromLibre（settings-meta 生成契约）。
+  const serverSettings = useQuery({
+    queryKey: ['server-settings'],
+    queryFn: ({ signal }) => getServerSettings(signal),
+  })
+  const dismissMigration = useMutation({
+    mutationFn: () => patchServerSettings({ translationMigratedFromLibre: false }),
+    onSuccess: (server) => {
+      queryClient.setQueryData(['server-settings'], server)
+    },
+  })
+
+  // 表单编辑值：null = 跟随服务端值（渲染期派生，无需 effect 同步）。
+  // 旧快照可能残留 libretranslate —— 引擎域已收敛为 ai|browser，
+  // 未知值一律归一为 ai（服务端迁移同步做了同样的事）。
+  const [edit, setEdit] = useState<{ engine: EngineValue; language: 'zh-CN' | 'en' } | null>(null)
+  const s = settings.data
+  const engine: EngineValue = edit?.engine ?? (s?.translationEngine === 'browser' ? 'browser' : 'ai')
+  const language: 'zh-CN' | 'en' = edit?.language ?? (s?.translationLanguage === 'en' ? 'en' : 'zh-CN')
+  const dirty = edit !== null
   // FIX-057：向设置中心登记脏状态——切分类 / 关闭设置前统一守护。
   useSettingsDirtySection('translation', dirty)
 
-  useEffect(() => {
-    const s = settings.data
-    if (s === undefined || dirty) return
-    setEngine(s.translationEngine as EngineValue)
-    setLanguage(s.translationLanguage === 'en' ? 'en' : 'zh-CN')
-    setLibreUrl(s.libretranslateUrl)
-  }, [settings.data, dirty])
-
-  const saveKey = useSaveLibreTranslateKeyMutation()
-  const clearKey = useClearLibreTranslateKeyMutation()
-  const test = useTestLibreTranslateMutation()
-  const [testResult, setTestResult] = useState<string | null>(null)
+  // 浏览器翻译：运行时探测（Translator API 存在才可选）。
+  const [browserReady] = useState(() => localTranslatorAvailable())
 
   if (settings.isPending) {
     return (
@@ -96,7 +92,7 @@ export function TranslationSettingsSection() {
       </p>
     )
   }
-  if (settings.isError || settings.data === undefined) {
+  if (s === undefined) {
     return (
       <p className="py-3 text-sm text-[var(--lumi-danger)]" role="alert">
         翻译设置加载失败，请稍后重试。
@@ -104,54 +100,129 @@ export function TranslationSettingsSection() {
     )
   }
 
-  const s = settings.data
+  const showMigration = serverSettings.data?.translationMigratedFromLibre === true
+  const translationProfileId = s.purposeStatus.translation?.profileId ?? 'default'
+  const enabledProfiles = (profiles.data ?? []).filter((p) => p.enabled)
 
   return (
     <div className="flex flex-col gap-4 py-3">
+      {showMigration && (
+        <MigrationBanner busy={dismissMigration.isPending} onConfirm={() => dismissMigration.mutate()} />
+      )}
+
       <section className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3.5">
-        <h3 className="text-sm font-medium text-[var(--lumi-text-primary)]">翻译引擎与目标语言</h3>
+        <h3 className="text-sm font-medium text-[var(--lumi-text-primary)]">翻译方式与目标语言</h3>
         <div className="mt-3 flex flex-col gap-4">
-          <FieldShell label="翻译引擎" hint="运行位置如实标注：云端 / 自托管服务器 / 此浏览器。">
-            <Select
-              aria-label="翻译引擎"
-              value={engine}
-              disabled={update.isPending}
-              options={ENGINE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-              onChange={(e) => {
-                setDirty(true)
-                setEngine(e.target.value as EngineValue)
-              }}
-            />
-          </FieldShell>
-          <FieldShell label="目标语言" hint="译文的目标语言；语言参与翻译缓存身份。">
-            <Select
-              aria-label="目标语言"
-              value={language}
-              disabled={update.isPending}
-              options={[
-                { value: 'zh-CN', label: '简体中文' },
-                { value: 'en', label: 'English' },
-              ]}
-              onChange={(e) => {
-                setDirty(true)
-                setLanguage(e.target.value as 'zh-CN' | 'en')
-              }}
-            />
-          </FieldShell>
+          <div>
+            <p className="text-sm font-medium text-[var(--lumi-text-primary)]">翻译方式</p>
+            <div className="mt-1.5">
+              <Select
+                aria-label="翻译方式"
+                value={engine}
+                disabled={update.isPending}
+                options={[
+                  { value: 'ai', label: 'AI 翻译' },
+                  {
+                    // 运行时探测可用才可选：此浏览器无 Translator API 时禁用。
+                    value: 'browser',
+                    label: browserReady
+                      ? '浏览器翻译'
+                      : '浏览器翻译（此浏览器不支持）',
+                    disabled: !browserReady,
+                  },
+                ]}
+                onChange={(e) => {
+                  setEdit({ engine: e.target.value === 'browser' ? 'browser' : 'ai', language })
+                }}
+              />
+            </div>
+            {/* 位置说明放选项下方：当前所选方式在哪里执行。 */}
+            <p className="mt-1.5 text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
+              {engine === 'ai'
+                ? '由 AI 提供者执行（云端或自托管）；在下方选择翻译 Profile 与目标语言。'
+                : '由本浏览器内置翻译执行，正文不出设备、不经服务端。'}
+            </p>
+            {engine === 'browser' && !browserReady && (
+              <p className="mt-1.5 text-xs leading-relaxed text-[var(--lumi-danger)]">
+                此浏览器不支持浏览器翻译，选择不会生效；请改用 AI 翻译。
+              </p>
+            )}
+          </div>
+
+          {engine === 'ai' && (
+            <div>
+              <p className="text-sm font-medium text-[var(--lumi-text-primary)]">翻译 Profile</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
+                选择后立即生效；Profile 在「设置 → AI」管理。
+              </p>
+              <div className="mt-1.5 flex items-center gap-2">
+                <Select
+                  aria-label="翻译 Profile"
+                  value={translationProfileId}
+                  disabled={assignProfile.isPending || profiles.isPending}
+                  options={[
+                    { value: 'default', label: '默认配置（默认模型与密钥）' },
+                    ...enabledProfiles.map((p) => ({
+                      value: p.id,
+                      label: `${p.label}（${p.model}）${p.keyConfigured ? '' : ' · 密钥未配置'}`,
+                    })),
+                  ]}
+                  onChange={(e) => {
+                    const profileId = e.target.value
+                    if (profileId === translationProfileId) return
+                    assignProfile.mutate(
+                      { translation: profileId },
+                      {
+                        onSuccess: () => {
+                          void queryClient.invalidateQueries({ queryKey: ['ai-settings'] })
+                        },
+                      },
+                    )
+                  }}
+                />
+              </div>
+              {translationProfileId !== 'default' && s.purposeStatus.translation?.keyConfigured === false && (
+                <p className="mt-1.5 text-xs leading-relaxed text-[var(--lumi-danger)]">
+                  当前 Profile 密钥未配置，翻译会失败；可在「设置 → AI」补齐。
+                </p>
+              )}
+            </div>
+          )}
+
+          <div>
+            <p className="text-sm font-medium text-[var(--lumi-text-primary)]">目标语言</p>
+            <p className="mt-0.5 text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
+              译文语言；语言不同缓存相互独立。
+            </p>
+            <div className="mt-1.5">
+              <Select
+                aria-label="目标语言"
+                value={language}
+                disabled={update.isPending}
+                options={[
+                  { value: 'zh-CN', label: '简体中文' },
+                  { value: 'en', label: 'English' },
+                ]}
+                onChange={(e) => {
+                  setEdit({ engine, language: e.target.value === 'en' ? 'en' : 'zh-CN' })
+                }}
+              />
+            </div>
+          </div>
+
           <div className="flex items-center gap-2">
             <Button
               size="sm"
-              disabled={!dirty || update.isPending}
+              disabled={!dirty || update.isPending || (engine === 'browser' && !browserReady && s.translationEngine !== 'browser')}
               onClick={() =>
                 update.mutate(
                   {
                     translationEngine: engine,
                     translationLanguage: language,
-                    libretranslateUrl: libreUrl,
                   },
                   {
                     onSuccess: () => {
-                      setDirty(false)
+                      setEdit(null)
                       void queryClient.invalidateQueries({ queryKey: ['ai-settings'] })
                     },
                   },
@@ -163,163 +234,25 @@ export function TranslationSettingsSection() {
             </Button>
           </div>
           <p className="text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
-            按需翻译：打开文章绝不自动翻译；在阅读工具栏选择「双语 / 仅译文」即是一次显式请求。
-            自动批量翻译恒关，不会在无指示时调用付费引擎。
+            打开文章绝不自动翻译；阅读工具栏选「双语 / 仅译文」才调用付费引擎，且不批量翻译。
           </p>
         </div>
       </section>
 
-      {engine === 'libretranslate' && (
-        <section className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3.5">
-          <h3 className="text-sm font-medium text-[var(--lumi-text-primary)]">LibreTranslate（自托管）</h3>
-          <div className="mt-3 flex flex-col gap-4">
-            <FieldShell label="服务地址" hint="例如 http://127.0.0.1:5000（BFF 服务器可达的地址）。">
-              <input
-                type="url"
-                value={libreUrl}
-                aria-label="LibreTranslate 服务地址"
-                placeholder="http://127.0.0.1:5000"
-                disabled={update.isPending}
-                onChange={(e) => {
-                  setDirty(true)
-                  setLibreUrl(e.target.value)
-                }}
-                className={inputClass}
-              />
-            </FieldShell>
-            <FieldShell
-              label="API Key（可选）"
-              hint={s.libretranslateKeyConfigured ? '已配置（只写不读；可替换或清除）。' : '未配置；多数自托管实例无需鉴权，不必填写假 Key。'}
-            >
-              <div className="flex items-center gap-2">
-                <input
-                  type="password"
-                  value={keyInput}
-                  aria-label="LibreTranslate API Key"
-                  placeholder={s.libretranslateKeyConfigured ? '已保存（输入新值可替换）' : '留空即可（无鉴权实例）'}
-                  autoComplete="off"
-                  disabled={saveKey.isPending}
-                  onChange={(e) => setKeyInput(e.target.value)}
-                  className={inputClass}
-                />
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={keyInput === ''}
-                  loading={saveKey.isPending}
-                  onClick={() =>
-                    saveKey.mutate(keyInput, {
-                      onSuccess: () => {
-                        setKeyInput('')
-                        void queryClient.invalidateQueries({ queryKey: ['ai-settings'] })
-                      },
-                    })
-                  }
-                >
-                  保存 Key
-                </Button>
-                {s.libretranslateKeyConfigured && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={clearKey.isPending}
-                    onClick={() =>
-                      clearKey.mutate(undefined, {
-                        onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['ai-settings'] }),
-                      })
-                    }
-                  >
-                    清除
-                  </Button>
-                )}
-              </div>
-            </FieldShell>
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={libreUrl === ''}
-                loading={test.isPending}
-                onClick={() =>
-                  test.mutate(undefined, {
-                    onSuccess: (result) => setTestResult(result.message ?? ''),
-                    onError: (error) =>
-                      setTestResult(error instanceof Error ? error.message : '连接失败。'),
-                  })
-                }
-              >
-                测试连接
-              </Button>
-              {testResult !== null && (
-                <span className="text-xs text-[var(--lumi-text-secondary)]">{testResult}</span>
-              )}
-            </div>
-          </div>
-        </section>
-      )}
-
       {engine === 'browser' && (
         <section className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3.5">
-          <h3 className="text-sm font-medium text-[var(--lumi-text-primary)]">本地翻译（此浏览器）</h3>
+          <h3 className="text-sm font-medium text-[var(--lumi-text-primary)]">隐私与语言边界</h3>
           <p className="mt-2 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-            使用浏览器内置 Translator API。正文不出设备、不经过 BFF、不消耗任何 API
-            额度；首次使用某语言对时浏览器可能需要下载语言包（下载进度在阅读器状态条显示）。
-            源语言由浏览器自动探测，探测失败时按英语处理。
+            正文在本浏览器内翻译，不出设备、不消耗 API 额度。
+            仅支持浏览器提供的语言对；源语言自动探测，失败按英语处理。
+            首次使用某语言对可能下载语言包。
           </p>
-          <table className="mt-2 w-full text-xs text-[var(--lumi-text-secondary)]">
-            <caption className="sr-only">本地翻译平台支持矩阵</caption>
-            <thead>
-              <tr className="text-left text-[var(--lumi-text-tertiary)]">
-                <th scope="col" className="py-1 pr-2 font-normal">平台</th>
-                <th scope="col" className="py-1 font-normal">支持情况</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td className="py-1 pr-2">Windows / macOS / ChromeOS 桌面 Chrome 138+</td>
-                <td className="py-1">支持</td>
-              </tr>
-              <tr>
-                <td className="py-1 pr-2">Linux 桌面 Chrome 138+</td>
-                <td className="py-1">
-                  支持，但翻译组件可能未自动下发——组件未就绪时打开 chrome://components 更新 TranslateKit
-                </td>
-              </tr>
-              <tr>
-                <td className="py-1 pr-2">Android / iOS / iPadOS 任何浏览器</td>
-                <td className="py-1">不支持（如实提示，不假装可用）</td>
-              </tr>
-              <tr>
-                <td className="py-1 pr-2">Firefox / Safari 桌面</td>
-                <td className="py-1">不支持</td>
-              </tr>
-            </tbody>
-          </table>
         </section>
       )}
 
       {/* N088/N089：本机翻译能力（离线能力检测 + 语言对支持与模型存储）。
           独立于当前引擎选择——检测的是「此设备」的能力，任何引擎下都诚实可得。 */}
       <LocalTranslationCapabilitySection remoteEndpoint={s.baseUrl} />
-
-      <section className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3.5">
-        <h3 className="text-sm font-medium text-[var(--lumi-text-primary)]">AI 提供者与模型</h3>
-        <p className="mt-2 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-          翻译用途当前解析：
-          <span className="ml-1 font-medium text-[var(--lumi-text-primary)]">
-            {s.purposeStatus.translation === undefined
-              ? '默认配置'
-              : s.purposeStatus.translation.profileId === 'default'
-                ? '默认配置'
-                : `Profile「${s.purposes.translation ?? s.purposeStatus.translation.profileId}」`}
-            {s.purposeStatus.translation?.keyConfigured ? '' : ' · 密钥未配置'}
-          </span>
-        </p>
-        <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
-          Profile 的创建 / 编辑 / 用途分配统一在「设置 → AI」进行；翻译与摘要共享同一份
-          Profile 存储，修改会影响所有使用该 Profile 的用途。
-        </p>
-      </section>
     </div>
   )
 }
