@@ -8,7 +8,7 @@
  *   面板内只有一个 heading，不重复；
  * - 正文：children 在 Dialog 的滚动区内滚动；description 置顶；
  * - 底部操作区：sticky 在滚动容器底（长表单滚动时操作区恒可达），
- *   整体是 <form>——回车提交走原生 form submit；
+ *   整体包在原生 form 元素里——回车提交走原生 form submit；
  * - 宽度：--lumi-width-form-dialog token（28rem）。
  *
  * busy：提交按钮 loading + aria-busy + disabled（Button FIX-115 契约），

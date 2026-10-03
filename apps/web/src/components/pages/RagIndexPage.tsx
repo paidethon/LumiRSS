@@ -411,11 +411,11 @@ function OverviewCard({ data }: { data: RagIndexOverview }) {
           aria-valuemin={0}
           aria-valuemax={total}
           aria-valuenow={queue.done}
-          className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--lumi-surface-pressed)]"
+          className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--lumi-surface-pressed)] forced-colors:bg-[ButtonFace] forced-colors:border forced-colors:border-[ButtonBorder]"
         >
           <div
             className={cx(
-              'h-full rounded-full bg-[var(--lumi-accent)]',
+              'h-full rounded-full bg-[var(--lumi-accent)] forced-colors:bg-[CanvasText]',
               'transition-[width] duration-150 motion-reduce:transition-none',
             )}
             style={{ width: `${pct}%` }}

@@ -188,7 +188,9 @@ describe('翻译页（R21：AI / 浏览器两方式，无自托管引擎）', ()
     expect(screen.queryByText('Microsoft Translator')).not.toBeInTheDocument()
     expect(screen.queryByText('DeepL（免费版）')).not.toBeInTheDocument()
     expect(await screen.findByText('翻译方式与目标语言')).toBeInTheDocument()
-    expect(screen.getByText(/AI 翻译 — AI 提供者执行/)).toBeInTheDocument()
+    // R14：选项只写「AI 翻译」，运行位置说明放选项下方
+    expect(screen.getByRole('option', { name: 'AI 翻译' }).textContent ?? '').toBe('AI 翻译')
+    expect(screen.getByText(/由 AI 提供者执行/)).toBeInTheDocument()
     // jsdom 无 Translator API → 运行时探测如实标注不支持并禁用该选项
     const browserOption = screen.getByLabelText('翻译方式').querySelector('option[value="browser"]') as HTMLOptionElement | null
     expect(browserOption?.disabled).toBe(true)

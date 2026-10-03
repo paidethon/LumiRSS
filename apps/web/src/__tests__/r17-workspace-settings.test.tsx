@@ -162,6 +162,6 @@ describe('工作区设置面（R17）', () => {
     renderSection(defaultHandler())
     await screen.findByLabelText('选择工作区')
     expect(screen.queryByRole('switch')).toBeNull()
-    expect(screen.getByText(/暂无服务端字段/)).toBeInTheDocument()
+    expect(screen.getByText(/暂未支持，提供后会在此出现/)).toBeInTheDocument()
   })
 })

@@ -103,10 +103,10 @@ describe('API 来源空态治理', () => {
     expect(screen.getByRole('button', { name: /添加 API 来源/ })).toBeInTheDocument()
 
     // 次级帮助默认折叠，点击展开
-    expect(screen.queryByText(/任意返回 JSON 列表的 HTTP API/)).toBeNull()
+    expect(screen.queryByText(/任何返回 JSON 列表的 HTTP API/)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '了解支持的 API' }))
-    expect(screen.getByText(/任意返回 JSON 列表的 HTTP API/)).toBeInTheDocument()
-    expect(screen.getByText(/支持页码与游标两种分页/)).toBeInTheDocument()
+    expect(screen.getByText(/任何返回 JSON 列表的 HTTP API/)).toBeInTheDocument()
+    expect(screen.getByText(/支持页码与游标分页和每日条目上限/)).toBeInTheDocument()
 
     // 十个高级工具入口全部不可见；接入中心不出现
     expect(screen.queryByText('接入中心')).toBeNull()

@@ -73,6 +73,7 @@ const AUDITED_SHADOW_CARRIERS: Record<string, number> = {
   'VersionUpdateToast.tsx': 2,
   'WhatsNewTour.tsx': 1,
   'ui/Dialog.tsx': 1,
+  'ui/ActionMenu.tsx': 1,
   'ui/Menu.tsx': 1,
   'ui/Popover.tsx': 1,
   'ui/Sheet.tsx': 1,

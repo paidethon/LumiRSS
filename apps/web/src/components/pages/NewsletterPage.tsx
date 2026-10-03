@@ -270,7 +270,7 @@ function IssueRow({
           </span>
           <span
             className={cx(
-              'shrink-0 rounded-[var(--lumi-radius-sm)] px-1.5 py-0.5 text-[0.6875rem] leading-none',
+              'shrink-0 rounded-[var(--lumi-radius-sm)] px-1.5 py-0.5 text-[0.6875rem] leading-tight',
               badge.className,
             )}
           >

@@ -48,11 +48,14 @@ describe('折叠 rail 与 nav-registry 同源（R02 收编）', () => {
     const opened: Array<string | undefined> = []
     const off = onOpenSettingsRequest((detail) => opened.push(detail.category))
     render(<SidebarCollapsedRail />)
+    // R19/R24：邮件简报与 RAG 索引是内容 section，深链仅剩 API 来源
     fireEvent.click(screen.getByRole('button', { name: 'API 来源' }))
-    fireEvent.click(screen.getByRole('button', { name: '邮件简报' }))
-    fireEvent.click(screen.getByRole('button', { name: 'RAG 索引' }))
-    expect(opened).toEqual(['api-sources', 'mail', 'ai'])
+    expect(opened).toEqual(['api-sources'])
     off()
+    fireEvent.click(screen.getByRole('button', { name: '邮件简报' }))
+    expect(useReaderUi.getState().section).toBe('newsletter')
+    fireEvent.click(screen.getByRole('button', { name: 'RAG 索引' }))
+    expect(useReaderUi.getState().section).toBe('rag')
 
     fireEvent.click(screen.getByRole('button', { name: '收件箱' }))
     expect(useReaderUi.getState().section).toBe('inbox')

@@ -30,8 +30,8 @@ describe('FIX-273: 底栏不拦截系统缩放、点按幂等', () => {
   })
 
   it('四个入口都是 type=button 的单一 onClick 导航（幂等 selectSection）', () => {
-    expect(tabBar).toMatch(/key=\{tab\.key\}/)
-    expect(tabBar).toMatch(/onClick=\{\(\) => selectSection\(tab\.key\)\}/)
+    expect(tabBar).toMatch(/key=\{tab\.(id|key)\}/)
+    expect(tabBar).toMatch(/onClick=\{\(\) => selectSection\((tab\.(key|id)|target\.section)\)\}/)
     expect(tabBar).toMatch(/aria-current=\{active \? 'page' : undefined\}/)
   })
 })
