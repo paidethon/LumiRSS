@@ -27,7 +27,7 @@ def _install_read_adapter(title: str):
     async def _list_subs():
         return [SimpleNamespace(stream_id="feed/1", feed_url=FEED_URL, title=title)]
 
-    app.state.freshrss_adapter = SimpleNamespace(list_subscriptions=_list_subs)
+    app.state.freshrss_control_adapter = SimpleNamespace(list_subscriptions=_list_subs)
 
 
 def test_n013_put_upsert_history_and_snapshot(client):
