@@ -101,7 +101,7 @@ def _install_adapter(subscriptions):
     async def _list_subscriptions():
         return list(subscriptions)
 
-    app.state.freshrss_adapter = SimpleNamespace(list_subscriptions=_list_subscriptions)
+    app.state.freshrss_control_adapter = SimpleNamespace(list_subscriptions=_list_subscriptions)
 
 
 def test_n014_route_suggestion_and_apply_records_advisory(tmp_path):

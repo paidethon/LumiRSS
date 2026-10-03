@@ -24,7 +24,7 @@ def meta_client(client, monkeypatch):
         async def _list():
             return subs
 
-        app.state.freshrss_adapter = type("A", (), {"list_subscriptions": staticmethod(_list)})()
+        app.state.freshrss_control_adapter = type("A", (), {"list_subscriptions": staticmethod(_list)})()
 
     asyncio.run(_install())
     return client

@@ -21,7 +21,7 @@ def _install_adapter(feed_urls: list[str]):
     async def _list():
         return subs
 
-    app.state.freshrss_adapter = SimpleNamespace(list_subscriptions=_list)
+    app.state.freshrss_control_adapter = SimpleNamespace(list_subscriptions=_list)
 
 
 def test_volume_counts_and_unknown_semantics(client, monkeypatch):
