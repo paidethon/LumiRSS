@@ -31,7 +31,18 @@ async def health_ready(request: Request) -> JSONResponse:
     isolation, AD-0018-3).
     """
     service = _get_operations_service(request)
-    ready, payload = await service.ready()
+    # 就绪探测不经认证（CLI 健康门/编排器匿名调用）——session 多账户
+    # 模式下匿名请求没有用户上下文，而核心依赖检查探的是控制库。显式
+    # 绑定 owner 上下文（与后台扫描循环同一模式）让探针语义与请求身份
+    # 解耦；basic 单用户模式行为不变（本就有隐式 owner）。
+    owner_id = getattr(request.app.state, "owner_id", None)
+    if owner_id:
+        from lumirss.user_scope import user_context
+
+        with user_context(owner_id):
+            ready, payload = await service.ready()
+    else:
+        ready, payload = await service.ready()
     return JSONResponse(status_code=200 if ready else 503, content=payload)
 
 

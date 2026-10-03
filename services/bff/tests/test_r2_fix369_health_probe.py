@@ -95,5 +95,40 @@ def test_detailed_diagnostics_require_session(path, monkeypatch):
     with TestClient(app) as client:
         response = client.get(path)
     assert response.status_code == 401
+
+
+def test_ready_anonymous_binds_owner_context_session_mode(monkeypatch):
+    """R01 回归：session 多账户模式下 /health/ready 匿名可探且 200。
+
+    basic 单用户模式里匿名请求隐式携带 owner 上下文；切到 session 后
+    匿名请求没有用户身份，RoutingDatabase._connect 会拒绝——就绪探针
+    是 CLI 健康门/编排器的匿名入口，必须显式绑定 owner 上下文（与
+    后台扫描循环同一模式），探针语义与请求身份解耦。
+    """
+    import lumirss.routers.health as health_module
+    from lumirss.operations import OperationsService
+    from lumirss.user_scope import current_user_id
+
+    seen: dict[str, object] = {}
+
+    class _ProbeService:
+        async def ready(self) -> tuple[bool, dict]:
+            seen["user_id"] = current_user_id()
+            return True, {"status": "ok", "components": {}}
+
+    assert not isinstance(OperationsService, type(None))  # 保持导入语义清晰
+    app.state.owner_id = "u-owner"
+    monkeypatch.setattr(
+        health_module, "_get_operations_service", lambda request: _ProbeService()
+    )
+    try:
+        with TestClient(app) as probe:
+            response = probe.get("/health/ready")
+    finally:
+        app.state.owner_id = None
+    assert response.status_code == 200
+    # 绑定的是启动时解析的真实 owner（非请求者身份）
+    assert seen["user_id"] == app.state.owner_id
+    assert seen["user_id"]
     assert response.json()["error"]["type"] == "session_required"
     assert response.headers.get("cache-control") == "no-store"
