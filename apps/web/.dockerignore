@@ -1,3 +1,30 @@
 node_modules
 dist
-*.tsbuildinfo
+src/__tests__
+src/test
+*.test.*
+*.setup.ts
+
+# FIX-375: local credentials, ledgers and VCS/agent state must never enter
+# the build context (the context is uploaded to the build daemon wholesale
+# and lands in the builder stage's layers). `.env` alone misses .env.prod
+# etc.; `**/` forms cover nested paths (dockerignore globs are not
+# gitignore-style: a bare name matches only the context root).
+.env
+.env.*
+**/.env
+**/.env.*
+.git
+**/.git
+.work
+**/.work
+backups
+**/backups
+*.key
+*.pem
+**/*.key
+**/*.pem
+*.sqlite
+*.sqlite-*
+test-results
+playwright-report
