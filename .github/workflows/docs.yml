@@ -8,6 +8,9 @@ on:
       - 'docs/**'
       - 'package.json'
       - 'package-lock.json'
+      - 'scripts/deploy-docs-site.sh'
+      - 'scripts/check_docs_nav.py'
+      - 'scripts/check_docs_allowlist.py'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
@@ -20,11 +23,16 @@ concurrency:
   group: docs-pages-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Production docs host (doc.oouo.top). The GitHub Pages project-site
+  # mirror is built with DOCS_BASE=/LumiRSS/ (second build step below).
+  DOCS_PROD_URL: https://doc.oouo.top
+
 jobs:
   build:
-    name: Build docs site (dead-link gate)
+    name: Build & gate docs site
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -39,16 +47,53 @@ jobs:
       - name: Install docs tooling
         run: npm ci
 
-      - name: Build docs (internal dead links fail the build)
-        run: npm run docs:build
+      - name: Docs structure check (SSOT allowlist)
+        run: python3 scripts/check_docs_allowlist.py
+
+      - name: Build docs — production (base /, dead links fail the build)
+        run: |
+          npm run docs:build
+          python3 scripts/check_docs_nav.py
+
+      - name: Local preview smoke (production build)
+        run: |
+          npm run docs:preview &
+          for i in $(seq 1 30); do
+            curl -fsS -o /dev/null http://127.0.0.1:4173/ && break || sleep 1
+          done
+          for route in / /getting-started /usage /operations /configuration /architecture /design-system /development /roadmap /upstreams; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:4173$route")
+            echo "$code  $route"
+            [ "$code" = "200" ] || { echo "preview smoke FAIL: $route -> $code"; exit 1; }
+          done
+          css=$(curl -s http://127.0.0.1:4173/ | grep -oE 'href="/assets/[^"]+\.css"' | head -1 | sed 's/href="//;s/"//')
+          [ -n "$css" ] || { echo "preview smoke FAIL: no CSS link on index"; exit 1; }
+          code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:4173$css")
+          echo "$code  $css"
+          [ "$code" = "200" ] || { echo "preview smoke FAIL: CSS asset"; exit 1; }
+          kill %1
+
+      - name: Upload production dist (for server deploy + smoke)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: docs-dist-root
+          path: docs/.vitepress/dist
+          retention-days: 3
+
+      - name: Build docs — GitHub Pages mirror (base /LumiRSS/)
+        run: |
+          rm -rf docs/.vitepress/dist
+          npm run docs:build
+        env:
+          DOCS_BASE: /LumiRSS/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.1
         with:
           path: docs/.vitepress/dist
 
-  deploy:
-    name: Deploy to GitHub Pages
+  deploy-pages:
+    name: Deploy GitHub Pages mirror
     if: github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
@@ -62,3 +107,88 @@ jobs:
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
         with:
           artifact_name: github-pages
+
+  deploy-server:
+    name: Deploy doc.oouo.top (production)
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository (deploy script)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download production dist
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: docs-dist-root
+          path: docs/.vitepress/dist
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          install -m 600 /dev/null ~/.ssh/deploy_key
+          echo "${{ secrets.DOCS_DEPLOY_KEY }}" > ~/.ssh/deploy_key
+          echo "${{ secrets.DOCS_DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy (rsync + atomic symlink flip)
+        run: |
+          export DOCS_DEPLOY_HOST="${{ secrets.DOCS_DEPLOY_HOST }}"
+          export DOCS_DEPLOY_USER="${{ secrets.DOCS_DEPLOY_USER }}"
+          export DOCS_DEPLOY_KEY="$HOME/.ssh/deploy_key"
+          export DOCS_DEPLOY_KNOWN_HOSTS="$HOME/.ssh/known_hosts"
+          bash scripts/deploy-docs-site.sh
+
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
+
+  production-smoke:
+    name: Production smoke (doc.oouo.top)
+    if: github.ref == 'refs/heads/main'
+    needs: deploy-server
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download production dist (route source of truth)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: docs-dist-root
+          path: dist
+
+      - name: Smoke every built route + essential assets on production
+        run: |
+          set -euo pipefail
+          BASE="${DOCS_PROD_URL}"
+          # 1. Every built HTML page must answer 200 (cleanUrls /foo for foo.html).
+          fail=0
+          while IFS= read -r f; do
+            route="${f#dist}"
+            route="${route%/index.html}"
+            route="${route%.html}"
+            [ "$route" = "" ] && route="/"
+            # directory index pages keep their trailing path (x/index.html -> /x/)
+            case "$f" in
+              */index.html) [ "$route" = "/" ] || route="${f#dist}"; route="${route%/index.html}/" ;;
+            esac
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE$route")
+            echo "$code  $route"
+            [ "$code" = "200" ] || { echo "SMOKE FAIL: $route -> $code"; fail=1; }
+          done < <(find dist -name '*.html' ! -name '404.html')
+          # 2. Every local asset referenced by index.html must answer 200.
+          for a in $(curl -s "$BASE/" | grep -oE '(src|href)="[^"]+"' | sed 's/^[a-z]*="//;s/"$//' | grep '^/[^/]' | sort -u); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE$a")
+            echo "$code  $a"
+            [ "$code" = "200" ] || { echo "SMOKE FAIL: asset $a -> $code"; fail=1; }
+          done
+          # 3. The served home page must NOT carry the old project-base self-references.
+          if curl -s "$BASE/" | grep -q 'href="/LumiRSS/'; then
+            echo "SMOKE FAIL: production home still links /LumiRSS/* (stale base build)"
+            fail=1
+          fi
+          # 4. Unknown route must hit the VitePress 404 page (handled error).
+          code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/docs-v2-smoke-nonexistent")
+          echo "$code  /docs-v2-smoke-nonexistent (expected 404)"
+          [ "$code" = "404" ] || { echo "SMOKE FAIL: expected 404 for unknown route"; fail=1; }
+          exit $fail
