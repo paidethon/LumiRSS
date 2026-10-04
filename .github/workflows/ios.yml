@@ -114,10 +114,11 @@ jobs:
           echo "Our generated types at: $OURS" | tee /tmp/generated-surface.log
           if [ -n "$OURS" ]; then
             GEN_DIR="$(dirname "$OURS")"
-            for f in "$GEN_DIR"/*.swift; do
-              echo "===== $(basename "$f") =====" >> /tmp/generated-surface.log
-              grep -nE "public struct|public enum|public var|public let|case |public init|public func" "$f" >> /tmp/generated-surface.log || true
-            done
+            SCHEMAS="$GEN_DIR/Types+Components+Schemas.swift"
+            echo "===== Types+Components+Schemas.swift (full) =====" >> /tmp/generated-surface.log
+            sed -n '1,5000p' "$SCHEMAS" >> /tmp/generated-surface.log
+            echo "===== Types+Operations.swift (signatures) =====" >> /tmp/generated-surface.log
+            grep -nE "struct |enum |var |let |case |init\(|func " "$GEN_DIR/Types+Operations.swift" >> /tmp/generated-surface.log || true
             wc -l /tmp/generated-surface.log
           fi
 
