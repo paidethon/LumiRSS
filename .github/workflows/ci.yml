@@ -312,7 +312,8 @@ jobs:
 
       - name: Build all-in-one production image (no push)
         run: >-
-          docker build --build-arg LUMIRSS_VERSION="$(cat VERSION)"
+          docker build -f docker/all-in-one/Dockerfile
+          --build-arg LUMIRSS_VERSION="$(cat VERSION)"
           --build-arg LUMIRSS_COMMIT=${{ github.sha }}
           --build-arg VITE_GIT_COMMIT=${{ github.sha }}
           -t lumirss-allinone:ci .
