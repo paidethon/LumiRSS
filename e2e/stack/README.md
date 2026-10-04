@@ -13,7 +13,7 @@ Contents:
 | `run-smoke.sh` | Drives the stack end to end; every check prints PASS/FAIL and the summary is the release verdict. Network-dependent checks SKIP honestly unless `LUMIRSS_E2E_ALLOW_NETWORK=1`. |
 | `ai_server.py` | Scripted OpenAI-compatible server (deterministic AI answers; no real provider). |
 | `mail_sink.py` | Minimal stdlib SMTP sink (:1025) + HTTP API (:8025, `GET /api/v1/messages`); mounted as the compose `mailpit` service so the stack works even where the Mailpit image cannot be pulled. |
-| `fixtures/` | Files served by the controlled fixtures server: sample source payloads, a deliberately `malicious.html` sanitizer probe, `seed.json`, and a read-only Obsidian vault tree (note fixture `vault/AI/transformer.md` is fixture content, deliberately excluded from docs governance — see docs/doc-disposition.md). |
+| `fixtures/` | Files served by the controlled fixtures server: sample source payloads, a deliberately `malicious.html` sanitizer probe, `seed.json`, and a read-only Obsidian vault tree (note fixture `vault/AI/transformer.md` is fixture content, not project documentation). |
 
 Quick start:
 
@@ -24,5 +24,5 @@ e2e/stack/run-smoke.sh up   # init + smoke
 
 All services bind 127.0.0.1 only; every credential in this tree is a
 test fixture, never a real secret. Documentation: the test matrix lives
-in [docs/reference/testing.md](../../docs/reference/testing.md); perf
+in [docs/development.md](../../docs/development.md); perf
 usage of this stack in [tools/perf/README.md](../../tools/perf/README.md).

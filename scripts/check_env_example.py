@@ -79,7 +79,7 @@ PLACEHOLDER_VALUE = re.compile(
 # FIX-397: non-empty fallback defaults, each verified against the code
 # (source noted per entry). If the code fallback ever changes, update the
 # entry here AND the prose in .env.prod.example /
-# docs/reference/configuration.md — the checker fails until all three
+# docs/configuration.md — the checker fails until all three
 # agree.
 NONEMPTY_FALLBACKS: dict[str, tuple[str, str]] = {
     "LUMIRSS_ATOM_BASE_URL": (
@@ -122,7 +122,7 @@ NONEMPTY_FALLBACKS: dict[str, tuple[str, str]] = {
 CLAIM_SCAN_FILES: tuple[str, ...] = (
     ".env.prod.example",
     "services/bff/.env.example",
-    "docs/reference/configuration.md",
+    "docs/configuration.md",
 )
 
 # Phrases that introduce an empty/default claim. When one appears in the

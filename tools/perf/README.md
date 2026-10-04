@@ -5,7 +5,7 @@ authenticated, fixed-mix load (60% list / 20% detail / 10% search /
 10% workspace add-remove) on the production-like e2e stack while
 sampling the BFF container (`docker stats`, 1s interval, best-effort).
 Methodology, metric definitions and engineering targets:
-[docs/reference/performance.md](../../docs/reference/performance.md).
+[docs/development.md](../../docs/development.md).
 
 ## Prerequisites
 

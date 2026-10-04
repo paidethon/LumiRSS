@@ -130,8 +130,8 @@ LumiRSS — self-hosted reader lifecycle
                                   site block (BEGIN/END LUMIRSS markers)
   ./lumirss freshrss-init                       install/enable the internal
                                   FreshRSS + user for the BFF (idempotent)
-                                  a 2 GB host (see docs/how-to/
-                                  optional-services.md)
+                                  a 2 GB host (see docs/
+                                  operations.md)
   ./lumirss set-password                        install/rotate the browser
                                   login password (session auth mode); asks
                                   interactively or takes LUMIRSS_NEW_PASSWORD

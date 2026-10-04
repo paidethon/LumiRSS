@@ -3,7 +3,7 @@
 // Consumed by index.html (window.LUMIRSS_PROJECT). Compact rows only.
 window.LUMIRSS_PROJECT = {
   "generatedAt": "2026-09-26T19:26:00Z",
-  "source": "docs/implementation-status.json@61cf646",
+  "source": "docs/implementation-status.json@4fd1fe21",
   "summary": {
     "pTotal": 20,
     "nTotal": 200,

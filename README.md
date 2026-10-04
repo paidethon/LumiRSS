@@ -5,9 +5,8 @@ information reader: the operator invites members from an admin console,
 each invited member activates their own account, and every account's
 subscriptions, reading state, library, AI settings and FreshRSS binding
 are fully isolated. Public registration exists as an **optional,
-default-off instance policy**: upgraded and fresh instances stay
-invite-only until an admin explicitly enables it (see
-[docs/decisions/0006-public-registration.md](docs/decisions/0006-public-registration.md)).
+default-off instance policy** (see
+[architecture → accounts](https://doc.oouo.top/architecture#accounts)).
 
 Its foundation:
 
@@ -16,18 +15,7 @@ Its foundation:
 - a project-owned **FastAPI BFF**;
 - a responsive **React Web / PWA** client.
 
-On top of that foundation it ships: article reading with explicit
-read/star state, subscriptions & categories with OPML import/export,
-AI summary / translation / article conversation, the Lumi library
-(bookmarks / server-side web clips / offline snapshots), workspaces &
-server-side read-later, inbox push sources, API sources & newsletter
-bridges feeding FreshRSS, a read-only Obsidian vault projection (plus an
-optional, hard-bounded server-side export into a dedicated export
-mount),
-unified search with tags / favorites / graph, an optional RAG-indexed
-semantic layer plus an Agent workbench, a unified settings center, and
-local + WebDAV backup with staged restore. See
-[docs/ROADMAP.md](docs/ROADMAP.md) for exact feature status.
+Official documentation: **https://doc.oouo.top/**
 
 ---
 
@@ -47,7 +35,7 @@ Non-RSS source → RSSHub → FreshRSS
 
 FreshRSS owns RSS-domain state. RSSHub generates feeds upstream. The Web
 client talks only to the Lumi BFF. Full explanation:
-[docs/explanation/architecture.md](docs/explanation/architecture.md).
+[doc.oouo.top/architecture](https://doc.oouo.top/architecture).
 
 ---
 
@@ -60,7 +48,7 @@ cd services/bff && cp .env.example .env && uv sync && uv run uvicorn lumirss.mai
 cd ../../apps/web && pnpm install && pnpm dev
 ```
 
-Full guide: [docs/getting-started.md](docs/getting-started.md).
+Full guide: [doc.oouo.top/getting-started](https://doc.oouo.top/getting-started).
 
 ---
 
@@ -76,22 +64,25 @@ sudo ./lumirss deploy --single             # optional single-container topology 
 Caddy serves the Web build and reverse-proxies `/api` to the BFF;
 FreshRSS / RSSHub stay on the internal network. Automated TLS, health
 endpoints, backups (local + WebDAV) and staged restore are included.
-Full runbook: [docs/how-to/deploy.md](docs/how-to/deploy.md).
+Full runbook: [doc.oouo.top/operations](https://doc.oouo.top/operations).
 
 ---
 
 ## Documentation
 
+The documentation site is built from the same `docs/` Markdown that
+GitHub renders — one source, two renderers.
+
 | You want… | Read |
 |---|---|
-| Run it locally | [docs/getting-started.md](docs/getting-started.md) |
-| Deploy / upgrade / roll back | [docs/how-to/deploy.md](docs/how-to/deploy.md) |
-| Invite members / registration policy (admin) | [docs/how-to/invite-members.md](docs/how-to/invite-members.md) |
-| Back up / restore | [docs/how-to/backup-restore.md](docs/how-to/backup-restore.md) |
-| Troubleshoot | [docs/how-to/troubleshoot.md](docs/how-to/troubleshoot.md) |
-| Configuration keys | [docs/reference/configuration.md](docs/reference/configuration.md) |
-| Architecture & invariants | [docs/explanation/architecture.md](docs/explanation/architecture.md) |
-| Docs index | [docs/README.md](docs/README.md) |
+| Run it locally / self-host quick start | [getting-started](https://doc.oouo.top/getting-started) |
+| Daily usage (reading / sources / AI / data control) | [usage](https://doc.oouo.top/usage) |
+| Deploy / upgrade / roll back / back up / troubleshoot | [operations](https://doc.oouo.top/operations) |
+| Configuration keys | [configuration](https://doc.oouo.top/configuration) |
+| Architecture & invariants | [architecture](https://doc.oouo.top/architecture) |
+| Design system | [design-system](https://doc.oouo.top/design-system) |
+| Contributing / tests / CI | [development](https://doc.oouo.top/development) |
+| What comes next | [roadmap](https://doc.oouo.top/roadmap) |
 
 ---
 

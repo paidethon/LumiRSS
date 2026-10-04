@@ -1,10 +1,9 @@
 # LumiRSS Design System
 
-> 长期视觉与交互规则（源于 0009 UI Reboot 规格，2026-08-28 用户批准；
-> 现为设计权威文档）。历史过程见
-> [history/milestones.md](../history/milestones.md)；
-> 阅读器定制研究依据见 [reader-research.md](reader-research.md)。
-> 本文描述视觉/交互规则与目标状态；实现细节以源码为准。
+> LumiRSS 唯一的 UI/UX 权威文档：视觉语言、tokens、组件架构、响应式、
+> 可访问性与长期设计决策。设计目标源于 0009 UI Reboot 规格（2026-08-28
+> 用户批准）；阅读器样式能力的竞品调研结论已吸收进 §2.5。本文描述
+> 视觉/交互规则与目标状态；实现细节以源码为准。
 
 ---
 
@@ -208,7 +207,7 @@ Accent    Lumi Indigo 默认；AccentColorPicker 自定义取色，
   JSON 文档，跨设备）；布局宽度、自定义字体、过滤规则等设备本地键
   永不上传；
 - secrets 永不进入设置存储。架构细节见
-  [explanation/architecture.md](../explanation/architecture.md)「Frontend state」。
+  [architecture](/architecture)「Frontend state」。
 
 ---
 
@@ -428,7 +427,7 @@ a giant card. Reader theme is independent from the app theme.
 
 Preserve the DOMPurify-based sanctioned HTML boundary. Visual work must
 never relax sanitization for prettier embeds. Pipeline detail:
-[explanation/architecture.md](../explanation/architecture.md)「Reader content pipeline」。
+[architecture](/architecture)「Reader content pipeline」。
 
 ### 12.5 AI surfaces（已实现：内嵌于 Reader）
 
@@ -555,7 +554,7 @@ UI 改动至少覆盖以下视口（明暗两主题）：
 必须检查的状态：loading / empty / error / selected / unread-read /
 starred / 长标题 / 无图 / 键盘导航 / 移动 drawer 与 list→reader 返回流。
 
-命令与 CI 视角见 [reference/testing.md](../reference/testing.md)。
+命令与 CI 视角见 [development](/development)。
 
 ### Behavior regression guard
 
@@ -634,3 +633,32 @@ responsive、业务 API。**任何新 modal/menu/popover/tooltip 行为不得
   模式，待列表行重构时一并解决，见 final report follow-ups）；
 - `SearchPage` 历史 chip 删除：rounded-full 微型按钮；
 - 原生 `<input type="radio">`（RssHub/Website 候选表单）：native-backed。
+
+---
+
+## 20. Reader 样式能力分层结论（竞品调研收敛）
+
+> 源自 2026-08-30 的 10+ 阅读器调研（Reeder / Readwise Reader / Miniflux
+> / FreshRSS / TTRSS / NetNewsWire / NewsBlur / Legado / Read You /
+> CommaFeed 等）。完整调研过程存于 Git 历史；此处只保留长期设计依据。
+
+**功能维度全集（去重 checklist）**：字体（衬线/无衬线/等宽分通道、字号
+档位+快捷键、行距、段距分离、字重、无障碍字体、字体导入）、版式（正文
+宽度、页边距、justify、段距 vs 首行缩进、分页滚动、阅读进度）、颜色
+（明暗三态、sepia、AMOLED 真黑、高对比、动态取色、自定义背景、排版
+预设快照）、内容元素（图片灰度/隐藏、代码高亮主题、简繁转换）、高级
+（用户自定义 CSS、主题包导入导出、Bionic Reading、TTS、按 feed 覆盖、
+CJK 阅读时长）。
+
+**LumiRSS 采用的分层**：
+
+- 必备基础：字号/行距/宽度档/明暗三态（§5.2 已实现）；
+- 进阶：字体族多选/段距/justify/sepia+AMOLED/图片控制/自定义 CSS/字体
+  导入/排版预设（§5.2 已实现）；
+- 差异化亮点：主题包导入导出分享（Web 端无先例）、中文深度排版（段距/
+  首行缩进/标点悬挂/简繁/CJK 时长）、Bionic Reading、分页滚动（§5.2
+  已实现）。
+
+技术路线（已验证）：字体导入走 FontFace API + IndexedDB（仅 woff2）或
+字体 URL；中文排版 `text-indent: 2em` + 标点悬挂 + OpenCC；主题包 =
+schemaVersion 信封 JSON；代码高亮 shiki 按需加载。
