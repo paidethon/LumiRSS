@@ -114,7 +114,7 @@ jobs:
           echo "GeneratedSources at: $GEN" | tee /tmp/generated-surface.log
           if [ -n "$GEN" ]; then
             for f in "$GEN"/*.swift; do
-              echo "===== \$(basename "$f") =====" >> /tmp/generated-surface.log
+              echo "===== $(basename "$f") =====" >> /tmp/generated-surface.log
               grep -nE "public struct|public enum|public var|public let|case |public init|public func" "$f" >> /tmp/generated-surface.log || true
             done
             wc -l /tmp/generated-surface.log
