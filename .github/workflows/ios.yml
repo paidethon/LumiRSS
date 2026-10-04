@@ -107,6 +107,19 @@ jobs:
               exit $EXIT
             }
 
+      - name: Dump generated API surface (diagnostics)
+        if: always()
+        run: |
+          GEN=$(find ~/Library/Developer/Xcode/DerivedData -type d -name "GeneratedSources" 2>/dev/null | head -1)
+          echo "GeneratedSources at: $GEN" | tee /tmp/generated-surface.log
+          if [ -n "$GEN" ]; then
+            for f in "$GEN"/*.swift; do
+              echo "===== \$(basename "$f") =====" >> /tmp/generated-surface.log
+              grep -nE "public struct|public enum|public var|public let|case |public init|public func" "$f" >> /tmp/generated-surface.log || true
+            done
+            wc -l /tmp/generated-surface.log
+          fi
+
       - name: Unit tests (simulator)
         working-directory: apps/ios
         run: |
@@ -154,6 +167,7 @@ jobs:
             /tmp/build.xcresult
             /tmp/test.xcresult
             /tmp/launch.png
+            /tmp/generated-surface.log
 
   device-archive:
     name: Unsigned device archive (dev preview)
