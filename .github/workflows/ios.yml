@@ -183,7 +183,7 @@ jobs:
           echo "XCODEGEN_BIN=$XCODEGEN_BIN" >> "$GITHUB_ENV"
       - name: Generate the Xcode project
         working-directory: apps/ios
-        run: "$XCODEGEN_BIN" generate
+        run: '"$XCODEGEN_BIN" generate'
       - name: Archive for iphoneos (unsigned, explicitly labeled)
         working-directory: apps/ios
         run: |
