@@ -110,10 +110,11 @@ jobs:
       - name: Dump generated API surface (diagnostics)
         if: always()
         run: |
-          GEN=$(find ~/Library/Developer/Xcode/DerivedData -type d -name "GeneratedSources" 2>/dev/null | head -1)
-          echo "GeneratedSources at: $GEN" | tee /tmp/generated-surface.log
-          if [ -n "$GEN" ]; then
-            for f in "$GEN"/*.swift; do
+          OURS=$(find ~/Library/Developer/Xcode/DerivedData -type f -name "Types+Components+Schemas.swift" 2>/dev/null | head -1)
+          echo "Our generated types at: $OURS" | tee /tmp/generated-surface.log
+          if [ -n "$OURS" ]; then
+            GEN_DIR="$(dirname "$OURS")"
+            for f in "$GEN_DIR"/*.swift; do
               echo "===== $(basename "$f") =====" >> /tmp/generated-surface.log
               grep -nE "public struct|public enum|public var|public let|case |public init|public func" "$f" >> /tmp/generated-surface.log || true
             done
