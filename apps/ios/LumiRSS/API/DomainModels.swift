@@ -113,7 +113,7 @@ struct ServerVersion {
     }
 }
 
-struct AccountSession: Equatable {
+struct AccountSession: Equatable, Codable {
     var userId: String?
     var username: String?
     var role: String?

@@ -82,8 +82,8 @@ struct SubscriptionsView: View {
 
     @ViewBuilder
     private func feedRow(_ feed: FeedSummary) -> some View {
-        if let url = feed.feedUrl, let feedURL = URL(string: url) {
-            NavigationLink(value: FeedRef(kind: .feed(url: url), title: feed.title)) {
+        if URL(string: feed.feedUrl) != nil {
+            NavigationLink(value: FeedRef(kind: .feed(url: feed.feedUrl), title: feed.title)) {
                 Label(feed.title, systemImage: "rss")
                     .lineLimit(2)
             }

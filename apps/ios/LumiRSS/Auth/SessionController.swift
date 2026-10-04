@@ -246,7 +246,7 @@ final class SessionController {
             secure: cookie.isSecure
         )
         if let data = try? JSONEncoder().encode(stored) {
-            store.writeData(data, forKey: cookieKey)
+            store.writeData(data, forKey: Self.cookieKey)
         }
     }
 

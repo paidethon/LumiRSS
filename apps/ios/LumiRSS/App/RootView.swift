@@ -34,27 +34,23 @@ struct MainTabView: View {
 
     var body: some View {
         TabView {
-            Tab(String(localized: "首页"), systemImage: "house") {
-                HomeView()
+            HomeView()
+                .tabItem { Label(String(localized: "首页"), systemImage: "house") }
+            NavigationStack {
+                SubscriptionsView()
+                    .articleDestinations()
             }
-            Tab(String(localized: "订阅"), systemImage: "rss") {
-                NavigationStack {
-                    SubscriptionsView()
-                        .articleDestinations()
-                }
+            .tabItem { Label(String(localized: "订阅"), systemImage: "rss") }
+            NavigationStack {
+                SearchView()
+                    .articleDestinations()
             }
-            Tab(String(localized: "搜索"), systemImage: "magnifyingglass") {
-                NavigationStack {
-                    SearchView()
-                        .articleDestinations()
-                }
+            .tabItem { Label(String(localized: "搜索"), systemImage: "magnifyingglass") }
+            NavigationStack {
+                FavoritesView()
+                    .articleDestinations()
             }
-            Tab(String(localized: "收藏"), systemImage: "star") {
-                NavigationStack {
-                    FavoritesView()
-                        .articleDestinations()
-                }
-            }
+            .tabItem { Label(String(localized: "收藏"), systemImage: "star") }
         }
     }
 }

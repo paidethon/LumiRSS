@@ -37,7 +37,7 @@ enum ServerURL {
         let withScheme = raw.contains("://") ? raw : "https://\(raw)"
         guard let parsed = URL(string: withScheme),
               let scheme = parsed.scheme?.lowercased(),
-              !parsed.host.isEmpty || parsed.urlHostPortPart != nil else {
+              let host = parsed.host, !host.isEmpty else {
             throw NormalizationError.invalidURL
         }
         guard scheme == "http" || scheme == "https" else {
@@ -45,9 +45,6 @@ enum ServerURL {
         }
         guard parsed.user == nil, parsed.password == nil else {
             throw NormalizationError.userinfoNotAllowed
-        }
-        guard let host = parsed.host, !host.isEmpty else {
-            throw NormalizationError.missingHost
         }
         var components = URLComponents()
         components.scheme = scheme
@@ -61,9 +58,4 @@ enum ServerURL {
     static func ensureOrigin(_ url: URL) -> URL? {
         try? normalize(url.absoluteString)
     }
-}
-
-private extension URL {
-    /// Non-nil when the string carried `host:port`.
-    var urlHostPortPart: String? { host }
 }
