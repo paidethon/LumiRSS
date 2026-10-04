@@ -26,15 +26,13 @@ targets:
     platform: iOS
     sources:
       - path: LumiRSS
-        excludes:
-          - "API/openapi.json"
-          - "API/openapi-generator-config.yaml"
-      # The OpenAPIGenerator build plugin discovers these two files via
-      # target membership; buildPhase:none keeps them out of the bundle.
+      # The OpenAPIGenerator build plugin discovers these via target
+      # inputFiles; Apple's own example wires them as resources (a few
+      # KB in the bundle — the accepted trade for plugin discovery).
       - path: LumiRSS/API/openapi.json
-        buildPhase: none
+        buildPhase: resources
       - path: LumiRSS/API/openapi-generator-config.yaml
-        buildPhase: none
+        buildPhase: resources
     dependencies:
       - package: OpenAPIRuntime
       - package: OpenAPIURLSession
