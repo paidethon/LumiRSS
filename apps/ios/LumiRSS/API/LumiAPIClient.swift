@@ -101,7 +101,7 @@ final class LumiAPIClient: @unchecked Sendable {
     func login(username: String, password: String) async throws -> LoginOutcome {
         do {
             let output = try await client.loginApiV1AuthLoginPost(
-                body: .json(.init(username: username, password: password))
+                body: .json(.init(password: password, username: username))
             )
             guard case .ok(let ok) = output else {
                 throw LumiAPIError.server(status: 0, type: nil, message: nil)
@@ -120,7 +120,7 @@ final class LumiAPIClient: @unchecked Sendable {
     func verifyTOTP(pendingToken: String, code: String) async throws -> AccountSession {
         do {
             let output = try await client.totpVerifyApiV1AuthTotpVerifyPost(
-                body: .json(.init(pendingToken: pendingToken, code: code))
+                body: .json(.init(code: code, pendingToken: pendingToken))
             )
             guard case .ok(let ok) = output else {
                 throw LumiAPIError.server(status: 0, type: nil, message: nil)
@@ -178,7 +178,7 @@ final class LumiAPIClient: @unchecked Sendable {
                 feedUrl = ref.feedUrl
                 categoryId = ref.categoryId
                 output = try await client.entriesApiV1EntriesGet(
-                    query: .init(view: .all, feedUrl: feedUrl, categoryId: categoryId, cursor: cursor)
+                    query: .init(categoryId: categoryId, cursor: cursor, feedUrl: feedUrl, view: .all)
                 )
             }
             guard case .ok(let ok) = output else {
@@ -282,7 +282,7 @@ final class LumiAPIClient: @unchecked Sendable {
     func search(query: String, cursor: String?) async throws -> SearchPage {
         do {
             let output = try await client.searchApiV1SearchGet(
-                query: .init(q: query, cursor: cursor)
+                query: .init(cursor: cursor, q: query)
             )
             guard case .ok(let ok) = output else {
                 throw LumiAPIError.server(status: 0, type: nil, message: nil)

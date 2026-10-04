@@ -59,13 +59,56 @@ def _refs_of(node: object, found: set[str]) -> None:
             _refs_of(item, found)
 
 
+def _to_openapi30(node: object) -> object:
+    """Deterministically downgrade the 3.1 export to OpenAPI 3.0.3.
+
+    Why: swift-openapi-generator (as of 1.13.x) parses a 3.1 document
+    but SILENTLY DROPS properties shaped as ``anyOf: [T, {type: null}]``
+    (the pydantic v2 nullable form) — verified on this repo's contract,
+    where AuthStatus.userId & friends vanished from the generated
+    struct. Converting to the 3.0 ``nullable: true`` form is a lossless,
+    mechanical rewrite done at filter time, so the committed subset
+    stays script-derived from the authoritative export (never hand
+    edited). Anything the converter does not understand fails LOUDLY —
+    silent shape changes are how dropped fields slipped through.
+    """
+    if isinstance(node, list):
+        return [_to_openapi30(item) for item in node]
+    if not isinstance(node, dict):
+        return node
+
+    converted = {key: _to_openapi30(value) for key, value in node.items()}
+
+    if "const" in converted:
+        # 3.1 `const` -> 3.0 single-value enum.
+        const_value = converted.pop("const")
+        converted["enum"] = [const_value]
+
+    if "anyOf" in converted:
+        children = converted["anyOf"]
+        nulls = [child for child in children if child == {"type": "null"}]
+        others = [child for child in children if child != {"type": "null"}]
+        if nulls:
+            if len(nulls) != 1 or len(others) != 1:
+                raise SystemExit(
+                    f"iOS contract converter: unsupported anyOf shape at {converted!r:.200} "
+                    "— extend _to_openapi30 explicitly instead of guessing."
+                )
+            merged = {**others[0], "nullable": True, **{
+                key: value for key, value in converted.items() if key not in ("anyOf",)
+            }}
+            return merged
+    return converted
+
+
 def build_subset(source: dict) -> dict:
     missing = [p for p in IOS_PATHS if p not in source.get("paths", {})]
     if missing:
         raise SystemExit(f"iOS contract references unknown paths (server rename?): {missing}")
 
     subset: dict = {
-        "openapi": source.get("openapi", "3.0.3"),
+        # 3.0.3 for swift-openapi-generator compatibility (see _to_openapi30).
+        "openapi": "3.0.3",
         "info": source["info"],
         "servers": source.get("servers", []),
         "paths": {p: source["paths"][p] for p in IOS_PATHS},
@@ -93,8 +136,9 @@ def build_subset(source: dict) -> dict:
         bucket = source.get("components", {}).get(section, {})
         if name in bucket:
             components = subset["components"].setdefault(section, {})
-            components[name] = bucket[name]
+            components[name] = _to_openapi30(bucket[name])
 
+    subset["paths"] = _to_openapi30(subset["paths"])
     return subset
 
 

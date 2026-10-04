@@ -5,15 +5,9 @@
     "description": "One scheme initial-source subscription attempt (N001).\n\n``ok=False`` is an honest per-URL failure record — activation itself\nis never blocked or rolled back by a source failure.",
     "properties": {
      "error": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Error"
+      "nullable": true,
+      "title": "Error",
+      "type": "string"
      },
      "ok": {
       "title": "Ok",
@@ -63,29 +57,17 @@
       "type": "boolean"
      },
      "expiresAt": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Expiresat"
+      "nullable": true,
+      "title": "Expiresat",
+      "type": "string"
      },
      "initialSources": {
-      "anyOf": [
-       {
-        "items": {
-         "$ref": "#/components/schemas/ActivationSourceResult"
-        },
-        "type": "array"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Initialsources"
+      "items": {
+       "$ref": "#/components/schemas/ActivationSourceResult"
+      },
+      "nullable": true,
+      "title": "Initialsources",
+      "type": "array"
      },
      "mode": {
       "default": "session",
@@ -97,53 +79,29 @@
       "type": "string"
      },
      "newDevice": {
-      "anyOf": [
-       {
-        "type": "boolean"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Newdevice"
+      "nullable": true,
+      "title": "Newdevice",
+      "type": "boolean"
      },
      "role": {
-      "anyOf": [
-       {
-        "enum": [
-         "owner",
-         "admin",
-         "member"
-        ],
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
+      "enum": [
+       "owner",
+       "admin",
+       "member"
       ],
-      "title": "Role"
+      "nullable": true,
+      "title": "Role",
+      "type": "string"
      },
      "userId": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Userid"
+      "nullable": true,
+      "title": "Userid",
+      "type": "string"
      },
      "username": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Username"
+      "nullable": true,
+      "title": "Username",
+      "type": "string"
      }
     },
     "required": [
@@ -175,26 +133,14 @@
     "description": "N032：一个可选的正文版本（经同一净化边界渲染）。\n\nkind: \"current\"（上游当前）| \"last_known_full\"（保留的上一个更长\n版本；仅在该版本仍被保留时出现——有界 side table，keep_latest=1）。\ncontentHtml 仍是不可信上游 HTML：Web 端必须经同一 DOMPurify 边界\n渲染，BFF 不做净化（与正文同一安全模型）。",
     "properties": {
      "capturedAt": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Capturedat"
+      "nullable": true,
+      "title": "Capturedat",
+      "type": "string"
      },
      "contentHtml": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Contenthtml"
+      "nullable": true,
+      "title": "Contenthtml",
+      "type": "string"
      },
      "kind": {
       "title": "Kind",
@@ -252,51 +198,27 @@
     "description": "One article with its body.\n\ncontentText is the safe plain-text rendering (always present);\ncontentHtml is the raw upstream HTML from FreshRSS. contentHtml is\nUNTRUSTED upstream HTML (it comes from external RSS feeds) — the BFF\nonly transports it; sanitizing before rendering is the web client's\nresponsibility. Missing/empty upstream HTML is normalized to None.",
     "properties": {
      "author": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Author"
+      "nullable": true,
+      "title": "Author",
+      "type": "string"
      },
      "contentHtml": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Contenthtml"
+      "nullable": true,
+      "title": "Contenthtml",
+      "type": "string"
      },
      "contentText": {
       "title": "Contenttext",
       "type": "string"
      },
      "contentVariants": {
-      "anyOf": [
-       {
-        "$ref": "#/components/schemas/ContentVariantsBlock"
-       },
-       {
-        "type": "null"
-       }
-      ]
+      "$ref": "#/components/schemas/ContentVariantsBlock",
+      "nullable": true
      },
      "crawledAt": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Crawledat"
+      "nullable": true,
+      "title": "Crawledat",
+      "type": "string"
      },
      "enclosure": {
       "items": {
@@ -310,52 +232,28 @@
       "type": "string"
      },
      "extractPolicy": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Extractpolicy"
+      "nullable": true,
+      "title": "Extractpolicy",
+      "type": "string"
      },
      "extractionFailed": {
-      "anyOf": [
-       {
-        "type": "boolean"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Extractionfailed"
+      "nullable": true,
+      "title": "Extractionfailed",
+      "type": "boolean"
      },
      "feedTitle": {
       "title": "Feedtitle",
       "type": "string"
      },
      "feedUrl": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Feedurl"
+      "nullable": true,
+      "title": "Feedurl",
+      "type": "string"
      },
      "publishedAt": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Publishedat"
+      "nullable": true,
+      "title": "Publishedat",
+      "type": "string"
      },
      "read": {
       "title": "Read",
@@ -370,15 +268,9 @@
       "type": "string"
      },
      "url": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Url"
+      "nullable": true,
+      "title": "Url",
+      "type": "string"
      }
     },
     "required": [
@@ -400,15 +292,9 @@
       "type": "string"
      },
      "type": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Type"
+      "nullable": true,
+      "title": "Type",
+      "type": "string"
      }
     },
     "required": [
@@ -440,26 +326,14 @@
     "description": "One article in the entry list — never contains the body.\n\n2026-09 移动端专项 P2/F02/F03 enrich（列表级元数据，非正文）：\n- feedUrl：来源真实订阅 URL（标题→URL 映射解析；解析不到保持\n  None，前端该来源不可点击，诚实降级）；\n- snippet：列表摘要（html_to_text 前 160 字符，纯文本）；\n- coverUrl：封面图（正文首个 http(s) <img src>；仅元数据，是否\n  加载由前端图片模式控制）。",
     "properties": {
      "author": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Author"
+      "nullable": true,
+      "title": "Author",
+      "type": "string"
      },
      "coverUrl": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Coverurl"
+      "nullable": true,
+      "title": "Coverurl",
+      "type": "string"
      },
      "entryRef": {
       "title": "Entryref",
@@ -470,81 +344,45 @@
       "type": "string"
      },
      "feedUrl": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Feedurl"
+      "nullable": true,
+      "title": "Feedurl",
+      "type": "string"
      },
      "hiddenByRule": {
-      "anyOf": [
-       {
-        "$ref": "#/components/schemas/EntryHiddenByRule"
-       },
-       {
-        "type": "null"
-       }
-      ]
+      "$ref": "#/components/schemas/EntryHiddenByRule",
+      "nullable": true
      },
      "publishedAt": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Publishedat"
+      "nullable": true,
+      "title": "Publishedat",
+      "type": "string"
      },
      "read": {
       "title": "Read",
       "type": "boolean"
      },
      "snippet": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Snippet"
+      "nullable": true,
+      "title": "Snippet",
+      "type": "string"
      },
      "starred": {
       "title": "Starred",
       "type": "boolean"
      },
      "timeCredibility": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Timecredibility"
+      "nullable": true,
+      "title": "Timecredibility",
+      "type": "string"
      },
      "title": {
       "title": "Title",
       "type": "string"
      },
      "url": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Url"
+      "nullable": true,
+      "title": "Url",
+      "type": "string"
      }
     },
     "required": [
@@ -561,15 +399,9 @@
     "description": "Envelope for GET /api/v1/entries.",
     "properties": {
      "filteredCount": {
-      "anyOf": [
-       {
-        "type": "integer"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Filteredcount"
+      "nullable": true,
+      "title": "Filteredcount",
+      "type": "integer"
      },
      "items": {
       "items": {
@@ -579,15 +411,9 @@
       "type": "array"
      },
      "nextCursor": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Nextcursor"
+      "nullable": true,
+      "title": "Nextcursor",
+      "type": "string"
      }
     },
     "required": [
@@ -601,26 +427,14 @@
     "description": "PATCH body: set (never toggle) read/starred; one bool is required.\n\nStrict bools: Pydantic does not coerce 1/0/\"true\" into bool.",
     "properties": {
      "read": {
-      "anyOf": [
-       {
-        "type": "boolean"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Read"
+      "nullable": true,
+      "title": "Read",
+      "type": "boolean"
      },
      "starred": {
-      "anyOf": [
-       {
-        "type": "boolean"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Starred"
+      "nullable": true,
+      "title": "Starred",
+      "type": "boolean"
      }
     },
     "title": "EntryStateUpdate",
@@ -703,15 +517,9 @@
       "type": "string"
      },
      "url": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Url"
+      "nullable": true,
+      "title": "Url",
+      "type": "string"
      }
     },
     "required": [
@@ -730,7 +538,9 @@
       "type": "string"
      },
      "totpRequired": {
-      "const": true,
+      "enum": [
+       true
+      ],
       "title": "Totprequired",
       "type": "boolean"
      }
@@ -752,17 +562,11 @@
       "type": "string"
      },
      "username": {
-      "anyOf": [
-       {
-        "maxLength": 64,
-        "minLength": 1,
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Username"
+      "maxLength": 64,
+      "minLength": 1,
+      "nullable": true,
+      "title": "Username",
+      "type": "string"
      }
     },
     "required": [
@@ -779,15 +583,9 @@
       "type": "integer"
      },
      "lastSyncedAt": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Lastsyncedat"
+      "nullable": true,
+      "title": "Lastsyncedat",
+      "type": "string"
      },
      "partial": {
       "default": false,
@@ -805,15 +603,9 @@
     "description": "One search hit — list metadata plus a safe plain-text snippet.\n\n``snippet`` is plain text extracted from the sanitized content text\n(never HTML); the web client renders it as text only.",
     "properties": {
      "author": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Author"
+      "nullable": true,
+      "title": "Author",
+      "type": "string"
      },
      "entryRef": {
       "title": "Entryref",
@@ -828,28 +620,22 @@
       "type": "string"
      },
      "matchPositions": {
-      "anyOf": [
-       {
-        "items": {
-         "additionalProperties": {
-          "anyOf": [
-           {
-            "type": "string"
-           },
-           {
-            "type": "integer"
-           }
-          ]
+      "items": {
+       "additionalProperties": {
+        "anyOf": [
+         {
+          "type": "string"
          },
-         "type": "object"
-        },
-        "type": "array"
+         {
+          "type": "integer"
+         }
+        ]
        },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Matchpositions"
+       "type": "object"
+      },
+      "nullable": true,
+      "title": "Matchpositions",
+      "type": "array"
      },
      "matchedFields": {
       "items": {
@@ -879,15 +665,9 @@
       "type": "string"
      },
      "url": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Url"
+      "nullable": true,
+      "title": "Url",
+      "type": "string"
      }
     },
     "required": [
@@ -926,29 +706,17 @@
       "type": "array"
      },
      "library": {
-      "anyOf": [
-       {
-        "items": {
-         "$ref": "#/components/schemas/LibrarySearchItem"
-        },
-        "type": "array"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Library"
+      "items": {
+       "$ref": "#/components/schemas/LibrarySearchItem"
+      },
+      "nullable": true,
+      "title": "Library",
+      "type": "array"
      },
      "libraryError": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Libraryerror"
+      "nullable": true,
+      "title": "Libraryerror",
+      "type": "string"
      },
      "libraryHasMore": {
       "default": false,
@@ -956,26 +724,14 @@
       "type": "boolean"
      },
      "libraryNextCursor": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Librarynextcursor"
+      "nullable": true,
+      "title": "Librarynextcursor",
+      "type": "string"
      },
      "nextCursor": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Nextcursor"
+      "nullable": true,
+      "title": "Nextcursor",
+      "type": "string"
      }
     },
     "required": [
@@ -992,14 +748,8 @@
     "description": "GET/POST /api/v1/subscriptions item (0013 management view).\n\nsubscriptionRef is Lumi-owned and opaque; clients never assemble ids.",
     "properties": {
      "category": {
-      "anyOf": [
-       {
-        "$ref": "#/components/schemas/FeedCategory"
-       },
-       {
-        "type": "null"
-       }
-      ]
+      "$ref": "#/components/schemas/FeedCategory",
+      "nullable": true
      },
      "feedUrl": {
       "title": "Feedurl",
@@ -1089,15 +839,9 @@
     "description": "POST /api/v1/subscriptions body.\n\nfeedUrl must be an absolute http(s) URL (validated before FreshRSS);\ncategoryId, when given, must exist (404 otherwise); title is optional\n(a blank title is treated as absent — the feed's own title is used).",
     "properties": {
      "categoryId": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Categoryid"
+      "nullable": true,
+      "title": "Categoryid",
+      "type": "string"
      },
      "feedUrl": {
       "minLength": 1,
@@ -1105,15 +849,9 @@
       "type": "string"
      },
      "title": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Title"
+      "nullable": true,
+      "title": "Title",
+      "type": "string"
      }
     },
     "required": [
@@ -1128,7 +866,7 @@
   "title": "LumiRSS BFF",
   "version": "0.1.0"
  },
- "openapi": "3.1.0",
+ "openapi": "3.0.3",
  "paths": {
   "/api/v1/auth/login": {
    "post": {
@@ -1286,20 +1024,14 @@
       "name": "view",
       "required": false,
       "schema": {
-       "anyOf": [
-        {
-         "enum": [
-          "all",
-          "unread",
-          "starred"
-         ],
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
+       "enum": [
+        "all",
+        "unread",
+        "starred"
        ],
-       "title": "View"
+       "nullable": true,
+       "title": "View",
+       "type": "string"
       }
      },
      {
@@ -1307,15 +1039,9 @@
       "name": "feedUrl",
       "required": false,
       "schema": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "Feedurl"
+       "nullable": true,
+       "title": "Feedurl",
+       "type": "string"
       }
      },
      {
@@ -1323,15 +1049,9 @@
       "name": "sourceType",
       "required": false,
       "schema": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "Sourcetype"
+       "nullable": true,
+       "title": "Sourcetype",
+       "type": "string"
       }
      },
      {
@@ -1339,15 +1059,9 @@
       "name": "categoryId",
       "required": false,
       "schema": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "Categoryid"
+       "nullable": true,
+       "title": "Categoryid",
+       "type": "string"
       }
      },
      {
@@ -1355,15 +1069,9 @@
       "name": "cursor",
       "required": false,
       "schema": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "Cursor"
+       "nullable": true,
+       "title": "Cursor",
+       "type": "string"
       }
      },
      {
@@ -1381,16 +1089,12 @@
       "name": "sort",
       "required": false,
       "schema": {
-       "anyOf": [
-        {
-         "const": "received",
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
+       "enum": [
+        "received"
        ],
-       "title": "Sort"
+       "nullable": true,
+       "title": "Sort",
+       "type": "string"
       }
      },
      {
@@ -1398,19 +1102,13 @@
       "name": "attention",
       "required": false,
       "schema": {
-       "anyOf": [
-        {
-         "enum": [
-          "must_read",
-          "excl_low"
-         ],
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
+       "enum": [
+        "must_read",
+        "excl_low"
        ],
-       "title": "Attention"
+       "nullable": true,
+       "title": "Attention",
+       "type": "string"
       }
      }
     ],
@@ -1551,15 +1249,9 @@
       "name": "cursor",
       "required": false,
       "schema": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "Cursor"
+       "nullable": true,
+       "title": "Cursor",
+       "type": "string"
       }
      },
      {
@@ -1567,15 +1259,9 @@
       "name": "libraryCursor",
       "required": false,
       "schema": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "Librarycursor"
+       "nullable": true,
+       "title": "Librarycursor",
+       "type": "string"
       }
      },
      {
@@ -1593,15 +1279,9 @@
       "name": "feedUrl",
       "required": false,
       "schema": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "Feedurl"
+       "nullable": true,
+       "title": "Feedurl",
+       "type": "string"
       }
      },
      {
@@ -1609,15 +1289,9 @@
       "name": "categoryId",
       "required": false,
       "schema": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "Categoryid"
+       "nullable": true,
+       "title": "Categoryid",
+       "type": "string"
       }
      },
      {
@@ -1625,15 +1299,9 @@
       "name": "state",
       "required": false,
       "schema": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "State"
+       "nullable": true,
+       "title": "State",
+       "type": "string"
       }
      },
      {
@@ -1641,15 +1309,9 @@
       "name": "favorite",
       "required": false,
       "schema": {
-       "anyOf": [
-        {
-         "type": "boolean"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "Favorite"
+       "nullable": true,
+       "title": "Favorite",
+       "type": "boolean"
       }
      },
      {
@@ -1657,15 +1319,9 @@
       "name": "from_",
       "required": false,
       "schema": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "From "
+       "nullable": true,
+       "title": "From ",
+       "type": "string"
       }
      },
      {
@@ -1673,15 +1329,9 @@
       "name": "to",
       "required": false,
       "schema": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "To"
+       "nullable": true,
+       "title": "To",
+       "type": "string"
       }
      },
      {
@@ -1689,15 +1339,9 @@
       "name": "intitle",
       "required": false,
       "schema": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "Intitle"
+       "nullable": true,
+       "title": "Intitle",
+       "type": "string"
       }
      },
      {
@@ -1705,15 +1349,9 @@
       "name": "phrase",
       "required": false,
       "schema": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "Phrase"
+       "nullable": true,
+       "title": "Phrase",
+       "type": "string"
       }
      },
      {
@@ -1721,15 +1359,9 @@
       "name": "exclude",
       "required": false,
       "schema": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "Exclude"
+       "nullable": true,
+       "title": "Exclude",
+       "type": "string"
       }
      },
      {
@@ -1737,15 +1369,9 @@
       "name": "hasSummary",
       "required": false,
       "schema": {
-       "anyOf": [
-        {
-         "type": "boolean"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "Hassummary"
+       "nullable": true,
+       "title": "Hassummary",
+       "type": "boolean"
       }
      },
      {
@@ -1753,15 +1379,9 @@
       "name": "author",
       "required": false,
       "schema": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "Author"
+       "nullable": true,
+       "title": "Author",
+       "type": "string"
       }
      },
      {
