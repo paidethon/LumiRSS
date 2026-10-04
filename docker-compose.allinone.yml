@@ -41,6 +41,13 @@ services:
     container_name: lumirss-app
     restart: unless-stopped
     env_file: .env.prod
+    # R3 兼容：存量 freshrss_binding/rsshub 配置里存的是四容器 DNS 名
+    # （http://freshrss:80 / http://rsshub:1200）。把名字指到容器内回环，
+    # 配合 Caddyfile.aio 的 Host 站点，双拓扑下绑定零改写。
+    extra_hosts:
+      - "freshrss:127.0.0.1"
+      - "rsshub:127.0.0.1"
+
     environment:
       TZ: Asia/Shanghai
       # Structural, tied to the mounts below (not in .env.prod).

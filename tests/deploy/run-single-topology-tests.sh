@@ -574,6 +574,21 @@ assert_contains "refusal names docker-compose.allinone.yml" "docker-compose.alli
 rm -rf "$tree"
 
 # ---------------------------------------------------------------------------
+# R3 兼容守卫：存量 freshrss_binding 存的是四容器 DNS 名
+# （http://freshrss:80 / http://rsshub:1200）——单容器必须同时提供
+# extra_hosts 名字映射与 Caddy Host 站点，否则迁移后文章全挂（v3.0.0
+# 首发真实事故）。
+grep -q 'extra_hosts' "$REPO_ROOT/docker-compose.allinone.yml" \
+  && grep -q '"freshrss:127.0.0.1"' "$REPO_ROOT/docker-compose.allinone.yml" \
+  && grep -q '"rsshub:127.0.0.1"' "$REPO_ROOT/docker-compose.allinone.yml" \
+  && ok "allinone compose maps freshrss/rsshub hostnames to loopback" \
+  || bad "allinone compose missing extra_hosts freshrss/rsshub"
+grep -q 'http://freshrss,' "$REPO_ROOT/docker/all-in-one/Caddyfile.aio.template" \
+  && grep -q 'http://rsshub {' "$REPO_ROOT/docker/all-in-one/Caddyfile.aio.template" \
+  && ok "aio Caddy routes Host freshrss/rsshub to internal services" \
+  || bad "aio Caddy template missing freshrss/rsshub Host sites"
+
+# ---------------------------------------------------------------------------
 echo
 echo "single-topology tests: $PASS passed, $FAIL failed"
 if [[ "$FAIL" -gt 0 ]]; then exit 1; fi

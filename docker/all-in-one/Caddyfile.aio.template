@@ -58,13 +58,24 @@ __INTERNAL_TOKEN_DIRECTIVE__
 # parity with the official FreshRSS Apache vhost: ONLY p/ is served
 # (app/, data/, cli/ … are unreachable); php_fastcgi resolves index.php and
 # PATH_INFO-style URLs (api/greader.php/<…>) like Apache did.
-http://127.0.0.1:8081 {
+#
+# R3 兼容：每用户 freshrss_binding 里存的是四容器时代的
+# `http://freshrss:80`（数据迁移不重写绑定）。compose extra_hosts 把
+# `freshrss` 指到 127.0.0.1，下面的 Host 站点让这个名字在单容器里
+# 命中同一套 php_fastcgi —— 双拓扑（4 容器/单容器）下既有绑定都可用。
+http://freshrss, http://127.0.0.1:8081 {
 	root * /var/www/FreshRSS/p
 	encode gzip
 
 	php_fastcgi unix//run/php/php8.4-fpm.sock
 
 	file_server
+}
+
+# RSSHub 同理：绑定/历史配置里的 `http://rsshub:1200` 经 extra_hosts +
+# 本 Host 路由命中容器内 node 进程。
+http://rsshub {
+	reverse_proxy 127.0.0.1:12001
 }
 
 # Container-internal healthcheck site (apps/web E06 parity): plain HTTP, no
