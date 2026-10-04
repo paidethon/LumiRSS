@@ -3,7 +3,7 @@ import Foundation
 /// Hand-written domain view models over the generated DTOs. The wire
 /// contract stays owned by the generated client; these are the shapes
 /// SwiftUI binds to (dates parsed, optionals narrowed, no wire names).
-struct ArticleListItem: Identifiable, Equatable, Hashable {
+struct ArticleListItem: Identifiable, Equatable, Hashable, Codable {
     let entryRef: String
     var title: String
     var feedTitle: String
@@ -42,7 +42,7 @@ struct ArticleListItem: Identifiable, Equatable, Hashable {
     }
 }
 
-struct ArticleDetail {
+struct ArticleDetail: Codable {
     let entryRef: String
     var title: String
     var feedTitle: String

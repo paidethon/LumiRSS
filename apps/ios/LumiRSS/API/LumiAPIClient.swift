@@ -106,12 +106,17 @@ final class LumiAPIClient: @unchecked Sendable {
             guard case .ok(let ok) = output else {
                 throw LumiAPIError.server(status: 0, type: nil, message: nil)
             }
-            switch try ok.body.json {
-            case .authStatus(let status):
+            // The union decodes as anyOf optionals (value1 = AuthStatus,
+            // value2 = LoginChallenge); decoding order guarantees at
+            // most one is non-nil.
+            let payload = try ok.body.json
+            if let status = payload.value1 {
                 return .authenticated(session(from: status))
-            case .loginChallenge(let challenge):
+            }
+            if let challenge = payload.value2 {
                 return .totpRequired(pendingToken: challenge.pendingToken)
             }
+            throw LumiAPIError.decoding("login response matched no union member")
         } catch {
             throw await mapError(error)
         }
@@ -153,7 +158,7 @@ final class LumiAPIClient: @unchecked Sendable {
         AccountSession(
             userId: status.userId,
             username: status.username,
-            role: status.role,
+            role: status.role?.rawValue,
             expiresAt: LumiDate.parse(status.expiresAt)
         )
     }
@@ -178,7 +183,7 @@ final class LumiAPIClient: @unchecked Sendable {
                 feedUrl = ref.feedUrl
                 categoryId = ref.categoryId
                 output = try await client.entriesApiV1EntriesGet(
-                    query: .init(categoryId: categoryId, cursor: cursor, feedUrl: feedUrl, view: .all)
+                    query: .init(view: .all, feedUrl: feedUrl, categoryId: categoryId, cursor: cursor)
                 )
             }
             guard case .ok(let ok) = output else {
@@ -282,7 +287,7 @@ final class LumiAPIClient: @unchecked Sendable {
     func search(query: String, cursor: String?) async throws -> SearchPage {
         do {
             let output = try await client.searchApiV1SearchGet(
-                query: .init(cursor: cursor, q: query)
+                query: .init(q: query, cursor: cursor)
             )
             guard case .ok(let ok) = output else {
                 throw LumiAPIError.server(status: 0, type: nil, message: nil)
