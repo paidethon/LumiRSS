@@ -51,7 +51,10 @@ RUN pnpm build
 FROM web-build AS web-dist
 # Normalize the layout to /srv — the same path the lumirss-web image serves
 # dist from, so the runtime COPY below works for both sources.
-RUN cp -a /app/dist /srv
+# 内容级拷贝（/.）：dst 已存在（web-dist 被 --build-context 替换为
+# lumirss-web 镜像时 /srv 天然存在）也不会嵌套成 /srv/dist——v3.0.0
+# 首发的镜像正是这样把 dist 藏进 /srv/dist 导致 SPA 404。
+RUN mkdir -p /srv && cp -a /app/dist/. /srv/
 
 # ---- stages: external-image sources ----------------------------------------
 # `COPY --from` cannot expand ARGs (docker/buildx#820), so every upstream
@@ -195,6 +198,9 @@ RUN set -eu; \
 
 # --- SPA dist (parity with lumirss-web /srv) -------------------------------
 COPY --from=web-dist /srv /srv
+# 构建期断言：dist 必须落在 /srv 根（index.html 在位）——嵌套/缺失在
+# 构建时炸掉，绝不发布一个 SPA 404 的单容器镜像。
+RUN test -f /srv/index.html || { echo "FATAL: /srv/index.html missing (dist layout nested?)"; ls -la /srv /srv/* 2>/dev/null | head -20; exit 1; }
 
 # --- s6 service tree, Caddyfile template, php pool, health helper ----------
 COPY docker/all-in-one/rootfs/ /

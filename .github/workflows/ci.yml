@@ -310,6 +310,17 @@ jobs:
           docker image inspect lumirss-bff:ci > /dev/null && echo "bff image OK"
           docker image inspect lumirss-web:ci > /dev/null && echo "web image OK"
 
+      - name: Build all-in-one production image (no push)
+        run: >-
+          docker build --build-arg LUMIRSS_VERSION="$(cat VERSION)"
+          --build-arg LUMIRSS_COMMIT=${{ github.sha }}
+          --build-arg VITE_GIT_COMMIT=${{ github.sha }}
+          -t lumirss-allinone:ci .
+      - name: All-in-one serves SPA at /srv root (R3 nesting guard)
+        run: |
+          docker image inspect lumirss-allinone:ci > /dev/null && echo "allinone image OK"
+          docker run --rm --entrypoint sh lumirss-allinone:ci -c "test -f /srv/index.html && echo 'SPA at /srv OK'"
+
   docs-build:
     name: Docs site build (dead-link gate)
     runs-on: ubuntu-latest
