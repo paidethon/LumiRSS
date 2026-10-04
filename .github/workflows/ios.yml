@@ -110,7 +110,7 @@ jobs:
       - name: Dump generated API surface (diagnostics)
         if: always()
         run: |
-          OURS=$(find ~/Library/Developer/Xcode/DerivedData -type f -name "Types+Components+Schemas.swift" 2>/dev/null | head -1)
+          OURS=$(grep -rl "EntryListResponse" --include="Types+Components+Schemas.swift" ~/Library/Developer/Xcode/DerivedData 2>/dev/null | head -1)
           echo "Our generated types at: $OURS" | tee /tmp/generated-surface.log
           if [ -n "$OURS" ]; then
             GEN_DIR="$(dirname "$OURS")"
