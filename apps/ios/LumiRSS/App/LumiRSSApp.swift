@@ -2,7 +2,7 @@ import SwiftUI
 
 @main
 struct LumiRSSApp: App {
-    @StateObject private var environment = AppEnvironment.live()
+    @State private var environment = AppEnvironment.live()
 
     var body: some Scene {
         WindowGroup {

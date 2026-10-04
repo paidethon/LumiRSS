@@ -214,6 +214,24 @@ schema 不做二进制降级；数据库不兼容时唯一受支持路径是恢�
 **2.0.0 起数据布局改变（控制库 + 每用户库），跨该版本回退只能恢复升级前
 备份**。
 
+### iOS 客户端的服务器兼容升级
+
+iOS 客户端通过 `GET /api/v1/version` 探测服务器，要求 ≥ 3.0.0。服务器
+正常按上述 `./lumirss update` 流程升级即可——原生客户端不引入新端点，
+升级后 App 重启（或重新登录）即可继续使用；服务器降级到 3.0.0 以下时
+App 会在连接页明确提示版本不兼容，Web 不受影响。
+
+### iOS 客户端获取与安装（IPA）
+
+当前阶段（0.1.0 Preview）：CI 只产出**未签名**的设备归档
+（GitHub Actions `iOS` workflow → artifact
+`ios-unsigned-devpreview-<sha>`，含 SHA256SUMS）——它是开发预览，
+**不能直接安装到 iPhone**。可安装的签名 IPA 需要运营者补齐 Apple
+开发者配置（Secrets 清单与启用步骤见
+[development](/development) §iOS 签名）；具备 Ad Hoc 条件后，同一
+workflow 会输出带 profile 的安装包并附设备 UDID 说明。模拟器构建
+产物（`ios-build-test-<sha>` artifact 中的截图/日志）仅作验证证据。
+
 <a id="backup-restore"></a>
 
 ## 备份与恢复

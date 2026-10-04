@@ -9,6 +9,7 @@
 
 ```text
 apps/web/             React Web / PWA（TypeScript, Vite, Tailwind v4）
+apps/ios/             SwiftUI 原生 iOS 客户端（XcodeGen 工程定义 + macOS CI）
 services/bff/         FastAPI BFF（Python, uv）
 docs/                 本文档站（VitePress，源文件即内容）
 e2e/                  生产级 e2e 栈（compose + smoke fixtures）
@@ -24,8 +25,9 @@ tests/                部署/CLI 集成测试（shell）
 
 | 类型 | 位置 | 说明 |
 |---|---|---|
-| BFF 单元/集成 | `services/bff/tests/`（pytest） | 上游网络全部 mock，DB 用临时文件 |
+| BFF 单元/集成 | `services/bff/tests/`（pytest） | 上游网络全部 mock，DB 用临时文件；`test_ios_native_compat.py` 钉住原生客户端依赖的服务端行为 |
 | Web 单元/组件 | `apps/web/src/**/__tests__/`（vitest） | 含 CSP 哈希漂移、API 契约对齐等钉子测试 |
+| iOS 单元 | `apps/ios/Tests/`（XCTest，macOS CI 运行） | 地址规范化、HTML 边界、缓存隔离、状态语义、分页去重 |
 | E2E（Playwright） | `apps/web/e2e/` | 桌面/移动 journey × 多视口 × 明暗主题，axe 可访问性门禁；另有确定性 CI smoke |
 | 生产级 compose 冒烟 | `e2e/stack/` | 真实拓扑栈（FreshRSS/RSSHub/Mailpit/fixtures/AI 桩/只读 vault），22 项 PASS/FAIL/SKIP；依赖外网的两项需 `LUMIRSS_E2E_ALLOW_NETWORK=1`（未设则如实 SKIP） |
 
@@ -106,6 +108,44 @@ report、诚实口径）与工程目标（2C/2G：BFF 空闲 ≤1.2 GiB、混合
 结构与 configuration.md 主张窗校验、feature-manifest 校验、镜像元数据、
 tracked-secrets 扫描。CI 不使用任何真实凭据。
 
+## iOS 客户端（apps/ios，`.github/workflows/ios.yml`）
+
+iOS 构建只发生在 macOS runner 上——WSL/Linux 从不充当 iOS 构建机。
+流水线：契约子集漂移检查（ubuntu）→ XcodeGen 生成工程 → xcodebuild
+模拟器构建 + XCTest 单测 → 启动冒烟（simctl 装进真模拟器、截图、进程
+存活断言）→ 未签名 iphoneos 归档（dev preview，**不是可安装 IPA**）。
+
+| 操作 | 命令 |
+| --- | --- |
+| 生成 Xcode 工程（需 macOS + XcodeGen 2.46.0） | `cd apps/ios && xcodegen generate` |
+| 本地构建/测试（需 Mac） | `xcodebuild -project LumiRSS.xcodeproj -scheme LumiRSS -destination 'platform=iOS Simulator,name=iPhone 16' -skipPackagePluginValidation test` |
+| 重新过滤 iOS 契约子集 | `python3 apps/ios/scripts/filter_openapi.py`（CI `--check` 漂移门禁） |
+
+- 工程源是真源 `apps/ios/project.yml`；`LumiRSS.xcodeproj/` 不入库。
+- Swift API 客户端由 [swift-openapi-generator](https://github.com/apple/swift-openapi-generator)
+  1.13.1（build plugin，CI 固定版本）从 `LumiRSS/API/openapi.json`
+  生成；该 JSON 由脚本从权威导出 `apps/web/src/api/generated/openapi.json`
+  过滤而来——不存在第二份手写权威契约。
+- 依赖锁定：OpenAPIRuntime 1.12.2 / OpenAPIURLSession 1.3.2 /
+  generator 1.13.1 / XcodeGen 2.46.0（project.yml `exactVersion`）。
+- 最低 iOS 17.0；客户端版本独立于服务器 VERSION（当前 0.1.0 Preview）。
+
+### iOS 签名（当前未配置——人工补齐清单）
+
+仓库 Secrets 只有 `DOCS_DEPLOY_*`，没有 Apple 签名材料，因此 CI 只产
+未签名归档。补齐以下配置后签名 job 即可启用（workflow 已预留结构）：
+
+1. `IOS_P12_BASE64` + `IOS_P12_PASSWORD`：分发证书（Keychain 导出）；
+2. `IOS_MOBILEPROVISION_BASE64`：Ad Hoc profile（含目标设备 UDID）；
+3. `IOS_KEYCHAIN_PASSWORD`：临时 Keychain 口令（随机即可）；
+4. 在 `ios.yml` device-archive job 中替换为签名 archive + export
+   （`-exportOptionsPlist` method=ad-hoc），产物即 Ad Hoc IPA；
+5. Bundle ID `io.github.paidethon.LumiRSS` 需在开发者账户注册
+   （或改成你拥有的 ID：project.yml + Info.plist 一处改）。
+
+TestFlight 另需 App Store Connect API Key（`IOS_ASC_KEY_ID/ISSUER/CONTENT`）
+与 App Record；上传成功≠外部测试可用，以 App Store Connect 状态为准。
+
 <a id="generated-artifacts"></a>
 
 ## 生成物与复用边界
@@ -133,6 +173,9 @@ tracked-secrets 扫描。CI 不使用任何真实凭据。
 | --- | --- | --- |
 | `apps/web/src/api/generated/openapi.json` + `schema.ts` | `pnpm api:generate` | `pnpm api:check`（CI 同） |
 | `apps/web/src/api/generated/settings-meta.ts` | `pnpm settings:generate` | `pnpm settings:check`（CI 同） |
+| `apps/ios/LumiRSS/API/openapi.json`（iOS 契约子集） | `python3 apps/ios/scripts/filter_openapi.py`（输入是上面的权威导出） | 同命令 `--check`（ios.yml CI 同） |
+| Swift API 客户端 | swift-openapi-generator build plugin（编译期生成，不入库） | xcodebuild 编译失败即漂移 |
+| `apps/ios/LumiRSS.xcodeproj` | `xcodegen generate`（project.yml 为真源，产物不入库） | CI 每次重新生成 |
 | `services/bff/src/lumirss/rsshub_routes.generated.json` | `services/bff/scripts/export_rsshub_routes.py`（需本地 docker） | digest 断言测试 |
 | `tools/progress-dashboard/dist/` | `npm run build:dashboard` | `npm run check:dashboard` |
 | `docs/.vitepress/dist/` | `npm run docs:build`（不入库） | 构建死链 + nav 门禁 |
