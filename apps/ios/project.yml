@@ -29,6 +29,12 @@ targets:
         excludes:
           - "API/openapi.json"
           - "API/openapi-generator-config.yaml"
+      # The OpenAPIGenerator build plugin discovers these two files via
+      # target membership; buildPhase:none keeps them out of the bundle.
+      - path: LumiRSS/API/openapi.json
+        buildPhase: none
+      - path: LumiRSS/API/openapi-generator-config.yaml
+        buildPhase: none
     dependencies:
       - package: OpenAPIRuntime
       - package: OpenAPIURLSession
