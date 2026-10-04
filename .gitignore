@@ -62,3 +62,10 @@ docs/.vitepress/cache/
 .playwright-mcp/
 LumiRSS-2.0.1-ZCode-R2/
 .pnpm-store/
+
+# iOS (apps/ios) — generated project & build outputs; the committed
+# sources of truth are project.yml + Swift sources + filtered openapi.
+apps/ios/LumiRSS.xcodeproj/
+apps/ios/build/
+apps/ios/DerivedData/
+apps/ios/.swiftpm/

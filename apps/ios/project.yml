@@ -1,0 +1,92 @@
+name: LumiRSS
+options:
+  bundleIdPrefix: io.github.paidethon
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+packages:
+  OpenAPIRuntime:
+    url: https://github.com/apple/swift-openapi-runtime
+    exactVersion: 1.12.2
+  OpenAPIURLSession:
+    url: https://github.com/apple/swift-openapi-urlsession
+    exactVersion: 1.3.2
+  OpenAPIGenerator:
+    url: https://github.com/apple/swift-openapi-generator
+    exactVersion: 1.13.1
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    CODE_SIGN_STYLE: Automatic
+targets:
+  LumiRSS:
+    type: application
+    platform: iOS
+    sources:
+      - path: LumiRSS
+        excludes:
+          - "API/openapi.json"
+          - "API/openapi-generator-config.yaml"
+    dependencies:
+      - package: OpenAPIRuntime
+      - package: OpenAPIURLSession
+    buildToolPlugins:
+      - plugin: OpenAPIGenerator
+        package: OpenAPIGenerator
+    info:
+      path: LumiRSS/Info.plist
+      properties:
+        CFBundleDisplayName: LumiRSS
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        CURRENT_PROJECT_VERSION: "1"
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UIRequiresFullScreen: false
+        ITSAppUsesNonExemptEncryption: false
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: false
+        LSApplicationCategoryType: public.app-category.news
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.paidethon.LumiRSS
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: "YES"
+        ENABLE_PREVIEWS: "YES"
+        GENERATE_INFOPLIST_FILE: "NO"
+        SWIFT_EMIT_LOC_STRINGS: "YES"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: LumiAccent
+  LumiRSSTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [Tests]
+    dependencies:
+      - target: LumiRSS
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: "YES"
+schemes:
+  LumiRSS:
+    build:
+      targets:
+        LumiRSS: all
+        LumiRSSTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - LumiRSSTests
+    archive:
+      config: Release
