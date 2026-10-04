@@ -21,17 +21,12 @@ final class SessionControllerTests: XCTestCase {
         XCTAssertNotNil(controller.api)
     }
 
-    func testLogoutKeepsServerReturnsLoggedOut() throws {
+    func testLogoutKeepsServerReturnsLoggedOut() async throws {
         let store = MemoryStore()
         let origin = URL(string: "https://rss.example.com")!
         store.writeData(try JSONEncoder().encode(origin), forKey: "server.origin")
         let controller = SessionController(store: store)
-        let expectation = expectation(description: "logout")
-        Task {
-            await controller.logout()
-            await MainActor.run { expectation.fulfill() }
-        }
-        await fulfillment(of: [expectation])
+        await controller.logout()
         guard case .loggedOut = controller.phase else {
             return XCTFail("expected .loggedOut, got \(controller.phase)")
         }

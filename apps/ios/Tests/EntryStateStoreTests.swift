@@ -51,14 +51,23 @@ final class EntryStateStoreTests: XCTestCase {
     }
 
     func testReconcileKeepsInFlightOptimisticValue() async {
-        let store = EntryStateStore(writer: { _, _, _ in })
+        // A writer that stays in flight until the test lets it finish.
+        let store = EntryStateStore(writer: { _, _, _ in
+            try await Task.sleep(nanoseconds: 400_000_000)
+        })
         store.hydrate(entryRef: "a", read: false, starred: false)
-        // Simulate an in-flight write.
-        store.set(entryRef: "a", read: true)
-        // A concurrent refresh arrives claiming read=false.
+        let write = Task { await store.set(entryRef: "a", read: true) }
+        // Wait for the optimistic value to land (syncing == true).
+        for _ in 0..<100 where !store.isSyncing("a") {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertTrue(store.isSyncing("a"), "write should be in flight")
+        // A concurrent refresh arrives claiming read=false — it must
+        // not clobber the in-flight optimistic write.
         store.reconcile(with: [item("a", read: false, starred: false)])
-        // The write is in flight — reconcile must not clobber it.
         XCTAssertTrue(store.isSyncing("a"))
+        _ = await write.value
+        XCTAssertTrue(store.readFlag(for: "a"))
     }
 
     func testSuccessClearsFlags() async {

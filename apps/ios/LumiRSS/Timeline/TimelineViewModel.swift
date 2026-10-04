@@ -185,7 +185,7 @@ final class TimelineViewModel {
     /// Merge a fetched page into the current list, keeping first-seen
     /// order and dropping duplicate entryRefs (stable across refresh
     /// boundaries where upstream repeats items).
-    static func merge(base: [ArticleListItem], page: [ArticleListItem]) -> (merged: [ArticleListItem], added: Int) {
+    nonisolated static func merge(base: [ArticleListItem], page: [ArticleListItem]) -> (merged: [ArticleListItem], added: Int) {
         var seen = Set(base.map(\.entryRef))
         var merged = base
         var added = 0
