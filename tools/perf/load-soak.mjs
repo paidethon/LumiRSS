@@ -41,7 +41,7 @@
  *
  * NOTE: numbers produced on a dev box against the e2e stack are the
  * "before" baseline of THIS machine only — they are NOT measurements of
- * the 2C/2G production target profile. See docs/reference/performance.md.
+ * the 2C/2G production target profile. See docs/development.md.
  */
 
 import { spawn } from 'node:child_process'
@@ -581,7 +581,7 @@ async function main() {
       bffContainer: CFG.bffContainer,
       reAuths,
       environment: 'dev-e2e-stack',
-      note: 'Dev-box baseline against the e2e stack — NOT a measurement of the 2C/2G production target profile. Latency is client-observed (driver -> web/Caddy -> BFF); see docs/reference/performance.md.',
+      note: 'Dev-box baseline against the e2e stack — NOT a measurement of the 2C/2G production target profile. Latency is client-observed (driver -> web/Caddy -> BFF); see docs/development.md.',
       reportPath,
     },
     totals: {

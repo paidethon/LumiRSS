@@ -791,7 +791,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
               <AboutVersion />
               <p className="mt-4 text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
                 界面交互参考 Folo 与 OrigRead，独立实现；来源映射见
-                docs/reference/SOURCE_MAP.md。
+                docs/upstream/SOURCE_MAP.md。
               </p>
             </div>
           ),

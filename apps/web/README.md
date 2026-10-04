@@ -14,4 +14,5 @@ pnpm lint       # oxlint
 pnpm build      # 生产构建（tsc -b + vite build → dist/）
 ```
 
-完整说明见仓库根 `README.md` 与 `docs/README.md`。
+完整说明见仓库根 `README.md` 与文档站 <https://doc.oouo.top/>（源文件
+`docs/`）。

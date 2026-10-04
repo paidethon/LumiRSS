@@ -1,0 +1,191 @@
+/* LumiRSS docs — Lumi Mist visual layer over the VitePress default theme.
+   Source of truth for palette/radii/motion: docs/design-system.md.
+   Restrained by design: no glass effects, no decorative animation. */
+
+:root {
+  /* Brand = Lumi Indigo (light) */
+  --vp-c-brand-1: #6d78e8;
+  --vp-c-brand-2: #616cd8;
+  --vp-c-brand-3: #5660c8;
+  --vp-c-brand-soft: rgba(109, 120, 232, 0.14);
+
+  /* Warm-neutral canvas, Lumi surfaces */
+  --vp-c-bg: #f7f5f5;
+  --vp-c-bg-alt: #f1eeee;
+  --vp-c-bg-soft: #efeced;
+  --vp-c-bg-elv: #ffffff;
+
+  --vp-c-text-1: #29282c;
+  --vp-c-text-2: #5d5a63;
+  --vp-c-text-3: #8a8791;
+
+  --vp-c-border: rgba(52, 47, 57, 0.12);
+  --vp-c-divider: rgba(52, 47, 57, 0.08);
+  --vp-c-gutter: rgba(52, 47, 57, 0.08);
+
+  --vp-c-sponsor: #b87d91;
+
+  /* Typography: keep system stack; docs render Inter via default theme */
+  --vp-font-family-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo,
+    Consolas, monospace;
+
+  /* Radii: 8 / 12 / 16 */
+  --vp-border-radius: 8px;
+
+  /* Code */
+  --vp-code-color: #5660c8;
+  --vp-code-bg: rgba(109, 120, 232, 0.08);
+  --vp-code-block-bg: #232227;
+  --vp-code-lang-color: #aaa8b0;
+
+  /* Custom blocks: muted, low saturation */
+  --vp-custom-block-tip-bg: rgba(118, 160, 139, 0.1);
+  --vp-custom-block-tip-code-bg: rgba(118, 160, 139, 0.16);
+  --vp-custom-block-info-bg: rgba(109, 120, 232, 0.07);
+  --vp-custom-block-info-code-bg: rgba(109, 120, 232, 0.12);
+  --vp-custom-block-warning-bg: rgba(201, 141, 89, 0.1);
+  --vp-custom-block-warning-code-bg: rgba(201, 141, 89, 0.16);
+  --vp-custom-block-danger-bg: rgba(184, 101, 107, 0.1);
+  --vp-custom-block-danger-code-bg: rgba(184, 101, 107, 0.16);
+
+  /* Home hero name: subtle indigo gradient */
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(120deg, #6d78e8, #8b79b8);
+
+  /* Motion: 120/180/240ms, ease-out */
+  --vp-t-color: 120ms;
+}
+
+.dark {
+  --vp-c-brand-1: #8993f5;
+  --vp-c-brand-2: #98a1ff;
+  --vp-c-brand-3: #7782e6;
+  --vp-c-brand-soft: rgba(137, 147, 245, 0.16);
+
+  --vp-c-bg: #18181a;
+  --vp-c-bg-alt: #1d1d20;
+  --vp-c-bg-soft: #232226;
+  --vp-c-bg-elv: #28282d;
+
+  --vp-c-text-1: #ececef;
+  --vp-c-text-2: #aaa8b0;
+  --vp-c-text-3: #7d7b84;
+
+  --vp-c-border: rgba(255, 255, 255, 0.12);
+  --vp-c-divider: rgba(255, 255, 255, 0.08);
+  --vp-c-gutter: rgba(255, 255, 255, 0.08);
+
+  --vp-code-color: #a5adff;
+  --vp-code-bg: rgba(137, 147, 245, 0.12);
+
+  --vp-home-hero-name-background: linear-gradient(120deg, #8993f5, #a893d8);
+}
+
+/* ---------- Focus visibility (a11y: visible in every theme) ---------- */
+:focus-visible {
+  outline: 2px solid var(--vp-c-brand-1);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ---------- Nav / sidebar: quieter surfaces ---------- */
+.VPNavBar {
+  background-color: var(--vp-c-bg) !important;
+}
+.VPSidebar {
+  background-color: var(--vp-c-bg-alt);
+}
+.VPSidebarItem.level-1.is-active > .item > .link > .text,
+.VPNavBarMenuLink.active {
+  color: var(--vp-c-brand-1);
+}
+
+/* ---------- Content rhythm ---------- */
+.vp-doc h2 {
+  border-top: 1px solid var(--vp-c-divider);
+  margin-top: 32px;
+  padding-top: 24px;
+}
+.vp-doc table {
+  border-radius: 8px;
+  overflow: hidden;
+}
+.vp-doc th,
+.vp-doc td {
+  padding: 8px 14px;
+}
+
+/* ---------- Custom blocks: 12px radius, no heavy borders ---------- */
+.vp-doc .custom-block {
+  border-radius: 12px;
+  border: 1px solid var(--vp-c-divider);
+}
+
+/* ---------- Home ---------- */
+.VPHero .name,
+.VPHero .text {
+  letter-spacing: -0.02em;
+}
+.VPFeature {
+  border-radius: 16px;
+  border-color: var(--vp-c-border);
+  background-color: var(--vp-c-bg-elv);
+  transition: border-color 120ms ease-out, transform 120ms ease-out;
+}
+.VPFeature:hover {
+  border-color: var(--vp-c-brand-soft);
+  transform: translateY(-1px);
+}
+.VPButton.brand {
+  border-radius: 8px;
+}
+
+/* Home docs navigation table: constrain to hero width */
+.lumi-home-docs {
+  max-width: 1152px;
+  margin: 0 auto;
+  padding: 0 24px 64px;
+}
+.lumi-home-docs h2 {
+  border-top: none;
+  margin-top: 8px;
+}
+@media (min-width: 960px) {
+  .lumi-home-docs {
+    padding: 0 24px 80px;
+  }
+}
+
+/* ---------- Build-info footer (VERSION + commit + date) ---------- */
+.lumi-build-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  padding: 12px 0;
+  margin-bottom: 12px;
+  border-top: 1px dashed var(--vp-c-divider);
+  color: var(--vp-c-text-3);
+  font-size: 12.5px;
+}
+.lumi-build-info code {
+  color: var(--vp-c-text-2);
+  background: none;
+  padding: 0;
+}
+.VPHome .lumi-build-info {
+  max-width: 1152px;
+  margin: 0 auto 28px;
+  padding: 12px 24px 0;
+  border-top: none;
+}
+
+/* ---------- Reduced motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

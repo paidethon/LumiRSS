@@ -4,13 +4,45 @@
  * Build doubles as the dead-link gate (`npm run docs:build`, no ignores).
  */
 
-import { defineConfig } from 'vitepress'
+import { execSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { defineConfig, type HeadConfig } from 'vitepress'
 
-// Deploy target is GitHub Pages PROJECT site → served under /LumiRSS/.
-// Overridable for other targets; local dev/preview serve under the same
-// base (VitePress dev+preview honor base), so what you preview is what
-// Pages serves.
-const base = process.env.DOCS_BASE || '/LumiRSS/'
+// Production docs site (doc.oouo.top) is served at the domain root, so the
+// production build is base '/'. The GitHub Pages project-site mirror needs
+// '/LumiRSS/' — that target sets DOCS_BASE explicitly (pinned in CI). There
+// is deliberately no project-URL default: a wrong silent default is what
+// broke doc.oouo.top assets/links (everything pointed at /LumiRSS/* while
+// the server serves '/'). Local dev/preview run at '/' like production.
+const base = process.env.DOCS_BASE ?? '/'
+
+const SITE_URL = 'https://doc.oouo.top'
+
+// Build provenance (§16: version footer must come from the repo/CI, never
+// hand-copied). VERSION is the single version source; commit comes from the
+// CI environment with a local git fallback; the date is the build date.
+function readVersion(): string {
+  try {
+    return readFileSync(fileURLToPath(new URL('../../VERSION', import.meta.url)), 'utf8').trim()
+  } catch {
+    return 'unknown'
+  }
+}
+function readCommit(): string {
+  const fromCI = process.env.GITHUB_SHA
+  if (fromCI) return fromCI.slice(0, 7)
+  try {
+    return execSync('git rev-parse --short HEAD').toString().trim()
+  } catch {
+    return 'unknown'
+  }
+}
+const buildInfo = {
+  version: readVersion(),
+  commit: readCommit(),
+  date: new Date().toISOString().slice(0, 10),
+}
 
 /** CJK-aware tokenizer: split latin/digit words, and CJK text into
  * single characters (whitespace tokenization would make whole Chinese
@@ -35,7 +67,21 @@ function tokenize(text: string): string[] {
   return tokens
 }
 
-const ARCHIVE = '历史与研究（存档）'
+// Per-page canonical + OpenGraph against the production host. head entries
+// are NOT base-prefixed by VitePress, so build the absolute URL ourselves.
+function pageHead(pageData: { relativePath: string; title: string; description: string }): HeadConfig[] {
+  const route = pageData.relativePath === 'index.md' ? '' : `/${pageData.relativePath.replace(/\.md$/, '')}`
+  const url = `${SITE_URL}${route}/`.replace(/index\.html/, '')
+  return [
+    ['link', { rel: 'canonical', href: url }],
+    ['meta', { property: 'og:url', content: url }],
+    ['meta', { property: 'og:site_name', content: 'LumiRSS' }],
+    ['meta', { property: 'og:type', content: 'website' }],
+    ['meta', { property: 'og:title', content: pageData.title }],
+    ['meta', { property: 'og:description', content: pageData.description }],
+    ['meta', { property: 'og:locale', content: 'zh_CN' }],
+  ]
+}
 
 export default defineConfig({
   lang: 'zh-CN',
@@ -43,25 +89,25 @@ export default defineConfig({
   description: '邀请制多账户、自托管、source-first 的信息阅读器',
   cleanUrls: true,
   base,
+  sitemap: { hostname: SITE_URL },
+  // LEGAL 存档（许可审计/来源归档）保留在仓库供 GitHub 渲染与合规引用，
+  // 但不进入文档站：它们不是面向用户/开发者的活跃文档。
+  srcExclude: ['upstream/**'],
   // 唯一豁免：上游功能对照矩阵是 docs/public/reference/ 下的独立 HTML
-  // 资产（离线单文件，非 VitePress 页面），md 里以相对 .html 链接引用，
+  // 资产（离线单文件，非 VitePress 页面），md 里以绝对路径链接引用，
   // 构建期无法解析为页面——运行时路径经 public/ 拷贝后成立。
-  ignoreDeadLinks: [
-    // docs/public/reference/ 下的独立 HTML 资产（离线单文件，非 VitePress
-    // 页面）：md 里以相对 .html 链接引用，构建期无法解析为页面——运行时
-    // 路径经 public/ 拷贝后成立。两种书写位（reference/ 内与根 ROADMAP）。
-    /^\.?\/?(reference\/|public\/reference\/)?upstream-feature-matrix$/,
-  ],
-  rewrites: {
-    // docs/README.md is the docs homepage on GitHub AND the site home —
-    // one source, no index copy.
-    'README.md': 'index.md',
-  },
+  ignoreDeadLinks: [/^\/reference\/upstream-feature-matrix(\.html)?$/],
   head: [
     // head entries are NOT base-prefixed by VitePress — build the
     // absolute path ourselves.
     ['link', { rel: 'icon', type: 'image/svg+xml', href: `${base}logo.svg` }],
   ],
+  transformHead: ({ pageData }) => pageHead(pageData),
+  vite: {
+    define: {
+      __LUMI_DOCS_BUILD__: JSON.stringify(buildInfo),
+    },
+  },
   themeConfig: {
     logo: '/logo.svg',
     siteTitle: 'LumiRSS',
@@ -79,96 +125,56 @@ export default defineConfig({
             footer: { selectText: '选择', navigateText: '切换', closeText: '关闭' },
           },
         },
-        // LocalSearchOptions.miniSearch — the custom CJK tokenizer was
-        // previously nested under a non-existent `options.options`
-        // wrapper, so MiniSearch never saw it and every CJK char ran
-        // through the default whitespace tokenizer (pool #49: verified
-        // against vitepress default-theme.d.ts).
+        // LocalSearchOptions.miniSearch — MiniSearch 构造参数：换掉按空白
+        // 分词的默认 tokenizer，中文按单字索引（实测默认分词搜不到中文）。
         miniSearch: {
-          // MiniSearch 构造参数：换掉按空白分词的默认 tokenizer，
-          // 中文按单字索引（实测默认分词搜不到中文）。
           options: { tokenize },
         },
       },
     },
     socialLinks: [{ icon: 'github', link: 'https://github.com/paidethon/LumiRSS' }],
     nav: [
-      { text: '开始', link: '/getting-started' },
-      { text: '功能', link: '/guide/features-reading', activeMatch: '/guide/' },
-      { text: '使用', link: '/how-to/deploy' },
-      { text: '配置', link: '/reference/configuration' },
-      { text: '架构', link: '/explanation/architecture' },
-      { text: 'Roadmap', link: '/ROADMAP' },
-      { text: '历史', link: '/history/milestones', activeMatch: '/(audits|history|upstream)/' },
+      { text: '指南', link: '/getting-started', activeMatch: '/(getting-started|usage)' },
+      { text: '部署', link: '/operations' },
+      { text: '配置', link: '/configuration' },
+      { text: '架构', link: '/architecture', activeMatch: '/(architecture|design-system|upstreams)' },
+      { text: 'Roadmap', link: '/roadmap' },
+      { text: 'GitHub', link: 'https://github.com/paidethon/LumiRSS' },
     ],
-    sidebar: {
-      '/': [
-        {
-          text: '开始',
-          items: [
-            { text: '快速上手', link: '/getting-started' },
-            // README.md is rewritten to index.md — the /README route no
-            // longer exists at runtime (dead-link gate checks source
-            // files, not rewritten routes, so it never caught this).
-            { text: '文档导航', link: '/' },
-          ],
-        },
-        {
-          text: '功能清单',
-          items: [
-            { text: '阅读与时间线', link: '/guide/features-reading' },
-            { text: '内容来源', link: '/guide/features-sources' },
-            { text: '整理、搜索与数据控制', link: '/guide/features-organize' },
-            { text: 'AI 功能', link: '/guide/features-ai' },
-            { text: '管理与运维', link: '/guide/features-admin' },
-          ],
-        },
-        {
-          text: '使用（How-to）',
-          items: [
-            { text: '部署 / 升级 / 回滚', link: '/how-to/deploy' },
-            { text: '邀请成员（运营者）', link: '/how-to/invite-members' },
-            { text: '备份与恢复', link: '/how-to/backup-restore' },
-            { text: '故障排查', link: '/how-to/troubleshoot' },
-            { text: '文档站部署', link: '/how-to/docs-site' },
-          ],
-        },
-        {
-          text: '参考（Reference）',
-          items: [
-            { text: '配置键', link: '/reference/configuration' },
-            { text: '测试与 CI', link: '/reference/testing' },
-            { text: '性能与负载', link: '/reference/performance' },
-          ],
-        },
-        {
-          text: '解释（Explanation）',
-          items: [
-            { text: '系统架构', link: '/explanation/architecture' },
-            { text: '全局搜索原理', link: '/explanation/search' },
-            { text: '复用与自研边界', link: '/explanation/reuse-policy' },
-          ],
-        },
-        {
-          text: '产品与决策',
-          items: [
-            { text: '产品需求（PRD）', link: '/product/PRD' },
-            { text: '架构决策（ADR）', link: '/decisions/0001-freshrss-owns-rss-state' },
-            { text: '邀请制多账户（ADR 0005）', link: '/decisions/0005-invite-multi-account' },
-            { text: '设计系统', link: '/design/design-system' },
-          ],
-        },
-        { text: 'Roadmap', link: '/ROADMAP' },
-        {
-          text: ARCHIVE,
-          collapsed: true,
-          items: [
-            { text: 'Recovery 审计账本（冻结）', link: '/audits/phase2-recovery' },
-            { text: '历史里程碑', link: '/history/milestones' },
-            { text: '上游引用与许可', link: '/upstream/UPSTREAMS' },
-          ],
-        },
-      ],
+    sidebar: [
+      {
+        text: '开始',
+        items: [
+          { text: '快速开始', link: '/getting-started' },
+          { text: '使用指南', link: '/usage' },
+        ],
+      },
+      {
+        text: '运维',
+        items: [
+          { text: '部署与运维', link: '/operations' },
+          { text: '配置参考', link: '/configuration' },
+        ],
+      },
+      {
+        text: '开发',
+        items: [
+          { text: '架构', link: '/architecture' },
+          { text: '设计系统', link: '/design-system' },
+          { text: '开发指南', link: '/development' },
+        ],
+      },
+      {
+        text: '项目',
+        items: [
+          { text: 'Roadmap', link: '/roadmap' },
+          { text: '上游对照', link: '/upstreams' },
+        ],
+      },
+    ],
+    footer: {
+      message: '基于 AGPL-3.0 发布',
+      copyright: 'LumiRSS · Source-first information reader',
     },
   },
 })

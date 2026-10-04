@@ -6,8 +6,8 @@ Wired end to end: image + compose verified locally, the `./lumirss` CLI
 integration (`deploy --single` / `migrate-single` / `rollback-single`) is
 landed, and `publish-images.yml` publishes `lumirss-allinone` to GHCR
 (next to `lumirss-web` / `-bff`). Operator-facing runbook:
-[docs/how-to/deploy.md](../../docs/how-to/deploy.md) §4b (decision record:
-[docs/decisions/0008-single-container-topology.md](../../docs/decisions/0008-single-container-topology.md)).
+[docs/operations.md](../../docs/operations.md)（单容器拓扑一节；决策结论
+收录于 [docs/architecture.md](../../docs/architecture.md)）.
 
 ```text
 published (loopback)                    inside the container

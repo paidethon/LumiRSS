@@ -1,8 +1,9 @@
-# Configuration Reference
+# 配置参考（Configuration）
 
 > 配置键的唯一权威参考。事实来源：`.env.prod.example`、
 > `services/bff/src/lumirss/config.py`、`docker-compose.prod.yml`、
-> `./lumirss` 脚本。
+> `./lumirss` 脚本。部署流程见 [operations](/operations)，架构背景见
+> [architecture](/architecture)。
 
 ## 通用规则
 
@@ -17,7 +18,7 @@
 
 | 键 | 说明 |
 |---|---|
-| `LUMIRSS_AUTH_MODE` | `session`（主模式：BFF 账号登录 + 长效 Cookie，Caddy 不加代理层 basic auth）或 `basic`（兼容可选项，历史行为：Caddy basic_auth；**未显式设置时 env 缺省仍是 `basic`**，生产实例切换执行中）。`./lumirss deploy --auth-mode=session` 自动写入 |
+| `LUMIRSS_AUTH_MODE` | `session`（主模式：BFF 账号登录 + 长效 Cookie，Caddy 不加代理层 basic auth）或 `basic`（兼容可选项，历史行为：Caddy basic_auth；**未显式设置时 env 缺省仍是 `basic`**）。`./lumirss deploy --auth-mode=session` 自动写入 |
 | `LUMIRSS_AUTH_USER` / `LUMIRSS_AUTH_HASH` | basic 模式的 Caddy basic_auth 边缘访问控制（单组共享凭据，历史兼容；账号级登录请用 session 模式）。bcrypt 哈希（不是明文密码），`$$` 转义。**两个要么都设要么都不设，只设一个容器拒绝启动**；都为空 = 无 auth（受信内网/已有外层认证）。session 模式下忽略 |
 | `LUMIRSS_SESSION_MAX_AGE_DAYS` | `180`（天）。session 模式的绝对不活跃窗口；活跃使用会滑动续期（临近过期自动延长），经常使用基本不需要重新登录 |
 | `LUMIRSS_SESSION_SECURE_COOKIES` | `1`。`__Host-` 前缀 + `Secure`（要求 HTTPS，所有生产部署都应保持 1）；仅纯 HTTP 本地调试才设 0（此时 cookie 名退化为 `lumirss_session`） |
@@ -36,16 +37,16 @@
 
 | 键 | 默认 | 说明 |
 |---|---|---|
-| `LUMIRSS_DB_PATH` | `<services/bff>/data/lumi.sqlite` | Lumi 控制库（身份/会话/邀请/FreshRSS 池/审计）；首次使用时创建。每用户业务库在 `LUMIRSS_DATA_DIR/users/<uid>/lumi.sqlite`（见 [ADR 0005](../decisions/0005-invite-multi-account.md)）。生产 compose 固定为 `/data/lumi.sqlite`（lumi-data 卷），不走 `.env.prod` |
+| `LUMIRSS_DB_PATH` | `<services/bff>/data/lumi.sqlite` | Lumi 控制库（身份/会话/邀请/FreshRSS 池/审计）；首次使用时创建。每用户业务库在 `LUMIRSS_DATA_DIR/users/<uid>/lumi.sqlite`（见 [architecture](/architecture#accounts)）。生产 compose 固定为 `/data/lumi.sqlite`（lumi-data 卷），不走 `.env.prod` |
 | `LUMIRSS_DATA_DIR` | `LUMIRSS_DB_PATH` 的父目录 | Lumi 运行时状态根：`users/<uid>/`（每用户业务库 + secrets）、`secrets.json`（0600）、本地备份 `backups/`、恢复暂存 `restore-staging/` |
 | `FRESHRSS_DATA_DIR` | 空 | FreshRSS 数据目录的**只读**挂载路径，供一致性在线备份；空 = 完整备份不可用（开发态）。生产 compose 固定为 `/freshrss-data` |
-| `LUMIRSS_SEARCH_SYNC_INTERVAL` | `60.0`（秒） | 搜索投影后台同步节奏；`0` 关闭后台同步（测试用）。机制见 [../explanation/search.md](../explanation/search.md) |
+| `LUMIRSS_SEARCH_SYNC_INTERVAL` | `60.0`（秒） | 搜索投影后台同步节奏；`0` 关闭后台同步（测试用）。机制见 [architecture](/architecture#search) |
 | `LUMIRSS_ATOM_BASE_URL` | 空 | API 来源 / 邮件桥生成的 Atom feed 的 docker 内网基地址（freshrss 容器经它抓取 `/feeds/...`；`GET /api/v1/sources` 的 `atomPath` 始终是相对路径，浏览器走 Caddy）。空 = 回退 compose 默认 `http://bff:8000`（prod compose 服务名，见 `api_sources.py` 的 `atom_base()`）；dev compose（BFF 在宿主机）需显式设为 freshrss 容器可达地址，如 `http://host.docker.internal:8000` |
 | `LUMIRSS_OBSIDIAN_VAULT_DIR` | 空 | Obsidian vault 的容器内挂载路径（**只读**，读面投影）。生产 compose 经 `LUMIRSS_OBSIDIAN_VAULT_HOST_DIR` 绑定宿主目录；空 = Obsidian 投影关闭 |
 | `LUMIRSS_OBSIDIAN_SCAN_INTERVAL` | `0`（秒） | vault 增量扫描节奏（`config.py` 默认 `0` = 仅手动 rescan）；`0` 关闭后台扫描 |
-| `LUMIRSS_OBSIDIAN_EXPORT_HOST_DIR` | （空） | **唯一的写面**：宿主导出目录（通常指向 vault 内一个 Lumi 专用子树，如 `…/MyVault/LumiRSS`）。容器内固定挂到 `/vault-export`（rw）；与只读 `/vault` 可指向同一个 vault，导出的笔记会被扫描器当作普通笔记重新索引。留空 = 导出关闭（overlay `docker-compose.obsidian-export.yml` 叠加启用，见 [../decisions/0007-obsidian-server-side-export.md](../decisions/0007-obsidian-server-side-export.md)） |
+| `LUMIRSS_OBSIDIAN_EXPORT_HOST_DIR` | （空） | **唯一的写面**：宿主导出目录（通常指向 vault 内一个 Lumi 专用子树，如 `…/MyVault/LumiRSS`）。容器内固定挂到 `/vault-export`（rw）；与只读 `/vault` 可指向同一个 vault，导出的笔记会被扫描器当作普通笔记重新索引。留空 = 导出关闭（overlay `docker-compose.obsidian-export.yml` 叠加启用） |
 | `LUMIRSS_OBSIDIAN_EXPORT_DIR` | `/vault-export` | 导出根的容器内路径（overlay 固定注入；导出落在 `<子目录>/<账户id>/` 下，新文件、绝不覆盖、每日配额） |
-| `LUMIRSS_RAG_INDEX_INTERVAL` | `300`（秒） | RAG 语义索引增量收敛节奏（`config.py` 默认 `300`）；`0` 关闭（显式 rebuild 仍可用）。模型加载在显式启用后进行，空闲自动卸载 |
+| `LUMIRSS_RAG_INDEX_INTERVAL` | `300`（秒） | RAG 语义索引增量收敛节奏；`0` 关闭（显式 rebuild 仍可用）。模型加载在显式启用后进行，空闲自动卸载 |
 | `LUMIRSS_FETCH_ALLOW_PRIVATE_HOSTS` | 空 | 逗号分隔主机名 allow-list：名单内的私网主机可作为**来源 URL / AI base URL** 被服务端访问（容器内 RSSHub、自托管 AI 等）。仅跳过"公网地址拒绝"，取回仍逐跳解析、校验、按钉住 IP 直连 |
 | `LUMIRSS_ACCESS_LOG` | `json` | BFF 访问日志：`json` = 每请求一行结构化 JSON（request_id/路由模板/status/duration_ms/服务端派生 actor）；`off` = 静默。脱敏边界：绝不记录 query string、请求体、header、凭据 |
 | `LUMIRSS_INTERNAL_TOKEN` | 空 | 同上表（BFF 侧读取） |
@@ -56,11 +57,11 @@
 
 | 键 | 默认 | 说明 |
 |---|---|---|
-| `LUMIRSS_IMAGE_TAG` | 仓库 `VERSION`（发布版本 tag） | GHCR 镜像 tag（`ghcr.io/paidethon/lumirss/lumirss-web` / `-bff`）。FIX-184：空 = 本次发布的不可变版本 tag（与 `docker-compose.prod.yml` 默认相等，`scripts/check-version.py` 强制）——可变 `latest` 绝不是默认。`./lumirss deploy` 会把它实际部署的值持久化进 `.env.prod`，`update` / `rollback` 复用同一不可变引用；显式环境变量仍优先生效。digest 级精确安装走 `./lumirss import-images`（release-manifest.json 携带推送的 `@sha256` digest） |
+| `LUMIRSS_IMAGE_TAG` | 仓库 `VERSION`（发布版本 tag） | GHCR 镜像 tag（`ghcr.io/paidethon/lumirss/lumirss-web` / `-bff`）。空 = 本次发布的不可变版本 tag（与 `docker-compose.prod.yml` 默认相等，`scripts/check-version.py` 强制）——可变 `latest` 绝不是默认。`./lumirss deploy` 会把它实际部署的值持久化进 `.env.prod`，`update` / `rollback` 复用同一不可变引用；显式环境变量仍优先生效。digest 级精确安装走 `./lumirss import-images`（release-manifest.json 携带推送的 `@sha256` digest） |
 | `LUMIRSS_BUILD_COMMIT` | （空） | 部署/构建时注入的 git commit → Web `VITE_GIT_COMMIT` 与 BFF `LUMIRSS_COMMIT` 两个 build-arg，「关于」页与 `/api/v1/version` 展示，用于版本偏斜诊断 |
 | `LUMIRSS_HTTP_PORT` / `LUMIRSS_HTTPS_PORT` | `80` / `443` | Caddy 发布到宿主的端口；与 `COMPOSE_PROJECT_NAME` 一起用于同机隔离测试（避免端口与卷冲突） |
-| `LUMIRSS_EXTERNAL_CADDY` | （空） | `1` = 外部宿主反代模式：web 只发布 `127.0.0.1:LUMIRSS_UPSTREAM_PORT`（纯 HTTP、任意 Host，无 ACME/443），TLS 由宿主 Caddy/nginx 负责。`./lumirss deploy --external-caddy` 自动写入；见 [../how-to/deploy.md](../how-to/deploy.md) |
-| `LUMIRSS_SINGLE` | （空） | `1` = 单容器拓扑（`docker-compose.allinone.yml`）。`migrate-single` 写入、`rollback-single` 写 `0`，`status` / `doctor` / `update --single` 复用；见 [../how-to/deploy.md](../how-to/deploy.md) §4b 与 [../decisions/0008-single-container-topology.md](../decisions/0008-single-container-topology.md) |
+| `LUMIRSS_EXTERNAL_CADDY` | （空） | `1` = 外部宿主反代模式：web 只发布 `127.0.0.1:LUMIRSS_UPSTREAM_PORT`（纯 HTTP、任意 Host，无 ACME/443），TLS 由宿主 Caddy/nginx 负责。`./lumirss deploy --external-caddy` 自动写入；见 [operations](/operations) |
+| `LUMIRSS_SINGLE` | （空） | `1` = 单容器拓扑（`docker-compose.allinone.yml`）。`migrate-single` 写入、`rollback-single` 写 `0`，`status` / `doctor` / `update --single` 复用；见 [operations](/operations#single-container) |
 | `LUMIRSS_ALLINONE_MEM_LIMIT` / `_RESERVATION` | `1200m` / `256m` | 仅单容器拓扑：一个 cgroup 承载 Caddy+BFF+FreshRSS+RSSHub 的总 limit（按 1.6 GB 宿主定标；空闲实测约 340 MiB）。单容器下 per-container 内存键被合并，RSSHub V8 堆上限仍是主要约束杠杆 |
 | `LUMIRSS_UPSTREAM_PORT` | `18080` | external 模式下 web 发布的 loopback 端口（`127.0.0.1:<port> -> 80`）。必须与宿主反代 upstream 一致；`./lumirss caddy-config` 按它渲染站点块 |
 | `COMPOSE_PROJECT_NAME` | `lumirss-prod` | compose 项目名（决定卷前缀） |
@@ -70,7 +71,7 @@
 | `LUMIRSS_RSSHUB_MEM_LIMIT` / `_RESERVATION` | `1g` / `256m` | RSSHub 容器（low-memory 预设 448m/192m） |
 | `LUMIRSS_RSSHUB_MEMORY_MAX` | `256`（MB） | RSSHub 进程内 memory cache 上限（与固定镜像默认一致；low-memory 预设 64——小规模自托管足够） |
 | `LUMIRSS_RSSHUB_NODE_OPTIONS` | （空 = V8 默认） | RSSHub Node 堆上限（如 `--max-old-space-size=256`）。**容器 limit 必须明显高于 V8 堆**，给 native memory 留余量（low-memory 预设 = 256 堆 + 448 容器） |
-| `LUMIRSS_BACKUP_DIR` | `./backups` | `./lumirss backup` 输出目录（每次备份一个 `<stamp>/` 子目录 + `LATEST` 指针，见 [../how-to/backup-restore.md](../how-to/backup-restore.md)） |
+| `LUMIRSS_BACKUP_DIR` | `./backups` | `./lumirss backup` 输出目录（每次备份一个 `<stamp>/` 子目录 + `LATEST` 指针，见 [operations](/operations#backup-restore)） |
 | `LUMIRSS_FRESHRSS_CRON_MIN` | `13,43` | FreshRSS 容器内置 cron 的自动刷新分钟（本部署唯一调度拥有者；缺省时 cron 不启动，RSS 永不自动更新） |
 | `LUMIRSS_BACKUP_IMAGE` | （空 = 栈自身的 BFF 镜像） | `./lumirss backup` / `restore` 临时容器镜像的覆盖项。默认解析 compose 里的 BFF 镜像（python3 + tar 内置，离线主机零额外拉取；解析失败回退 `ghcr.io/paidethon/lumirss/lumirss-bff:$LUMIRSS_IMAGE_TAG`）；覆盖镜像**必须提供 python3 + tar**，缺失时备份如实失败——活库绝不裸 tar |
 | `LUMIRSS_DOMAIN` / `LUMIRSS_AUTH_USER` / `LUMIRSS_AUTH_HASH` / `LUMIRSS_AUTH_PASSWORD` / `LUMIRSS_UPSTREAM_PORT` | — | 仅 `./lumirss deploy` 的非交互覆盖（环境变量，非文件键） |
@@ -79,8 +80,8 @@
 
 `FRESHRSS_BASE_URL`（默认 `http://127.0.0.1:8080`）、`FRESHRSS_USERNAME`、
 `FRESHRSS_API_PASSWORD` 必填；`RSSHUB_*`、`AI_API_KEY`、`FRESHRSS_DATA_DIR`
-（完整备份用，见 [../how-to/backup-restore.md](../how-to/backup-restore.md)）
-可选。模板：`services/bff/.env.example`。
+（完整备份用，见 [operations](/operations#backup-restore)）可选。
+模板：`services/bff/.env.example`。
 
 ## 非配置项：注册策略
 
@@ -88,4 +89,4 @@
 的唯一真源在控制库 `instance_settings` 表（迁移 0089），默认关闭，升级
 与全新安装都不开放；由 admin 经 `GET/PUT
 /api/v1/admin/registration-policy` 显式切换，变更落审计。见
-[ADR 0006](../decisions/0006-public-registration.md)。
+[architecture](/architecture#accounts)。
