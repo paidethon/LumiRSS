@@ -53,7 +53,7 @@ function FeedbackRow({ entry }: { entry: DocFeedbackEntry }) {
 }
 
 export function DocFeedbackPanel() {
-  const [docPath, setDocPath] = useState('README.md')
+  const [docPath, setDocPath] = useState('index.md')
   const [anchor, setAnchor] = useState('')
   const [question, setQuestion] = useState('')
   const [error, setError] = useState('')
