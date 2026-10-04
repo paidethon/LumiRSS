@@ -3,8 +3,8 @@
 from lumirss.config import LumiSettings
 from new2xx_ab import ab_env  # noqa: F401 — pytest 夹具注册
 
-REAL_DOC = "README.md"
-REAL_ANCHOR = "LumiRSS"  # README 标题行里真实出现的词
+REAL_DOC = "design-system.md"
+REAL_ANCHOR = "LumiRSS"  # design-system.md 标题行（# LumiRSS Design System）真实出现的词
 
 
 def test_new399_submit_locates_version_and_anchor(ab_env):  # noqa: F811
