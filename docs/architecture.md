@@ -21,11 +21,23 @@
 | 部分 | 负责 | 不负责 |
 |---|---|---|
 | React Web | 展示、输入、导航、阅读反馈 | 保存业务事实、直连上游 |
+| SwiftUI iOS（`apps/ios`） | 原生阅读（时间线/订阅/搜索/收藏/正文）、本地缓存 | 保存业务事实、直连上游、复制管理后台 |
 | FastAPI BFF | 认证、业务规则、适配来源、组合结果、调用 AI | 重新实现 FreshRSS |
 | FreshRSS | 订阅、条目、已读/收藏等 RSS 域事实 | 用户笔记、日报等 Lumi 自有内容 |
 | Lumi SQLite | Lumi 自有内容、状态、引用、批准的可重建投影 | 复制整套 RSS 数据 |
 | RSSHub | 非 RSS 来源 → 可消费 feed | 定义 UI 状态 |
 | Caddy/Compose | 路由、进程与数据卷边界 | 业务语义 |
+
+Web 与 iOS 消费**同一份** `/api/v1` 契约：FastAPI/Pydantic 是唯一真源，
+Web 经 `pnpm api:generate` 生成 TS 类型；iOS 经
+`apps/ios/scripts/filter_openapi.py` 从同一导出过滤子集后由
+swift-openapi-generator 生成 Swift 客户端（漂移各有 CI 门禁）。iOS
+认证复用浏览器同款 cookie 会话（URLSession 无 Origin 头，天然通过
+CSRF 同源门；SameSite 属性对非浏览器存储无意义），会话 cookie 落
+Keychain 而非 UserDefaults；无独立 token/刷新层——服务器会话有明确
+有效期与撤销（logout/logout-all/管理台）。iOS 本地缓存是按服务器+
+账户隔离的可重建副本（列表+正文，不含图片），不改变 FreshRSS 的
+服务端权威地位。
 
 ## 数据流
 
@@ -39,7 +51,7 @@ Non-RSS → RSSHub-generated feed ──┤
                                   ▼
                              FastAPI BFF  ──  Lumi SQLite（AI/设置/搜索投影）
                                   ▼
-                         React Web / PWA
+                    React Web / PWA  ·  SwiftUI iOS（apps/ios）
 ```
 
 浏览器只信任 Lumi 契约，不感知上游实现细节。自动采集的拥有者是
@@ -228,6 +240,19 @@ Shiki 高亮）→ DOMPurify.sanitize（最终安全边界）→ ArticleContent
 外部链接经 `safeExternalHttpUrl` 校验（仅绝对 http/https），渲染为
 `target="_blank" rel="noopener noreferrer"`。视觉/交互规则见
 [design-system](/design-system)。
+
+iOS 正文边界（`apps/ios/LumiRSS/Reader/`）——同一威胁模型的原生实现：
+
+```text
+contentHtml（不可信上游 HTML）→ controlled transforms（相对 URL 解析 +
+本地排版 CSS）→ CSP meta（default-src 'none'; img-src http/https/data;
+style-src 'unsafe-inline'）→ WKWebView（JS 禁用、非持久空 cookie store、
+无任何 bridge；导航全部 cancel，链接点击交给受控外部打开）
+```
+
+脚本在配置层面不可执行（不是靠过滤），第三方资源加载不带 Lumi 会话
+凭据（会话 cookie 只存在于 URLSession 存储）。降级路径：无 HTML 时
+渲染服务端纯文本 `contentText`（转义后），明确提示而非空白。
 
 ## 前端状态
 

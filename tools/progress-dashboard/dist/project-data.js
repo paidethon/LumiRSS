@@ -3,10 +3,10 @@
 // Consumed by index.html (window.LUMIRSS_PROJECT). Compact rows only.
 window.LUMIRSS_PROJECT = {
   "generatedAt": "2026-09-26T19:26:00Z",
-  "source": "docs/implementation-status.json@4fd1fe21",
+  "source": "docs/implementation-status.json@772e9cd5",
   "summary": {
     "pTotal": 20,
-    "nTotal": 200,
+    "nTotal": 201,
     "pByStatus": {
       "blocked": 1,
       "deployed_verified": 3,
@@ -15,7 +15,7 @@ window.LUMIRSS_PROJECT = {
     },
     "nByStatus": {
       "blocked": 1,
-      "verified": 199
+      "verified": 200
     },
     "nNovelty": {
       "exists": 12,
@@ -25,6 +25,13 @@ window.LUMIRSS_PROJECT = {
     "verifiedPct": 97.7
   },
   "tasks": [
+    {
+      "id": "IOS1",
+      "title": "iOS 原生客户端 0.1.0 Preview（SwiftUI 阅读 App + macOS CI）",
+      "phase": "N",
+      "status": "verified",
+      "novelty": "SwiftUI + swift-openapi-generator（首个原生客户端）"
+    },
     {
       "id": "N001",
       "title": "邀请方案模板",

@@ -2837,6 +2837,21 @@
    "acceptance": "见任务书 N-200",
    "evidence": [],
    "release_sha": "9aaf5e1f1b5e"
+  },
+  {
+   "id": "IOS1",
+   "title": "iOS 原生客户端 0.1.0 Preview（SwiftUI 阅读 App + macOS CI）",
+   "phase": "N",
+   "status": "verified",
+   "baseline_state": "复用 /api/v1 与 cookie 会话，服务端零契约改动；契约子集脚本过滤同一权威 OpenAPI 导出",
+   "novelty": "SwiftUI + swift-openapi-generator（首个原生客户端）",
+   "acceptance": "登录/时间线/正文/已读收藏 set 语义/搜索/订阅/收藏；BFF 兼容测试 4 项；macOS CI 模拟器构建+单测+启动冒烟；签名 IPA 阻塞于 Apple 开发者材料（清单见 development.md）",
+   "evidence": [
+    "apps/ios/LumiRSS（SwiftUI 源码与沙箱 WKWebView 边界）",
+    "services/bff/tests/test_ios_native_compat.py",
+    ".github/workflows/ios.yml（macOS 构建/测试/未签名归档）"
+   ],
+   "release_sha": ""
   }
  ],
  "deployment": {

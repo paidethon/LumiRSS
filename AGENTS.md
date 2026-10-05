@@ -10,21 +10,24 @@
 
 LumiRSS is an invite-based multi-account, self-hosted, source-first
 information reader: RSS/Atom via FreshRSS, non-RSS via RSSHub, a FastAPI
-BFF, and a responsive React Web / PWA client. The operator invites
-members from the admin console; each invitee activates their own account
-(one-time, expiring invite → self-chosen username/password at
-`/activate`), and every account's data is fully isolated (control DB +
-per-user DBs, server-derived identity). Public registration is an
-optional, default-off instance policy. Feature status lives in
+BFF, a responsive React Web / PWA client, and a native SwiftUI iOS /
+iPadOS client (`apps/ios`; macOS CI only — never claim a Linux/WSL
+build as an iOS build). The operator invites members from the admin
+console; each invitee activates their own account (one-time, expiring
+invite → self-chosen username/password at `/activate`), and every
+account's data is fully isolated (control DB + per-user DBs,
+server-derived identity). Public registration is an optional,
+default-off instance policy. Feature status lives in
 [docs/roadmap.md](docs/roadmap.md); released work in `CHANGELOG.md`.
 
 NOT implemented — do not describe these as existing: web clipping
 browser extension, free-form Obsidian write-back (the read-side vault
 projection stays read-only; the only write face is the separately
 mounted, hard-bounded server-side export directory), MCP surface, PWA
-push / background sync, multi-tenant tenancy. LumiRSS is small-scale by
-design; public-internet hardening is out of scope. All data-protection
-rules below still apply exactly as written.
+push / background sync, iOS APNs / Widget / Share Extension /
+Spotlight, Android or Windows packages, multi-tenant tenancy. LumiRSS
+is small-scale by design; public-internet hardening is out of scope.
+All data-protection rules below still apply exactly as written.
 
 ## 2. Architecture invariants (non-negotiable)
 
@@ -51,6 +54,7 @@ Full explanation: [docs/architecture.md](docs/architecture.md).
 | Config keys/defaults | [docs/configuration.md](docs/configuration.md) |
 | Data paths, boundaries, account isolation | [docs/architecture.md](docs/architecture.md) |
 | UI work | [docs/design-system.md](docs/design-system.md) |
+| iOS client work | [docs/development.md](docs/development.md) §iOS 客户端 |
 | Tests, CI, codegen, docs governance | [docs/development.md](docs/development.md) |
 | Feature status / what's next | [docs/roadmap.md](docs/roadmap.md) |
 

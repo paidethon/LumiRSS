@@ -13,7 +13,10 @@ Its foundation:
 - **FreshRSS** as the RSS-domain engine and source of truth;
 - **RSSHub** as an upstream generator for non-RSS sources;
 - a project-owned **FastAPI BFF**;
-- a responsive **React Web / PWA** client.
+- a responsive **React Web / PWA** client;
+- a native **SwiftUI iOS/iPadOS** client (`apps/ios`, 0.1.0 Preview;
+  Android will reuse the Web via Capacitor and Windows via a Tauri
+  shell — see the [roadmap](https://doc.oouo.top/roadmap)).
 
 Official documentation: **https://doc.oouo.top/**
 
@@ -30,11 +33,12 @@ Non-RSS source → RSSHub → FreshRSS
                                   ▼
                            FastAPI BFF
                                   ▼
-                              React Web
+                React Web / PWA  ·  SwiftUI iOS (apps/ios)
 ```
 
-FreshRSS owns RSS-domain state. RSSHub generates feeds upstream. The Web
-client talks only to the Lumi BFF. Full explanation:
+FreshRSS owns RSS-domain state. RSSHub generates feeds upstream. Both
+clients talk only to the Lumi BFF through the same `/api/v1` contract.
+Full explanation:
 [doc.oouo.top/architecture](https://doc.oouo.top/architecture).
 
 ---

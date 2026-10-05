@@ -1,0 +1,242 @@
+name: iOS
+
+# Native iOS client (SwiftUI). Real builds happen ONLY on macOS — a
+# WSL/Linux host never stands in for an iOS build. The workflow:
+#   1. contract-subset (ubuntu): the iOS OpenAPI subset must be exactly
+#      what the filter script derives from the authoritative export —
+#      no hand-maintained second contract.
+#   2. build-test (macos): XcodeGen generates the project from the
+#      committed project.yml, xcodebuild builds the app + runs unit
+#      tests on a real iOS Simulator discovered on the runner.
+#   3. device-archive (macos): an explicitly UNSIGNED iphoneos archive
+#      for development preview. Signing requires Apple developer
+#      secrets (IOS_*) that are NOT configured yet — see
+#      docs/development.md §iOS for the manual checklist.
+on:
+  push:
+    branches: [main, "feat/ios-*"]
+    paths: ["apps/ios/**", ".github/workflows/ios.yml"]
+  pull_request:
+    paths: ["apps/ios/**", ".github/workflows/ios.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract-subset:
+    name: OpenAPI subset drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify the iOS OpenAPI subset matches the authoritative export
+        run: python3 apps/ios/scripts/filter_openapi.py --check
+
+  build-test:
+    name: Build & unit tests (simulator)
+    runs-on: macos-15
+    timeout-minutes: 45
+    needs: contract-subset
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select the newest stable Xcode on the runner
+        run: |
+          set -euo pipefail
+          ls -d /Applications/Xcode*.app || true
+          NEWEST=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          echo "Using $NEWEST"
+          sudo xcode-select -s "$NEWEST"
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i ios || true
+
+      - name: Install XcodeGen 2.46.0 (pinned)
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/xcodegen.zip \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip"
+          unzip -q -o /tmp/xcodegen.zip -d /tmp/xcodegen-dist
+          if [ ! -x /tmp/xcodegen-dist/xcodegen/bin/xcodegen ]; then
+            XCODEGEN_BIN="$(find /tmp/xcodegen-dist -type f -name xcodegen -perm -111 | head -1)"
+          else
+            XCODEGEN_BIN=/tmp/xcodegen-dist/xcodegen/bin/xcodegen
+          fi
+          echo "XcodeGen at $XCODEGEN_BIN"
+          "$XCODEGEN_BIN" --version
+          echo "XCODEGEN_BIN=$XCODEGEN_BIN" >> "$GITHUB_ENV"
+
+      - name: Generate the Xcode project
+        working-directory: apps/ios
+        run: |
+          set -euo pipefail
+          "$XCODEGEN_BIN" generate
+          ls LumiRSS.xcodeproj
+
+      - name: Discover an available iPhone simulator
+        id: simulator
+        run: |
+          set -euo pipefail
+          xcrun simctl list devices available
+          DEVICE=$(xcrun simctl list devices available | grep -oE "iPhone [^(]+\([0-9A-F-]{36}\)" | head -1)
+          NAME="${DEVICE% (*}"
+          UDID="${DEVICE##*(}"
+          UDID="${UDID%)}"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          echo "Selected simulator: $NAME ($UDID)"
+
+      - name: Build (Debug, simulator)
+        working-directory: apps/ios
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          xcodebuild \
+            -project LumiRSS.xcodeproj \
+            -scheme LumiRSS \
+            -destination "platform=iOS Simulator,name=${{ steps.simulator.outputs.name }}" \
+            -skipPackagePluginValidation \
+            -resultBundlePath /tmp/build.xcresult \
+            build 2>&1 | tee /tmp/build.log || {
+              EXIT=$?
+              echo "::error::xcodebuild build failed (exit $EXIT) — see build.log artifact"
+              exit $EXIT
+            }
+
+      - name: Dump generated API surface (diagnostics)
+        if: always()
+        run: |
+          OURS=$(grep -rl "EntryListResponse" --include="Types+Components+Schemas.swift" ~/Library/Developer/Xcode/DerivedData 2>/dev/null | head -1)
+          echo "Our generated types at: $OURS" | tee /tmp/generated-surface.log
+          if [ -n "$OURS" ]; then
+            GEN_DIR="$(dirname "$OURS")"
+            SCHEMAS="$GEN_DIR/Types+Components+Schemas.swift"
+            echo "===== Types+Components+Schemas.swift (full) =====" >> /tmp/generated-surface.log
+            sed -n '1,5000p' "$SCHEMAS" >> /tmp/generated-surface.log
+            echo "===== Types+Operations.swift (signatures) =====" >> /tmp/generated-surface.log
+            grep -nE "struct |enum |var |let |case |init\(|func " "$GEN_DIR/Types+Operations.swift" >> /tmp/generated-surface.log || true
+            wc -l /tmp/generated-surface.log
+          fi
+
+      - name: Unit tests (simulator)
+        working-directory: apps/ios
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          xcodebuild \
+            -project LumiRSS.xcodeproj \
+            -scheme LumiRSS \
+            -destination "platform=iOS Simulator,name=${{ steps.simulator.outputs.name }}" \
+            -skipPackagePluginValidation \
+            -resultBundlePath /tmp/test.xcresult \
+            test 2>&1 | tee /tmp/test.log || {
+              EXIT=$?
+              echo "::error::xcodebuild test failed (exit $EXIT) — see test.log artifact"
+              exit $EXIT
+            }
+
+      - name: Simulator smoke — app launches
+        working-directory: apps/ios
+        run: |
+          set -euo pipefail
+          APP=$(find ~/Library/Developer/Xcode/DerivedData -path "*Build/Products/Debug-iphonesimulator/LumiRSS.app" | head -1)
+          echo "App at $APP"
+          xcrun simctl bootstatus "${{ steps.simulator.outputs.udid }}" -b
+          xcrun simctl install "${{ steps.simulator.outputs.udid }}" "$APP"
+          xcrun simctl launch "${{ steps.simulator.outputs.udid }}" io.github.paidethon.LumiRSS
+          sleep 5
+          # Screenshot as evidence the process renders the first screen.
+          xcrun simctl io "${{ steps.simulator.outputs.udid }}" screenshot /tmp/launch.png
+          if ! xcrun simctl spawn "${{ steps.simulator.outputs.udid }}" launchctl list | grep -q io.github.paidethon.LumiRSS; then
+            echo "::error::app is not running after launch"
+            exit 1
+          fi
+          echo "Launch smoke OK"
+
+      - name: Upload evidence (logs, results, screenshot)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-test-${{ github.sha }}
+          retention-days: 14
+          path: |
+            /tmp/build.log
+            /tmp/test.log
+            /tmp/build.xcresult
+            /tmp/test.xcresult
+            /tmp/launch.png
+            /tmp/generated-surface.log
+
+  device-archive:
+    name: Unsigned device archive (dev preview)
+    runs-on: macos-15
+    timeout-minutes: 30
+    needs: build-test
+    # Unsigned archives are dev previews only — NOT installable IPA.
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select the newest stable Xcode on the runner
+        run: |
+          set -euo pipefail
+          NEWEST=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$NEWEST"
+          xcodebuild -version
+      - name: Install XcodeGen 2.46.0 (pinned)
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/xcodegen.zip \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip"
+          unzip -q -o /tmp/xcodegen.zip -d /tmp/xcodegen-dist
+          if [ ! -x /tmp/xcodegen-dist/xcodegen/bin/xcodegen ]; then
+            XCODEGEN_BIN="$(find /tmp/xcodegen-dist -type f -name xcodegen -perm -111 | head -1)"
+          else
+            XCODEGEN_BIN=/tmp/xcodegen-dist/xcodegen/bin/xcodegen
+          fi
+          echo "XCODEGEN_BIN=$XCODEGEN_BIN" >> "$GITHUB_ENV"
+      - name: Generate the Xcode project
+        working-directory: apps/ios
+        run: '"$XCODEGEN_BIN" generate'
+      - name: Archive for iphoneos (unsigned, explicitly labeled)
+        working-directory: apps/ios
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          xcodebuild \
+            -project LumiRSS.xcodeproj \
+            -scheme LumiRSS \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath build/LumiRSS-unsigned.xcarchive \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            archive 2>&1 | tee /tmp/archive.log || {
+              EXIT=$?
+              echo "::error::device archive failed (exit $EXIT)"
+              exit $EXIT
+            }
+          # Verify the archive really targets iphoneos (not simulator).
+          BINARY="build/LumiRSS-unsigned.xcarchive/Products/Applications/LumiRSS.app/LumiRSS"
+          PLATFORM=$(file "$BINARY" | head -1)
+          echo "Binary: $PLATFORM"
+          echo "$PLATFORM" | grep -q "arm64" || { echo "::error::unexpected binary"; exit 1; }
+          shasum -a 256 "$BINARY" | tee build/SHA256SUMS.txt
+          echo "commit ${{ github.sha }}" >> build/SHA256SUMS.txt
+          echo "unsigned dev preview — NOT an installable IPA" >> build/SHA256SUMS.txt
+          cd build && zip -qr LumiRSS-unsigned-devpreview.zip LumiRSS-unsigned.xcarchive SHA256SUMS.txt
+      - name: Upload unsigned dev-preview archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-unsigned-devpreview-${{ github.sha }}
+          retention-days: 30
+          path: apps/ios/build/LumiRSS-unsigned-devpreview.zip
+      - name: Upload archive log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-archive-log-${{ github.sha }}
+          retention-days: 14
+          path: /tmp/archive.log

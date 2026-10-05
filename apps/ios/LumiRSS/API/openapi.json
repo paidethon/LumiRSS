@@ -1,0 +1,1523 @@
+{
+ "components": {
+  "schemas": {
+   "ActivationSourceResult": {
+    "description": "One scheme initial-source subscription attempt (N001).\n\n``ok=False`` is an honest per-URL failure record — activation itself\nis never blocked or rolled back by a source failure.",
+    "properties": {
+     "error": {
+      "nullable": true,
+      "title": "Error",
+      "type": "string"
+     },
+     "ok": {
+      "title": "Ok",
+      "type": "boolean"
+     },
+     "url": {
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "url",
+     "ok"
+    ],
+    "title": "ActivationSourceResult",
+    "type": "object"
+   },
+   "ApiVersionInfo": {
+    "description": "GET /api/v1/version (build provenance for Web/BFF skew diagnosis).",
+    "properties": {
+     "apiVersion": {
+      "title": "Apiversion",
+      "type": "integer"
+     },
+     "commit": {
+      "title": "Commit",
+      "type": "string"
+     },
+     "version": {
+      "title": "Version",
+      "type": "string"
+     }
+    },
+    "required": [
+     "version",
+     "commit",
+     "apiVersion"
+    ],
+    "title": "ApiVersionInfo",
+    "type": "object"
+   },
+   "AuthStatus": {
+    "description": "Login / session-status payload; expiresAt is an ISO-8601 instant.\n\nmode tells the web app WHICH auth layer is active: \"basic\" = proxy\nBasic Auth (the app must not render its own login gate), \"session\" =\nBFF sessions (gate on ``authenticated``). userId/username/role carry\nthe server-verified identity for the account menu — the client never\ndeclares who it is. initialSources is only present on the invite\nactivation response (N001); every other surface omits it entirely.",
+    "properties": {
+     "authenticated": {
+      "title": "Authenticated",
+      "type": "boolean"
+     },
+     "expiresAt": {
+      "nullable": true,
+      "title": "Expiresat",
+      "type": "string"
+     },
+     "initialSources": {
+      "items": {
+       "$ref": "#/components/schemas/ActivationSourceResult"
+      },
+      "nullable": true,
+      "title": "Initialsources",
+      "type": "array"
+     },
+     "mode": {
+      "default": "session",
+      "enum": [
+       "basic",
+       "session"
+      ],
+      "title": "Mode",
+      "type": "string"
+     },
+     "newDevice": {
+      "nullable": true,
+      "title": "Newdevice",
+      "type": "boolean"
+     },
+     "role": {
+      "enum": [
+       "owner",
+       "admin",
+       "member"
+      ],
+      "nullable": true,
+      "title": "Role",
+      "type": "string"
+     },
+     "userId": {
+      "nullable": true,
+      "title": "Userid",
+      "type": "string"
+     },
+     "username": {
+      "nullable": true,
+      "title": "Username",
+      "type": "string"
+     }
+    },
+    "required": [
+     "authenticated"
+    ],
+    "title": "AuthStatus",
+    "type": "object"
+   },
+   "Category": {
+    "description": "One item of GET /api/v1/categories (includes empty categories).",
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "label"
+    ],
+    "title": "Category",
+    "type": "object"
+   },
+   "ContentVariantOption": {
+    "description": "N032：一个可选的正文版本（经同一净化边界渲染）。\n\nkind: \"current\"（上游当前）| \"last_known_full\"（保留的上一个更长\n版本；仅在该版本仍被保留时出现——有界 side table，keep_latest=1）。\ncontentHtml 仍是不可信上游 HTML：Web 端必须经同一 DOMPurify 边界\n渲染，BFF 不做净化（与正文同一安全模型）。",
+    "properties": {
+     "capturedAt": {
+      "nullable": true,
+      "title": "Capturedat",
+      "type": "string"
+     },
+     "contentHtml": {
+      "nullable": true,
+      "title": "Contenthtml",
+      "type": "string"
+     },
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "lengthChars": {
+      "default": 0,
+      "title": "Lengthchars",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "kind",
+     "label"
+    ],
+    "title": "ContentVariantOption",
+    "type": "object"
+   },
+   "ContentVariantsBlock": {
+    "description": "N032：正文明显变短时的版本选择块（未触发 → None）。\n\ntriggered 条件（服务端判定）：当前 contentHtml 长度 < 投影行记录的\n历史最大内容长度（content_max_len）的 40%。真实阈值事实，不猜测\n内容是否「完整」。",
+    "properties": {
+     "currentLength": {
+      "title": "Currentlength",
+      "type": "integer"
+     },
+     "maxLength": {
+      "title": "Maxlength",
+      "type": "integer"
+     },
+     "triggered": {
+      "title": "Triggered",
+      "type": "boolean"
+     },
+     "variants": {
+      "items": {
+       "$ref": "#/components/schemas/ContentVariantOption"
+      },
+      "title": "Variants",
+      "type": "array"
+     }
+    },
+    "required": [
+     "triggered",
+     "currentLength",
+     "maxLength"
+    ],
+    "title": "ContentVariantsBlock",
+    "type": "object"
+   },
+   "EntryDetail": {
+    "description": "One article with its body.\n\ncontentText is the safe plain-text rendering (always present);\ncontentHtml is the raw upstream HTML from FreshRSS. contentHtml is\nUNTRUSTED upstream HTML (it comes from external RSS feeds) — the BFF\nonly transports it; sanitizing before rendering is the web client's\nresponsibility. Missing/empty upstream HTML is normalized to None.",
+    "properties": {
+     "author": {
+      "nullable": true,
+      "title": "Author",
+      "type": "string"
+     },
+     "contentHtml": {
+      "nullable": true,
+      "title": "Contenthtml",
+      "type": "string"
+     },
+     "contentText": {
+      "title": "Contenttext",
+      "type": "string"
+     },
+     "contentVariants": {
+      "$ref": "#/components/schemas/ContentVariantsBlock",
+      "nullable": true
+     },
+     "crawledAt": {
+      "nullable": true,
+      "title": "Crawledat",
+      "type": "string"
+     },
+     "enclosure": {
+      "items": {
+       "$ref": "#/components/schemas/EntryEnclosure"
+      },
+      "title": "Enclosure",
+      "type": "array"
+     },
+     "entryRef": {
+      "title": "Entryref",
+      "type": "string"
+     },
+     "extractPolicy": {
+      "nullable": true,
+      "title": "Extractpolicy",
+      "type": "string"
+     },
+     "extractionFailed": {
+      "nullable": true,
+      "title": "Extractionfailed",
+      "type": "boolean"
+     },
+     "feedTitle": {
+      "title": "Feedtitle",
+      "type": "string"
+     },
+     "feedUrl": {
+      "nullable": true,
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "publishedAt": {
+      "nullable": true,
+      "title": "Publishedat",
+      "type": "string"
+     },
+     "read": {
+      "title": "Read",
+      "type": "boolean"
+     },
+     "starred": {
+      "title": "Starred",
+      "type": "boolean"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "url": {
+      "nullable": true,
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "entryRef",
+     "title",
+     "feedTitle",
+     "read",
+     "starred",
+     "contentText"
+    ],
+    "title": "EntryDetail",
+    "type": "object"
+   },
+   "EntryEnclosure": {
+    "description": "F011：一个媒体附件（原样来自 FreshRSS 响应，仅取 href/type）。",
+    "properties": {
+     "href": {
+      "title": "Href",
+      "type": "string"
+     },
+     "type": {
+      "nullable": true,
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "href"
+    ],
+    "title": "EntryEnclosure",
+    "type": "object"
+   },
+   "EntryHiddenByRule": {
+    "description": "F045：命中并屏蔽本条的服务端规则（include_hidden 时附带）。",
+    "properties": {
+     "reason": {
+      "title": "Reason",
+      "type": "string"
+     },
+     "ruleId": {
+      "title": "Ruleid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "ruleId",
+     "reason"
+    ],
+    "title": "EntryHiddenByRule",
+    "type": "object"
+   },
+   "EntryListItem": {
+    "description": "One article in the entry list — never contains the body.\n\n2026-09 移动端专项 P2/F02/F03 enrich（列表级元数据，非正文）：\n- feedUrl：来源真实订阅 URL（标题→URL 映射解析；解析不到保持\n  None，前端该来源不可点击，诚实降级）；\n- snippet：列表摘要（html_to_text 前 160 字符，纯文本）；\n- coverUrl：封面图（正文首个 http(s) <img src>；仅元数据，是否\n  加载由前端图片模式控制）。",
+    "properties": {
+     "author": {
+      "nullable": true,
+      "title": "Author",
+      "type": "string"
+     },
+     "coverUrl": {
+      "nullable": true,
+      "title": "Coverurl",
+      "type": "string"
+     },
+     "entryRef": {
+      "title": "Entryref",
+      "type": "string"
+     },
+     "feedTitle": {
+      "title": "Feedtitle",
+      "type": "string"
+     },
+     "feedUrl": {
+      "nullable": true,
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "hiddenByRule": {
+      "$ref": "#/components/schemas/EntryHiddenByRule",
+      "nullable": true
+     },
+     "publishedAt": {
+      "nullable": true,
+      "title": "Publishedat",
+      "type": "string"
+     },
+     "read": {
+      "title": "Read",
+      "type": "boolean"
+     },
+     "snippet": {
+      "nullable": true,
+      "title": "Snippet",
+      "type": "string"
+     },
+     "starred": {
+      "title": "Starred",
+      "type": "boolean"
+     },
+     "timeCredibility": {
+      "nullable": true,
+      "title": "Timecredibility",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "url": {
+      "nullable": true,
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "entryRef",
+     "title",
+     "feedTitle",
+     "read",
+     "starred"
+    ],
+    "title": "EntryListItem",
+    "type": "object"
+   },
+   "EntryListResponse": {
+    "description": "Envelope for GET /api/v1/entries.",
+    "properties": {
+     "filteredCount": {
+      "nullable": true,
+      "title": "Filteredcount",
+      "type": "integer"
+     },
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/EntryListItem"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "nextCursor": {
+      "nullable": true,
+      "title": "Nextcursor",
+      "type": "string"
+     }
+    },
+    "required": [
+     "items",
+     "nextCursor"
+    ],
+    "title": "EntryListResponse",
+    "type": "object"
+   },
+   "EntryStateUpdate": {
+    "description": "PATCH body: set (never toggle) read/starred; one bool is required.\n\nStrict bools: Pydantic does not coerce 1/0/\"true\" into bool.",
+    "properties": {
+     "read": {
+      "nullable": true,
+      "title": "Read",
+      "type": "boolean"
+     },
+     "starred": {
+      "nullable": true,
+      "title": "Starred",
+      "type": "boolean"
+     }
+    },
+    "title": "EntryStateUpdate",
+    "type": "object"
+   },
+   "FeedCategory": {
+    "description": "FreshRSS category (stable id + display label, single-category model).",
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "label"
+    ],
+    "title": "FeedCategory",
+    "type": "object"
+   },
+   "HTTPValidationError": {
+    "properties": {
+     "detail": {
+      "items": {
+       "$ref": "#/components/schemas/ValidationError"
+      },
+      "title": "Detail",
+      "type": "array"
+     }
+    },
+    "title": "HTTPValidationError",
+    "type": "object"
+   },
+   "HealthStatus": {
+    "description": "GET /health/live — liveness only.",
+    "properties": {
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "status"
+    ],
+    "title": "HealthStatus",
+    "type": "object"
+   },
+   "LibrarySearchItem": {
+    "description": "Library leg of unified search (same shape philosophy as SearchItem).",
+    "properties": {
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     },
+     "snippet": {
+      "default": "",
+      "title": "Snippet",
+      "type": "string"
+     },
+     "stale": {
+      "default": false,
+      "title": "Stale",
+      "type": "boolean"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "updatedAt": {
+      "default": "",
+      "title": "Updatedat",
+      "type": "string"
+     },
+     "url": {
+      "nullable": true,
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "ref",
+     "kind",
+     "title"
+    ],
+    "title": "LibrarySearchItem",
+    "type": "object"
+   },
+   "LoginChallenge": {
+    "description": "POST /api/v1/auth/login response when the account has TOTP enabled\n(N007): the password was verified, but the session is minted only\nafter ``POST /auth/totp/verify`` with this short-lived pending token\n(which is NOT a session and grants nothing on its own).",
+    "properties": {
+     "pendingToken": {
+      "title": "Pendingtoken",
+      "type": "string"
+     },
+     "totpRequired": {
+      "enum": [
+       true
+      ],
+      "title": "Totprequired",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "totpRequired",
+     "pendingToken"
+    ],
+    "title": "LoginChallenge",
+    "type": "object"
+   },
+   "LoginRequest": {
+    "description": "POST /api/v1/auth/login — username + password (multi-account);\nlegacy single-user mode sends password only.",
+    "properties": {
+     "password": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Password",
+      "type": "string"
+     },
+     "username": {
+      "maxLength": 64,
+      "minLength": 1,
+      "nullable": true,
+      "title": "Username",
+      "type": "string"
+     }
+    },
+    "required": [
+     "password"
+    ],
+    "title": "LoginRequest",
+    "type": "object"
+   },
+   "SearchIndexInfo": {
+    "description": "Honest state of the derived projection behind this response.",
+    "properties": {
+     "entryCount": {
+      "title": "Entrycount",
+      "type": "integer"
+     },
+     "lastSyncedAt": {
+      "nullable": true,
+      "title": "Lastsyncedat",
+      "type": "string"
+     },
+     "partial": {
+      "default": false,
+      "title": "Partial",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "entryCount"
+    ],
+    "title": "SearchIndexInfo",
+    "type": "object"
+   },
+   "SearchItem": {
+    "description": "One search hit — list metadata plus a safe plain-text snippet.\n\n``snippet`` is plain text extracted from the sanitized content text\n(never HTML); the web client renders it as text only.",
+    "properties": {
+     "author": {
+      "nullable": true,
+      "title": "Author",
+      "type": "string"
+     },
+     "entryRef": {
+      "title": "Entryref",
+      "type": "string"
+     },
+     "feedTitle": {
+      "title": "Feedtitle",
+      "type": "string"
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "matchPositions": {
+      "items": {
+       "additionalProperties": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "integer"
+         }
+        ]
+       },
+       "type": "object"
+      },
+      "nullable": true,
+      "title": "Matchpositions",
+      "type": "array"
+     },
+     "matchedFields": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Matchedfields",
+      "type": "array"
+     },
+     "publishedAt": {
+      "title": "Publishedat",
+      "type": "string"
+     },
+     "read": {
+      "title": "Read",
+      "type": "boolean"
+     },
+     "snippet": {
+      "title": "Snippet",
+      "type": "string"
+     },
+     "starred": {
+      "title": "Starred",
+      "type": "boolean"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "url": {
+      "nullable": true,
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "entryRef",
+     "title",
+     "feedTitle",
+     "feedUrl",
+     "publishedAt",
+     "read",
+     "starred",
+     "snippet",
+     "matchedFields"
+    ],
+    "title": "SearchItem",
+    "type": "object"
+   },
+   "SearchResponse": {
+    "description": "Envelope for GET /api/v1/search (phase2 G6: + optional library\nleg — additive fields, wire-compatible with older clients).",
+    "properties": {
+     "elapsedMs": {
+      "title": "Elapsedms",
+      "type": "integer"
+     },
+     "hasMore": {
+      "title": "Hasmore",
+      "type": "boolean"
+     },
+     "index": {
+      "$ref": "#/components/schemas/SearchIndexInfo"
+     },
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/SearchItem"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "library": {
+      "items": {
+       "$ref": "#/components/schemas/LibrarySearchItem"
+      },
+      "nullable": true,
+      "title": "Library",
+      "type": "array"
+     },
+     "libraryError": {
+      "nullable": true,
+      "title": "Libraryerror",
+      "type": "string"
+     },
+     "libraryHasMore": {
+      "default": false,
+      "title": "Libraryhasmore",
+      "type": "boolean"
+     },
+     "libraryNextCursor": {
+      "nullable": true,
+      "title": "Librarynextcursor",
+      "type": "string"
+     },
+     "nextCursor": {
+      "nullable": true,
+      "title": "Nextcursor",
+      "type": "string"
+     }
+    },
+    "required": [
+     "items",
+     "nextCursor",
+     "hasMore",
+     "elapsedMs",
+     "index"
+    ],
+    "title": "SearchResponse",
+    "type": "object"
+   },
+   "Subscription": {
+    "description": "GET/POST /api/v1/subscriptions item (0013 management view).\n\nsubscriptionRef is Lumi-owned and opaque; clients never assemble ids.",
+    "properties": {
+     "category": {
+      "$ref": "#/components/schemas/FeedCategory",
+      "nullable": true
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "subscriptionRef": {
+      "title": "Subscriptionref",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "subscriptionRef",
+     "title",
+     "feedUrl"
+    ],
+    "title": "Subscription",
+    "type": "object"
+   },
+   "TotpVerifyRequest": {
+    "description": "POST /auth/totp/verify — pending token + TOTP/recovery code.",
+    "properties": {
+     "code": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Code",
+      "type": "string"
+     },
+     "pendingToken": {
+      "maxLength": 256,
+      "minLength": 16,
+      "title": "Pendingtoken",
+      "type": "string"
+     }
+    },
+    "required": [
+     "pendingToken",
+     "code"
+    ],
+    "title": "TotpVerifyRequest",
+    "type": "object"
+   },
+   "ValidationError": {
+    "properties": {
+     "ctx": {
+      "title": "Context",
+      "type": "object"
+     },
+     "input": {
+      "title": "Input"
+     },
+     "loc": {
+      "items": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "integer"
+        }
+       ]
+      },
+      "title": "Location",
+      "type": "array"
+     },
+     "msg": {
+      "title": "Message",
+      "type": "string"
+     },
+     "type": {
+      "title": "Error Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "loc",
+     "msg",
+     "type"
+    ],
+    "title": "ValidationError",
+    "type": "object"
+   },
+   "lumirss__routers__subscriptions__SubscriptionCreate": {
+    "description": "POST /api/v1/subscriptions body.\n\nfeedUrl must be an absolute http(s) URL (validated before FreshRSS);\ncategoryId, when given, must exist (404 otherwise); title is optional\n(a blank title is treated as absent — the feed's own title is used).",
+    "properties": {
+     "categoryId": {
+      "nullable": true,
+      "title": "Categoryid",
+      "type": "string"
+     },
+     "feedUrl": {
+      "minLength": 1,
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "title": {
+      "nullable": true,
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "feedUrl"
+    ],
+    "title": "SubscriptionCreate",
+    "type": "object"
+   }
+  }
+ },
+ "info": {
+  "title": "LumiRSS BFF",
+  "version": "0.1.0"
+ },
+ "openapi": "3.0.3",
+ "paths": {
+  "/api/v1/auth/login": {
+   "post": {
+    "description": "Verify credentials, mint a per-user session.\n\nWrong-password and unknown-username share the generic failure shape\nand the same brute-force budget (no account oracle).\n\nN007: when the account has TOTP enabled, a correct password does NOT\nmint a session — the response is ``{totpRequired, pendingToken}`` and\nthe real session is issued by ``POST /auth/totp/verify`` (same\nbrute-force budget, one attempt per pending token).",
+    "operationId": "login_api_v1_auth_login_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/LoginRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/AuthStatus"
+          },
+          {
+           "$ref": "#/components/schemas/LoginChallenge"
+          }
+         ],
+         "title": "Response Login Api V1 Auth Login Post"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Login"
+   }
+  },
+  "/api/v1/auth/logout": {
+   "post": {
+    "description": "Revoke the current session and expire the cookie.",
+    "operationId": "logout_api_v1_auth_logout_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuthStatus"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Logout"
+   }
+  },
+  "/api/v1/auth/session": {
+   "get": {
+    "description": "Public probe: which auth layer is active, and is this browser\nholding a live session? Includes the server-verified identity (never\nfrom the request body) so the UI can render the account menu.",
+    "operationId": "session_status_api_v1_auth_session_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuthStatus"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Session Status"
+   }
+  },
+  "/api/v1/auth/totp/verify": {
+   "post": {
+    "operationId": "totp_verify_api_v1_auth_totp_verify_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TotpVerifyRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuthStatus"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Totp Verify"
+   }
+  },
+  "/api/v1/categories": {
+   "get": {
+    "description": "All categories including empty ones (tag/list folders).\n\nSame id/label contract as the category objects on /api/v1/feeds —\nthere is exactly one category model in Lumi.",
+    "operationId": "categories_api_v1_categories_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/Category"
+         },
+         "title": "Response Categories Api V1 Categories Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Categories"
+   }
+  },
+  "/api/v1/entries": {
+   "get": {
+    "description": "One filtered page of entries — list fields only, never bodies.\n\nFiltering happens upstream (FreshRSS). Cursor rules: without a cursor,\na missing view means \"all\"; with a cursor, a missing view/feedUrl/\nsourceType/categoryId adopts the cursor's scope, while an explicit\nview/feedUrl/sourceType/categoryId must match the cursor's scope\nexactly (else 400, before touching FreshRSS).\n\n0011 scope 扩展（§6/§13，全部服务端过滤，不用已加载页假筛选）：\n- sourceType：当前唯一合法值 \"rss\"（全部条目都是 RSS；契约上独立\n  于“全部”，未来新增来源后有真实过滤行为）；\n- categoryId：FreshRSS 分类（greader label stream，适配器含默认\n  分类本地化名 fallback）；\n- feedUrl 与 categoryId 互斥（两者同时出现 → 400）。\n\nN034：``sort=received`` —— 页内按投影接收/投影时间（fetched_at）\n降序重排（服务端执行，query param 真实生效）；上游 continuation\n分页语义不变（页边界仍由 FreshRSS 决定，诚实边界）。同时为页内\n条目附带 timeCredibility（投影摄取时分类的发布时间异常）。\n\nFIX-239 显式排序规则（timeline ordering contract）：默认时间线按\n**上游发表时间**排序（FreshRSS 域内事实，Lumi 不改写）；声明为远\n未来的条目因此可能停留在时间线顶部——这类条目由投影摄取时标记\n（timeCredibility=future，N034），且 ``sort=received`` 提供按接收\n时间排序的显式逃生通道（接收序与声明日期无关，未来日期不能霸占\n排序）。转换型来源（API Sources）在生成 Atom 时直接封顶远未来声\n明日期（api_sources._entry_timing），不让未来条目进入上游时间线。",
+    "operationId": "entries_api_v1_entries_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "view",
+      "required": false,
+      "schema": {
+       "enum": [
+        "all",
+        "unread",
+        "starred"
+       ],
+       "nullable": true,
+       "title": "View",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "feedUrl",
+      "required": false,
+      "schema": {
+       "nullable": true,
+       "title": "Feedurl",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "sourceType",
+      "required": false,
+      "schema": {
+       "nullable": true,
+       "title": "Sourcetype",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "categoryId",
+      "required": false,
+      "schema": {
+       "nullable": true,
+       "title": "Categoryid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "cursor",
+      "required": false,
+      "schema": {
+       "nullable": true,
+       "title": "Cursor",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "includeHidden",
+      "required": false,
+      "schema": {
+       "default": false,
+       "title": "Includehidden",
+       "type": "boolean"
+      }
+     },
+     {
+      "in": "query",
+      "name": "sort",
+      "required": false,
+      "schema": {
+       "enum": [
+        "received"
+       ],
+       "nullable": true,
+       "title": "Sort",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "attention",
+      "required": false,
+      "schema": {
+       "enum": [
+        "must_read",
+        "excl_low"
+       ],
+       "nullable": true,
+       "title": "Attention",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/EntryListResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Entries"
+   }
+  },
+  "/api/v1/entries/{entry_ref}": {
+   "get": {
+    "description": "One entry as plain text. Invalid refs are rejected before FreshRSS;\nreading a detail never marks anything as read (read-only milestone).\n\nF048：来源覆盖 extract_policy='web' 时，经安全有界抓取层抓原文正文\n（article_extract + SSRF 校验，≤2MB，不执行 JS），结果缓存于\nentry_extract_cache；失败回退 RSS 正文并置 extractionFailed=true。",
+    "operationId": "entry_detail_api_v1_entries__entry_ref__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "extractOnce",
+      "required": false,
+      "schema": {
+       "default": false,
+       "title": "Extractonce",
+       "type": "boolean"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/EntryDetail"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Entry Detail"
+   }
+  },
+  "/api/v1/entries/{entry_ref}/state": {
+   "patch": {
+    "description": "Set the read/starred state of one entry (set semantics, not toggle).\n\n204 means FreshRSS accepted the write; it does not re-confirm that the\nentry exists. Invalid refs and invalid bodies are rejected before any\nFreshRSS call. The accepted state is mirrored into the derived search\nprojection so its unread/starred filters stay fresh between syncs.",
+    "operationId": "entry_state_api_v1_entries__entry_ref__state_patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/EntryStateUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Entry State"
+   }
+  },
+  "/api/v1/search": {
+   "get": {
+    "description": "Global search over the derived projection.\n\n``q`` is required (1-200 characters, at most 4 whitespace-split terms).\n``state`` accepts \"unread\" (default: all); ``favorite`` filters\nstarred entries; ``from``/``to`` are inclusive/exclusive ISO dates\n(YYYY-MM-DD). ``categoryId``/``feedUrl`` scope the search; the two\nare mutually exclusive. F29 advanced conditions (optional):\n``intitle`` (title-only, ≤2 terms), ``phrase`` (exact phrase),\n``exclude`` (excluded terms, ≤2) — bound into the cursor scope so\npagination never drifts across changed conditions. NEW-364:\n``author`` filters on the indexed author column (LIKE, bound into\nthe cursor scope like every other condition).\n\nEach leg paginates independently: ``cursor`` keys the RSS leg,\n``libraryCursor`` the library leg; both cursors are bound to the\nquery scope and rejected (400) on mismatch. A ``null`` cursor next\nto a non-null ``libraryCursor`` means the RSS leg is exhausted.",
+    "operationId": "search_api_v1_search_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "q",
+      "required": true,
+      "schema": {
+       "title": "Q",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "cursor",
+      "required": false,
+      "schema": {
+       "nullable": true,
+       "title": "Cursor",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "libraryCursor",
+      "required": false,
+      "schema": {
+       "nullable": true,
+       "title": "Librarycursor",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 20,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "feedUrl",
+      "required": false,
+      "schema": {
+       "nullable": true,
+       "title": "Feedurl",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "categoryId",
+      "required": false,
+      "schema": {
+       "nullable": true,
+       "title": "Categoryid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "state",
+      "required": false,
+      "schema": {
+       "nullable": true,
+       "title": "State",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "favorite",
+      "required": false,
+      "schema": {
+       "nullable": true,
+       "title": "Favorite",
+       "type": "boolean"
+      }
+     },
+     {
+      "in": "query",
+      "name": "from_",
+      "required": false,
+      "schema": {
+       "nullable": true,
+       "title": "From ",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "to",
+      "required": false,
+      "schema": {
+       "nullable": true,
+       "title": "To",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "intitle",
+      "required": false,
+      "schema": {
+       "nullable": true,
+       "title": "Intitle",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "phrase",
+      "required": false,
+      "schema": {
+       "nullable": true,
+       "title": "Phrase",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "exclude",
+      "required": false,
+      "schema": {
+       "nullable": true,
+       "title": "Exclude",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "hasSummary",
+      "required": false,
+      "schema": {
+       "nullable": true,
+       "title": "Hassummary",
+       "type": "boolean"
+      }
+     },
+     {
+      "in": "query",
+      "name": "author",
+      "required": false,
+      "schema": {
+       "nullable": true,
+       "title": "Author",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "expandSynonyms",
+      "required": false,
+      "schema": {
+       "default": true,
+       "title": "Expandsynonyms",
+       "type": "boolean"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SearchResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Search"
+   }
+  },
+  "/api/v1/subscriptions": {
+   "get": {
+    "description": "Management view of all subscriptions (0013).\n\nEach item carries the Lumi-owned opaque subscriptionRef (built from\nFreshRSS's feed/<N> stream id — clients never assemble ids themselves)\nplus title/feedUrl/category. The read path (GET /api/v1/feeds) stays\nuntouched and compatible.",
+    "operationId": "subscriptions_api_v1_subscriptions_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/Subscription"
+         },
+         "title": "Response Subscriptions Api V1 Subscriptions Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Subscriptions"
+   },
+   "post": {
+    "description": "Subscribe to a feed URL; returns the server-confirmed subscription.\n\n409 when already subscribed (checked before any write); 400 feed_rejected\nwhen FreshRSS cannot add the feed. The write is attempted exactly once\n(no retry on timeout — clients re-read and reconcile).\n\nN191：管理员策略包（user_quotas.maxSources）在此事前拦截——按当前\n用户投影 search_feeds 计数，第 N+1 个来源直接 429 quota_exceeded，\nFreshRSS 侧零请求；成员没有任何路径可以提升该上限（设置端点是\nadmin-only，且本路由执行不读任何客户端提供的上限）。",
+    "operationId": "create_subscription_api_v1_subscriptions_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/lumirss__routers__subscriptions__SubscriptionCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Subscription"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Subscription"
+   }
+  },
+  "/api/v1/version": {
+   "get": {
+    "description": "Build provenance for Web/BFF skew diagnosis.\n\nDeliberately minimal: no env dump, no paths, no secrets — just the\nrunning BFF's version/commit so a stale deployment is diagnosable\nfrom the browser (see also the web build commit on the About page).",
+    "operationId": "version_api_v1_version_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiVersionInfo"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Version"
+   }
+  },
+  "/health/live": {
+   "get": {
+    "description": "Liveness: only proves this process is alive, never touches FreshRSS.",
+    "operationId": "health_live_health_live_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HealthStatus"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Health Live"
+   }
+  }
+ },
+ "servers": []
+}
