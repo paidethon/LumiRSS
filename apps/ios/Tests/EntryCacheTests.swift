@@ -77,9 +77,10 @@ final class EntryCacheTests: XCTestCase {
         cache.storeList([listItem("a")], scopeKey: "all", keys: alice)
         // Corrupt every file in the account directory.
         let dir = tempDir
-        for file in try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) where file.hasDirectoryPath {
-            for inner in try FileManager.default.contentsOfDirectory(at: file, includingPropertiesForKeys: nil) {
-                try Data("not json {{{".utf8).write(to: inner)
+        for dirName in try FileManager.default.contentsOfDirectory(atPath: dir.path) {
+            let accountDir = dir.appendingPathComponent(dirName, isDirectory: true)
+            for fileName in try FileManager.default.contentsOfDirectory(atPath: accountDir.path) {
+                try Data("not json {{{".utf8).write(to: accountDir.appendingPathComponent(fileName))
             }
         }
         XCTAssertNil(cache.loadList(scopeKey: "all", keys: alice), "corrupt cache reads as a miss, not a crash")
