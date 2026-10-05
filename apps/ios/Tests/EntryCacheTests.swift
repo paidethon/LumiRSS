@@ -77,7 +77,7 @@ final class EntryCacheTests: XCTestCase {
         cache.storeList([listItem("a")], scopeKey: "all", keys: alice)
         // Corrupt every file in the account directory.
         let dir = tempDir
-        for file in try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) {
+        for file in try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) where file.hasDirectoryPath {
             for inner in try FileManager.default.contentsOfDirectory(at: file, includingPropertiesForKeys: nil) {
                 try Data("not json {{{".utf8).write(to: inner)
             }
