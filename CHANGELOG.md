@@ -3,6 +3,42 @@
 本文件面向使用者（用户/部署者）概括能力与风险变化；逐条工程明细见
 `git log`。版本号遵循 [SemVer 2.0.0](https://semver.org/lang/zh-CN/)，
 唯一权威源是仓库根的 `VERSION`（`scripts/check-version.py` 校验派生）。
+iOS 客户端有独立的 0.x 版本线（`apps/ios`），不重置服务器 VERSION。
+
+## iOS 0.1.0 Preview（客户端独立版本线）
+
+首个 SwiftUI 原生 iOS / iPadOS 客户端（`apps/ios`，最低 iOS 17）。
+服务器零业务改动——复用既有 `/api/v1` 契约与 cookie 会话。
+
+### 新增
+
+- 原生阅读闭环：服务器地址配置与兼容性探测（≥3.0.0）、用户名密码
+  登录（含 TOTP 两步）、重启会话恢复（Keychain 存会话 cookie）、
+  首页时间线（全部/未读）、订阅分类浏览、搜索、收藏四个原生入口。
+- 正文阅读：受控 WKWebView（JavaScript 禁用、CSP 白名单、导航全
+  拦截、空 cookie store——不可信正文无法执行脚本或携带凭据）；
+  字号设置、原生分享、安全打开原文；正文缺失时降级为纯文本。
+- 状态语义与 Web 一致：read/star 均 set 语义（重复设为已读不会翻
+  回未读），打开文章不自动标读；乐观更新失败回滚并标注未同步；
+  列表/详情/收藏共享同一状态源。
+- 基础离线缓存：列表与正文按服务器+账户隔离落盘（容量上限、原子
+  写入、损坏自愈、可清除）；离线启动显示缓存内容并诚实标注；图片
+  不缓存。
+- 分页：cursor 不透明回传、跨页去重、下拉刷新重置、筛选切换取消
+  旧请求、刷新失败不清空已有内容。
+- macOS CI（`ios.yml`）：XcodeGen 生成工程 → 模拟器构建 + 51 项
+  XCTest → 模拟器安装/启动/截图冒烟 → 未签名 iphoneos 归档（开发
+  预览，非可安装 IPA）；契约子集漂移门禁（ubuntu）。
+- 契约链路：iOS 与 Web 消费同一份权威 OpenAPI 导出；iOS 子集由
+  `apps/ios/scripts/filter_openapi.py` 脚本生成（含生成器兼容所需
+  的 3.1→3.0 确定性转换），CI 校验无漂移。
+
+### 已知边界
+
+- 签名 IPA 未产出：仓库尚无 Apple 开发者证书/Profile Secrets（人工
+  补齐清单见 docs/development.md §iOS 签名）；CI 产物为未签名归档。
+- AI 摘要/翻译、APNs、Widget、Share Extension、Spotlight 不在首版
+  （见 roadmap 2026-10/11 计划）。
 
 ## 3.0.0
 
