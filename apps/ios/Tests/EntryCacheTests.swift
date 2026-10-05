@@ -76,7 +76,7 @@ final class EntryCacheTests: XCTestCase {
         let cache = makeCache()
         cache.storeList([listItem("a")], scopeKey: "all", keys: alice)
         // Corrupt every file in the account directory.
-        let dir = tempDir
+        guard let dir = tempDir else { return XCTFail("setUp did not run") }
         for dirName in try FileManager.default.contentsOfDirectory(atPath: dir.path) {
             let accountDir = dir.appendingPathComponent(dirName, isDirectory: true)
             for fileName in try FileManager.default.contentsOfDirectory(atPath: accountDir.path) {
